@@ -268,7 +268,7 @@ function wardenNotificationRuleForType(type) {
   if (/popup|redirect|meta_refresh|back_trap|confirm_bait|reload_loop|overlay_ad_frame|frame_top|gestureless_nav|app_install|notification_bait|autoplay_media|blocked_hidden_media/.test(value)) return 'suspicious_redirect';
   if (/fingerprint/.test(value)) return 'fingerprinting_prevented';
   if (/grabber|ip_lookup|webrtc|geolocation|media_capture|screen_capture|speech_capture|device_|file_|service_worker/.test(value)) return 'ip_privacy';
-  if (/tracker|beacon|cookie|social_widget|supercookie|storage_access|logger_api|idle_watch|keystroke/.test(value)) return 'tracker_blocked';
+  if (/tracker|ad_resource|beacon|cookie|social_widget|supercookie|storage_access|logger_api|idle_watch|keystroke/.test(value)) return 'tracker_blocked';
   return 'system_message';
 }
 

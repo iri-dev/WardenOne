@@ -1119,24 +1119,43 @@
   }
   /* The engine believes a wo-event only when it is signed: the notice card, the page badge and
      the risk score all read this bus, and a page can dispatch on it. One number per sender only
-     moves forward; the same event object seen again by the next listener is the same event. The
-     WeakMap methods and Reflect.apply are taken now, before the page can replace them. */
+     moves forward; the same event seen again by the next listener is the same event. The
+     WeakMap methods and Reflect.apply are taken now, before the page can replace them.
+     The event, not its detail, is what the next listener sees again. An event the bridge
+     dispatches from its own world hands every listener here a fresh copy of the detail, so
+     keyed on the detail the risk score's listener spent the number and the notice card's
+     listener refused the same event as a replay: no worker notice -- a popup the worker
+     closed, a frame's blocked redirect, a manual check's answer -- ever drew its card. */
   const __woEventLast=Object.create(null),
   __woEventAccepted=new WeakMap,
   __woWeakGet=WeakMap.prototype.get,
   __woWeakSet=WeakMap.prototype.set,
+  __woWeakDelete=WeakMap.prototype.delete,
+  __woMicrotask="function"==typeof queueMicrotask?queueMicrotask:null,
   __woApply=Reflect.apply;
-  function __woEventTrusted(d){
+  /* Keyed on the event, an accepted event stays accepted for as long as the page holds it, and
+     a page can dispatch the same object again after it has gone round. So the memory lasts one
+     dispatch: this capture listener on the window is registered before any page script, so its
+     clean-up is queued ahead of anything a page listener queues, and runs once every listener of
+     the dispatch has seen the event -- a wo-event is always dispatched from script, so no
+     microtask runs in the middle of one. A copy dispatched again afterwards meets the sequence
+     number, which has already moved on. */
+  woOn(window,"wo-event",e=>{
+    if(!__woMicrotask||!e||"object"!=typeof e)return;
+    try{__woApply(__woMicrotask,void 0,[()=>{try{__woApply(__woWeakDelete,__woEventAccepted,[e])}catch(_){}}])}catch(_){}
+  },!0);
+  function __woEventTrusted(d,ev){
     try{
       if(!d||"object"!=typeof d||null===__woKey)return!1;
       const src=String(d.src||""),
-      seq=Number(d.eseq);
+      seq=Number(d.eseq),
+      seen=ev&&"object"==typeof ev?ev:d;
       if(!/^(?:engine|hardener|miner|bridge)$/.test(src)||!Number.isInteger(seq))return!1;
       if(!__woAuth.same(d.emac,__woAuth.hmac(__woKey,__woAuth.eventText(src,seq,String(d.type||""),d.detail))))return!1;
-      if(__woApply(__woWeakGet,__woEventAccepted,[d])===src+":"+seq)return!0;
+      if(__woApply(__woWeakGet,__woEventAccepted,[seen])===src+":"+seq)return!0;
       if(seq<=(__woEventLast[src]||0))return!1;
       __woEventLast[src]=seq;
-      __woApply(__woWeakSet,__woEventAccepted,[d,src+":"+seq]);
+      __woApply(__woWeakSet,__woEventAccepted,[seen,src+":"+seq]);
       return!0
     }catch(_){
       return!1
@@ -1144,6 +1163,14 @@
   }
   let __woToastReady=!1;
   const __woToastPending=[];
+  /* Worker notices can arrive before the full config starts the toast UI. */
+  woOn(document,"wo-event",e=>{
+    if(__woToastReady)return;
+    const d=e&&e.detail;
+    if(!d||d.src!=="bridge"||!/^(?:blocked_|detected_|warned_)/.test(String(d.type||""))||!__woEventTrusted(d,e))return;
+    __woToastPending.push({type:String(d.type),detail:d.detail&&"object"==typeof d.detail?{...d.detail}:d.detail});
+    if(__woToastPending.length>32)__woToastPending.shift()
+  });
   function __woEmit(detail){
     if(!__woToastReady&&detail&&/^(?:blocked_|detected_|warned_)/.test(String(detail.type||""))){
       __woToastPending.push({type:String(detail.type),detail:detail.detail&&"object"==typeof detail.detail?{...detail.detail}:detail.detail});
@@ -9114,7 +9141,7 @@
       pasteDecisionId=0;
       woOn(document,"wo-event",e=>{
         const d=e&&e.detail;
-        if(!d||"warning_decision"!==d.type||"bridge"!==d.src||!__woEventTrusted(d))return;
+        if(!d||"warning_decision"!==d.type||"bridge"!==d.src||!__woEventTrusted(d,e))return;
         const seq=Number(d.eseq);
         if(!Number.isInteger(seq)||seq<=pasteDecisionSeq||!d.detail||"wo-paste-warn"!==d.detail.id||d.detail.decisionId!==pasteDecisionId)return;
         pasteDecisionSeq=seq;
@@ -9634,12 +9661,13 @@
       },
       scoreForm=pwField=>{
         const form=pwField.closest&&pwField.closest("form")||pwField.parentElement||pwField;
+        const hiddenPassword=credentialTrapHidden(pwField);
         let score=0;
         const reasons=[];
         /* Scored first so that when this is what happened, it is what the reader is
         told -- the panel shows reasons[0], and "there is a password box here you
         cannot see" is a more useful sentence than any of the ones below it. */
-        if(credentialTrapHidden(pwField)){
+        if(hiddenPassword){
           score+=2,
           reasons.push("there is a password box on this page you cannot see");
           const bait=credentialTrapBait(pwField),
@@ -9688,7 +9716,8 @@
         reasons.push("the page address asks for sign-in or account verification"))),
         isOverlay(form)&&(score+=2,
         reasons.push("the login box is an overlay floating on top of the page")),
-        injectedForms.has(pwField)&&(score+=2,
+        /* Hidden fields often arrive during normal sign-in hydration. */
+        !hiddenPassword&&injectedForms.has(pwField)&&(score+=2,
         reasons.push("the login box was inserted by a script after the page loaded")),
         {
           score:score,
@@ -15895,8 +15924,9 @@
         woOn(document,"wo-event",
         e=>{
           try{
-            if(!__woEventTrusted(e.detail))return;
-            const t=e.detail&&e.detail.type;
+            const d=e.detail;
+            if(!__woEventTrusted(d,e))return;
+            const t=d&&d.type;
             ("detected_grabber_domain"===t||/^blocked_grabber_/.test(t))&&addSignal(100,
             "Known IP logger service touched this page",
             "known-logger-event"),
@@ -18933,13 +18963,19 @@
     every one after it is refused -- the page simply does not get to re-add the entry,
     and Back works on the next press. Nothing already in your history is changed or
     removed; unwinding someone's history from underneath them would be worse than the
-    trap, and is a different thing entirely from declining to add to it. */
+    trap, and is a different thing entirely from declining to add to it. A BFCache
+    restore can also replay the exact link that took the reader away. */
     if(WO.backTrapGuard&&WO_TOP)try{
       let btLastPop=0,
       btRearms=0,
       btGestureAt=0,
       btBurstStarted=0,
       btRecentTargets=[],
+      btPendingLink="",
+      btPendingLinkAt=0,
+      btDepartedLink="",
+      btRestoredAt=0,
+      btRestoreReload=!1,
       btWarned=!1;
       /* How long after Back a push still counts as answering it. */
       const BT_POP_WINDOW=1200,
@@ -18962,7 +18998,7 @@
       /* One notice per page whichever way the page went about it: they are the same abuse
       wearing different clothes, and a person who has just been told Back is being fought
       does not need telling three times. The wording says which one it was. */
-      btNotice=(why,outcome)=>{
+      btNotice=(why,outcome,action)=>{
         if(btWarned)return;
         btWarned=!0;
         try{
@@ -18971,7 +19007,7 @@
             severity:"Medium",
             confidence:"High",
             why:why,
-            action:"Press Back again -- it should leave now. If the page keeps fighting, close the tab; nothing on it needs you to stay.",
+            action:action||"Press Back again -- it should leave now. If the page keeps fighting, close the tab; nothing on it needs you to stay.",
             outcome:outcome+" Your history itself was not rewritten -- nothing already in it was changed or removed."
           })
         }
@@ -18983,8 +19019,24 @@
       /* What separates an app from a trap is not how many entries it adds but whether anyone
       asked. Every ordinary interaction vouches for the pushes that follow it -- scrolling and
       wheeling included, or an endless list would run out of budget for behaving normally. */
-      btGesture=()=>{
+      btGesture=e=>{
         const now=Date.now();
+        if(e&&e.isTrusted!==!1&&/^(pointerdown|mousedown|keydown|touchstart|click)$/.test(e.type||"")){
+          try{
+            const link=e.target&&e.target.closest&&e.target.closest("a[href],area[href]");
+            if(link&&!link.hasAttribute("download")&&(!link.target||link.target==="_self")){
+              const target=btTarget(link.href||link.getAttribute("href"));
+              if(target&&target!==btUrl()){
+                btPendingLink=target,
+                btPendingLinkAt=now;
+                if(target===btDepartedLink)btRestoredAt=0
+              }
+            }
+          }
+          catch(_){
+
+          }
+        }
         now-btGestureAt<150||(btGestureAt=now,
         btBurstStarted=0,
         btRecentTargets=[])
@@ -18997,6 +19049,12 @@
       "popstate",
       ()=>{
         btLastPop=Date.now()
+      });
+      woOn(window,"pagehide",()=>{
+        btDepartedLink=Date.now()-btPendingLinkAt<5e3?btPendingLink:""
+      });
+      woOn(window,"pageshow",e=>{
+        btRestoredAt=e&&e.persisted&&btDepartedLink&&btDepartedLink!==btUrl()?Date.now():0
       });
       const btWatch=name=>{
         try{
@@ -19016,6 +19074,21 @@
             working again on the very next press. */
             try{
               const btNow=Date.now();
+              /* A restored page may finish a stale AJAX request after Back. Refuse only
+              a push to the exact same-tab link that took the reader away. */
+              if(name==="pushState"&&btRestoredAt&&(btRestoreReload||btNow-btRestoredAt<BT_POP_WINDOW)&&btTarget(url)===btDepartedLink){
+                if(!btRestoreReload){
+                  btRestoreReload=!0;
+                  btNotice("After Back restored this page, a delayed request tried to reopen the link you had just left.",
+                  "The stale history entry was refused and this page refreshed to restore its content.",
+                  "You can continue from the page you returned to.");
+                  /* Refusing the URL alone still lets the stale response replace the page body. */
+                  try{location.reload()}catch(_){
+
+                  }
+                }
+                return
+              }
               if(name==="pushState"&&btUrl()===btTarget(url)&&btLastPop&&btNow-btLastPop<BT_POP_WINDOW&&++btRearms>=2)return void btNotice("Each time you pressed Back this page put the same address straight back into your history, so Back could not leave. Pages that do this are usually trying to keep you on a scam or a fake alert.",
               "The repeat entries were refused, so Back works again.");
               /* The other shape, and the one that does not need you to press Back at all: the
@@ -20725,9 +20798,9 @@
          inside the const chain below, where the first assignment threw TypeError and aborted
          engine start-up on every ordinary page, because removeOverlays is on by default. */
       let cleanerMonitoring=!1;
-      const NUISANCE=/(cookie|consent|gdpr|newsletter|subscribe|sign[\s-]?up for|mailing list|email list|ad ?block|adblock|disable your ad|whitelist|allow ads|notification|push|paywall|register to (read|continue)|create (a )?free account|allow notifications?|turn on notifications?|enable notifications?|click (the )?bell)/i,
+      const NUISANCE=/(cookie|consent|gdpr|newsletter|subscribe|sign[\s-]?up for|mailing list|email list|ad ?block|adblock|disable your ad|whitelist|allow ads|notification|paywall|register to (read|continue)|create (a )?free account|allow notifications?|turn on notifications?|enable notifications?|click (the )?bell)/i,
       AD_SIGNAL=/(advertisement|sponsored|ad\s*choices|adchoices|download now|continue to (your )?(download|the site)|no thanks,? (i|continue)|skip ad|your download will (begin|start)|presented by)/i,
-      BAIT_SIGNAL=/(notification|push|bell|subscribe|download now|watch now|continue to (download|watch|stream)|allow notifications?|enable notifications?)/i,
+      BAIT_SIGNAL=/(notification|bell|subscribe|download now|watch now|continue to (download|watch|stream)|allow notifications?|enable notifications?)/i,
       PROTECT=/(password|sign[\s-]?in|log[\s-]?in|checkout|payment|card number|billing address|add to (cart|basket)|two[\s-]?factor|verification code|confirm (your )?(order|payment|transaction)|delete|are you sure|accept (all )?cookies)/i,
       seen=new WeakSet,
       undoStack=[],
@@ -21074,7 +21147,7 @@
              "Download now", "Allow notifications" -- and there is no article
              underneath to lose. */
           structuralBlob=attrs+" "+(el.className||"")+" "+(el.id||""),
-          bigEnoughToMatter=r.width>=innerWidth*.5&&r.height>=innerHeight*.3,
+          bigEnoughToMatter=r.width*r.height>=innerWidth*innerHeight*.15||r.height>=innerHeight*.5&&r.width>=160,
           adSignalHere=bigEnoughToMatter?AD_SIGNAL.test(structuralBlob):adSignal,
           nuisanceHere=bigEnoughToMatter?NUISANCE.test(structuralBlob):nuisanceText,
           baitHere=bigEnoughToMatter?BAIT_SIGNAL.test(structuralBlob):baitSignal,
@@ -21691,11 +21764,11 @@
     catch(_){
 
     }
-    if(!1!==WO.showToasts&&WO_TOP){
+    if(WO_TOP){
       const TOAST_INFO={
         blocked_popup:{
           title:"Popup blocked",
-          why:"A new tab/window tried to open without you clicking anything.",
+          why:"The page tried to open an unwanted tab or window.",
           dwell:5300
         },
         blocked_gestureless_nav:{
@@ -22027,7 +22100,7 @@
         if(/popup|redirect|meta_refresh|back_trap|confirm_bait|reload_loop|overlay_ad_frame|frame_top|gestureless_nav|app_install|notification_bait|autoplay_media|blocked_hidden_media/.test(value))return"suspicious_redirect";
         if(/fingerprint/.test(value))return"fingerprinting_prevented";
         if(/grabber|ip_lookup|webrtc|geolocation|media_capture|screen_capture|speech_capture|device_|file_|service_worker/.test(value))return"ip_privacy";
-        if(/tracker|beacon|cookie|social_widget|supercookie|storage_access|logger_api|idle_watch|keystroke/.test(value))return"tracker_blocked";
+        if(/tracker|ad_resource|beacon|cookie|social_widget|supercookie|storage_access|logger_api|idle_watch|keystroke/.test(value))return"tracker_blocked";
         return"system_message"
       },
       notificationPreference=type=>{
@@ -22098,6 +22171,8 @@
       },
       QUIET_GOOGLE_TOAST_TYPES=new Set(["warned_logger_api",
       "detected_thirdparty_tracker"]),
+      ACTIVE_BLOCK_TOAST_TYPES=new Set(["blocked_popup",
+      "blocked_gestureless_nav","blocked_meta_refresh","blocked_redirect_chain"]),
       QUIET_GOOGLE_PAGE_RE=/(^|\.)(google\.com|google\.co\.uk)$/i,
       QUIET_GOOGLE_SERVICE_RE=/(^|\.)(google\.com|google\.co\.uk|googleapis\.com|gstatic\.com|googleusercontent\.com|gvt1\.com|gvt2\.com|ggpht\.com|youtube\.com|ytimg\.com|googlevideo\.com)$/i,
       shouldQuietToast=(type,
@@ -22113,14 +22188,10 @@
              challengermode installed a service worker" appeared on every visit
              to three sites that had installed nothing. */
           if(detail&&detail.existing)return!0;
-          /* Silenced by the reader, for a while or for good. Checked first: a
-             person who said "not now" has answered the question this card
-             exists to ask, and asking again is not a second warning, it is the
-             same one ignoring them. */
-          /* Already said within the hour, about this same site. A statement
-             repeated on every reload stops being information. */
+          /* Passive warnings stay quiet across reloads; each confirmed popup or
+             redirect block is a new action. Explicit mutes still apply below. */
           const memory=WO.toastMemory;
-          if(memory){
+          if(memory&&!ACTIVE_BLOCK_TOAST_TYPES.has(type)){
             const host=String(location.hostname||"").replace(/^www./,"").toLowerCase(),
             seenAt=Number(memory[type+"|"+host]||0);
             if(seenAt&&Date.now()-seenAt<18e5)return!0
@@ -22201,11 +22272,10 @@
         /* Asking the same question twice is a reasonable thing to do, and the
         answer is not less true the second time. */
         if(!asked&&toastSeen.has(key))return;
-        /* Nothing already on screen may be pushed off by a burst arriving in the same moment.
-        Distinct warnings are staggered rather than dropped -- dropping one loses the only
-        notice a person gets, and this queue cannot grow without bound because the set above
-        admits each distinct wording exactly once per page. */
+        /* Stagger distinct cards so a burst cannot push one off screen. Action
+           blocks can recur after 30 seconds; passive warnings stay once per page. */
         toastSeen.add(key);
+        if(ACTIVE_BLOCK_TOAST_TYPES.has(type))setTimeout(()=>toastSeen.delete(key),3e4);
         if(OWNED_TOAST_TYPES.has(type))__woEmit({type:"warning_toast",detail:{id:type}});
         /* Report it once, here, where the decision to show is final -- not at
            render, which is deferred by the stagger and would double-report a
@@ -22443,7 +22513,7 @@
         const d=e&&e.detail||{
 
         };
-        if(!__woEventTrusted(d))return;
+        if(!__woEventTrusted(d,e))return;
         /* quiet means the guard cleaned something up that the user never saw and
         never had a decision to make about. It still reaches the Activity Center;
         it just does not interrupt. Distinct from "silent", which only suppresses
@@ -22551,7 +22621,7 @@
         title.textContent="WardenOne",
         list.id="rg-list",
         list.className="empty",
-        list.textContent="Nothing blocked yet  -  all clear",
+        list.textContent="No blocks shown here yet. Open WardenOne for network activity.",
         panel.appendChild(title),
         panel.appendChild(list),
         root.appendChild(style),
@@ -23113,7 +23183,7 @@
                 bEl.classList.add("damaged"),
                 nEl.textContent="Guard damaged",
                 listEl.className="empty",
-                listEl.textContent="Nothing blocked yet.";
+                listEl.textContent="Badge status unavailable.";
                 const warn=document.createElement("div");
                 return warn.className="warn",
                 warn.textContent="A component hit an error on this page. Try reloading; if it keeps happening, toggle WardenOne off and on in the popup.",
@@ -23123,7 +23193,7 @@
               nEl.textContent=total+" blocked");
               const keys=Object.keys(counts);
               if(!keys.length)return listEl.className="empty",
-              void(listEl.textContent="Nothing blocked yet  -  all clear");
+              void(listEl.textContent="No blocks shown here yet. Open WardenOne for network activity.");
               listEl.className="",
               listEl.textContent="",
               keys.forEach(k=>{
@@ -23282,8 +23352,9 @@
               "detected_manual_check"]);
               woOn(document,"wo-event",
               e=>{
-                if(!__woEventTrusted(e.detail))return;
-                const t=e.detail&&e.detail.type||"";
+                const d=e.detail;
+                if(!__woEventTrusted(d,e))return;
+                const t=d&&d.type||"";
                 if("detected_download_gate"!==t&&!NO_BADGE_TYPES.has(t))return t&&/_failed$/.test(t)?(WO.__damaged=!0,
                 void renderBadge()):void(/^blocked_|^detected_|^gated_/.test(t)&&(counts[t]=(counts[t]||0)+1,
                 total++,

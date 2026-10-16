@@ -87,7 +87,7 @@ function bridgeRealm() {
   assert(engineMacLine, 'engineMac is gone from the bridge');
   const state = { relayed: [], listeners: {} };
   const sandbox = {
-    TOKEN, KEY, Number, String, Object, RegExp, Date, Uint8Array, Uint32Array, Math,
+    TOKEN, KEY, BRIDGE_TOP_FRAME: true, Number, String, Object, RegExp, Date, URL, Uint8Array, Uint32Array, Math,
     chrome: { runtime: { lastError: null, sendMessage: (msg) => { state.relayed.push(JSON.parse(JSON.stringify(msg))); } } },
     document: { dispatchEvent(ev) { const fn = state.listeners[ev.type]; if (fn) fn(ev); return true; } },
     woOn: (target, type, fn) => { state.listeners[type] = fn; },
@@ -147,15 +147,16 @@ function workerRealm(options) {
     chrome: { tabs: { update: (id, props) => { updates.push({ id, props }); return Promise.resolve(); } } },
     isLoginCompatibilityUrl: (u) => /accounts\.google|login\.microsoftonline|\/oauth|\/saml/i.test(String(u || '')),
     URL, Object, Date, String, Number, Promise, RegExp,
+    setTimeout: () => {},
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(BG.slice(adTargetFrom, adTargetTo) + '\n'
     + grabFn(BG, 'messageCleanHost') + '\n' + BG.slice(from, to)
-    + '\nthis.__state = { PLAYER_GESTURE_AT, TOP_NAV_OWNED_AT, LAST_TOP_URL, LAST_GESTURE_AT, TOP_NAV_OWNED_HOST: typeof TOP_NAV_OWNED_HOST !== "undefined" ? TOP_NAV_OWNED_HOST : null };',
+    + '\nthis.__state = { PLAYER_GESTURE_AT, TOP_NAV_OWNED_AT, LAST_TOP_URL, LAST_GESTURE_AT, PRESSED_LINK_AT, PRESSED_LINK_HOST, PRESSED_LINK_URL, PRESSED_LINK_SOURCE_URL, TOP_NAV_OWNED_HOST: typeof TOP_NAV_OWNED_HOST !== "undefined" ? TOP_NAV_OWNED_HOST : null };',
     ctx, { filename: 'worker-guard.js' });
   return {
     updates, history, state: sandbox.__state,
-    signal: (tabId, kind, host) => sandbox.noteNavSignal(tabId, kind, host),
+    signal: (tabId, kind, host, url, sourceUrl) => sandbox.noteNavSignal(tabId, kind, host, url, sourceUrl),
     committed: (tabId, url) => { sandbox.__state.LAST_TOP_URL[tabId] = url; },
     forget: (tabId) => sandbox.forgetNavSignals(tabId),
     forced: (tabId, url) => sandbox.maybeBlockForcedTopRedirect({ tabId, frameId: 0, url, transitionQualifiers: ['client_redirect'] }),
@@ -199,6 +200,28 @@ const hmacHex = (keyHex, text) => crypto.createHmac('sha256', Buffer.from(keyHex
     check('a sequence number that went backwards is not relayed whatever the kind', b.state.relayed.length === 2);
     b.dispatch({ token: TOKEN, kind: 'gesture', seq: 3, mac: hmacHex(KEY, 'nav-signal\n3\ngesture\n') });
     check('a signed gesture with the next number is', b.state.relayed.length === 3 && b.state.relayed[2].signal === 'gesture' && b.state.relayed[2].host === '');
+    b.dispatch({ token: TOKEN, kind: 'link-press', host: 'link-vault.org', seq: 4, mac: hmacHex(PAGE_KEY, 'nav-signal\n4\nlink-press\nlink-vault.org') });
+    check('the page cannot forge a pressed-link destination', b.state.relayed.length === 3);
+    b.dispatch({ token: TOKEN, kind: 'link-press', host: 'link-vault.org', seq: 4, mac: hmacHex(KEY, 'nav-signal\n4\nlink-press\nlink-vault.org') });
+    check('a signed pressed-link destination is relayed', b.state.relayed.length === 4 && b.state.relayed[3].host === 'link-vault.org');
+    b.dispatch({ token: TOKEN, kind: 'link-press', host: 'evil.example', seq: 5, mac: hmacHex(KEY, 'nav-signal\n5\nlink-press\nlink-vault.org') });
+    check('the pressed-link destination is covered by the signature', b.state.relayed.length === 4);
+  }
+  {
+    const b = bridgeRealm();
+    const em = emitterRealm((detail) => b.dispatch(detail));
+    const url = 'https://files.example/get?ticket=private';
+    em.signal('link-press', { host: 'files.example', url });
+    check('a signed download press relays its exact URL', b.state.relayed.length === 1 && b.state.relayed[0].url === url);
+    b.dispatch({ token: TOKEN, kind: 'link-press', host: 'files.example', url: 'https://files.example/other',
+      seq: 2, mac: hmacHex(KEY, 'nav-signal\n2\nlink-press\nfiles.example\n' + url) });
+    check('the page cannot replace the pressed URL', b.state.relayed.length === 1);
+    b.dispatch({ token: TOKEN, kind: 'link-press', host: 'files.example', url: 'https://evil.example/get',
+      seq: 2, mac: hmacHex(KEY, 'nav-signal\n2\nlink-press\nfiles.example\nhttps://evil.example/get') });
+    check('the relay rejects a URL whose host differs from the signed host', b.state.relayed.length === 1);
+    em.signal('download-hijack');
+    check('a signed blocked-popup signal reaches the worker', b.state.relayed.length === 2
+      && b.state.relayed[1].signal === 'download-hijack');
   }
 
   /* ---- 2. the emitter and the relay agree, end to end -------------------------------------------- */
@@ -241,6 +264,23 @@ const hmacHex = (keyHex, text) => crypto.createHmac('sha256', Buffer.from(keyHex
     w.committed(1, 'https://yomi.to/watch/x');
     await w.forced(1, EVIL);
     check('with no signal at all, a cross-site client_redirect is interposed', w.updates.length === 1 && w.history.length === 1, JSON.stringify(w.updates));
+  }
+  {
+    const w = workerRealm();
+    const pressed = 'https://files.example/get?ticket=private';
+    w.signal(1, 'link-press', 'files.example', pressed, 'https://origin.example/page');
+    check('the worker keeps the pressed URL only for a matching cross-site link', w.state.PRESSED_LINK_URL[1] === pressed);
+    w.signal(1, 'link-press', 'files.example', 'https://evil.example/get', 'https://origin.example/page');
+    check('the worker drops a URL with a different host', !w.state.PRESSED_LINK_URL[1]);
+    w.signal(1, 'link-press', 'files.example', pressed, 'https://files.example/page');
+    check('a same-site link cannot arm download restoration', !w.state.PRESSED_LINK_URL[1]);
+    check('a same-site link still names the pressed host and source page',
+      w.state.PRESSED_LINK_HOST[1] === 'files.example' && w.state.PRESSED_LINK_SOURCE_URL[1] === 'https://files.example/page');
+    w.signal(1, 'link-press', 'files.example', '', 'https://files.example/page');
+    check('a later unrelated press clears the previous link intent',
+      !w.state.PRESSED_LINK_AT[1] && !w.state.PRESSED_LINK_HOST[1] && !w.state.PRESSED_LINK_SOURCE_URL[1]);
+    w.signal(1, 'link-press', 'files.example', pressed, 'https://origin.example/' + 'x'.repeat(9000));
+    check('an oversized source URL cannot be retained in the worker', !w.state.PRESSED_LINK_URL[1]);
   }
   {
     const w = workerRealm();
@@ -303,6 +343,19 @@ const hmacHex = (keyHex, text) => crypto.createHmac('sha256', Buffer.from(keyHex
     check('a committed page forgets the host with the rest', !w.state.TOP_NAV_OWNED_AT[1] && !(w.state.TOP_NAV_OWNED_HOST && w.state.TOP_NAV_OWNED_HOST[1]));
   }
   {
+    const w = workerRealm();
+    const listing = 'https://pawchive.pw/patreon/user/4618037';
+    const post = listing + '/post/172291325';
+    w.signal(1, 'link-press', 'pawchive.pw', post, listing);
+    w.committed(1, post);
+    w.forget(1);
+    check('a same-site post commit retains its recent link intent for the popup event',
+      w.state.PRESSED_LINK_HOST[1] === 'pawchive.pw' && w.state.PRESSED_LINK_SOURCE_URL[1] === listing);
+    w.committed(1, 'https://elsewhere.example/page');
+    w.forget(1);
+    check('leaving the site clears that intent', !w.state.PRESSED_LINK_AT[1] && !w.state.PRESSED_LINK_HOST[1]);
+  }
+  {
     /* End to end: the guard's beacon, through the relay, into the worker. */
     const b = bridgeRealm();
     const em = emitterRealm((detail) => b.dispatch(detail));
@@ -318,7 +371,7 @@ const hmacHex = (keyHex, text) => crypto.createHmac('sha256', Buffer.from(keyHex
   }
 
   /* ---- 4. the wiring, in the shipped files ---------------------------------------------------- */
-  check('the worker handler passes the host through', /noteNavSignal\(sender && sender\.tab && sender\.tab\.id, msg\.signal, msg\.host\)/.test(BG));
+  check('the worker handler passes the host and signed URL through', /noteNavSignal\(sender && sender\.tab && sender\.tab\.id, msg\.signal, msg\.host, msg\.url,/.test(BG));
   check('both announcing paths in the guard name the host',
     (GUARD.match(/signal\('top-nav-authorized', \{ host: hostOf\(rawTarget\) \}\)/g) || []).length === 2 && !/signal\('top-nav-authorized'\)/.test(GUARD));
   check('the relay still checks the token and the rate as before', /d\.token !== TOKEN/.test(BRIDGE) && /bridgeRateOk\('wo-nav-signal', 180, 60000\)/.test(BRIDGE));

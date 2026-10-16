@@ -5868,6 +5868,7 @@ const SITE_DASH_PROTECTIONS = [
 ];
 const SITE_DASH_EVENT_LABELS = {
   blocked_popup: 'Blocked a pop-up',
+  blocked_ad_resource: 'Blocked an ad script or frame',
   blocked_gestureless_nav: 'Stopped a redirect you didn’t click',
   blocked_meta_refresh: 'Stopped an automatic redirect',
   blocked_form_submit: 'Stopped a forced form submit',

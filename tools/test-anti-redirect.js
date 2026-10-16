@@ -38,6 +38,15 @@ const PREDS = {
   'a[href],area[href],form,input:not([type="range"]),textarea,select': (el) => ((el.tagName === 'A' || el.tagName === 'AREA') && (el.attrs.href != null || el.href)) || el.tagName === 'FORM' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.attrs.type !== 'range'),
 };
 
+/* The controls the popup policy asks a press about, lifted from the source so this predicate
+   answers for exactly that selector string. */
+const GESTURE_CONTROL = vm.runInNewContext(/const GESTURE_CONTROL = ([\s\S]*?);\n/.exec(SRC)[1]);
+const CONTROL_TAGS = ['button', 'input', 'select', 'textarea', 'label', 'summary', 'option', 'iframe', 'video', 'audio', 'canvas', 'embed', 'object'];
+const CONTROL_ROLES = new Set([...GESTURE_CONTROL.matchAll(/\[role="([a-z]+)"\]/g)].map((m) => m[1]));
+PREDS[GESTURE_CONTROL] = (el) => ((el.tagName === 'A' || el.tagName === 'AREA') && (el.attrs.href != null || el.href))
+  || CONTROL_TAGS.includes(el.tagName.toLowerCase()) || el.attrs.onclick != null || el.attrs.contenteditable != null
+  || (el.attrs.tabindex != null && String(el.attrs.tabindex) !== '-1') || CONTROL_ROLES.has(el.attrs.role);
+
 function makeEl(props) {
   props = props || {};
   const el = {
@@ -159,6 +168,8 @@ function build(opts) {
     zIndex: String(el && el.style && el.style.zIndex || 'auto'),
     backgroundColor: String(el && el.style && el.style.backgroundColor || 'rgba(0, 0, 0, 0)'),
     backgroundImage: String(el && el.style && el.style.backgroundImage || 'none'),
+    cursor: String(el && el.style && el.style.cursor || 'auto'),
+    userSelect: String(el && el.style && el.style.userSelect || 'auto'),
   });
   /* The Navigation API, so the player-frame guard can be handed navigate events. */
   const navListeners = [];
@@ -185,6 +196,13 @@ function build(opts) {
   const nativeReplace = function (u) { state.replaced.push(String(u)); };
   sandbox.Location.prototype.assign = nativeAssign;
   sandbox.Location.prototype.replace = nativeReplace;
+  /* Element.click and dispatchEvent, which a detached link's popup goes through. */
+  state.nativeClicks = [];
+  state.nativeDispatches = [];
+  sandbox.HTMLElement = function HTMLElement() {};
+  sandbox.HTMLElement.prototype.click = function () { state.nativeClicks.push(this); };
+  sandbox.EventTarget = function EventTarget() {};
+  sandbox.EventTarget.prototype.dispatchEvent = function (ev) { state.nativeDispatches.push(ev); return true; };
   sandbox.HTMLFormElement = function HTMLFormElement() {};
   const nativeSubmit = function () { state.submitted.push(1); };
   sandbox.HTMLFormElement.prototype.submit = nativeSubmit;
@@ -290,6 +308,9 @@ function build(opts) {
     open(u, name, features) { return sandbox.open(u, name, features); },
     advanceTime(ms) { clockNow += Number(ms) || 0; },
     assign(u) { sandbox.Location.prototype.assign.call(loc, u); },
+    /* The page clicking an element from script: el.click(), or dispatching a click on it. */
+    scriptClick(el) { return sandbox.HTMLElement.prototype.click.call(el); },
+    scriptDispatchClick(el) { return sandbox.EventTarget.prototype.dispatchEvent.call(el, { type: 'click' }); },
     setHref(u) { loc.href = u; },
     submit(form) { sandbox.HTMLFormElement.prototype.submit.call(form); },
     lastEmit() { return state.emits[state.emits.length - 1] || null; },
@@ -393,10 +414,18 @@ function check(name, cond, extra) {
   check('T3 full disabled config replaces the bootstrap', t.state.opened.length === 1);
 }
 {
+  /* Before the settings, the shipped defaults refuse this .cfd advert from a button press. A page
+     forging "off" changes nothing; the reader's own "off", signed by the bridge, does. */
   const t = build({ deferConfig: true });
-  t.forgeBootstrap({ enabled: true, blockForcedPopups: true, strictPopupShield: true });
+  t.forgeBootstrap({ enabled: false, blockForcedPopups: false, strictPopupShield: false });
+  t.userClick(Object.assign(makeEl({ tag: 'button', text: 'Open' }), { isConnected: true }), 50, 50);
   t.open('https://newsboydurance.cfd/ad');
-  check('T3 forged bootstrap cannot enable the guard', t.state.opened.length === 1);
+  check('T3 forged bootstrap cannot switch the guard off', t.state.opened.length === 0);
+  const real = build({ deferConfig: true });
+  real.sendBootstrap({ enabled: true, blockForcedPopups: false, strictPopupShield: false, allowlist: [] });
+  real.userClick(Object.assign(makeEl({ tag: 'button', text: 'Open' }), { isConnected: true }), 50, 50);
+  real.open('https://newsboydurance.cfd/ad');
+  check('T3 where a genuine one does', real.state.opened.length === 1);
 }
 
 // T3b: gesture on a div that OVERLAYS the video (coords inside video rect)
@@ -524,6 +553,127 @@ function check(name, cond, extra) {
   a.attrs.href = 'https://gamedrive.org/game';
   const ev = t.fire('click', { target: a, clientX: 50, clientY: 50 });
   check('T10c same-origin tracking rewrite NOT cancelled', ev.defaultPrevented !== true, ev);
+}
+
+// T10f: a GameDrive-style click starts on a named link, then the page retargets
+// the click and spends the gesture on an unrelated popup.
+for (const [name, pressed, popup, allowed] of [
+  ['unrelated downloader', 'https://link-vault.org/c/example#torrent', 'https://link-file-abc.ai3zxo9jn.space/file', false],
+  ['unrelated Discord ad', 'https://gamedrive.org/discord', 'https://link-file-abc.ai3zxo9jn.space/file', false],
+  ['named destination', 'https://link-vault.org/c/example#torrent', 'https://link-vault.org/c/example#torrent', true],
+]) {
+  const t = build();
+  const a = makeEl({ tag: 'a', href: pressed, attrs: { href: pressed } });
+  t.fire('pointerdown', { target: a, clientX: 50, clientY: 50 });
+  t.fire('click', { target: makeEl({}), clientX: 50, clientY: 50 });
+  t.open(popup);
+  check('T10f ' + name, (t.state.opened.length === 1) === allowed, t.state);
+}
+
+// T10g: a confirmed mismatched popup may restore only a signed, new-tab
+// download destination. Ordinary links keep their native click behavior.
+for (const [name, options, eligible] of [
+  ['GameDrive download', { hostname: 'gamedrive.org' }, true],
+  ['other site download', { hostname: 'files.example' }, true],
+  ['ordinary link', { text: 'Read article' }, false],
+  ['same-site link', { url: 'https://gamedrive.org/download' }, false],
+  ['same-tab link', { target: '_self' }, false],
+  ['hidden link', { opacity: 0 }, false],
+  ['press outside link bounds', { outside: true }, false],
+  ['modified click', { ctrlKey: true }, false],
+  ['credentialed URL', { url: 'https://user:pass@link-vault.org/c/example#torrent' }, false],
+  ['download attribute', { text: 'File', download: true }, true],
+  ['untrusted press', { trusted: false }, false],
+  ['allowlisted site', { allowlist: true }, false],
+]) {
+  const hostname = options.hostname || 'gamedrive.org';
+  const t = build({ hostname, href: 'https://' + hostname + '/game',
+    config: options.allowlist ? { allowlist: [hostname] } : undefined });
+  const url = options.url || 'https://link-vault.org/c/example#torrent';
+  const a = makeEl({ tag: 'a', href: url, attrs: Object.assign({ href: url }, options.download ? { download: '' } : {}),
+    target: options.target || '_blank', text: options.text || 'DOWNLOAD',
+    style: options.opacity === 0 ? { opacity: 0 } : {},
+    rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+  a.isConnected = true;
+  t.fire('pointerdown', { target: a, button: 0, clientX: options.outside ? 150 : 50,
+    clientY: 50, ctrlKey: !!options.ctrlKey, isTrusted: options.trusted !== false });
+  const press = t.state.navSignals.find(signal => signal.kind === 'link-press');
+  check('T10g ' + name + ' URL scope', (!!press && press.url === url) === (eligible || name === 'same-site link'), press);
+  t.open('https://fake-downloader.example/ad');
+  const hijack = t.state.navSignals.find(signal => signal.kind === 'download-hijack');
+  check('T10g ' + name + ' recovery trigger', !!hijack === eligible, t.state.navSignals);
+}
+
+// A real content link supplies its own site to the browser popup backstop.
+// Pawchive can open the post and a native ad tab from the same click.
+{
+  const t = build({ hostname: 'pawchive.pw', href: 'https://pawchive.pw/patreon/user/4618037' });
+  const url = 'https://pawchive.pw/patreon/user/4618037/post/172291325';
+  const post = makeEl({ tag: 'a', href: url, attrs: { href: '/patreon/user/4618037/post/172291325' },
+    text: 'Read post', rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+  post.isConnected = true;
+  t.fire('pointerdown', { target: post, button: 0, clientX: 50, clientY: 50 });
+  const press = t.state.navSignals.find(signal => signal.kind === 'link-press');
+  check('T10g ordinary same-site post press names its destination', press && press.host === 'pawchive.pw' && press.url === url, press);
+  t.fire('pointerdown', { target: makeEl({}), button: 0, clientX: 50, clientY: 50 });
+  const clears = t.state.navSignals.filter(signal => signal.kind === 'link-press');
+  check('T10g a later unrelated press clears the post intent', clears.length === 2 && clears[1].url === '', clears);
+}
+for (const [name, href, text, opacity] of [
+  ['sign-in link', 'https://pawchive.pw/account/login', 'Log in', 1],
+  ['invisible post link', 'https://pawchive.pw/patreon/user/4618037/post/1', 'Read post', 0],
+]) {
+  const t = build({ hostname: 'pawchive.pw', href: 'https://pawchive.pw/patreon/user/4618037' });
+  const a = makeEl({ tag: 'a', href, attrs: { href }, text, style: { opacity },
+    rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+  a.isConnected = true;
+  t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50 });
+  check('T10g ' + name + ' does not arm native popup cleanup',
+    !t.state.navSignals.some(signal => signal.kind === 'link-press' && signal.url), t.state.navSignals);
+}
+{
+  const t = build({ hostname: 'gamedrive.org', href: 'https://gamedrive.org/game' });
+  const a = makeEl({ tag: 'a', href: 'https://link-vault.org/file',
+    attrs: { href: 'https://link-vault.org/file' }, target: '_blank', text: 'DOWNLOAD',
+    rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+  a.isConnected = true;
+  t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+  t.open('https://fake-downloader.cfd/ad');
+  check('T10g known bad popup also restores pressed download',
+    t.state.navSignals.some(signal => signal.kind === 'download-hijack'), t.state.navSignals);
+}
+
+// A quick ordinary click must revoke a recoverable download on the same host.
+{
+  const t = build({ hostname: 'gamedrive.org', href: 'https://gamedrive.org/game' });
+  const download = makeEl({ tag: 'a', href: 'https://link-vault.org/file',
+    attrs: { href: 'https://link-vault.org/file' }, target: '_blank', text: 'DOWNLOAD',
+    rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+  download.isConnected = true;
+  const ordinary = makeEl({ tag: 'a', href: 'https://link-vault.org/help',
+    attrs: { href: 'https://link-vault.org/help' }, target: '_blank', text: 'Help',
+    rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+  ordinary.isConnected = true;
+  const plain = build({ hostname: 'gamedrive.org', href: 'https://gamedrive.org/game' });
+  plain.fire('pointerdown', { target: ordinary, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+  check('T10g ordinary links do not wake the worker',
+    !plain.state.navSignals.some(signal => signal.kind === 'link-press'), plain.state.navSignals);
+  t.fire('pointerdown', { target: download, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+  t.fire('pointerdown', { target: ordinary, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+  const presses = t.state.navSignals.filter(signal => signal.kind === 'link-press');
+  check('T10g quick ordinary click clears prior download', presses.length === 2
+    && presses[0].url === 'https://link-vault.org/file' && presses[1].url === '', presses);
+  for (const [name, type, detail] of [
+    ['button press', 'pointerdown', { button: 0, clientX: 50, clientY: 50 }],
+    ['keyboard activation', 'keydown', { key: 'Enter' }],
+  ]) {
+    const next = build({ hostname: 'gamedrive.org', href: 'https://gamedrive.org/game' });
+    next.fire('pointerdown', { target: download, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+    next.fire(type, Object.assign({ target: makeEl({ tag: 'button' }), isTrusted: true }, detail));
+    const signals = next.state.navSignals.filter(signal => signal.kind === 'link-press');
+    check('T10g ' + name + ' clears prior download', signals.length === 2
+      && signals[1].url === '', signals);
+  }
 }
 
 // T10d: third-party redirector wrappers that visibly carry the final URL are
@@ -789,8 +939,9 @@ const MONETAG = 'https://dadgah.org/4/52106d0b?refer=https%3A%2F%2Fplaymogo.com%
   /* The top frame, a page with no player, and the switch. */
   const top = build({ hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
   top.userClick(top.videos[0], 500, 280);
+  /* The top frame carries the guard against a child player moving it, and the tab-under guard. */
   check('T13p the child-frame guard never judges the top frame\'s own navigations',
-    top.navListeners.length === 1 && top.navigate(HOP).defaultPrevented === false, top.navListeners.length);
+    top.navListeners.length === 2 && top.navigate(HOP).defaultPrevented === false, top.navListeners.length);
   const noPlayer = build({ framed: true, hostname: 'example-news.com' });
   noPlayer.userClick(makeEl({}), 500, 280);
   check('T13p a frame with no player is not judged', noPlayer.navigate(HOP).defaultPrevented === false);
@@ -1435,6 +1586,390 @@ const MONETAG = 'https://dadgah.org/4/52106d0b?refer=https%3A%2F%2Fplaymogo.com%
   const t = build({ hostname: 'videosite.com', href: 'https://videosite.com/page', config: { allowlist: [] } });
   t.open('https://ads1-example.com/x');
   check('T42f an empty allowlist changes nothing', t.state.opened.length === 0, t.state);
+}
+
+// T43: the popunder's "first click anywhere" (pawchive.pw, Clickadu's anti-adblock loader). Its
+// document listener spends the first press wherever it lands; a press on plain page -- a section,
+// text, empty margin -- does not get the one-popup allowance a press on a control keeps.
+const onPage = (props) => Object.assign(makeEl(props), { isConnected: true });
+const PAWCHIVE = { hostname: 'pawchive.pw', href: 'https://pawchive.pw/patreon/user/4618037', pathname: '/patreon/user/4618037' };
+{
+  const t = build(PAWCHIVE);
+  t.userClick(onPage({ tag: 'section', className: 'site-section site-section--user' }), 219, 160);
+  t.open('https://qmyamxdku.in/odtafx?dQ=Fi&zcsd=0');
+  check('T43 a press on plain page cannot open a cross-site popup', t.state.opened.length === 0, t.state.opened);
+  const e = t.lastEmit();
+  check('T43 and the block names why', !!e && e.type === 'blocked_popup' && /empty part of the page/.test(e.detail.why), e);
+  t.userClick(onPage({ tag: 'p', text: 'Some post text' }), 300, 300);
+  t.open('https://pawchive.pw/patreon/user/4618037/post/1');
+  check('T43 the site itself may still open its own page from there', t.state.opened.length === 1, t.state.opened);
+}
+for (const [name, el] of [
+  ['a button', onPage({ tag: 'button', text: 'Open dashboard' })],
+  ['a card drawn with a pointer cursor', onPage({ tag: 'div', style: { cursor: 'pointer' } })],
+  ['a role=button control', onPage({ tag: 'div', attrs: { role: 'button' } })],
+  ['a focusable custom control', onPage({ tag: 'div', attrs: { tabindex: '0' } })],
+  ['a custom element', onPage({ tag: 'my-share-card' })],
+  ['an app control drawn with the default arrow and unselectable text', onPage({ tag: 'div', text: 'Share', style: { cursor: 'default', userSelect: 'none' } })],
+  ['a node the press removed', makeEl({ tag: 'div' })],
+]) {
+  const t = build();
+  t.userClick(el, 50, 50);
+  t.open('https://randomapp.com/dash');
+  check('T43b a press on ' + name + ' keeps the one-popup allowance', t.state.opened.length === 1, t.state.opened);
+}
+{
+  const t = build();
+  t.userClick(onPage({ tag: 'p', text: 'Article text', style: { cursor: 'default' } }), 50, 50);
+  t.open('https://randomapp.com/dash');
+  check('T43b but selectable page text under a default arrow is still plain page', t.state.opened.length === 0, t.state.opened);
+}
+{
+  const t = build();
+  const inner = onPage({ tag: 'button', text: 'Share' });
+  const host = onPage({ tag: 'div' });
+  t.fire('pointerdown', { target: host, clientX: 50, clientY: 50, composedPath: () => [inner, host] });
+  t.open('https://randomapp.com/share');
+  check('T43c a control inside a shadow root is judged by what was pressed, not by its host', t.state.opened.length === 1, t.state.opened);
+}
+{
+  const t = build();
+  t.fire('pointerdown', { target: onPage({ tag: 'div' }), clientX: 50, clientY: 50, composedPath: () => [onPage({ tag: 'span' })] });
+  t.open('https://randomapp.com/dash');
+  check('T43c and plain page inside a shadow root is still plain page', t.state.opened.length === 0, t.state.opened);
+}
+{
+  const t = build();
+  t.fire('keydown', { key: 'Enter', target: onPage({ tag: 'body' }) });
+  t.open('https://randomapp.com/dash');
+  check('T43d Enter with nothing focused cannot open a cross-site popup', t.state.opened.length === 0, t.state.opened);
+}
+{
+  const t = build();
+  t.fire('keydown', { key: 'Enter', target: onPage({ tag: 'button', text: 'Open' }) });
+  t.open('https://randomapp.com/dash');
+  check('T43d Enter on a focused button still can', t.state.opened.length === 1, t.state.opened);
+}
+{
+  const t = build({ config: { strictPopupShield: false } });
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  t.open('https://randomapp.com/dash');
+  check('T43e with the strict popup shield off, a plain-page press keeps its allowance', t.state.opened.length === 1, t.state.opened);
+}
+
+// T44: the auction popup the worker used to close after its tab had opened -- the flash the
+// reader could see -- is refused before the tab exists, even from a press on a control.
+const auctionUrl = (host, fields, payload) => 'https://' + host + '/odtafx?'
+  + Array.from({ length: fields }, (_, i) => 'k' + i + '=' + (i === 7 ? 'p'.repeat(payload) : 'v'.repeat(52))).join('&');
+{
+  const url = auctionUrl('qmyamxdku.in', 30, 200);
+  check('T44 the sample is the observed shape (long query, many fields, one opaque payload)', url.length > 1600);
+  const t = build(PAWCHIVE);
+  t.userClick(onPage({ tag: 'button', text: 'Favorite' }), 50, 50);
+  t.open(url);
+  check('T44 an ad-auction popup is refused from a press on a control', t.state.opened.length === 0, t.state.opened);
+  check('T44 and named as one', /ad-auction popup/.test((t.lastEmit() || { detail: {} }).detail.why), t.lastEmit());
+}
+{
+  const t = build({ config: { strictPopupShield: false } });
+  t.userClick(onPage({ tag: 'button', text: 'Open' }), 50, 50);
+  t.open(auctionUrl('qmyamxdku.in', 30, 200));
+  check('T44b with the strict popup shield off, the worker\'s rule is not applied here either', t.state.opened.length === 1, t.state.opened);
+}
+{
+  /* Kept identical to the worker's copy: one rule, applied before the tab exists and after. */
+  const page = /\n  function popupAuctionPayload\(rawTarget\) \{[\s\S]*?\n  \}\n/.exec(SRC)[0];
+  const worker = /\nfunction popupAuctionPayload\(rawUrl\) \{[\s\S]*?\n\}\n/.exec(fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8'))[0];
+  const login = (u) => /accounts\.example-idp\.com/.test(String(u));
+  const pageFn = vm.runInNewContext(page + ';popupAuctionPayload', { URL, location: { href: 'https://pawchive.pw/' }, federationUrlShape: login });
+  const workerFn = vm.runInNewContext(worker + ';popupAuctionPayload', { URL, isLoginCompatibilityUrl: login });
+  const samples = [
+    auctionUrl('qmyamxdku.in', 30, 200), auctionUrl('qmyamxdku.in', 24, 200), auctionUrl('qmyamxdku.in', 30, 149),
+    auctionUrl('accounts.example-idp.com', 30, 200), 'https://qmyamxdku.in/odtafx?a=1', 'ftp://x.example/?' + 'a=b&'.repeat(600),
+    'https://q.example/?' + Array.from({ length: 40 }, (_, i) => 'f' + i + '=' + 'x'.repeat(i ? 30 : 400)).join('&'),
+  ];
+  const verdicts = samples.map((u) => [pageFn(u), workerFn(u)]);
+  check('T44c the page and the worker agree on what an auction popup is', verdicts.every(([a, b]) => a === b), verdicts);
+  check('T44c and the samples exercise both answers', verdicts.some(([a]) => a) && verdicts.some(([a]) => !a), verdicts);
+}
+
+// T45: the tab-under (pawchive.pw, 2026-10-15: "it still redirected me and sent me back"). The page
+// opens a copy of itself or the pressed post in a new tab and sends THIS tab to an advert from
+// script, which the unforgeable Location members never show the hooks; the navigate event does.
+const AD_DIRECT = 'https://tsyndicate.com/api/v1/direct/0f3c?pt=1';
+const POST = 'https://pawchive.pw/patreon/user/4618037/post/172380567';
+const postLink = () => Object.assign(onPage({ tag: 'a', href: POST, attrs: { href: POST }, text: 'MeowWithMe post',
+  rect: { left: 200, top: 300, width: 300, height: 200, right: 500, bottom: 500 } }), {});
+{
+  const t = build(PAWCHIVE);
+  t.userClick(onPage({ tag: 'section' }), 219, 160);
+  const copy = t.open(PAWCHIVE.href);
+  check('T45 the copy of the page is a same-site popup, which the popup policy lets through', t.state.opened.length === 1 && copy && copy.__nativeWindow === true);
+  const nav = t.navigate(AD_DIRECT);
+  check('T45 a tab-under from a press on plain page is cancelled', nav.defaultPrevented === true, nav);
+  check('T45 and the decoy copy is closed', copy.closed === true, copy);
+  const e = t.lastEmit();
+  check('T45 and it is reported as a blocked redirect', !!e && e.type === 'blocked_gestureless_nav' && e.detail.kind === 'tab-under' && e.detail.matched === 'tsyndicate.com', e);
+}
+{
+  const t = build(PAWCHIVE);
+  t.userClick(postLink(), 300, 400);
+  const post = t.open(POST);
+  check('T45b a tab-under from a press on a post link is cancelled', t.navigate('https://ad-landing.example/offer').defaultPrevented === true);
+  check('T45b and the post the reader pressed stays open for them', post && post.closed === false, post);
+}
+{
+  const t = build(PAWCHIVE);
+  t.userClick(onPage({ tag: 'section' }), 219, 160);
+  t.open('https://qmyamxdku.in/odtafx?dQ=Fi');
+  check('T45c the popunder is refused first', t.state.opened.length === 0);
+  check('T45c and its fallback, sending this tab to the advert instead, is cancelled too', t.navigate('https://go.ad-landing.example/pop.go').defaultPrevented === true);
+}
+for (const [name, setup, destination] of [
+  ['a download button that opens an ad and then goes to its file host', (t) => {
+    t.userClick(onPage({ tag: 'button', text: 'Download' }), 50, 50);
+    t.open('https://randomapp.com/offer');
+  }, 'https://files.example-host.net/d/abc'],
+  ['a control that names where it goes', (t) => {
+    t.userClick(onPage({ tag: 'button', text: 'Mirror 2', attrs: { 'data-link': 'https://mirror-two.example/watch/1' } }), 50, 50);
+    t.open(PAWCHIVE.href);
+  }, 'https://mirror-two.example/watch/1'],
+  ['a sign-in button', (t) => {
+    t.userClick(onPage({ tag: 'button', text: 'Sign in' }), 50, 50);
+    t.open(PAWCHIVE.href);
+  }, 'https://login.example-idp.com/authorize'],
+  ['a press on a link to the place the tab goes', (t) => {
+    const a = onPage({ tag: 'a', href: 'https://mirror.example/x', attrs: { href: 'https://mirror.example/x' }, text: 'Mirror', rect: { left: 0, top: 0, width: 100, height: 40, right: 100, bottom: 40 } });
+    t.userClick(a, 50, 20);
+    t.open('https://unrelated-ad.example/x');
+  }, 'https://mirror.example/x'],
+  ['a cross-site navigation with no popup in sight', (t) => {
+    t.userClick(onPage({ tag: 'section' }), 50, 50);
+  }, 'https://elsewhere.example/'],
+  ['a button that opens another of the site\'s pages, then the site sends the tab on', (t) => {
+    t.userClick(onPage({ tag: 'button', text: 'Open receipt' }), 50, 50);
+    t.open('https://pawchive.pw/account/receipt/77');
+  }, 'https://checkout.example-bank.com/return'],
+  ['the site going to its own page', (t) => {
+    t.userClick(onPage({ tag: 'section' }), 50, 50);
+    t.open(PAWCHIVE.href);
+  }, POST],
+]) {
+  const t = build(PAWCHIVE);
+  setup(t);
+  check('T45d left alone: ' + name, t.navigate(destination).defaultPrevented === false, t.state);
+}
+{
+  const t = build(PAWCHIVE);
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  t.open(PAWCHIVE.href);
+  check('T45e a real link press is the reader\'s own navigation', t.navigate(AD_DIRECT, { userInitiated: true }).defaultPrevented === false);
+  check('T45e and so is Back', t.navigate(AD_DIRECT, { navigationType: 'traverse' }).defaultPrevented === false);
+}
+{
+  const t = build(Object.assign({ fakeClock: true }, PAWCHIVE));
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  t.open(PAWCHIVE.href);
+  t.advanceTime(3500);
+  check('T45f a popup from long ago is not evidence for a later navigation', t.navigate(AD_DIRECT).defaultPrevented === false);
+}
+{
+  const t = build(Object.assign({ config: { blockForcedPopups: false } }, PAWCHIVE));
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  t.open(PAWCHIVE.href);
+  check('T45g with forced-popup blocking off, the guard stands down', t.navigate(AD_DIRECT).defaultPrevented === false);
+}
+{
+  const t = build(Object.assign({ config: { allowlist: ['pawchive.pw'] } }, PAWCHIVE));
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  t.open(PAWCHIVE.href);
+  check('T45g and on a site the reader allowed', t.navigate(AD_DIRECT).defaultPrevented === false);
+}
+
+// T46: before the settings arrive. A busy worker (just reloaded, rebuilding its lists) answered the
+// page seconds late, and a first click on playmogo inside that window sent the tab to the advert.
+{
+  const t = build(Object.assign({ deferConfig: true }, PAWCHIVE));
+  t.userClick(onPage({ tag: 'section' }), 219, 160);
+  const copy = t.open(PAWCHIVE.href);
+  check('T46 with no settings yet, a tab-under is still cancelled', t.navigate(AD_DIRECT).defaultPrevented === true);
+  check('T46 and its copy closed', copy && copy.closed === true, copy);
+}
+{
+  const t = build({ deferConfig: true });
+  t.open('https://ads1-example.com/x');
+  check('T46b with no settings yet, a popup with no gesture behind it is refused', t.state.opened.length === 0, t.state.opened);
+  check('T46b and named as such', /no recent user gesture/.test((t.lastEmit() || { detail: {} }).detail.why), t.lastEmit());
+}
+for (const [name, el, allowed] of [
+  ['a press on a control keeps its one popup', () => onPage({ tag: 'button', text: 'Open dashboard' }), true],
+  ['a press on plain page does not', () => onPage({ tag: 'section' }), false],
+]) {
+  const t = build({ deferConfig: true });
+  t.userClick(el(), 50, 50);
+  t.open('https://randomapp.com/dash');
+  check('T46c with no settings yet the shipped defaults apply: ' + name, (t.state.opened.length === 1) === allowed, t.state.opened);
+}
+{
+  const t = build({ deferConfig: true });
+  t.userClick(onPage({ tag: 'button', text: 'Favorite' }), 50, 50);
+  t.open(auctionUrl('qmyamxdku.in', 30, 200));
+  check('T46c and an ad-auction popup is refused', t.state.opened.length === 0, t.state.opened);
+}
+{
+  /* A frame whose settings never come stops applying the defaults after the grace period, so an
+     allowlist entry or off switch is not overridden for good. */
+  const t = build({ deferConfig: true, fakeClock: true });
+  t.advanceTime(16000);
+  t.open('https://ads1-example.com/x');
+  check('T46e a frame still without settings after the grace period stands aside again', t.state.opened.length === 1, t.state.opened);
+}
+for (const [name, settings] of [
+  ['the master switch off', { enabled: false }],
+  ['forced-popup blocking off', { blockForcedPopups: false }],
+  ['the site on the allowlist', { allowlist: ['pawchive.pw'] }],
+]) {
+  const full = build(Object.assign({ deferConfig: true }, PAWCHIVE));
+  full.handshake(settings);
+  full.open('https://ads1-example.com/x');
+  full.userClick(onPage({ tag: 'section' }), 219, 160);
+  full.open(PAWCHIVE.href);
+  check('T46d once the settings say ' + name + ', both stand down',
+    full.state.opened.length === 2 && full.navigate(AD_DIRECT).defaultPrevented === false, full.state.opened);
+  const boot = build(Object.assign({ deferConfig: true }, PAWCHIVE));
+  boot.sendBootstrap(Object.assign({ enabled: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true, allowlist: [] }, settings));
+  boot.open('https://ads1-example.com/x');
+  check('T46d and so they do when only the bootstrap has said ' + name, boot.state.opened.length === 1, boot.state.opened);
+}
+
+// T47: a popup through a link the page never put in the document. Pawchive's Clickadu loader makes
+// <a target=_blank href=advert>, leaves it detached, and clicks it on the first press; the click
+// never reaches the window, so the click layer never saw it and the worker closed the tab after
+// it had flashed open.
+const detachedLink = (href, target, extra) => Object.assign(makeEl({ tag: 'a', href, attrs: Object.assign({ href }, target ? { target } : {}), target: target || '' }), { isConnected: false }, extra || {});
+{
+  const t = build(PAWCHIVE);
+  t.userClick(onPage({ tag: 'section' }), 219, 160);
+  t.scriptClick(detachedLink(auctionUrl('rarvalrh.in', 30, 200), '_blank'));
+  check('T47 a detached advert link clicked from a press on plain page does not open', t.state.nativeClicks.length === 0, t.state.nativeClicks.length);
+  const e = t.lastEmit();
+  check('T47 and is reported as a blocked popup', !!e && e.type === 'blocked_popup' && e.detail.matched === 'rarvalrh.in', e);
+}
+for (const [name, setup, href, target, opens] of [
+  ['an outbound link a button opens this way', (t) => t.userClick(onPage({ tag: 'button', text: 'Open on Patreon' }), 50, 50), 'https://www.patreon.com/meowwithme', '_blank', true],
+  ['a link with no gesture behind it', () => {}, 'https://randomapp.com/dash', '_blank', false],
+  ['a link from a press on plain page', (t) => t.userClick(onPage({ tag: 'section' }), 50, 50), 'https://randomapp.com/dash', '_blank', false],
+  ['a same-tab link, which the navigation guards judge', (t) => t.userClick(onPage({ tag: 'section' }), 50, 50), 'https://randomapp.com/dash', '', true],
+  ['a link to the site itself', (t) => t.userClick(onPage({ tag: 'button', text: 'Open' }), 50, 50), PAWCHIVE.href, '_blank', true],
+]) {
+  const t = build(PAWCHIVE);
+  setup(t);
+  t.scriptClick(detachedLink(href, target));
+  check('T47b ' + (opens ? 'opens: ' : 'refused: ') + name, (t.state.nativeClicks.length === 1) === opens, t.state);
+}
+{
+  const t = build(PAWCHIVE);
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  const inDocument = Object.assign(detachedLink('https://randomapp.com/dash', '_blank'), { isConnected: true });
+  t.scriptClick(inDocument);
+  check('T47c a link in the document is left to the click layer, which sees its click', t.state.nativeClicks.length === 1);
+}
+{
+  const t = build(PAWCHIVE);
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  const result = t.scriptDispatchClick(detachedLink(auctionUrl('rarvalrh.in', 30, 200), '_blank'));
+  check('T47d a click dispatched on a detached advert link is refused too', result === false && t.state.nativeDispatches.length === 0, t.state.nativeDispatches);
+  t.scriptDispatchClick(onPage({ tag: 'div' }));
+  check('T47d and every other dispatch goes through untouched', t.state.nativeDispatches.length === 1);
+}
+{
+  const t = build(Object.assign({ deferConfig: true }, PAWCHIVE));
+  t.userClick(onPage({ tag: 'section' }), 219, 160);
+  t.scriptClick(detachedLink(auctionUrl('rarvalrh.in', 30, 200), '_blank'));
+  check('T47e before the settings arrive, the defaults refuse it as well', t.state.nativeClicks.length === 0);
+}
+{
+  /* A press on a post. The advert's address carries the referring page, as every auction does;
+     that is not the reader's link, and used to be enough to let the popup through. */
+  const t = build(PAWCHIVE);
+  t.userClick(postLink(), 300, 400);
+  t.scriptClick(detachedLink('https://rarvalrh.in/odtafx?ref=' + encodeURIComponent(PAWCHIVE.href) + '&z=1', '_blank'));
+  check('T47f a popup that only mentions this site is not the post that was pressed', t.state.nativeClicks.length === 0, t.state.nativeClicks.length);
+  const u = build(PAWCHIVE);
+  u.userClick(postLink(), 300, 400);
+  u.scriptClick(detachedLink('https://out.example-redirector.com/go?url=' + encodeURIComponent(POST), '_blank'));
+  check('T47f but one that carries the pressed post\'s own address is', u.state.nativeClicks.length === 1, u.state.nativeClicks.length);
+}
+
+// T48: a child frame Chrome injects nothing into. PopAds (in Playmogo's player) builds an iframe
+// with src="javascript:false", which carries a window.open of its own and no copy of this guard,
+// and opens its about:blank pop-out window through it on the player press.
+function unguardedChild() {
+  const child = { opened: [] };
+  child.open = function (u) { child.opened.push(String(u)); return { real: true, closed: false }; };
+  return child;
+}
+{
+  const child = unguardedChild();
+  const t = build({ hostname: 'playmogo.com', pathname: '/e/gk49gvu4can6', childFrames: [child],
+    videoRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }] });
+  t.userClick(t.videos[0], 300, 300);
+  const pop = child.open('about:blank', '', 'width=1280,height=720,left=4000');
+  check('T48 a popunder window opened through an unguarded child frame is refused', child.opened.length === 0, child.opened);
+  check('T48 and the player is handed the decoy, open for now, so the ad library does not keep taking presses', !!pop && pop.real !== true && pop.closed === false, pop);
+  const e = t.lastEmit();
+  check('T48 and it is reported', !!e && e.type === 'blocked_popup', e);
+}
+{
+  const child = unguardedChild();
+  const t = build({ childFrames: [child] });
+  t.userClick(onPage({ tag: 'button', text: 'Open dashboard' }), 50, 50);
+  child.open('https://randomapp.com/dash');
+  check('T48b a press on a control keeps its one popup through a child frame too', child.opened.length === 1, child.opened);
+}
+{
+  const child = unguardedChild();
+  const own = child.open;
+  child.__wardenOneAntiRedirectHardener = '1.0.2';
+  const t = build({ childFrames: [child] });
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  check('T48c a child that runs its own guard is left to guard itself', child.open === own);
+}
+{
+  const child = unguardedChild();
+  const t = build({ childFrames: [child] });
+  t.fire('keydown', { key: 'a', target: onPage({ tag: 'body' }) });
+  const own = child.open;
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  child.open('about:blank');
+  check('T48d the child is reached at the press, through window.frames', child.open !== own && child.opened.length === 0, child.opened);
+}
+{
+  /* The frame loads a new document: same window handle, a fresh native open. */
+  const child = unguardedChild();
+  const t = build({ childFrames: [child] });
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  const fresh = [];
+  child.open = function (u) { fresh.push(String(u)); return { real: true, closed: false }; };
+  t.userClick(onPage({ tag: 'section' }), 50, 50);
+  child.open('about:blank');
+  check('T48e a child that loaded a new document is guarded again', fresh.length === 0, fresh);
+}
+{
+  /* PopAds' other door: a link made in the helper frame and clicked there. */
+  const child = unguardedChild();
+  const clicked = [];
+  child.HTMLElement = function HTMLElement() {};
+  child.HTMLElement.prototype.click = function () { clicked.push(this); };
+  child.EventTarget = function EventTarget() {};
+  child.EventTarget.prototype.dispatchEvent = function () { clicked.push(this); return true; };
+  const t = build({ hostname: 'playmogo.com', pathname: '/e/gk49gvu4can6', childFrames: [child],
+    videoRects: [{ left: 100, top: 100, width: 600, height: 400, right: 700, bottom: 500 }] });
+  t.userClick(t.videos[0], 300, 300);
+  const link = detachedLink('https://ads.example-network.com/pop', '_blank');
+  child.HTMLElement.prototype.click.call(link);
+  child.EventTarget.prototype.dispatchEvent.call(link, { type: 'click' });
+  check('T48f a detached link clicked through an unguarded child realm is refused, both ways', clicked.length === 0, clicked.length);
 }
 
 console.log('');

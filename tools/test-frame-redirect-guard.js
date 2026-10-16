@@ -572,6 +572,21 @@ async function main() {
       /ad click tracker/.test(decodeURIComponent(w.updates[0].props.url)), w.updates[0].props.url);
   }
 
+  for (const [fromUrl, toUrl, expected] of [
+    ['https://join.gamedrive.org/discord/', 'https://discord.gg/UckNkHeJsr', true],
+    ['https://join.gamedrive.org/discord/', 'https://discord.com/invite/UckNkHeJsr', true],
+    ['https://join.gamedrive.org/discord/', 'https://download.example/installer', false],
+    ['https://join.gamedrive.org/download/', 'https://discord.com/invite/UckNkHeJsr', false],
+    ['https://join.gamedrive.org.evil.example/discord/', 'https://discord.com/invite/UckNkHeJsr', false],
+    ['https://join.gamedrive.org/discord/', 'https://discord.com.evil.example/invite/UckNkHeJsr', false],
+  ]) {
+    const w = world();
+    w.committed(1, fromUrl);
+    await w.forced(1, toUrl);
+    check('invite redirect ' + (expected ? 'allowed' : 'still checked') + ': ' + fromUrl + ' -> ' + toUrl,
+      (w.updates.length === 0) === expected, w.updates);
+  }
+
   {
     const w = world();
     w.committed(1, 'https://yomi.to/');

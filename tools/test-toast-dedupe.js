@@ -4,9 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* One toast per distinct warning wording per page; changed matched hosts
-   still reach Activity Center. Distinct warnings queue, navigation resets
-   deduplication, and blocked tracker attempts do not claim a fetch succeeded. */
+/* Passive warnings appear once per wording per page. Confirmed popup and
+   redirect blocks may recur after 30 seconds. */
 'use strict';
 
 const fs = require('fs');
@@ -38,7 +37,8 @@ function check(name, condition, extra) {
      were not different warnings, and the screen is where the difference has to show. Every
      occurrence is still recorded in the Activity Center, which is where the full list belongs. */
   function makePage() {
-    const seen = new Set();
+    const seen = new Map();
+    const active = new Set(['blocked_popup', 'blocked_gestureless_nav', 'blocked_meta_refresh', 'blocked_redirect_chain']);
     let recentKey = '';
     let lastAt = 0;
     /* A real Date.now() is never 0, and the shipped guard leans on that: lastToastAt is
@@ -52,8 +52,8 @@ function check(name, condition, extra) {
       /* why/severity/action default the way TOAST_INFO does: same type, same wording. */
       toast(type, matched, why) {
         const key = type + '|' + (why || 'why:' + type) + '|sev|act';
-        if (seen.has(key)) return { shown: false, at: null };
-        seen.add(key);
+        if (seen.has(key) && (!active.has(type) || clock - seen.get(key) < 30000)) return { shown: false, at: null };
+        seen.set(key, clock);
         const gap = lastAt ? Math.max(0, 900 - (clock - lastAt)) : 0;
         const at = lastAt ? Math.max(clock, lastAt + 900) : clock;
         lastAt = at;
@@ -81,6 +81,17 @@ function check(name, condition, extra) {
     p.tick(3000); p.toast('warned_logger_api', 'pixel.example');
     check('the same warning about five different hosts is still one warning',
       p.shown.length === 1, p.shown.map((s) => s.key).join(', '));
+  }
+
+  {
+    const p = makePage();
+    p.toast('blocked_popup', 'ad.example');
+    p.tick(29000);
+    const tooSoon = p.toast('blocked_popup', 'ad.example');
+    p.tick(1000);
+    const anotherBlock = p.toast('blocked_popup', 'ad.example');
+    check('another confirmed popup block notifies after the thirty-second cooldown',
+      !tooSoon.shown && anotherBlock.shown && p.shown.length === 2);
   }
 
   {
@@ -205,6 +216,11 @@ function check(name, condition, extra) {
   check('the dedupe set is in the shipped build', /toastSeen=new Set\(\)/.test(MIN));
   check('the dedupe is actually consulted', /toastSeen\.has\(key\)/.test(MIN));
   check('navigation clears it in the shipped build', /resetToastMemory/.test(MIN));
+  check('top-frame toast listener exists even if notices are enabled after page load',
+    /if\(WO_TOP\)\{const TOAST_INFO=/.test(MIN)
+      && /!WO\.enabled\|\|!WO\.showToasts\|\|shouldQuietToast/.test(MIN));
+  check('action blocks leave page deduplication after thirty seconds',
+    /ACTIVE_BLOCK_TOAST_TYPES\.has\(type\)\)setTimeout\(\(\)=>toastSeen\.delete\(key\),3e4\)/.test(MIN));
   check('the suppression is in the shipped build', /ALREADY_BLOCKED_TRACKERS/.test(MIN));
   check('suppression respects the tracker-blocking toggle',
     /!1!==WO\.blockTrackers&&ALREADY_BLOCKED_TRACKERS/.test(MIN),
@@ -500,11 +516,11 @@ function modelMs(pace, w) {
     const b = a < 0 ? -1 : harness.indexOf(CLOSE, a + OPEN.length);
     check('the harness has somewhere to keep the embedded copy', a >= 0 && b > a);
 
-    const START = 'if(!1!==WO.showToasts&&WO_TOP){';
+    const START = 'if(WO_TOP){const TOAST_INFO={';
     const END = 'woOn(document,"wo-config-change"';
     const x = MIN.indexOf(START);
     const y = x < 0 ? -1 : MIN.indexOf(END, x + START.length);
-    const built = x >= 0 && y > x ? MIN.slice(x + START.length, y) : '';
+    const built = x >= 0 && y > x ? 'const TOAST_INFO={' + MIN.slice(x + START.length, y) : '';
     if (a >= 0 && b > a) {
       check('the embedded copy matches the build', harness.slice(a + OPEN.length, b) === '\n' + built + '\n',
         'run: node tools/build-toast-harness.js --build');

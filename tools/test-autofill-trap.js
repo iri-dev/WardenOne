@@ -88,7 +88,7 @@ function score(field, opts) {
     onGrabberList: () => false,
     isOverlay: () => false,
     brandClaimMismatch: () => '',
-    injectedForms: { has: () => false },
+    injectedForms: { has: () => !!o.injected },
     WO: { __pageRisk: null },
   };
   vm.createContext(sandbox);
@@ -116,6 +116,12 @@ function score(field, opts) {
     'scored ' + r.score);
 }
 {
+  const field = makeField({ rect: HIDDEN_RECT, autocomplete: 'current-password' });
+  const r = score(field, { injected: true });
+  check('a script-inserted hidden autofill field without a credential stays under',
+    r.score < THRESHOLD, 'scored ' + r.score + ': ' + r.reasons.join(' / '));
+}
+{
   /* The important one: a real login page whose manager filled a hidden field as well
      as the visible one. Every part of the trap is present EXCEPT that there is a
      login box on screen -- and that is what makes it ordinary. */
@@ -125,6 +131,13 @@ function score(field, opts) {
   check('hidden + marked + filled, WITH a visible login, stays under', r.score < THRESHOLD,
     'scored ' + r.score + ' (' + r.reasons.join(' / ') + '); this is the ordinary case and '
     + 'warning on it would make the feature unusable');
+}
+{
+  const hidden = makeField({ rect: HIDDEN_RECT, autocomplete: 'current-password', value: 'hunter2' });
+  const visible = makeField({});
+  const r = score(hidden, { injected: true, pagePasswordFields: [hidden, visible] });
+  check('an inserted hidden field autofilled beside a visible login stays under',
+    r.score < THRESHOLD, 'scored ' + r.score + ': ' + r.reasons.join(' / '));
 }
 {
   const f = makeField({ rect: HIDDEN_RECT, autocomplete: 'current-password', value: 'typed-by-hand' });
@@ -144,6 +157,12 @@ function score(field, opts) {
     'the panel shows reasons[0]; got: ' + r.reasons[0]);
   check('and says no login box was on screen',
     r.reasons.some((x) => /no login box/.test(x)));
+}
+{
+  const f = makeField({ rect: HIDDEN_RECT, autocomplete: 'current-password', value: 'hunter2' });
+  const r = score(f, { injected: true, pagePasswordFields: [f] });
+  check('a filled script-inserted hidden autofill field still warns', r.score >= THRESHOLD,
+    'scored ' + r.score);
 }
 {
   /* Chrome tells us directly what it filled, which must count even with no value

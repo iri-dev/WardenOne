@@ -16,6 +16,7 @@ const SRC = fs.readFileSync('src/content.js', 'utf8');
 const MIN = fs.readFileSync('content.min.js', 'utf8');
 const BG = fs.readFileSync('background.js', 'utf8');
 const BRIDGE = fs.readFileSync('bridge.js', 'utf8');
+const ACTIVE_BLOCK_TOAST_TYPES = new Set(JSON.parse(/ACTIVE_BLOCK_TOAST_TYPES=new Set\((\[[^\]]+\])\)/.exec(MIN)[1]));
 let failed = 0;
 
 function check(what, ok, why) {
@@ -37,7 +38,8 @@ function loadQuietRule() {
     else if (MIN[end] === '}') { depth--; if (!depth) break; }
   }
   const body = MIN.slice(open + 1, end);
-  const sandbox = { WO: {}, Object, Number, Date, String, location: { hostname: 'example.com' }, __quiet: null };
+  const sandbox = { WO: {}, Object, Number, Date, String, ACTIVE_BLOCK_TOAST_TYPES,
+    location: { hostname: 'example.com' }, __quiet: null };
   vm.createContext(sandbox);
   return (type, detail, wo) => {
     sandbox.WO = wo || {};
@@ -113,7 +115,7 @@ check('they all report through wardenManualNotice',
   /async function wardenManualNotice\(title, message, tab, id, documentId\)/.test(BG));
 check('which raises exactly the type showToast now lets through',
   /window\.__wardenOneLocalNotice\('detected_manual_check'/.test(BG)
-    && /!\/\^detected_manual_check\$\/\.test\(String\(type \|\| ''\)\)\) return false;/.test(BRIDGE));
+    && /LOCAL_NOTICE_TYPES = new Set\(\[[^\]]*'detected_manual_check'/.test(BRIDGE));
 check('and the engine has copy for that type',
   /detected_manual_check:\{[\s\S]{0,200}?title:"WardenOne check"/.test(MIN));
 

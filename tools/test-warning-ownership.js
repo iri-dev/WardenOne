@@ -124,7 +124,7 @@ const W = sandbox.__W;
   check('the isolated choice is signed and the engine rejects replayed decisions',
     BRIDGE.includes("const type = 'warning_decision'")
       && BRIDGE.includes('if (!dispatchWarningDecision(id, decisionId)) return;')
-      && src.includes('"warning_decision"!==d.type||"bridge"!==d.src||!__woEventTrusted(d)')
+      && src.includes('"warning_decision"!==d.type||"bridge"!==d.src||!__woEventTrusted(d,e)')
       && src.includes('seq<=pasteDecisionSeq')
       && src.includes('d.detail.decisionId!==pasteDecisionId'));
 }

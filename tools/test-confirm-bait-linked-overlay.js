@@ -190,6 +190,49 @@ if (isBaitBox) {
   check('an icon button beside a "Continue" div: the icon is the control, so the div is not', isBaitBox(iconBesideDiv) === false);
 }
 
+/* ---- a player's own resume prompt (Playmogo / DoodStream, 2026-10-16) ------------------------- */
+/* The live markup, from the /e/ player frame on a return visit:
+   <div id=checkresume_div class="checkresume clear"><div id=checkresume_div_n class="checkresumearea clear">
+     <div class="checkresumetop clear"><h3>Resume playing?</h3><p>Welcome back! You left off at
+     <span id=lefttime>0:03:57</span>. Would you like to resume watching where you left off?</p></div>
+     <div class="checkresumebottom clear"><button id=yesplease>Yes, please</button>
+     <button id=no_thanks>No, thanks</button></div></div></div>
+   The sweep removed it as bait, and the reader lost the choice the player was waiting on. */
+const liftWith = (onPlayer) => {
+  try { return vm.runInNewContext(baitSrc + ';confirmBaitOverlay', { playerDocument: () => onPlayer }); } catch (_) { return null; }
+};
+const onPlayerPage = liftWith(true);
+const offPlayerPage = liftWith(false);
+check('the detector lifts with a player page around it', typeof onPlayerPage === 'function' && typeof offPlayerPage === 'function');
+function resumePrompt(opts) {
+  const o = Object.assign({ question: 'Resume playing?', position: '0:03:57', labels: ['Yes, please', 'No, thanks'] }, opts || {});
+  const message = el('p', {}, o.position ? [el('span', { id: 'lefttime' }, [], o.position)] : [],
+    'Welcome back! You left off at. Would you like to resume watching where you left off?');
+  const top = div('checkresumetop clear', [el('h3', {}, [], o.question), message]);
+  const bottom = div('checkresumebottom clear', o.labels.map((l, i) => el('button', { id: i ? 'no_thanks' : 'yesplease' }, [], l)));
+  const area = el('div', { id: 'checkresume_div_n', class: 'checkresumearea clear' }, [top, bottom]);
+  const box = el('div', { id: 'checkresume_div', class: 'checkresume clear' }, [area]);
+  el('body', { id: 'videoPlayerWrap' }, [box]);
+  return box;
+}
+if (onPlayerPage && offPlayerPage) {
+  check('a player\'s own resume prompt is not bait', onPlayerPage(resumePrompt()) === false,
+    'it names a place in the video and offers a way out; removing it lost the reader the choice');
+  check('nor with a longer position', onPlayerPage(resumePrompt({ position: '1:07:00' })) === false);
+  check('nor with "Start over" as the decline', onPlayerPage(resumePrompt({ labels: ['Resume', 'Start over'] })) === false);
+  check('the same box off a player page is judged as before', offPlayerPage(resumePrompt()) === true);
+  check('a resume question with no position in the video is still bait', onPlayerPage(resumePrompt({ position: '' })) === true);
+  check('nor does a lone Yes become a resume prompt by mentioning one', onPlayerPage(resumePrompt({ labels: ['Yes, please'] })) === true);
+  const confirmBait = (() => {
+    const box = div('modal', [div('title', [], 'Please Confirm To Continue'), div('msg', [], 'Continue now?'), el('button', {}, [], 'OK')]);
+    el('body', {}, [box]);
+    return box;
+  })();
+  check('the "Please Confirm To Continue" bait on the same player page is still bait', onPlayerPage(confirmBait) === true);
+}
+check('the exemption sits ahead of every other rule in the detector',
+  /const text = String\(overlay\.innerText \|\| ''\)\.replace\(\/\\s\+\/g, ' '\)\.trim\(\);\s*if \(playerResumePrompt\(overlay, text\)\) return false;/.test(GUARD));
+
 /* ---- the sweep stays off the media apps ------------------------------------------------------- */
 const CONTENT_SRC = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const engineList = (CONTENT_SRC.match(/trustedMediaHost=(\/.+?\/i)\.test\(location\.hostname\)/) || [])[1] || '';

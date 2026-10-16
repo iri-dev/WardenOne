@@ -5,7 +5,7 @@
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
 /*
- * Generates the compact UTS #39 mapping embedded in domain-utils.js.
+ * Generates the compact UTS #39 mapping embedded in idn-utils.js.
  *
  * WardenOne compares decoded IDN labels only with protected brand names made from ASCII
  * letters and digits. A confusable prototype containing any other character cannot equal
@@ -25,7 +25,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const OUT = path.join(ROOT, 'domain-utils.js');
+const OUT = path.join(ROOT, 'idn-utils.js');
 const SOURCE_URL = 'https://www.unicode.org/Public/security/latest/confusables.txt';
 const BEGIN = '/* === BEGIN GENERATED UTS39 ASCII CONFUSABLES === */';
 const END = '/* === END GENERATED UTS39 ASCII CONFUSABLES === */';
@@ -113,7 +113,7 @@ function render(data) {
 function replaceGenerated(text, block) {
   const start = text.indexOf(BEGIN);
   const end = text.indexOf(END, start);
-  if (start < 0 || end < 0) throw new Error('generated UTS #39 markers are missing from domain-utils.js');
+  if (start < 0 || end < 0) throw new Error('generated UTS #39 markers are missing from idn-utils.js');
   return text.slice(0, start) + block + text.slice(end + END.length);
 }
 
@@ -156,7 +156,7 @@ function check() {
     if (block !== render(data)) problems.push('generated block differs from the canonical rendering');
   }
   if (problems.length) {
-    for (const problem of problems) console.error('domain-utils.js UTS #39 data: ' + problem);
+    for (const problem of problems) console.error('idn-utils.js UTS #39 data: ' + problem);
     process.exit(1);
   }
   console.log('UTS #39 ASCII-brand map ok: ' + data.entries.length + ' mappings, Unicode ' + data.version + ', ' + Math.round(age) + ' days old');
@@ -176,7 +176,7 @@ async function main() {
   const current = fs.readFileSync(OUT, 'utf8');
   const next = replaceGenerated(current, render(data));
   fs.writeFileSync(OUT, next, 'utf8');
-  console.log('wrote ' + data.entries.length + ' Unicode ' + data.version + ' ASCII-brand mappings to domain-utils.js');
+  console.log('wrote ' + data.entries.length + ' Unicode ' + data.version + ' ASCII-brand mappings to idn-utils.js');
 }
 
 main().catch((error) => {

@@ -34,7 +34,7 @@ const { h, makeDocument } = require('./lib/mini-dom');
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const STARTUP = fs.readFileSync(path.join(ROOT, 'background-startup.js'), 'utf8');
-const DOMAIN = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
+const IDN = fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8');
 const SCRIPT = fs.readFileSync(path.join(ROOT, 'search-junk.js'), 'utf8');
 const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
@@ -265,10 +265,8 @@ check('the pressure trim cuts the count with the array',
       },
     };
     vm.createContext(brandWorld);
-    const idnStart = DOMAIN.indexOf('const WARDENONE_IDN_CONFUSABLES');
-    const idnEnd = DOMAIN.indexOf('function regDomain(', idnStart);
-    check('the shared IDN helper is available', idnStart >= 0 && idnEnd > idnStart);
-    vm.runInContext(DOMAIN.slice(idnStart, idnEnd), brandWorld);
+    check('the shared IDN helper is available', IDN.includes('function wardenOneIdnLabels('));
+    vm.runInContext(IDN, brandWorld);
     vm.runInContext(STARTUP.slice(first, last) + '\nglobalThis.brandRisk = loginBrandRiskForHost; globalThis.lookalike = looksLikeLookalikeHost;', brandWorld);
     const score = makeScorer({ brand: (h) => brandWorld.brandRisk(h, ''), lookalike: (h) => brandWorld.lookalike(h) });
     check('a Disboard server result has no fake-Discord warning', score('disboard.org', CTX) === null);

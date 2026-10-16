@@ -18,6 +18,7 @@ const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
 const rules = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules.json'), 'utf8'));
+const trackerRules = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules-trackers.json'), 'utf8'));
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
 
 const FUNCTIONAL_RESOURCE_TYPES = [
@@ -177,6 +178,41 @@ const grabifyRule = ruleById(1);
 assert(conditionMatches(grabifyRule, 'sub.grabify.link', 'example.com', 'script'));
 assert(!conditionMatches(grabifyRule, 'grabify.link.evil.example', 'example.com', 'script'),
   'grabify.link block leaked into a hostile suffix');
+
+const pawchiveAds = trackerRules.find((rule) => rule.id === 47);
+assert(pawchiveAds && pawchiveAds.action.type === 'block', 'the observed ad frames have an enabled static rule');
+assert((manifest.declarative_net_request?.rule_resources || []).some((pack) => pack.id === 'trackers'
+  && pack.path === 'rules-trackers.json' && pack.enabled === true), 'the reviewed frame rule is in an enabled ruleset');
+for (const host of ['phonydepth.com', 'armvupzc.in']) {
+  assert(conditionMatches(pawchiveAds, host, '', 'sub_frame'),
+    'script-driven ad frames can have an opaque initiator');
+  assert(!conditionMatches(pawchiveAds, host + '.evil.example', '', 'sub_frame'));
+  assert(!conditionMatches(pawchiveAds, host, '', 'main_frame'));
+}
+
+const playmogoPopunders = trackerRules.find((rule) => rule.id === 48);
+assert(playmogoPopunders && playmogoPopunders.action.type === 'block', 'the observed player ad loaders have a static rule');
+for (const host of ['dnhfi5nn2dt67.cloudfront.net', 'www.blockadsnot.com', 'www.xlxchtas.com',
+  'www.ejfiynnbu.com', 'dd.gillyspencie.com', 'briggie.org']) {
+  assert(conditionMatches(playmogoPopunders, host, 'playmogo.com', 'script'));
+  assert(!conditionMatches(playmogoPopunders, host, 'example.com', 'script'), 'other sites keep their scripts');
+  assert(!conditionMatches(playmogoPopunders, host, 'playmogo.com', 'media'), 'the video stream stays available');
+  assert(!conditionMatches(playmogoPopunders, host + '.evil.example', 'playmogo.com', 'script'));
+}
+
+const pawchivePopup = trackerRules.find((rule) => rule.id === 49);
+assert(pawchivePopup && pawchivePopup.action.type === 'block', 'the observed Pawchive popup script has a static rule');
+for (const host of ['npilkasacdu.in', 'excavatenearbywand.com', 'phonydepth.com', 'armvupzc.in', 'onxgaladrj.in']) {
+  assert(conditionMatches(pawchivePopup, host, 'pawchive.pw', 'script'));
+  assert(conditionMatches(pawchivePopup, host, 'pawchive.pw', 'sub_frame'));
+  assert(!conditionMatches(pawchivePopup, host, 'example.com', 'script'));
+  assert(!conditionMatches(pawchivePopup, host, 'pawchive.pw', 'main_frame'));
+  assert(!conditionMatches(pawchivePopup, host + '.evil.example', 'pawchive.pw', 'script'));
+}
+assert(!conditionMatches(pawchivePopup, 'www.oncehuman.game', 'pawchive.pw', 'main_frame'),
+  'a direct visit to the ad destination remains a normal navigation');
+assert(!conditionMatches(pawchivePopup, 'cdn.jsdelivr.net', 'pawchive.pw', 'script'),
+  'unrelated third-party libraries remain available');
 
 const compatibilityRules = [ruleById(164), ruleById(165), ruleById(166)];
 for (const rule of compatibilityRules) {

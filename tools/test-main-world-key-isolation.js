@@ -130,7 +130,10 @@ function bridgeRealm(key) {
   return Object.assign(sandbox.api, { state, window: sandbox.window });
 }
 function engineRealm() {
-  const sandbox = { Object, String, Number, WeakMap, Reflect, Uint8Array, Uint32Array, Math, Array };
+  /* The window's capture listener is the one that ends an event's acceptance after its dispatch. */
+  const startOfDispatch = [];
+  const sandbox = { Object, String, Number, WeakMap, Reflect, Uint8Array, Uint32Array, Math, Array, queueMicrotask,
+    document: {}, window: {}, woOn: (target, type, fn) => { if (target === sandbox.window && type === 'wo-event') startOfDispatch.push(fn); } };
   vm.createContext(sandbox);
   vm.runInContext([
     authBlock(CONTENT, 'src/content.js'),
@@ -138,6 +141,7 @@ function engineRealm() {
     between(CONTENT, '  let __woEventSeq=0,', '  function __woEmit(detail){', 'the engine\'s signing and checking'),
     'this.api = { signed: __woSignedDetail, notice: __woSignedNotice, request: __woSignedRequest, trusted: __woEventTrusted, arm: (t, k) => { __woToken = t; __woKey = __woAuth.key(k); } };',
   ].join('\n'), sandbox, { filename: 'src/content.js:events' });
+  sandbox.api.dispatching = (ev) => startOfDispatch.forEach((fn) => fn(ev));
   return sandbox.api;
 }
 
@@ -221,26 +225,55 @@ console.log('the other senders');
 }
 
 console.log('the bridge\'s own notice');
-{
+/* Async: two checks wait for a dispatch to end. */
+const bridgeNoticeChecks = (async () => {
   const b = bridgeRealm();
   const e = engineRealm();
   e.arm(TOKEN, KEY);
   check('the answer to a right-click check goes out signed', b.dispatchLocalNotice('detected_manual_check', { why: 'example.com: nothing known', action: 'You asked' }) === true);
   const n = b.state.dispatched[0];
   check('as the "bridge" sender, and the engine\'s notice card believes it', n && n.src === 'bridge' && e.trusted(JSON.parse(JSON.stringify(n))) === true);
-  check('it will sign nothing but that notice', b.dispatchLocalNotice('blocked_payment_card_submit', {}) === false && b.state.dispatched.length === 1);
+  check('a confirmed worker popup also goes out signed', b.dispatchLocalNotice('blocked_popup', { why: 'A popup was closed' }) === true
+    && e.trusted(JSON.parse(JSON.stringify(b.state.dispatched[1]))) === true);
+  check('a passive resource block cannot impersonate an action toast', b.dispatchLocalNotice('blocked_ad_resource', { why: 'A rule blocked an ad script' }) === false);
+  check('the bridge rejects other notice types', b.dispatchLocalNotice('blocked_payment_card_submit', {}) === false && b.state.dispatched.length === 2);
   check('it is reachable from the extension\'s own world only', typeof b.window.__wardenOneLocalNotice === 'function');
+  /* Dispatched from the bridge's world, the notice reaches each engine listener as a fresh copy
+     of its detail; what the listeners share is the event. Keyed on the detail, the risk score
+     spent the number and the notice card refused the same notice as a replay. */
+  b.dispatchLocalNotice('blocked_popup', { why: 'An ad-auction popup was closed', matched: 'ads.example' });
+  const fromBridge = b.state.dispatched[b.state.dispatched.length - 1];
+  const copy = () => JSON.parse(JSON.stringify(fromBridge));
+  const delivered = { type: 'wo-event' };
+  e.dispatching(delivered);
+  check('the risk score, the notice card and the badge each believe a bridge notice from their own copy',
+    e.trusted(copy(), delivered) === true && e.trusted(copy(), delivered) === true && e.trusted(copy(), delivered) === true);
+  check('a copy of it dispatched again as a new event is a replay', e.trusted(copy(), { type: 'wo-event' }) === false);
+  /* The same event object, kept by the page and dispatched again once the first dispatch is over. */
+  await Promise.resolve();
+  e.dispatching(delivered);
+  check('and so is the same event object dispatched again after its dispatch ended', e.trusted(copy(), delivered) === false);
+  const ev5 = e.signed({ type: 'blocked_popup', detail: { url: 'https://z.example/' } });
+  const own = { type: 'wo-event' };
+  e.dispatching(own);
+  check('the engine\'s own events still pass every listener of their dispatch', e.trusted(ev5, own) && e.trusted(ev5, own) && e.trusted(ev5, own));
+  await Promise.resolve();
+  check('and are refused when the page dispatches the same object again', e.trusted(ev5, own) === false);
   check('the bridge does not record its own notice as a finding', /if \(!eventSigned\(d\) \|\| d\.src === 'bridge'\) return;/.test(BRIDGE));
-}
+})();
 
 console.log('wiring');
 check('the engine\'s notice card, page badge and risk score believe only signed events',
-  (CONTENT.match(/if\(!__woEventTrusted\((?:e\.detail|d)\)\)return;/g) || []).length === 3);
+  (CONTENT.match(/if\(!__woEventTrusted\(d,e\)\)return;/g) || []).length === 3);
 check('the media-active flag and the reload-loop panel need a signed report',
   /pageNoticeSigned\('media', e\.data, e\.data\.active \? '1' : '0'\)/.test(BRIDGE) && /pageNoticeSigned\('reload-loop', e\.data, ''\)/.test(BRIDGE));
 check('the permission-chain relay needs a signed signal', /!permissionChainGuardOn\(\) \|\| !permissionSignalSigned\(d\)\) return;/.test(BRIDGE));
 check('the worker hands the right-click answer to the bridge, and falls back to a system notification',
   /window\.__wardenOneLocalNotice\('detected_manual_check'/.test(read('background.js')) && /results\[0\]\.result === true\) return true;/.test(read('background.js')));
+check('worker popup notices enter the top-frame signed bridge path',
+  /kind: 'wo-blocked-action', type, detail:/.test(read('background.js'))
+    && /msg\.kind === 'wo-blocked-action' && window === window\.top/.test(BRIDGE)
+    && /dispatchLocalNotice\(msg\.type, \{/.test(BRIDGE));
 /* SEC-14: the notice mute and "shown" requests. A page holding only the token could mute a
    class of security notices on every site, for good, with one message. */
 console.log('notice mutes');
@@ -283,5 +316,7 @@ check('the notice card signs both requests and only a real click mutes',
 const MIN = read('content.min.js');
 check('and the built engine carries all of it', MIN.indexOf('__woEventTrusted(') > 0 && MIN.indexOf('__woSignedNotice(') > 0 && MIN.indexOf('eventText:eventText') > 0);
 
-if (failed) { console.error('\n' + failed + ' key/signal check(s) failed'); process.exit(1); }
-console.log('\nall key-isolation and signed-signal checks passed');
+bridgeNoticeChecks.then(() => {
+  if (failed) { console.error('\n' + failed + ' key/signal check(s) failed'); process.exit(1); }
+  console.log('\nall key-isolation and signed-signal checks passed');
+}, (err) => { console.error(err); process.exit(1); });

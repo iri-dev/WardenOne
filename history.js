@@ -10,6 +10,7 @@ const DOWNLOAD_TRUSTED_KEY = 'wardenone_download_trusted_sites';
 
 const LABELS = {
   blocked_popup: 'Popup blocked',
+  blocked_ad_resource: 'Ad resource blocked',
   blocked_gestureless_nav: 'Forced redirect blocked',
   blocked_meta_refresh: 'Auto-redirect blocked',
   blocked_form_submit: 'Forced form-submit blocked',

@@ -20,11 +20,8 @@ const { installEngineAmbient } = require('./lib/engine-ambient.js');
 const ROOT = path.resolve(__dirname, '..');
 const CURRENT = fs.readFileSync(path.join(ROOT, 'background-startup.js'), 'utf8');
 const PAGE_SOURCE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
-const DOMAIN_SOURCE = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
-const idnStart = DOMAIN_SOURCE.indexOf('const WARDENONE_IDN_CONFUSABLES');
-const idnEnd = DOMAIN_SOURCE.indexOf('function regDomain(', idnStart);
-assert(idnStart >= 0 && idnEnd > idnStart, 'shared IDN helper has moved');
-const IDN_SCRIPT = new vm.Script(DOMAIN_SOURCE.slice(idnStart, idnEnd), { filename: 'domain-utils.js:idn' });
+const IDN_SOURCE = fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8');
+const IDN_SCRIPT = new vm.Script(IDN_SOURCE, { filename: 'idn-utils.js' });
 const CASES = [
   ['discord.com', '/channels/@me', 'official'],
   ['canary.discord.com', '/channels/@me', 'official'],
@@ -356,10 +353,22 @@ function runHomographMatrix() {
   }
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
   const mainScripts = manifest.content_scripts.filter((entry) => entry.world === 'MAIN');
-  const helperAt = mainScripts.findIndex((entry) => entry.js.includes('domain-utils.js'));
+  const helperAt = mainScripts.findIndex((entry) => entry.js.includes('idn-utils.js'));
   const engineAt = mainScripts.findIndex((entry) => entry.js.includes('content.min.js'));
-  assert(helperAt >= 0 && engineAt > helperAt,
-    'the shared IDN helper must load before the MAIN-world page detector');
+  assert(helperAt === engineAt && mainScripts[engineAt].js.indexOf('idn-utils.js')
+    < mainScripts[engineAt].js.indexOf('content.min.js'),
+  'the IDN helper must load before the MAIN-world page detector');
+  assert(!mainScripts.some((entry) => entry.all_frames && entry.js.includes('idn-utils.js')),
+    'child frames must not load the top-page IDN table');
+  assert(!manifest.content_scripts.some((entry) => entry.world !== 'MAIN'
+    && entry.js.includes('idn-utils.js')), 'isolated frames must not load the IDN table');
+  assert(!fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8').includes('WARDENONE_UTS39_ASCII_CONFUSABLES'),
+    'shared frame helpers must not carry the IDN table');
+  const backgroundSource = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+  assert(backgroundSource.includes("importScripts('idn-utils.js');"),
+    'the worker must load IDN data for startup checks');
+  assert(/CORE_FILES = \[[^\]]*'idn-utils\.js'/.test(backgroundSource),
+    'the packaged IDN helper must be covered by Verify & Repair');
   console.log('[ok] visual and IDN matrix: ' + ascii.length + ' ASCII lookalikes, '
     + idn.length + ' encoded brand spoofs, ' + broadCount + ' profile substitutions, '
     + 'seven ordinary IDNs');
