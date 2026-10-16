@@ -24,6 +24,9 @@
 
 ### Changed
 
+- The README now maps every protection and popup control to its documented feature, brings newer controls into the main guide, and corrects the explanation of Twitch's two rewind modes. A separate audit records the full control inventory and the older screenshots.
+- Replaced the README's outdated popup and Protection Health images with current screenshots showing Settings, Arrange sections, the site card, and the protection summary.
+- Documented the manual VirusTotal URL scanner and automatic download lookups separately, corrected the privacy policy, and stripped URL credentials before automatic VirusTotal requests.
 - Latest build notes list commits since the prior release only when its tag belongs to the current history. After a history rewrite, they summarize the new build instead of presenting the entire repository history as new work.
 - Phishing Army now uses its recommended canonical domain feed. The publisher says it contains the same data as the legacy extended URL; its linked credit remains in Credits & Attribution.
 - The worker now shares identical generic AdShield selector arrays across ordinary sites in its cosmetic cache. Site-specific rules, exceptions, scriptlets and player handling are unchanged.

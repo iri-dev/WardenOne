@@ -1974,16 +1974,15 @@ async function enrichDownloadWithExternalReputation(rep, url, cfg) {
     // client did not strip it, so switching the key on quietly shipped every download URL --
     // including files graded A that the user never even saw a panel for. Every other provider
     // strips the query at its own entry now (reputationQueryUrl, PRIV-03); this one does it here.
-    const vtUrl = normalizePublicHttpUrl(url);
-    if (vtUrl) {
-      let vtSafeUrl = vtUrl;
+    if (normalizePublicHttpUrl(url)) {
       try {
-        const u = new URL(vtUrl);
+        const u = new URL(url);
+        u.username = '';
+        u.password = '';
         u.search = '';
         u.hash = '';
-        vtSafeUrl = u.href;
+        if (u.href.length <= 2000) checks.push(checkVirusTotalUrl(u.href, cfg.downloadVirusTotalKey));
       } catch (_) {}
-      checks.push(checkVirusTotalUrl(vtSafeUrl, cfg.downloadVirusTotalKey));
     }
   }
   if (cfg && cfg.urlHaus === true && String(cfg.urlHausKey || '').trim()) {
