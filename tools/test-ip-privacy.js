@@ -222,6 +222,29 @@ function makeSandbox() {
   check('"Turn everything on" leaves it alone', /MANUAL_ONLY_TOGGLES = new Set\(\[[^\]]*'blockSuspiciousWebRTC'/.test(POPUP_JS));
   check('it is a mode of the guard, not a second counted shield', !/'blockSuspiciousWebRTC'/.test(BG.slice(BG.indexOf('const HEALTH_SHIELD_KEYS = ['), BG.indexOf('];', BG.indexOf('const HEALTH_SHIELD_KEYS = [')))));
   check('the engine still gates the native patch on both switches', /if\(WO\.blockWebRTCLeak&&!trustedMediaHost&&WO\.blockSuspiciousWebRTC\)try\{/.test(MIN));
+  const from = MIN.indexOf('function buildConfig(overrides){');
+  const to = MIN.indexOf('Object.assign(__woConfigStore,buildConfig(null))', from);
+  if (from < 0 || to <= from) throw new Error('buildConfig markers missing');
+  const configSandbox = {
+    DEFAULTS: { enabled: true, blockWebRTCLeak: true, blockSuspiciousWebRTC: false, allowlist: [], notificationSettings: {} },
+    GRABBER_DOMAINS: [], ADULT_DOMAINS: [], location: { hostname: 'privacy-audit.net' },
+    hostMatchesSite: (host, site) => host === site || host.endsWith('.' + site),
+  };
+  vm.createContext(configSandbox);
+  vm.runInContext(MIN.slice(from, to), configSandbox);
+  for (const lookup of [false, true]) {
+    for (const harden of [false, true]) {
+      for (const paused of [false, true]) {
+        for (const enabled of [false, true]) {
+          const cfg = { enabled, blockWebRTCLeak: lookup, blockSuspiciousWebRTC: harden,
+            allowlist: paused ? ['privacy-audit.net'] : [] };
+          check('saved WebRTC choice reaches the engine: ' + JSON.stringify(cfg),
+            configSandbox.buildConfig(cfg).blockSuspiciousWebRTC === (enabled && !paused && lookup && harden));
+        }
+      }
+    }
+  }
+  check('native hardening stays off on a fresh install', configSandbox.buildConfig(null).blockSuspiciousWebRTC === false);
   check('the README describes both levels', /\*\*IP lookup blocking\*\* \(on by default\)/.test(README) && /\*\*Harden WebRTC\*\* \(off by default\)/.test(README));
 
   console.log('');

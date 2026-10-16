@@ -8,6 +8,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+process.exitCode = 1;
 
 const root = path.resolve(__dirname, '..');
 const bg = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
@@ -29,6 +30,7 @@ function harness(initialLocal, initialSession, options = {}) {
     async clear() { for (const key of Object.keys(state)) delete state[key]; },
     async remove(key) { delete state[key]; },
     async set(values) {
+      if (state === local && options.beforeSet) await options.beforeSet(values);
       Object.assign(state, values);
       if (state === local && options.staleDuringMarker && values.wardenone_config_reset) {
         state.wardenone_config = options.staleDuringMarker;
@@ -37,6 +39,11 @@ function harness(initialLocal, initialSession, options = {}) {
     },
   });
   const sandbox = {
+    navigator: { locks: { request(_name, task) {
+      const next = lock.then(task);
+      lock = next.catch(() => {});
+      return next;
+    } } },
     chrome: {
       storage: { local: area(local), session: area(session), onChanged: { addListener() {} } },
       declarativeNetRequest: {
@@ -55,15 +62,18 @@ function harness(initialLocal, initialSession, options = {}) {
     TextEncoder,
     Date, URL,
     siteIdentityBg(host) { return host.endsWith('.webflow.io') ? host : host.split('.').slice(-2).join('.'); },
-    setTimeout: (fn) => { timers.push(fn); },
+    localGet: async () => Object.assign({}, local),
+    localSet: (values) => sandbox.chrome.storage.local.set(values),
+    setTimeout: (fn, delay) => { if (delay === 400) timers.push(fn); },
   };
+  let lock = Promise.resolve();
   vm.createContext(sandbox);
   /* The reset clears and rewrites the config under the config lock (config-lock.js). */
-  vm.runInContext(require('./config-write-harness.js').LOCK_SOURCE + '\n'
+  vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ + '\n'
     + 'const DEFAULT_CONFIG = { enabled: true, downloadSafeBrowsingKey: "", siteOverrides: {}, allowlist: [] };'
     + 'const PRIVACY_ERASE_REBUILD_KEY = "wardenone_erase_rebuild";'
     + 'let __privacyEraseInProgress = false;' + bg.slice(start, end)
-    + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, eraseWardenOneSite, repairConfigAfterReset, preservedPrivacyConfig, policy: PRIVACY_STORE_POLICY };', sandbox);
+    + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, eraseWardenOneSite, repairConfigAfterReset, repairOverwrittenConfig, stampConfigWrite, updateStoredConfig, preservedPrivacyConfig, policy: PRIVACY_STORE_POLICY };', sandbox);
   return { api: sandbox.__api, local, session, dynamic, sessionRules, timers, reloaded: () => reloaded };
 }
 
@@ -147,6 +157,56 @@ function harness(initialLocal, initialSession, options = {}) {
   h.timers[0]();
   assert.strictEqual(h.reloaded(), true);
 
+  for (const alreadySaved of [false, true]) {
+    let resume, held;
+    const paused = new Promise((resolve) => { held = resolve; });
+    const release = new Promise((resolve) => { resume = resolve; });
+    h = harness({ wardenone_config: { deAmp: false,
+      allowlist: alreadySaved ? ['erase.net', 'keep.net'] : ['keep.net'] } }, {}, {
+      async beforeSet(values) {
+        if (values.wardenone_config && values.wardenone_config.deAmp === true
+          && values.wardenone_config.allowlist.includes('erase.net')) { held(); await release; }
+      },
+    });
+    const saving = h.api.updateStoredConfig((cfg) => {
+      cfg.deAmp = true;
+      cfg.allowlist = ['erase.net', 'keep.net'];
+    });
+    await paused;
+    let done = false;
+    const erasing = h.api.eraseWardenOneSite('erase.net', false).then((result) => { done = true; return result; });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(done, false, 'site erase waits for the pending config save');
+    resume();
+    await saving;
+    assert.strictEqual((await erasing).ok, true);
+    assert.deepStrictEqual(Array.from(h.local.wardenone_config.allowlist), ['keep.net']);
+    assert.strictEqual(h.local.wardenone_config.deAmp, true, 'unrelated pending setting survives');
+  }
+
+  h = harness({ wardenone_config: { allowlist: ['erase.net', 'keep.net'],
+    siteOverrides: { 'erase.net': { adShield: false }, 'keep.net': { adShield: true } } } }, {});
+  await h.api.updateStoredConfig((cfg) => { cfg.deAmp = false; });
+  const staleConfig = JSON.parse(JSON.stringify(h.local.wardenone_config));
+  const staleStamp = h.api.stampConfigWrite(h.local.wardenone_config_writes, ['deAmp']);
+  assert.strictEqual((await h.api.eraseWardenOneSite('erase.net', false)).ok, true);
+  const changes = { wardenone_config: { oldValue: h.local.wardenone_config, newValue: { ...staleConfig, deAmp: true } },
+    wardenone_config_writes: { oldValue: h.local.wardenone_config_writes, newValue: staleStamp.record } };
+  h.local.wardenone_config = changes.wardenone_config.newValue;
+  h.local.wardenone_config_writes = staleStamp.record;
+  await h.api.repairOverwrittenConfig(changes);
+  assert.deepStrictEqual(Array.from(h.local.wardenone_config.allowlist), ['keep.net'], 'late private write cannot undo site erase');
+  assert.strictEqual(h.local.wardenone_config.siteOverrides['erase.net'], undefined);
+  assert.strictEqual(h.local.wardenone_config.siteOverrides['keep.net'].adShield, true);
+  assert.strictEqual(h.local.wardenone_config.deAmp, true, 'late private save keeps its unrelated change');
+
+  h = harness({ wardenone_config: { enabled: false, allowlist: ['keep.net'] } }, {});
+  const noData = await h.api.eraseWardenOneSite('erase.net', false);
+  assert.strictEqual(noData.ok, true);
+  assert.strictEqual(noData.affected.length, 0);
+  assert.strictEqual(h.dynamic.length + h.sessionRules.length, 3, 'an empty erase leaves rules alone');
+  assert.strictEqual(h.timers.length, 0, 'an empty erase does not restart');
+
   h = harness({ wardenone_history: [{ url: 'https://erase.example/' }] }, {}, { failDynamicRules: true });
   const partial = await h.api.eraseWardenOneSite('erase.example', false);
   assert.strictEqual(partial.ok, false);
@@ -227,4 +287,5 @@ function harness(initialLocal, initialSession, options = {}) {
   assert(bg.includes("msg.kind === 'privacy-data-erase-site' && messageSenderIsExtensionPage(sender)"));
   assert(html.includes('id="privacy-data-erase-site"') && popup.includes("kind: 'privacy-data-erase-site'"));
   console.log('[ok] privacy data inspection and erase tests');
+  process.exitCode = 0;
 })().catch((error) => { console.error(error); process.exitCode = 1; });

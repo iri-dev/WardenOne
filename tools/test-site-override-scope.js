@@ -69,6 +69,7 @@ const COORDINATED = new Set(SITE_OVERRIDE_SCOPE.coordinated);
 /* ---- who reads what, from the sources ---------------------------------------------- */
 const pageReads = new Set();
 const workerReads = new Set();
+const workerEnforcementReads = new Set();
 const collect = (set, src, re) => { for (const m of src.matchAll(re)) set.add(m[1]); };
 collect(pageReads, read('src/content.js'), /\bWO\.([A-Za-z0-9_]+)/g);
 collect(pageReads, read('src/content.js'), /\bcfg\.([A-Za-z0-9_]+)/g);
@@ -83,7 +84,13 @@ for (const f of ['yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'ey
   try { collect(pageReads, read(f), /\b(?:cfg|config|overrides|o|c|settings)\.([A-Za-z0-9_]+)/g); } catch (_) {}
 }
 for (const f of ['background.js', 'background-downloads.js', 'background-startup.js', 'background-memory.js', 'background-extension-watch.js']) {
-  try { collect(workerReads, read(f), /\b(?:cfg|config|merged|repairCfg|c)\.([A-Za-z0-9_]+)/g); } catch (_) {}
+  try {
+    let source = read(f);
+    collect(workerReads, source, /\b(?:cfg|config|merged|repairCfg|c)\.([A-Za-z0-9_]+)/g);
+    /* Diagnostic snapshots report page choices; they do not enforce a worker feature. */
+    if (f === 'background.js') source = source.replace(grabFn(source, 'privacyTestSettings'), '');
+    collect(workerEnforcementReads, source, /\b(?:cfg|config|merged|repairCfg|c)\.([A-Za-z0-9_]+)/g);
+  } catch (_) {}
 }
 
 console.log('\nsite override scope\n');
@@ -91,8 +98,8 @@ console.log('\nsite override scope\n');
 const toggles = KEYS.filter((k) => typeof DEFAULTS[k] === 'boolean');
 check('the table names only real toggles', [...PAGE, ...MIXED, ...COORDINATED].every((k) => toggles.includes(k)), [...PAGE, ...MIXED, ...COORDINATED].filter((k) => !toggles.includes(k)).join(', '));
 check('no key appears in multiple scopes', [...PAGE].every((k) => !MIXED.has(k) && !COORDINATED.has(k)) && [...MIXED].every((k) => !COORDINATED.has(k)));
-const pageWrong = [...PAGE].filter((k) => !pageReads.has(k) || workerReads.has(k));
-check('every page-resolved key is read by a page-side script and by no worker file', pageWrong.length === 0, pageWrong.join(', '));
+const pageWrong = [...PAGE].filter((k) => !pageReads.has(k) || workerEnforcementReads.has(k));
+check('every page-resolved key has a page reader and no worker enforcement', pageWrong.length === 0, pageWrong.join(', '));
 const mixedWrong = [...MIXED].filter((k) => !pageReads.has(k) || !workerReads.has(k));
 check('every mixed key is read by a page-side script and by the worker', mixedWrong.length === 0, mixedWrong.join(', '));
 const coordinatedWrong = [...COORDINATED].filter((k) => !pageReads.has(k) || !workerReads.has(k));

@@ -7,9 +7,8 @@
 /*
  * Point at the annoying thing and it goes away.
  *
- * Hides one element, saves its selector immediately, then pauses until the
- * reader presses Done. Reloading must not bring it back; Ctrl+Z restores it and
- * retracts the saved rule with it.
+ * Each selection saves immediately; Done or Escape ends selection without
+ * undoing it. Ctrl+Z restores the element and retracts its saved rule.
  *
  * There were two of these for a while -- this one, and a "pick" mode that worked
  * out the same selector but showed you what it matched before saving. Two tools

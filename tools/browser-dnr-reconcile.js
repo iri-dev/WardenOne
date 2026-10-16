@@ -4,7 +4,7 @@
    Upstream filter-list attribution: CREDITS.md */
 'use strict';
 
-/* Manual PERF-09 check in a disposable Edge profile. It fills the extension's dynamic/session
+/* PERF-09/AUD26-006 check in a disposable browser profile. It fills the extension's dynamic/session
    quota close to the browser limit, toggles SafeSearch, and compares the final SafeSearch band
    after restoring the original config. Nothing is written to the user's browser profile. */
 const fs = require('fs');
@@ -20,7 +20,7 @@ async function run() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-dnr-'));
   let cdp = null;
   try {
-    const browser = await profile.launch(profile.edgePath(), 'on', ROOT, port, dir);
+    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', ROOT, port, dir);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
@@ -65,7 +65,14 @@ async function run() {
           if(key.startsWith('dynamic')&&p.traces.length<8) p.traces.push({key,stack:String(new Error().stack).split('\\n').slice(1,4).join(' | ')});
           const result=original(...args);
           const finish=()=>{p.timings[key]+=performance.now()-started};
-          if(result&&typeof result.finally==='function') return result.finally(finish);
+          if(result&&typeof result.finally==='function') return result.then(async value=>{
+            const ids=args[0]&&args[0].ruleIds;
+            if(key==='dynamicReads'&&p.delayBand&&ids&&ids.includes(p.delayBand)){
+              p.delayedReads[p.delayBand]=(p.delayedReads[p.delayBand]||0)+1;
+              await new Promise(r=>setTimeout(r,120));
+            }
+            return value;
+          }).finally(finish);
           finish();
           return result;
         };
@@ -139,6 +146,8 @@ async function run() {
     }
     const dynamicCombined = await evaluate(`(async () => {
       const p=globalThis.__woDnrProfile;
+      p.delayBand=931700;
+      p.delayedReads={};
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
       p.traces=[];
       await chrome.storage.local.set({wardenone_config:{...p.config,blockFingerprintScripts:false,googleSearchResultCleanup:true}});
@@ -146,16 +155,20 @@ async function run() {
       const changed={...p.counts};
       const traces=p.traces.slice();
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
+      p.delayBand=931500;
       await chrome.storage.local.set({wardenone_config:p.config});
       await new Promise(r=>setTimeout(r,2200));
       const restoredCounts={...p.counts};
+      p.delayBand=0;
       const dynamic=await chrome.declarativeNetRequest.getDynamicRules();
       const fingerprint=dynamic.filter(r=>r.id>=931500&&r.id<931580).sort((a,b)=>a.id-b.id);
       const sponsor=dynamic.filter(r=>r.id>=931700&&r.id<931720).sort((a,b)=>a.id-b.id);
-      return {changed,restoredCounts,traces,exact:JSON.stringify(fingerprint)===p.fingerprintBand&&JSON.stringify(sponsor)===p.sponsorBand};
+      return {changed,restoredCounts,traces,delayedReads:p.delayedReads,
+        exact:JSON.stringify(fingerprint)===p.fingerprintBand&&JSON.stringify(sponsor)===p.sponsorBand};
     })()`);
     if (!dynamicCombined || !dynamicCombined.exact || dynamicCombined.changed.dynamicWrites !== 1
-      || dynamicCombined.restoredCounts.dynamicWrites !== 1) {
+      || dynamicCombined.restoredCounts.dynamicWrites !== 1 || dynamicCombined.delayedReads[931500] !== 1
+      || dynamicCombined.delayedReads[931700] !== 1) {
       throw new Error('Two dynamic owners did not merge or restore exactly: ' + JSON.stringify(dynamicCombined));
     }
     const rapid = await evaluate(`(async () => {
@@ -186,8 +199,8 @@ async function run() {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     const tempRoot = path.resolve(os.tmpdir()) + path.sep;
     if (!path.resolve(dir).startsWith(tempRoot)) throw new Error('Refusing to remove a profile outside temp');
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
 }
 
-if (require.main === module) run().catch((error) => { console.error(error); process.exitCode = 1; });
+if (require.main === module) profile.mustFinish(run, 'browser-dnr-reconcile').catch((error) => { console.error(error); process.exitCode = 1; });

@@ -11833,24 +11833,53 @@ const __reconcileComponentKeys = new Map();
 function createReconcileDnrBatch(kind) {
   const plans = [];
   let closed = false;
-  let scheduled = false;
+  let sealed = false;
+  let pending = 0;
+  let deadline = null;
   const update = kind === 'dynamic'
     ? (change) => chrome.declarativeNetRequest.updateDynamicRules(change)
     : (change) => chrome.declarativeNetRequest.updateSessionRules(change);
   const api = {
+    collect(apply) {
+      pending++;
+      let ready = false;
+      const prepared = () => {
+        if (ready) return;
+        ready = true;
+        pending--;
+        if (sealed && !pending) api.flush().catch(() => {});
+      };
+      let result;
+      try {
+        result = apply((change) => {
+          const committed = api.submit(change);
+          // Readiness precedes commit: waiting for the applier to finish would deadlock the batch.
+          prepared();
+          return committed;
+        });
+      } catch (error) {
+        prepared();
+        return Promise.reject(error);
+      }
+      return Promise.resolve(result).finally(prepared);
+    },
+    seal() {
+      sealed = true;
+      if (!pending) return api.flush();
+      // A stalled owner must not hold other protections' writes indefinitely.
+      deadline = setTimeout(() => { api.flush().catch(() => {}); }, 5000);
+      return Promise.resolve();
+    },
     submit(change) {
       if (closed) return update(change);
       return new Promise((resolve, reject) => {
         plans.push({ change, resolve, reject });
-        if (!scheduled) {
-          scheduled = true;
-          setTimeout(() => { api.flush().catch(() => {}); }, 0);
-        }
       });
     },
     async flush() {
       if (closed) return;
       closed = true;
+      if (deadline !== null) clearTimeout(deadline);
       if (!plans.length) return;
       const removeRuleIds = plans.flatMap((plan) => plan.change.removeRuleIds || []);
       const addRules = plans.flatMap((plan) => plan.change.addRules || []);
@@ -11977,14 +12006,14 @@ function refreshExtensionState() {
       // component and the rest of the list still runs (BUG-08). This is the one list: there is
       // no second or third copy of it in the failure paths below, which is how three copies
       // came to disagree about which components exist.
-      const run = (name, apply, stableKey) => {
+      const run = (name, apply, stableKey, batch) => {
         names.push(name);
         if (stableKey !== undefined && __reconcileComponentKeys.get(name) === stableKey) {
           applied.push(Promise.resolve(true));
           return;
         }
         let result;
-        try { result = apply(); } catch (_) { result = false; }
+        try { result = batch ? batch.collect(apply) : apply(); } catch (_) { result = false; }
         applied.push(Promise.resolve(result).then((value) => {
           if (stableKey !== undefined) {
             if (value === false) __reconcileComponentKeys.delete(name);
@@ -12004,9 +12033,9 @@ function refreshExtensionState() {
       }), [on && cfg.clientHintProtection !== false, on && cfg.capReferrer === true, on && cfg.trackerCacheProtection === true].join(','));
       run('thirdPartyCookies', () => applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false), String(on && cfg.blockThirdPartyCookies !== false));
       run('trackerCookies', () => applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false), String(on && cfg.blockThirdPartyCookies !== false));
-      run('allowlist', () => applyAllowlistRules(on ? activeAllowlist(cfg) : [], sharedSessionRules, sessionBatch.submit), JSON.stringify(on ? activeAllowlist(cfg) : []));
-      run('mediaCompatibility', () => applyMediaCompatibilityRules(on, sharedSessionRules, sessionBatch.submit), String(on));
-      run('loginCompatibility', () => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false, sharedSessionRules, sessionBatch.submit), String(on && cfg.loginCompatibility !== false));
+      run('allowlist', (submitRules) => applyAllowlistRules(on ? activeAllowlist(cfg) : [], sharedSessionRules, submitRules), JSON.stringify(on ? activeAllowlist(cfg) : []), sessionBatch);
+      run('mediaCompatibility', (submitRules) => applyMediaCompatibilityRules(on, sharedSessionRules, submitRules), String(on), sessionBatch);
+      run('loginCompatibility', (submitRules) => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false, sharedSessionRules, submitRules), String(on && cfg.loginCompatibility !== false), sessionBatch);
       run('httpsUpgrade', () => applyHttpsUpgradeRule(on && cfg.forceHttps === true), String(on && cfg.forceHttps === true));
       run('blocklistRulesets', () => refreshBlocklistRuleset(cfg));
       run('grabberFeed', () => applyGrabberFeedRules(),
@@ -12019,9 +12048,9 @@ function refreshExtensionState() {
       run('minerDetect', () => reconcileMinerDetectInjection(cfg));
       run('searchJunk', () => reconcileSearchJunkInjection(cfg));
       run('googleCleanupCss', () => reconcileGoogleCleanupCssInjection(cfg));
-      run('fingerprintScripts', () => applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true, sharedDynamicRules, dynamicBatch.submit), [on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true].join(','));
-      run('searchSponsoredAllow', () => applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg), sharedDynamicRules, dynamicBatch.submit), String(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)));
-      run('searchParams', () => applySearchParamRules(Object.assign({}, cfg, { enabled: on }), sharedSessionRules, sessionBatch.submit), [on, cfg.safeSearch === true, cfg.googleWebResultsOnly === true].join(','));
+      run('fingerprintScripts', (submitRules) => applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true, sharedDynamicRules, submitRules), [on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true].join(','), dynamicBatch);
+      run('searchSponsoredAllow', (submitRules) => applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg), sharedDynamicRules, submitRules), String(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)), dynamicBatch);
+      run('searchParams', (submitRules) => applySearchParamRules(Object.assign({}, cfg, { enabled: on }), sharedSessionRules, submitRules), [on, cfg.safeSearch === true, cfg.googleWebResultsOnly === true].join(','), sessionBatch);
       run('allCookies', () => applyAllCookieBlock(on && cfg.blockAllCookies === true), String(on && cfg.blockAllCookies === true));
       run('geolocation', () => applyGlobalLocationBlock(on && cfg.blockGeolocation === true, locationExemptHosts(cfg)), JSON.stringify([on && cfg.blockGeolocation === true, locationExemptHosts(cfg)]));
       run('locationHeaders', () => applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true), String(on && cfg.blockGeolocation === true));
@@ -12037,6 +12066,8 @@ function refreshExtensionState() {
         run('userBlocklist', () => userBlocklistBandStep());
         Promise.all(applied.slice(-3)).then((oks) => { if (oks.every((x) => x !== false)) __userBandsAppliedFor = on; }).catch(() => {});
       }
+      dynamicBatch.seal().catch(() => {});
+      sessionBatch.seal().catch(() => {});
       Promise.allSettled(applied).then((results) => {
         if (generation !== __refreshExtensionStateGeneration) return;   // a newer desired state took over
         const failed = [];
@@ -20996,7 +21027,7 @@ const SESSION_COOKIE_HINT = /(^|[_-])(sess|session|sid|auth|token|login|logged|r
 // A handful of generic names above (c, uid, ug, uids, consent) are only safe to remove on the
 // adtech hosts that actually set them, never on a site the user has an account with.
 const GENERIC_TRACKER_NAMES = new Set(['c', 'uid', 'uids', 'ug', 'gckp', 'consent', 'cookie_consent']);
-const ADTECH_HOSTS = /(doubleclick|adnxs|adsrvr|criteo|demdex|rubiconproject|pubmatic|casalemedia|openx|adform|bidswitch|taboola|outbrain|scorecardresearch|quantserve|everesttech|adsymptotic|agkn|bluekai|krxd|mathtag|turn|yieldmo|sharethrough|33across|id5-sync|crwdcntrl)\.(net|com|io)$/i;
+const ADTECH_HOSTS = /(^|\.)(doubleclick|adnxs|adsrvr|criteo|demdex|rubiconproject|pubmatic|casalemedia|openx|adform|bidswitch|taboola|outbrain|scorecardresearch|quantserve|everesttech|adsymptotic|agkn|bluekai|krxd|mathtag|turn|yieldmo|sharethrough|33across|id5-sync|crwdcntrl)\.(net|com|io)$/i;
 
 function cookieIsDisposable(cookie) {
 const name = String((cookie && cookie.name) || '');
@@ -21620,15 +21651,32 @@ async function planWardenOneSiteErase(rawHost) {
 async function eraseWardenOneSite(rawHost, dryRun) {
   if (__privacyEraseInProgress) return { ok: false, error: 'An erase is already running.' };
   const plan = await planWardenOneSiteErase(rawHost);
-  if (!plan.ok || dryRun === true || !plan.writes.length) {
+  if (!plan.ok || dryRun === true) {
     return { ok: plan.ok, error: plan.error, site: plan.site, affected: plan.affected || [] };
   }
   __privacyEraseInProgress = true;
   try {
+    /* Prune the latest config under its writer lock. The stamp also lets split
+       incognito contexts repair an older save that lands after the erase. */
+    const config = await updateStoredConfig((cfg, stored) => {
+      if (!stored) return false;
+      const next = privacySitePrune(cfg, plan.site);
+      if (!next || privacySiteResidual(JSON.stringify(next), plan.site)) {
+        throw new Error('A site setting could not be safely separated.');
+      }
+      return JSON.stringify(stored) === JSON.stringify(next) ? false : next;
+    });
+    const affected = plan.affected.filter(({ area, key }) => area !== 'local' || key !== 'wardenone_config');
+    if (config) affected.push({ area: 'local', key: 'wardenone_config' });
     for (const { area, key, value } of plan.writes) {
+      if (area === 'local' && key === 'wardenone_config') continue;
       const store = chrome.storage[area];
       if (value === undefined) await store.remove(key);
       else await store.set({ [key]: value });
+    }
+    if (!affected.length) {
+      __privacyEraseInProgress = false;
+      return { ok: true, site: plan.site, affected };
     }
     const [dynamic, sessionRules] = await Promise.all([
       chrome.declarativeNetRequest.getDynamicRules(),
@@ -21638,7 +21686,7 @@ async function eraseWardenOneSite(rawHost, dryRun) {
     if (sessionRules.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
     if (chrome.storage.session) await chrome.storage.session.set({ [PRIVACY_ERASE_REBUILD_KEY]: true });
     setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
-    return { ok: true, site: plan.site, affected: plan.affected };
+    return { ok: true, site: plan.site, affected };
   } catch (error) {
     /* A storage or DNR failure can happen after earlier writes succeeded. Restart
        instead of reconciling from stale in-memory state, then let the reader retry. */
@@ -21688,6 +21736,32 @@ async function eraseWardenOneData(mode) {
     return { ok: false, error: String(error && error.message || error || 'Erase failed.')
       + ' WardenOne is restarting; inspect the records and retry.' };
   }
+}
+
+function privacyTestSettings(config, host) {
+  const cfg = Object.assign({}, config);
+  /* Match the bridge's per-site off switches without changing stored choices. */
+  const rules = cfg.siteOverrides && typeof cfg.siteOverrides === 'object' ? cfg.siteOverrides : {};
+  for (const [pattern, entry] of Object.entries(rules)) {
+    if (!hostMatchesSite(host, pattern) || !entry || typeof entry !== 'object') continue;
+    for (const [key, value] of Object.entries(entry)) {
+      if (value === false && typeof cfg[key] === 'boolean') cfg[key] = false;
+    }
+  }
+  return {
+    enabled: cfg.enabled !== false,
+    antiFingerprintNoise: cfg.antiFingerprintNoise === true || cfg.antiFingerprint === true,
+    blockFingerprintScripts: cfg.blockFingerprintScripts !== false,
+    blockFraudVendorScripts: cfg.blockFraudVendorScripts === true,
+    fingerprintProbeDetection: cfg.fingerprintProbeDetection !== false,
+    blockWebRTCLeak: cfg.blockWebRTCLeak !== false,
+    blockSuspiciousWebRTC: cfg.blockSuspiciousWebRTC === true,
+    unshimLinks: cfg.unshimLinks !== false,
+    stripTrackingParams: cfg.stripTrackingParams !== false,
+    deviceAccessGuard: cfg.deviceAccessGuard !== false,
+    clientHintProtection: cfg.clientHintProtection !== false,
+    allowlisted: hostMatchesAllowlist(host, activeAllowlist(cfg)),
+  };
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -21842,22 +21916,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           host: (() => { try { return new URL(tab.url).hostname; } catch (_) { return ''; } })(),
           shielded: shielded,
           bare: bare,
-          settings: {
-            enabled: cfg.enabled !== false,
-            antiFingerprintNoise: cfg.antiFingerprintNoise === true || cfg.antiFingerprint === true,
-            blockFingerprintScripts: cfg.blockFingerprintScripts !== false,
-            blockFraudVendorScripts: cfg.blockFraudVendorScripts === true,
-            fingerprintProbeDetection: cfg.fingerprintProbeDetection !== false,
-            blockWebRTCLeak: cfg.blockWebRTCLeak !== false,
-            unshimLinks: cfg.unshimLinks !== false,
-            stripTrackingParams: cfg.stripTrackingParams !== false,
-            deviceAccessGuard: cfg.deviceAccessGuard !== false,
-            clientHintProtection: cfg.clientHintProtection !== false,
-            allowlisted: hostMatchesAllowlist(
-              (() => { try { return new URL(tab.url).hostname; } catch (_) { return ''; } })(),
-              activeAllowlist(cfg),
-            ),
-          },
+          settings: privacyTestSettings(cfg, new URL(tab.url).hostname),
         });
       } catch (e) { sendResponse({ ok: false, error: String(e) }); }
     })();
@@ -22798,8 +22857,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     };
   };
 
+  const changeJsMode = async (mode) => {
+    if (mode === 'lockdown') {
+      const ok = await reconcileJsRules(true, await jsAllowlistGet());
+      if (!ok) throw new Error('Could not update JavaScript setting.');
+    } else {
+      /* Clear per-site leftovers too; saved Lockdown exceptions stay dormant. */
+      await jsClearRules();
+    }
+    await localSet({ wardenone_js_global_block: mode === 'lockdown', [SCRIPT_SHIELD_MODE_KEY]: mode });
+    if (!await applyScriptShieldRules(mode)) throw new Error('Could not update Script Shield rules.');
+  };
+
   if (msg && msg.kind === 'get-javascript-state') {
-    (async () => {
+    storeTransaction(SCRIPT_SHIELD_MODE_KEY, async () => {
       try {
         if (!chrome.contentSettings) { sendResponse({ ok: false, error: 'JavaScript settings not available.' }); return; }
         if (msg.url && /^https?:/.test(msg.url)) {
@@ -22827,12 +22898,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
-    })();
+    });
     return true;
   }
 
   if (msg && msg.kind === 'set-script-shield-mode') {
-    (async () => {
+    /* Queue the entire transition, including validation and storage, so an older
+       mode cannot overwrite a newer request before the DNR applier is reached. */
+    storeTransaction(SCRIPT_SHIELD_MODE_KEY, async () => {
       try {
         if (!chrome.contentSettings) { sendResponse({ ok: false, error: 'JavaScript settings not available.' }); return; }
         const mode = normalizeScriptShieldMode(msg.mode);
@@ -22840,22 +22913,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const origin = normalizeWebOrigin(msg.url);
           if (!origin || !await activeTabMatchesOrigin(origin)) { sendResponse({ ok: false, error: 'Open the site first.' }); return; }
         }
-        if (mode === 'lockdown') {
-          const allowHosts = await jsAllowlistGet();
-          const ok = await reconcileJsRules(true, allowHosts);
-          if (!ok) { sendResponse({ ok: false, error: 'Could not update JavaScript setting.' }); return; }
-          await localSet({ wardenone_js_global_block: true, [SCRIPT_SHIELD_MODE_KEY]: 'lockdown' });
-          await applyScriptShieldRules('lockdown');
-        } else {
-          await jsClearRules();
-          await localSet({ wardenone_js_global_block: false, [SCRIPT_SHIELD_MODE_KEY]: mode });
-          await applyScriptShieldRules(mode);
-        }
+        await changeJsMode(mode);
         sendResponse(await buildJsState(msg.url));
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
-    })();
+    });
     return true;
   }
 
@@ -22881,29 +22944,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg && msg.kind === 'set-javascript-state' && msg.scope) {
-    (async () => {
+    storeTransaction(SCRIPT_SHIELD_MODE_KEY, async () => {
       try {
         if (!chrome.contentSettings) { sendResponse({ ok: false, error: 'JavaScript settings not available.' }); return; }
         if (msg.scope === 'global') {
-          if (msg.block) {
-            // Rebuild from stored state so saved allow-exceptions come back with
-            // the block (whitelist mode survives being toggled off and on).
-            const allowHosts = await jsAllowlistGet();
-            const ok = await reconcileJsRules(true, allowHosts);
-            if (!ok) { sendResponse({ ok: false, error: 'Could not update JavaScript setting.' }); return; }
-            await localSet({ wardenone_js_global_block: true, [SCRIPT_SHIELD_MODE_KEY]: 'lockdown' });
-            await applyScriptShieldRules('lockdown');
-            sendResponse(await buildJsState(msg.url));
-          } else {
-            // All-sites OFF = JS back on for EVERY site. CLEAR all of the extension's
-            // javascript rules (the global pattern AND any per-site leftovers) so
-            // nothing stays stuck blocked -- this is what was broken before. The
-            // stored allowlist is kept (dormant) for the next time block-all is on.
-            await jsClearRules();
-            await localSet({ wardenone_js_global_block: false, [SCRIPT_SHIELD_MODE_KEY]: 'normal' });
-            await applyScriptShieldRules('normal');
-            sendResponse(await buildJsState(msg.url));
-          }
+          await changeJsMode(msg.block ? 'lockdown' : 'normal');
+          sendResponse(await buildJsState(msg.url));
           return;
         }
         // per-site scope. Two modes: normally it is a per-site BLOCK; while
@@ -22942,7 +22988,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
-    })();
+    });
     return true;
   }
 
@@ -24049,7 +24095,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'idn-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
+          const CORE_FILES = ['content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'domain-utils-isolated.js', 'idn-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
           CORE_FILES.push('rules-grabber-resources.json', 'rules-grabber-navigation.json',
             'rules-grabber-malware-navigation.json', 'rules-grabber-compat.json',
             'rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',

@@ -217,6 +217,8 @@ function checkContentBuild() {
   'tools/test-worker-realm-guard.js',
   'tools/test-keyboard-lock-guard.js',
   'tools/test-fingerprint-surfaces.js',
+  'tools/test-fingerprint-media.js',
+  'tools/test-script-mode-order.js',
   'tools/test-payment-frame-origin.js',
   'tools/test-overlay-evidence.js',
   'tools/test-background-scope.js',
@@ -418,6 +420,9 @@ function checkContentBuild() {
   'tools/test-education-compat.js',
   'tools/config-write-harness.js',
   'tools/browser-config-race.js',
+  'tools/browser-audit-highs.js',
+  'tools/browser-audit-mediums.js',
+  'tools/browser-element-zapper.js',
   'tools/browser-resource-saver.js',
   'tools/test-animated-image-saver.js',
   'tools/browser-engine-smoke.js',
@@ -455,6 +460,7 @@ function checkContentBuild() {
   'consent-reject.js',
   'consent-wall.js',
   'domain-utils.js',
+  'domain-utils-isolated.js',
   'idn-utils.js',
   'psl-private.js',
   'build-profile.js',
@@ -637,6 +643,8 @@ checkCommand('storage access guard tests', ['tools/test-storage-access-guard.js'
 checkCommand('worker realm guard tests', ['tools/test-worker-realm-guard.js']);
 checkCommand('keyboard lock guard tests', ['tools/test-keyboard-lock-guard.js']);
 checkCommand('fingerprint surface tests', ['tools/test-fingerprint-surfaces.js']);
+checkCommand('fingerprint media selection', ['tools/test-fingerprint-media.js']);
+checkCommand('Script Shield mode ordering', ['tools/test-script-mode-order.js']);
 checkCommand('payment frame origin tests', ['tools/test-payment-frame-origin.js']);
 checkCommand('overlay evidence tests', ['tools/test-overlay-evidence.js']);
 checkCommand('background scope tests', ['tools/test-background-scope.js']);
