@@ -43,12 +43,24 @@ the page you're looking at. And when it blocks something it shows you why.
 
 **Inspect it for yourself:** [Privacy policy](PRIVACY.md) · [Permissions explained](permissions.html) · [Security policy](SECURITY.md) · [Source](https://github.com/iri-dev/WardenOne) · [Licence](LICENSE)
 
+## What's inside
+
+- **[Security](#security):** scam and phishing warnings, password and session guards, Download Shield, File Shield, and checks on your other extensions.
+- **[Privacy](#privacy--anti-tracking):** tracker and cookie controls, link cleaning, IP-logger protection, and optional anti-fingerprinting.
+- **[Content blocking](#content-blocking):** AdShield for ordinary pages and dedicated handling for YouTube, Twitch, and Spotify, plus search cleanup and Element Zapper.
+- **[Control and verification](#control-and-verification):** pause one site, adjust a protection there, inspect Activity and network requests, write your own rules, and check Protection Health or run the Self-Test.
+- **[Tools and comfort](#tools-performance-and-comfort):** Memory Shield, EyeShield, keyboard and right-click tools, and optional Resource Saver controls to pause GIFs, stop muted video previews, or disable WebGL on selected sites or everywhere except allowed sites.
+- **[Settings and popup layout](#settings-and-popup-layout):** a separate searchable Settings page for switches, site exceptions, notifications, backup, and rearranging the popup's sections.
+
+These popup screenshots show the current layout. Some feature screenshots farther down were taken
+from earlier builds and may place controls differently.
+
 <p align="center">
-  <a href="docs/screenshots/01-popup-master-switch.webp">
-    <img src="docs/screenshots/01-popup-overview.webp" alt="WardenOne's main control surface with the master switch, protection health and protection search" width="620">
+  <a href="docs/screenshots/01-popup-current-overview.webp">
+    <img src="docs/screenshots/01-popup-current-overview.webp" alt="Current WardenOne popup with Settings and Arrange buttons, master switch, recommended protections, site summary, protection status and search" width="453">
   </a>
 </p>
-<p align="center"><em>The main popup. Master switch, protection health and a search box for every setting. (Click any image to see it full size.)</em></p>
+<p align="center"><em>The current popup in Brave. The gear opens Settings; the arrows open Arrange sections. The site card reflects this page, and Brave Shields may block requests first. Click the image to see it full size.</em></p>
 
 # Quick install
 
@@ -191,6 +203,11 @@ site etc all together. Just mentioning a company isn't enough to get a page flag
 There's also an optional login-page age check. It looks for a password form on a domain that was
 registered really recently. When it's on it sends only the domain to RDAP (not the path or the
 page or anything you typed) and remembers the answer locally.
+
+The clearest look-alikes get a blocking screen with a choice to leave, visit the real site or
+continue. Behavioural detection can warn about an unknown site that acts like a tracker or scam
+even when no list knows it. Risky-site mode applies stricter checks to third-party scripts,
+frames, media and background calls on suspicious-looking domains.
 
 **Find it:** WardenOne → Advanced detection.
 
@@ -407,7 +424,8 @@ the swap outside the browser. Neither address gets sent anywhere.
 
 ### OAuth Grant Guard
 
-A Google, Microsoft, GitHub or Discord consent page can hand over way more than a simple sign-in.
+A Google, Microsoft, GitHub, Discord, Apple, Meta, Spotify, Slack, Dropbox, GitLab, Atlassian,
+LinkedIn or Twitch consent page can hand over way more than a simple sign-in.
 WardenOne warns when an app asks for your mail, contacts, repos, admin rights or long-lived offline
 access, or when the redirect looks off. It doesn't block OAuth just because of the brand. It looks
 at what's being asked for and where it's going.
@@ -494,9 +512,38 @@ Clean downloads straight from a publisher's own installer host can go through qu
 cloud and CDN hosts don't get trusted just for being big. A disguised file or a known-malware hash
 beats a legit-looking publisher every time.
 
-If you want more you can turn on extra lookups too: domain age, Google Safe Browsing, VirusTotal,
-URLhaus, AbuseIPDB, OpenPhish, PhishTank, WhoisXML. They're all optional and each one tells you
-exactly what it sends. There's no hidden WardenOne reputation server behind any of it.
+If you want more you can turn on extra lookups. Each provider switch is off by default and can be
+enabled separately. Most need your own API key; OpenPhish uses a public feed instead. There's no
+hidden WardenOne reputation server behind any of them.
+
+| Optional switch | What it checks |
+| --- | --- |
+| Download domain age | How recently a download source's domain was registered. |
+| Google Safe Browsing | Page and download URLs against Google's malware and phishing reports. |
+| VirusTotal reputation | Existing reports for download URLs. |
+| URLhaus | Page and download URLs associated with malware delivery. |
+| AbuseIPDB | Abuse reports for sites reached by a bare IP address. |
+| OpenPhish | Known phishing URLs in a community feed downloaded to your device. |
+| PhishTank | Phishing reports for suspicious pages, links and downloads. |
+| WhoisXML API | Domain registration and age clues. |
+| WhoisXML Domain Reputation | A domain reputation score. |
+| WhoisXML Threat Intelligence | Threat indicators for suspicious URLs and downloads. |
+
+The [privacy policy](PRIVACY.md#5-reputation-providers-opt-in-off-by-default-most-need-your-own-api-key)
+explains which checks run automatically and what each provider receives.
+
+The optional VirusTotal URL-content hash check is separate from its URL reputation check. For a
+small risky download it re-fetches up to 50 MB from the download address, hashes that response
+locally and sends only the hash. It cannot read the file Chrome saved, so the re-fetched bytes may
+not be the same. WhoisXML domain registration, domain reputation and threat intelligence are also
+separate choices that use the same key.
+
+The popup also has a manual **VirusTotal URL scanner**. Paste a link and press **Scan URL with
+VirusTotal** to check its report using your saved key; this works without turning on automatic
+VirusTotal checks. The pasted URL, including its query string, goes to VirusTotal, so remove any
+private tokens from it before scanning. Automatic download URL checks strip the query, fragment
+and URL credentials before the lookup; they run for public HTTP(S) downloads when enabled,
+including downloads that otherwise look clean. Very long or local addresses are skipped.
 
 <p align="center">
   <a href="docs/screenshots/04-download-review-suspicious.webp">
@@ -821,8 +868,12 @@ feeds. WardenOne can send the Do Not Track and Global Privacy Control signals to
 exist to track get treated more strictly than normal cross-site services, since there's no login
 or checkout on them to protect.
 
-All the filtering happens on your device. WardenOne never sends your browsing to a server to ask if
-a request is OK.
+It can also warn when a page posts to an unblocked third-party logging endpoint. A separate opt-in
+replaces Facebook, X, Instagram and TikTok embeds with click-to-load placeholders.
+
+Tracker and ad filtering here uses rules on your device. Optional reputation providers can receive
+page or download addresses when their separate switches are on; the [privacy policy](PRIVACY.md)
+explains each lookup.
 
 ## First-party Tracker Protection
 
@@ -847,6 +898,9 @@ stop them sticking around at all. It's careful around embedded frames and script
 because sign-ins depend on them. Domains that only exist for measurement get handled more strictly
 though.
 
+It can clear local storage in known tracker frames, so those trackers cannot simply restore an ID
+after their cookie is removed.
+
 When an embedded frame uses the Storage Access API to ask for its cookies you can see who's asking.
 Known trackers get refused. Requests that are invisible or happen without you doing anything get
 flagged. There's a separate opt-in that blocks every cross-site storage request. I left that out of
@@ -861,6 +915,10 @@ catches tracking parameters a page sticks straight into the address bar with `hi
 `replaceState`. There's no click and no navigation there for a normal link cleaner to notice.
 Link-click pings and the address cleaner have separate switches in the popup, and neither one
 changes where a normal link or form goes.
+
+Other optional link controls warn when a link hides a destination in a redirect parameter or behind
+a shortener. They still let you follow it. De-AMP can take you from Google's AMP copy to the
+original article.
 
 **Before**
 
@@ -989,6 +1047,12 @@ gives away roughly how new your GPU is. WebCodecs support is watched, not change
 capability probes gets logged separately from the shield, so noticing fingerprinting and changing
 the answers stay two different things.
 
+Fingerprint probe detection has its own switch. It notices canvas, audio, WebGL, font, layout and
+device probing without changing the answers.
+
+A separate opt-in can block known fraud and bot-check scripts that fingerprint you. Banks and shops
+also use those scripts to approve sign-ins and orders, so this one can break those flows.
+
 **Where it runs.** The noise changes the JavaScript environment it runs in (the realm), and a page
 has more than one. Every frame it embeds gets a fresh one. So the same noise runs in every frame as
 well as the page. Same-origin frames (`about:blank`, `srcdoc`, an `about:blank` window the page
@@ -1094,6 +1158,10 @@ Each notice comes with what it means and how long it stays on screen, and you ca
 it again. Muting a notice never turns off the protection behind it. That's why Silent mode is just
 a display thing and doesn't make you any less protected.
 
+You can also choose which notices make a sound, set their volume and position, and keep the local
+notice history for a day, a week, a month or until you clear it. Repeated notices can be grouped,
+and an optional unread count can appear on the toolbar icon.
+
 <p align="center">
   <a href="docs/screenshots/12-notification-centre.webp">
     <img src="docs/screenshots/12-notification-centre.webp" alt="WardenOne Notification Centre showing its local notice record and user-controlled preferences" width="900">
@@ -1111,6 +1179,9 @@ It checks the engines, registrations, lists and page components that should be t
 there, and that they respond. A saved setting isn't the same as a running protection. If
 something's failed you see the failure, not a nice green state with the problem hiding underneath.
 
+For support, **Prepare diagnostics** makes a local report of aggregate counts and states. You can
+preview it before downloading; it omits sites, browsing history, API keys and extension names.
+
 The Blocklist section shows two dates for each feed. When WardenOne last downloaded it, and the
 date the publisher put in it. Open **Publisher dates** to see them one by one. A publisher date
 over 30 days old gets flagged even if the download worked, and a feed without a reliable date says
@@ -1125,11 +1196,11 @@ a vetted replacement if one's needed. The [September 2026 source review](docs/fe
 covers the four feeds with older dates (without removing them).
 
 <p align="center">
-  <a href="docs/screenshots/02-protection-health.webp">
-    <img src="docs/screenshots/02-protection-health.webp" alt="Protection Health expanded in the popup, showing switched-on shields, recent blocks and list freshness" width="520">
+  <a href="docs/screenshots/02-popup-current-site-health.webp">
+    <img src="docs/screenshots/02-popup-current-site-health.webp" alt="Current popup with the github.com site card expanded to show page-specific tracker and ad counts above the Protections on health summary" width="421">
   </a>
 </p>
-<p align="center"><em>Switched-on shields, recent blocks and list freshness. The 105 switches are kept separate from the 108 protections overall.</em></p>
+<p align="center"><em>The current-site card expanded, with the Protection Health summary below. The zero counters describe this page in Brave, not the 108 protections overall.</em></p>
 
 ## Privacy Self-Test
 
@@ -1198,6 +1269,20 @@ Verify & Repair
         ↓
 Test again
 ```
+
+## Settings and popup layout
+
+Open the full Settings page from the gear in the popup or your browser's extension options. It
+groups the same protection switches by what they do and lets you search their names and explanations.
+Favorites, recently changed settings, site exceptions, notification choices, backup and clean-up
+controls are there too. The overview shows what differs from Recommended and which enabled settings
+may affect site compatibility. You can choose a compact or comfortable Settings layout and show
+the popup's current-site card as one line or with counts.
+
+Use **Arrange sections** from the popup's top bar or **Settings → Look & reading → Popup → Section order** to
+put the popup's sections in your preferred order. Drag them, use the arrow buttons, or reset to the
+original order. The order is shared between the popup and Settings; rearranging does not change any
+protection switches.
 
 ## Per-site control
 
@@ -1313,6 +1398,9 @@ third-party script hosts, or filter known fingerprinting scripts. Lockdown and S
 modes because "this page won't run any scripts" and "untrusted third-party scripts get limited"
 are really different promises.
 
+Script drift guard separately remembers the hash of a third-party script at a URL and warns when
+that URL later serves changed code with new behaviour or outbound hosts. It is on by default.
+
 <p align="center">
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
 </p>
@@ -1344,6 +1432,10 @@ Twitch stitches ads straight into live streams, so normal request blocking can f
 leave it looping. Instead WardenOne asks Twitch for another clean stream session (signed by Twitch
 itself) and keeps the video sequence continuous while it switches over. Display and
 picture-in-picture ads get declined before they load.
+
+Steadier Twitch playback is a separate comfort switch. It keeps a few seconds buffered through ad
+breaks and network hiccups, so the stream may sit a little further behind live. It turns Twitch's
+Low Latency mode off unless you chose that mode yourself.
 
 No third-party proxy ever touches the video. If Twitch doesn't offer a usable clean session the ad
 just plays, instead of the player freezing or looping behind a cover. That's on purpose. A stream
@@ -1406,6 +1498,9 @@ Point at a sticky bar, a leftover consent box, a sidebar, a floating video, what
 it. It's remembered for that site and saved locally the same way as your own cosmetic rules.
 `Ctrl+Z` can undo a few removals even after the tool closes. And if you select something big it
 asks first (mouse or keyboard).
+
+The Hidden elements page lists saved removals so you can bring back one item without clearing the
+others.
 
 <p align="center">
   <a href="docs/screenshots/13-element-zapper.webp">
@@ -1495,13 +1590,17 @@ you.
 ## Forget Me & Logins
 
 Clears a site's cookies and storage after you close its last tab (except allowlisted sites).
-There's a one-click button to clear them right now too.
+There's a one-click button to clear them right now too. You can separately choose to clear that
+site's browser history when Forget Me runs.
 
 ## Privacy Cleaner
 
 Pick exactly what to clear and over what time range. Cache, consent and tracking cookies, all
 sign-ins, history, download history, local storage, service workers, saved form data, or camera,
 mic and location permissions.
+
+Settings also lets you inspect and erase WardenOne's own saved records and site exceptions, with a
+preview of what the reset will remove.
 
 ## Settings Backup
 
@@ -1514,6 +1613,10 @@ somewhere else.
 Puts inactive tabs to sleep, with Gentle, Balanced, Aggressive or Emergency profiles. You can keep
 pinned tabs, tabs playing audio and tabs with forms, logins or payments awake. It can
 find duplicate and zombie tabs too, and free up memory whenever you ask.
+
+Tab Limit is separate: when opening a tab takes you over your chosen limit, it can sleep an older
+unused tab or close one if you choose the more aggressive mode. You can choose whether a close
+shows a notice and set the minimum idle time before a tab can be slept.
 
 From the right-click menu you can put a tab to sleep straight away, or mark a site never-sleep.
 The popup's Never-sleep sites control also lets you add a domain or the current site and remove
@@ -1574,9 +1677,11 @@ while you're browsing.
 
 ## Twitch Local Rewind
 
-Lets you scrub back through a live stream or jump back to when you joined. VOD Rewind does the
-same for recorded streams. These are just comfort features and they're separate from the ad and
-security engines.
+Local DVR lets you scrub back through a live stream from when you opened the tab. It keeps a buffer
+in your computer's memory and is off by default. The separate **Watch from earlier** button opens
+the current broadcast's VOD in Twitch's player, so you can jump to before you joined when the
+streamer saves past broadcasts. It uses no local recording. Both are comfort features, separate
+from the ad and security engines.
 
 ## Adult-site Arrival Screen
 
@@ -1616,7 +1721,7 @@ In short:
 - **Open source.** The code, the pages, the tests and the bundled rule data are all here in this repo.
 - **Local.** Your activity, settings, learned tracker evidence, file analysis and extension-ID matching all stay on your device.
 - **Secrets stay secret.** No login token or password ever gets stored, and none gets sent anywhere except the site it came from. The only place a token moves at all is Twitch ad blocking. It sends the Twitch page's own `Authorization` header back to `gql.twitch.tv` so the playback request gets accepted. It's read from the page, never written down, and never leaves Twitch.
-- **Outside checks only happen when you ask.** A domain, URL, extension ID, hash or k-anonymous prefix only leaves your device for an optional check you turned on or asked for. The one exception is the network filtering self-test, which loads a favicon from some named adult and malware-test domains to see what your network blocks. That's the whole point of it. It says so on the page and only your click starts it.
+- **Outside checks are disclosed.** Optional reputation switches can send page or download addresses automatically while enabled; manual scans send what you ask them to check. Public rule updates and the browser-release check also contact their named endpoints. The network filtering self-test loads favicons from named adult and malware-test domains only when you start it. The [privacy policy](PRIVACY.md) lists the requests and what they send.
 - **Files never get uploaded.** File Shield's VirusTotal button sends only the SHA-256, only when you press it, and only with your own key.
 - **Updates aren't telemetry.** Rule updates just download public list files and say nothing about your browsing. If one fails the old copy stays.
 
