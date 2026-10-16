@@ -43,7 +43,15 @@ the page you're looking at. And when it blocks something it shows you why.
 
 **Inspect it for yourself:** [Privacy policy](PRIVACY.md) · [Permissions explained](permissions.html) · [Security policy](SECURITY.md) · [Source](https://github.com/iri-dev/WardenOne) · [Licence](LICENSE)
 
-## What's inside
+<p align="center">
+  <a href="docs/screenshots/01-popup-current-overview.webp">
+    <img src="docs/screenshots/01-popup-current-overview.webp" alt="Current WardenOne popup with Settings and Arrange buttons, master switch, recommended protections, site summary, protection status and search" width="620">
+  </a>
+</p>
+<p align="center"><em>The main popup. Master switch, current-site summary, protection health and search. Settings and section arrangement are in the top-right. Click any image to see it full size.</em></p>
+
+<details>
+<summary><strong>Explore the features</strong></summary>
 
 - **[Security](#security):** scam and phishing warnings, password and session guards, Download Shield, File Shield, and checks on your other extensions.
 - **[Privacy](#privacy--anti-tracking):** tracker and cookie controls, link cleaning, IP-logger protection, and optional anti-fingerprinting.
@@ -52,15 +60,10 @@ the page you're looking at. And when it blocks something it shows you why.
 - **[Tools and comfort](#tools-performance-and-comfort):** Memory Shield, EyeShield, keyboard and right-click tools, and optional Resource Saver controls to pause GIFs, stop muted video previews, or disable WebGL on selected sites or everywhere except allowed sites.
 - **[Settings and popup layout](#settings-and-popup-layout):** a separate searchable Settings page for switches, site exceptions, notifications, backup, and rearranging the popup's sections.
 
-These popup screenshots show the current layout. Some feature screenshots farther down were taken
-from earlier builds and may place controls differently.
+The popup and Settings captures use the current build. Some other feature screenshots come from
+earlier builds and may place controls differently.
 
-<p align="center">
-  <a href="docs/screenshots/01-popup-current-overview.webp">
-    <img src="docs/screenshots/01-popup-current-overview.webp" alt="Current WardenOne popup with Settings and Arrange buttons, master switch, recommended protections, site summary, protection status and search" width="453">
-  </a>
-</p>
-<p align="center"><em>The current popup in Brave. The gear opens Settings; the arrows open Arrange sections. The site card reflects this page, and Brave Shields may block requests first. Click the image to see it full size.</em></p>
+</details>
 
 # Quick install
 
@@ -512,6 +515,9 @@ Clean downloads straight from a publisher's own installer host can go through qu
 cloud and CDN hosts don't get trusted just for being big. A disguised file or a known-malware hash
 beats a legit-looking publisher every time.
 
+<details>
+<summary><strong>Optional reputation providers, URL-content hashes and the URL scanner</strong></summary>
+
 If you want more you can turn on extra lookups. Each provider switch is off by default and can be
 enabled separately. Most need your own API key; OpenPhish uses a public feed instead. There's no
 hidden WardenOne reputation server behind any of them.
@@ -544,6 +550,8 @@ VirusTotal checks. The pasted URL, including its query string, goes to VirusTota
 private tokens from it before scanning. Automatic download URL checks strip the query, fragment
 and URL credentials before the lookup; they run for public HTTP(S) downloads when enabled,
 including downloads that otherwise look clean. Very long or local addresses are skipped.
+
+</details>
 
 <p align="center">
   <a href="docs/screenshots/04-download-review-suspicious.webp">
@@ -907,6 +915,13 @@ flagged. There's a separate opt-in that blocks every cross-site storage request.
 both Recommended and Maximum Privacy on purpose because it will break some embedded logins and
 checkouts.
 
+<p align="center">
+  <a href="docs/screenshots/15-settings-privacy.webp">
+    <img src="docs/screenshots/15-settings-privacy.webp" alt="Current Settings page showing complete tracking, cookie and storage controls" width="900">
+  </a>
+</p>
+<p align="center"><em>Tracker, cookie and storage controls in the full Settings page.</em></p>
+
 ## Link hygiene
 
 When you copy a link the known tracking parameters and redirect wrappers get stripped off.
@@ -1053,6 +1068,13 @@ device probing without changing the answers.
 A separate opt-in can block known fraud and bot-check scripts that fingerprint you. Banks and shops
 also use those scripts to approve sign-ins and orders, so this one can break those flows.
 
+<p align="center">
+  <a href="docs/screenshots/15-settings-fingerprinting.webp">
+    <img src="docs/screenshots/15-settings-fingerprinting.webp" alt="Current fingerprinting settings with separate switches for script blocking, probe detection, Client Hints, noise and bot-check scripts" width="900">
+  </a>
+</p>
+<p align="center"><em>Probe detection, script blocking and optional fingerprint noise have separate controls.</em></p>
+
 **Where it runs.** The noise changes the JavaScript environment it runs in (the realm), and a page
 has more than one. Every frame it embeds gets a fresh one. So the same noise runs in every frame as
 well as the page. Same-origin frames (`about:blank`, `srcdoc`, an `about:blank` window the page
@@ -1197,10 +1219,10 @@ covers the four feeds with older dates (without removing them).
 
 <p align="center">
   <a href="docs/screenshots/02-popup-current-site-health.webp">
-    <img src="docs/screenshots/02-popup-current-site-health.webp" alt="Current popup with the github.com site card expanded to show page-specific tracker and ad counts above the Protections on health summary" width="421">
+    <img src="docs/screenshots/02-popup-current-site-health.webp" alt="Protection Health expanded with switched-on shields, page confirmation, list freshness and diagnostics" width="520">
   </a>
 </p>
-<p align="center"><em>The current-site card expanded, with the Protection Health summary below. The zero counters describe this page in Brave, not the 108 protections overall.</em></p>
+<p align="center"><em>Protection Health expanded in a fresh profile. Built-in rules are active, and the list-download status stays visible.</em></p>
 
 ## Privacy Self-Test
 
@@ -1279,10 +1301,24 @@ controls are there too. The overview shows what differs from Recommended and whi
 may affect site compatibility. You can choose a compact or comfortable Settings layout and show
 the popup's current-site card as one line or with counts.
 
+<p align="center">
+  <a href="docs/screenshots/15-settings-overview.webp">
+    <img src="docs/screenshots/15-settings-overview.webp" alt="Current Settings overview with search, presets, protection status and all setting categories" width="900">
+  </a>
+</p>
+<p align="center"><em>Full Settings: search, presets, protection status and grouped controls.</em></p>
+
 Use **Arrange sections** from the popup's top bar or **Settings → Look & reading → Popup → Section order** to
 put the popup's sections in your preferred order. Drag them, use the arrow buttons, or reset to the
 original order. The order is shared between the popup and Settings; rearranging does not change any
 protection switches.
+
+<p align="center">
+  <a href="docs/screenshots/15-settings-arrange.webp">
+    <img src="docs/screenshots/15-settings-arrange.webp" alt="Arrange sections in Settings showing the complete popup section list, drag handles, arrow buttons and original-order reset" width="900">
+  </a>
+</p>
+<p align="center"><em>Reorder whole popup sections by dragging or using the arrows.</em></p>
 
 ## Per-site control
 
@@ -1657,6 +1693,13 @@ image download.
 The advanced WebGL saver can disable hardware-accelerated 3D graphics on selected sites or
 everywhere except an allowlist. It is off by default because games, maps, CAD tools and 3D viewers
 can stop working without WebGL. The popup has a current-site action; Settings manages both lists.
+
+<p align="center">
+  <a href="docs/screenshots/15-resource-saver.webp">
+    <img src="docs/screenshots/15-resource-saver.webp" alt="Current Resource Saver controls for autoplay, background tabs, prefetch, lazy loading, Ambient Mode, video previews, GIF pausing and WebGL" width="900">
+  </a>
+</p>
+<p align="center"><em>Resource Saver, including GIF pausing, preview controls and the WebGL mode.</em></p>
 
 ## EyeShield
 
