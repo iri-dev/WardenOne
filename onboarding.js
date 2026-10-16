@@ -4,6 +4,95 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
+/* Shared Settings descriptions keep the switch guide aligned with the shipped UI. */
+function onboardingFeatureGroups(data) {
+  const destinations = {
+    'Script Shield': ['Script Shield', 'security'],
+    'Redirects & popups': ['Pop-ups, redirects and page clutter', 'popups'],
+    'IP protection': ['IP protection, HTTPS and certificates', 'network'],
+    'Download Shield': ['Download Shield and optional reputation checks', 'downloads'],
+    Privacy: ['Tracking, cookies and fingerprinting', 'privacy'],
+    AdShield: ['AdShield and search cleanup', 'ads'],
+    'Memory Shield': ['Memory Shield and Resource Saver', 'speed'],
+    'Forget Me & Logins': ['Forget Me and logins', 'cleanup'],
+    'Media Shield': ['Camera, microphone, location and media', 'media'],
+    'Adult-site safety': ['Adult-site safety and SafeSearch', 'security'],
+    'Advanced detection (catches rotating/custom domains)': ['Site, script and network threat detection', 'security'],
+    'SessionShield — login & session protection': ['Sessions, forms, clipboard and scams', 'signin'],
+    'Blocklist (auto-updating)': ['Threat blocklists and cryptomining', 'lists'],
+    Interface: ['Page notices, badges and Element Zapper', 'look'],
+    'Privacy cleaner': ['Extension and permission monitoring', 'security'],
+  };
+  const seen = new Set();
+  const defaults = Object.assign({}, data.defaults, ...data.carried.map((extra) => extra.defaults || {}));
+  const manual = new Set(['elementZapper', ...data.carried.flatMap((extra) => extra.rows.map((row) => row.key))]);
+  const descriptions = {
+    memoryNeverPinned: 'Leave pinned tabs awake when Memory Shield chooses inactive tabs to sleep.',
+    memoryNeverAudio: 'Keep tabs playing audio awake, including music or radio in the background.',
+    memoryNeverForms: 'Keep tabs with unsaved form input awake so sleeping a tab does not discard your work.',
+    memoryNeverPayment: 'Keep recognised login and payment pages awake while you use them.',
+  };
+  const groups = data.sections.concat(data.carried).map((section, index) => {
+    const [title, page] = destinations[section.title] || (section.title ? [section.title, 'overview'] : ['Player tools', 'ads']);
+    const items = section.rows.filter((row) => !seen.has(row.key) && seen.add(row.key)).map((row) => ({
+      id: row.key, keys: [row.key], name: row.name, desc: row.desc || descriptions[row.key],
+      tag: manual.has(row.key) ? 'On demand' + (typeof defaults[row.key] === 'boolean' ? '; default: ' + (defaults[row.key] ? 'on' : 'off') : '') : typeof defaults[row.key] === 'boolean'
+        ? 'Default: ' + (defaults[row.key] ? 'on' : 'off') : 'Choose a mode',
+      links: [['Find in Settings', 'settings.html#page=' + page + '&inspect=' + encodeURIComponent(row.key)]],
+    }));
+    return { id: 'controls-' + index, title, intro: 'Each item links to its controls and explanation in Settings.', items };
+  });
+  const tool = (id, name, desc, links, keys = [], tag = 'On demand') => ({ id, name, desc, links, keys, tag });
+  groups.push({ id: 'watch-only', title: 'Watch-only activity', intro: 'These record activity; a record is not proof that a request was blocked.', items: [
+    tool('logThirdPartyBeacons', 'Background reports', 'Records background beacon attempts and the destination seen by WardenOne. Review them in Activity.', [['Activity Centre', 'history.html']], ['logThirdPartyBeacons'], 'Watch only'),
+    tool('deviceAccessGuard', 'Hardware and file access', 'Records browser requests for hardware or files that WardenOne can observe. Browser permission prompts still make the access decision.', [['Activity Centre', 'history.html']], ['deviceAccessGuard'], 'Watch only'),
+    tool('capabilityGuard', 'Browser capabilities', 'Records observed clipboard, fullscreen, keyboard-lock and other powerful browser API use. It does not block these calls by itself.', [['Activity Centre', 'history.html']], ['capabilityGuard'], 'Watch only'),
+  ] });
+  groups.push({ id: 'page-tools', title: 'Page tools and streaming', intro: 'Actions you start yourself, plus player-specific controls.', items: [
+    tool('zapper-workflow', 'Hide an element and bring it back', 'Start Element Zapper from the popup or right-click menu, check the outline, and click. Keep removing items, then press Done or Esc. Ctrl+Z undoes removals on the open page, even after the tool closes. Saved removals stay hidden after reload; Hidden elements restores them individually.', [['Hidden elements', 'hidden-elements.html'], ['Site exceptions', 'settings.html#page=sites']]),
+    tool('streaming', 'YouTube, Twitch and Spotify AdShield', 'AdShield has player-specific handling for YouTube and Twitch, and handles Spotify audio ads in the web player. These are compatibility workarounds: sites can change their players, and blocking may be incomplete.', [['Ads and player controls', 'settings.html#page=ads']]),
+    tool('right-click', 'Right-click tools', 'The WardenOne menu includes Element Zapper, Copy clean link, Check this link, Check selected text, image and frame inspection, Sleep this tab, Never sleep this site, Close this tab and Block this site. Sleep and close check for unsaved forms and active camera or microphone use.', [['Tools and shortcut guide', 'settings.html#page=shortcuts']]),
+    tool('palette', 'Command Palette and keyboard shortcuts', 'Open the palette, type an action and choose it: scan, pause here, clean the address, hide an element, open a tool or change settings. Alt+Shift+O is suggested for the palette and Alt+Shift+U for cleaning the address; the browser may leave a shortcut unassigned. Assign or change keys in your browser.', [['Keyboard shortcuts', 'settings.html#page=shortcuts']]),
+  ] });
+  groups.push({ id: 'settings-tools', title: 'Settings, layout and site choices', intro: 'Find controls without scrolling through the popup.', items: [
+    tool('settings-navigation', 'Settings search, favorites and change history', 'Search names and descriptions, star favorites, review recent changes, compare with Recommended, and inspect enabled choices that may affect compatibility.', [['Settings overview', 'settings.html#page=overview'], ['Favorites', 'settings.html#page=favorites'], ['Recent changes', 'settings.html#page=recent'], ['Changed from Recommended', 'settings.html#page=changed'], ['May affect compatibility', 'settings.html#page=compat']]),
+    tool('arrangement', 'Rearrange popup sections', 'Move sections into the order you use them. Search still finds controls, and rearranging does not change any protection switch.', [['Arrange sections', 'settings.html#page=arrange']]),
+    tool('appearance', 'Themes, density and site card', 'Choose Light, Dark or System for WardenOne pages. Settings can be Compact or Comfortable. The popup site card offers a one-line summary or separate tracker, ad and other counts; open it for the Site Dashboard.', [['Look and reading', 'settings.html#page=look']], ['theme', 'density', 'siteCard'], 'Appearance'),
+    tool('site-dashboard', 'Site Dashboard and per-site control', 'Open the current site card to review its activity, pause protection, or override individual controls for that site. Settings lists pauses, allowlists, blocked and trusted sites, hidden elements, never-sleep sites, WebGL exceptions and firewall rules.', [['Sites and exceptions', 'settings.html#page=sites']]),
+    tool('sleep-options', 'Sleep profiles, tab limits and never-sleep sites', 'Choose Gentle, Balanced, Aggressive or Emergency timing; set the maximum tab count and minimum inactive time. Keep selected sites awake. Audio, pinned tabs, unsaved forms and login or payment pages have their own exceptions; active camera/microphone and supported video sites are protected automatically.', [['Speed and memory', 'settings.html#page=speed']], ['memoryMode', 'tabLimitMax', 'tabLimitMinIdleMinutes'], 'Configurable'),
+    tool('webgl', 'WebGL controls and site exceptions', 'Leave WebGL Off, disable it on selected sites, or disable it everywhere except allowed sites. Add the current site or manage blocked and allowed hosts. Off by default: games, maps, 3D viewers and some web apps can break without WebGL.', [['Speed and memory', 'settings.html#page=speed'], ['WebGL site lists', 'settings.html#page=sites']], ['webglSaverMode'], 'Default: off'),
+    tool('eyeshield-profiles', 'EyeShield adjustments and site profiles', 'Choose Normal, Light, Dark or Ultra, then adjust brightness, contrast, saturation, warmth and grayscale. Apply changes globally or save a profile for one site; sites can inherit the global choices or turn EyeShield off. EyeShield starts off.', [['Look and reading', 'settings.html#page=look']], ['eyeshield', 'eyeShieldBrightness', 'eyeShieldContrast', 'eyeShieldSaturation', 'eyeShieldWarmth', 'eyeShieldGrayscale'], 'Default: off'),
+  ] });
+  groups.push({ id: 'activity-tools', title: 'Activity, diagnostics and network tools', intro: 'See the evidence behind a warning or a block.', items: [
+    tool('activity', 'Activity Centre', 'Review blocked, warned-about and observed events, their reasons, and the site involved. Unknown or observed activity is not labelled as a confirmed block.', [['Activity Centre', 'history.html']]),
+    tool('notifications', 'Notification Centre and display choices', 'Review notices, group repeats, snooze or mute types, choose where cards appear and how long they stay, set history retention and optionally show an unread toolbar count. Silent Mode hides non-critical notices while protection continues.', [['Notification Centre', 'notifications.html'], ['Notice settings', 'settings.html#page=look']], ['noticeDuration', 'noticePosition', 'noticeGroup', 'noticeBadge', 'noticeRetention'], 'Configurable'),
+    tool('notification-sounds', 'Notification sounds', 'Sounds are off by default. Choose which severities make a sound, set the volume, and customise individual notice types in Notification Centre.', [['Notification Centre', 'notifications.html']], ['noticeSound', 'noticeSoundMode', 'noticeVolume'], 'Default: off'),
+    tool('health', 'Protection Health and diagnostics', 'The popup separates switches enabled in storage from evidence that guards reached the current page. Inspect list status, permission problems and diagnostics; preview a diagnostic export before sharing it.', [['Help and troubleshooting', 'settings.html#page=help']]),
+    tool('repair', 'Verify and Repair', 'Run Verify from the popup to check installation and guard state. Repair reconciles WardenOne with saved choices and refreshes guards where possible. Reload pages when requested; a successful repair is not proof that every site threat will be stopped.', [['Help and troubleshooting', 'settings.html#page=help']]),
+    tool('privacy-self-test', 'Privacy Self-Test', 'Run controlled checks for exposed browser surfaces and compare protected measurements with clean ones. It tests the current browser environment and reports limits; it does not certify anonymity.', [['Run the Self-Test', 'privacy-test.html']]),
+    tool('network-logger', 'Network Logger', 'Open the logger for the active tab to inspect requests, their types and blocking decisions. Filter the view, inspect an entry and use the evidence to refine your own rules.', [['Network Logger', 'logger.html']]),
+    tool('site-firewall', 'Site Firewall', 'Manage per-site resource rules by destination and request type. Advanced rules can break pages, so keep changes narrow and remove a rule if it blocks something you need.', [['Site Firewall', 'firewall.html']]),
+    tool('custom-rules', 'My Rules and Custom Lists', 'Add your own network or cosmetic rules, subscribe to custom filter lists, and review list freshness and source failures. A failed refresh does not automatically remove a previously downloaded list.', [['Blocklists and filters', 'settings.html#page=lists']]),
+  ] });
+  groups.push({ id: 'file-extension-tools', title: 'Files, extensions, providers and updates', intro: 'Local checks and optional outside lookups have different boundaries.', items: [
+    tool('file-shield', 'File Shield', 'Choose or drop local files or a folder to inspect formats, executable structures, scripts, shortcuts, archives, documents and SHA-256 hashes. Files are not opened, executed or uploaded. An optional VirusTotal button sends only a hash. Findings do not prove a file is safe; keep your antivirus.', [['Open File Shield', 'file-shield.html']]),
+    tool('download-review', 'Download Review', 'Known-dangerous browser downloads are blocked; suspicious ones can be held for an A–F review explaining the source, name, type and reputation evidence. Download Shield cannot freely read the saved file; use File Shield for its actual bytes.', [['Download settings', 'settings.html#page=downloads']]),
+    tool('extension-security', 'Extension Security Centre and pre-install checks', 'Review installed extensions, permissions and reputation clues, inspect changes and startup findings, or check an extension ID or Store link before installation. WardenOne reports evidence and cannot guarantee that an extension is harmless.', [['Extension Security Centre', 'extensions.html']]),
+    tool('permission-scanner', 'Site Permission Scanner', 'Use the popup scan to review remembered camera, microphone, location and other site permissions. Browser settings remain the place to revoke permissions you no longer want.', [['Permissions guide', 'permissions.html'], ['Permissions and keys', 'settings.html#page=access']]),
+    tool('providers', 'Seven optional reputation providers', 'Google Safe Browsing, VirusTotal, URLhaus, AbuseIPDB, OpenPhish, PhishTank and WhoisXML add different checks. Most need your key; OpenPhish downloads a public feed for local matching. WhoisXML has three independently enabled checks. Automatic providers start only when enabled and may receive addresses or domains; review their data disclosures.', [['Providers, keys and disclosures', 'api-keys.html'], ['Permissions and keys', 'settings.html#page=access']], [], 'Opt-in'),
+    tool('url-scanner', 'Manual VirusTotal URL scanner', 'Paste a URL in the popup and start its lookup using your own key. This can work while automatic VirusTotal checks are off. The pasted URL, including its query string, is sent to VirusTotal; remove secrets or private tokens before scanning.', [['Provider guide', 'api-keys.html']]),
+    tool('updates', 'Browser Update Guardian and WardenOne build notices', 'The popup can warn about an outdated browser. Official GitHub ZIP builds can compare their packaged commit with the latest complete build; Settings About explains the result, Check again and manual update steps. The notice does not install an update for you.', [['About and build status', 'settings.html#page=about']]),
+  ] });
+  groups.push({ id: 'data-tools', title: 'Privacy cleanup, backup and help', intro: 'Your own data and configuration stay under your control.', items: [
+    tool('privacy-cleaner', 'Privacy Cleaner and WardenOne data erasure', 'Choose which browser data to clear and the time range. Review consent cookies separately from clearing every sign-in. You can also erase WardenOne activity, notices, caches or other saved data from Settings.', [['Clean-up and backup', 'settings.html#page=cleanup']]),
+    tool('backup', 'Settings backup and import', 'Export your settings and lists, preview an import and restore supported choices. API keys are excluded from backups. You can also reset selected settings or return to defaults.', [['Clean-up and backup', 'settings.html#page=cleanup']]),
+    tool('session-tools', 'Session Security Grade and Emergency Logout', 'The popup grades observed session risks and offers Emergency Logout to clear the relevant session data when you choose it. A good grade does not guarantee a site or account is safe.', [['Sign-in and sessions', 'settings.html#page=signin']]),
+    tool('network-guide', 'Network and DNS guide', 'Read how DNS and device-level tools can extend protection beyond this browser. WardenOne itself does not install a VPN or protect every app on your network.', [['Network and DNS guide', 'network.html']]),
+    tool('help', 'Help, privacy, source and credits', 'Report a problem or idea, read the privacy and permissions explanations, inspect the open-source project, and see credits and licences. No WardenOne account is needed and WardenOne sends no telemetry.', [['Help and feedback', 'settings.html#page=help'], ['About, privacy and credits', 'settings.html#page=about'], ['Permissions guide', 'permissions.html']]),
+  ] });
+  return groups.filter((group) => group.items.length);
+}
+
 (function () {
   'use strict';
 
@@ -37,7 +126,7 @@
     welcome: 'Takes about a minute. You can change anything later.',
     pin: 'Pinning is optional, but it keeps WardenOne one click away.',
     protect: 'Recommended is the safe default. Tweak any switch later from the popup.',
-    explore: 'That\'s everything. Hit Finish whenever you\'re ready.',
+    explore: 'Explore the guide whenever you like, or finish setup now.',
     done: 'One last step — then you\'re free to go.',
     closed: 'Setup complete. It\'s safe to close this tab.',
   };
@@ -232,7 +321,7 @@
     }
     await storageSet({ wardenone_onboarding_recommended_at: Date.now() });
     markApplyDone();
-    setStatus('Recommended protection is on. Pin WardenOne next to keep controls one click away.', 'good');
+    setStatus('Recommended protection applied. Existing advanced choices are preserved; review them in Settings.', 'good');
   }
 
   // ---- apply maximum privacy (opt-in, superset of recommended) -------------
@@ -337,7 +426,7 @@
     if (modeNote) {
       modeNote.textContent = isSilent
         ? 'Silent Mode is on. Protection keeps running; non-critical popups, badges, and notifications stay hidden.'
-        : 'Login compatibility stays on and your saved keys, allowlists, and trusted download sites are left untouched. You can change any of this later from the popup.';
+        : 'Your saved keys, allowlists, trusted download sites and other choices are preserved. Review or change them in Settings whenever you need to.';
     }
   }
 
@@ -384,8 +473,84 @@
     showDone();
   }
 
+  function renderFeatureGuide() {
+    const host = $('feature-groups');
+    if (!host || typeof SETTINGS_DATA !== 'object') return;
+    const data = SETTINGS_DATA;
+    const total = data.shieldKeys.length + data.watchOnlyKeys.length;
+    for (const [id, value] of [['onboarding-total', total], ['onboarding-total-stat', total],
+      ['onboarding-switchable', data.shieldKeys.length], ['onboarding-watch-only', data.watchOnlyKeys.length]]) {
+      if ($(id)) $(id).textContent = String(value);
+    }
+    const entries = [];
+    const node = (tag, className, text) => {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      if (text) element.textContent = text;
+      return element;
+    };
+    for (const group of onboardingFeatureGroups(data)) {
+      const details = node('details', 'guide-group');
+      details.dataset.guideGroup = group.id;
+      const summary = node('summary', '', group.title);
+      summary.appendChild(node('small', '', group.intro));
+      details.appendChild(summary);
+      const list = node('ul', 'guide-list');
+      const rows = [];
+      for (const item of group.items) {
+        const row = node('li', 'guide-item');
+        row.dataset.guideFeature = item.id;
+        const title = node('div', 'guide-item-title', item.name);
+        if (item.tag) title.appendChild(node('span', 'guide-tag', item.tag));
+        row.appendChild(title);
+        row.appendChild(node('p', '', item.desc));
+        const links = node('div', 'guide-links');
+        for (const [label, href] of item.links) {
+          const link = node('a', '', label);
+          link.setAttribute('href', href);
+          links.appendChild(link);
+        }
+        row.appendChild(links);
+        list.appendChild(row);
+        rows.push({ row, text: (group.title + ' ' + item.name + ' ' + item.desc).toLowerCase() });
+      }
+      details.appendChild(list);
+      host.appendChild(details);
+      entries.push({ details, rows, wasOpen: false });
+    }
+    let searching = false;
+    function filterGuide() {
+      const terms = $('feature-search').value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+      if (terms.length && !searching) entries.forEach((entry) => { entry.wasOpen = entry.details.open; });
+      let matches = 0;
+      for (const entry of entries) {
+        let visible = 0;
+        for (const { row, text } of entry.rows) {
+          row.hidden = !terms.every((term) => text.includes(term));
+          if (!row.hidden) visible++;
+        }
+        entry.details.hidden = visible === 0;
+        if (terms.length) entry.details.open = visible > 0;
+        else if (searching) entry.details.open = entry.wasOpen;
+        matches += visible;
+      }
+      searching = terms.length > 0;
+      $('feature-results').textContent = searching
+        ? matches + (matches === 1 ? ' matching feature or control.' : ' matching features and controls.') + (matches ? '' : ' Try a broader word, such as privacy or tabs.')
+        : 'Open a group, or search by a feature name or what it does.';
+    }
+    $('feature-search').addEventListener('input', filterGuide);
+    filterGuide();
+  }
+
   // ---- wiring --------------------------------------------------------------
   function init() {
+    renderFeatureGuide();
+    $('explore-features')?.addEventListener('click', () => {
+      goTo(3);
+      $('feature-catalog').open = true;
+      $('feature-guide').scrollIntoView({ block: 'start' });
+    });
     $('start')?.addEventListener('click', () => goTo(1));
     backBtn?.addEventListener('click', back);
     nextBtn?.addEventListener('click', next);
@@ -430,6 +595,7 @@
     // keyboard: left/right arrows move through the flow
     document.addEventListener('keydown', (e) => {
       if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+      if (e.target?.closest('#feature-guide')) return;
       if (e.key === 'ArrowRight') { e.preventDefault(); next(); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); back(); }
     });

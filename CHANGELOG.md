@@ -24,6 +24,7 @@
 
 ### Changed
 
+- Onboarding now has a searchable, grouped guide covering every protection and popup control, Settings modes and tools, with direct links and fresh-install default labels. Corrected protection and provider totals, download and WebRTC explanations, stronger-preset warnings, and completion messages that previously implied protection was active regardless of the master switch.
 - The README's Element Zapper section now shows the active selection outline and the resulting removal on GitHub's live Actions page, with the tool's confirmation and instructions for hiding and restoring elements.
 - The README now maps every protection and popup control to its documented feature, brings newer controls into the main guide, and corrects the explanation of Twitch's two rewind modes. A separate audit records the full control inventory and the older screenshots.
 - Recaptured the README's popup and Protection Health images directly from the extension at high resolution, with complete panels and no browser borders. Fresh image filenames avoid reusing cached earlier captures. Added current Settings, section arrangement, privacy, fingerprinting and Resource Saver screenshots, and kept the original guide's layout with images beside the descriptions.
