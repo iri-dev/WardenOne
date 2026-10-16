@@ -50,6 +50,7 @@
 
 ### Fixed
 
+- The near-quota browser regression now waits for startup and each settings reconciliation to finish, uses explicit starting choices, and prevents remote feed work from contaminating its rule API measurements.
 - Element Zapper guidance now describes continuous selection, Done and Escape, Undo last, and the page-lifetime Ctrl+Z shortcut.
 - Protection rule reconciliation now merges asynchronously prepared rule changes before writing to the browser, with independent failure fallback and a bounded wait for stalled owners.
 
