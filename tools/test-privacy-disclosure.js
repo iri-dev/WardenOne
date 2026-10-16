@@ -213,12 +213,10 @@ check('the README says where the one token that moves goes', /gql\.twitch\.tv/.t
 check('the README admits the self-test is an exception to "only what you asked"',
   /network filtering self-test/.test(README));
 
-/* 5. Enabled reputation providers. The policy said "the specific URL/domain/hash being
-      evaluated is sent", which reads as something you asked about. In fact a navigation
-      triggers the lookup. Safe Browsing and urlhaus used to get the full path and query;
-      since PRIV-03 every provider gets scheme, host and path, and the policy must say
-      exactly that -- neither the old "full address" nor anything vaguer. */
+/* 5. Enabled reputation providers. Navigation and downloads trigger different lookups.
+      The policy must state when each sends an address and which parts leave the device. */
 const BG_REP = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const DOWNLOAD_REP = fs.readFileSync(path.join(ROOT, 'background-downloads.js'), 'utf8');
 check('a page navigation still drives a reputation lookup on its own',
   /urlReputationLookupUrl\(url, Object\.assign\(\{ context: 'page' \}/.test(BG_REP),
   'if lookups became click-only, this section can be softened -- but only then');
@@ -228,8 +226,9 @@ check('the engine still keeps a whole-address form for its own comparisons',
 check('but what leaves for a provider has no userinfo, query or fragment',
   /function reputationQueryUrl\(url\) \{[\s\S]*?u\.username = '';\s*\n\s*u\.password = '';\s*\n\s*u\.search = '';\s*\n\s*u\.hash = '';/.test(BG_REP),
   'reputationQueryUrl is what decides how much of the address leaves (PRIV-03)');
-check('the policy says lookups happen as you navigate, not when you ask',
-  /as you navigate to them/.test(policy) && /for the whole time it stays enabled/.test(policy));
+check('the policy distinguishes automatic navigation and download lookups',
+  /some happen as you navigate, others\s+when a download begins/.test(policy)
+    && /for the whole time their switches stay enabled/.test(policy));
 check('the policy says providers get scheme, host and path, and no longer the whole address',
   /\*\*scheme, host and path\*\*/.test(policy) && !/receive the \*\*full address\*\*/.test(policy));
 check('and admits the path is kept and why', /path is kept on purpose/.test(policy) && /secret carried \*in the path\*/.test(policy));
@@ -237,6 +236,20 @@ check('and states the 1,500-character provider limit without claiming truncation
   /longer than 1,500 characters are skipped/.test(policy) && !/cut at 1,500 characters/.test(policy));
 check('the policy separates the providers that are held back on ordinary browsing',
   /held back during ordinary browsing/.test(policy));
+check('automatic VirusTotal download URL lookups are disclosed',
+  /cfg\.downloadVirusTotal === true/.test(DOWNLOAD_REP)
+    && /checkVirusTotalUrl\(u\.href, cfg\.downloadVirusTotalKey\)/.test(DOWNLOAD_REP)
+    && /public http\(s\) downloads/.test(policy)
+    && /including downloads that otherwise look clean/.test(policy));
+check('the separate VirusTotal download hash lookup is disclosed',
+  /cfg\.downloadVirusTotalHash !== true/.test(DOWNLOAD_REP)
+    && /VirusTotal URL-content hash lookup/.test(POLICY)
+    && /re-fetch up to 50 MB/.test(POLICY)
+    && /send only that SHA-256/.test(POLICY));
+check('the manual VirusTotal URL scanner discloses its full URL request',
+  /msg\.kind === 'scan-url-virustotal'/.test(BG_REP)
+    && /including any query string, fragment or credentials/.test(policy)
+    && !/virustotal is only used by file shield/.test(policy));
 check('the short version does not present reputation lookups as key-gated only',
   !/opt-in\*\* reputation look-ups that you must\s*\n?\s*switch on and supply your own api key for/.test(policy),
   'OpenPhish needs no key, and the key is not what decides whether your addresses are sent');
@@ -394,7 +407,7 @@ check('the affirmation is a section a reviewer can find, not a buried clause',
 check('the affirmation states the no-advertising limb explicitly',
   /never.{0,40}transferred or used for advertising/.test(policy));
 check('the policy date was refreshed alongside the content',
-  /last updated: october 10, 2026/.test(policy));
+  /last updated: october 16, 2026/.test(policy));
 
 /* M52: "the complete list" has to be complete about what the reader adds themselves, too. A
    subscribed filter list is fetched from a host the reader chose, so it cannot be named -- it has

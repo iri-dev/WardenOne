@@ -137,6 +137,7 @@ function loadDownloadGuard() {
     recentRedirectChainForDownload() {
       return sandbox.redirectForDownload || null;
     },
+    normalizePublicHttpUrl(url) { return String(url || ''); },
     lookupDomainAge: async () => ({ ok: false }),
     safeBrowsingLookupUrl: async () => ({ provider: 'Google Safe Browsing', ok: false, hit: false }),
     checkVirusTotalUrl: async () => ({ provider: 'VirusTotal', ok: false, hit: false }),
@@ -179,6 +180,22 @@ async function main() {
   assert(['D', 'E', 'F'].includes(archive.grade), 'archive lure should be reviewed strongly');
   assert(reasonIncludes(archive, 'Archive named like a crack or keygen'));
   assert(reasonIncludes(archive, 'Archive (contents not visible until opened)'));
+
+  const vtQueries = [];
+  sandbox.checkVirusTotalUrl = async (url) => {
+    vtQueries.push(url);
+    return { provider: 'VirusTotal', ok: false, hit: false };
+  };
+  const enrichExternal = vm.runInContext('enrichDownloadWithExternalReputation', sandbox);
+  const vtInput = 'https://user:secret@files.example/download?token=private#section';
+  const vtRep = guard.scoreDownload(vtInput, '', 'download', 'application/octet-stream', [], '');
+  await enrichExternal(vtRep, vtInput, { downloadVirusTotal: true, downloadVirusTotalKey: 'test-key' });
+  assert.deepStrictEqual(vtQueries, ['https://files.example/download'],
+    'automatic VirusTotal checks must omit URL credentials, query strings and fragments');
+  vtQueries.length = 0;
+  const vtLong = 'https://files.example/' + 'x'.repeat(2100);
+  await enrichExternal(vtRep, vtLong, { downloadVirusTotal: true, downloadVirusTotalKey: 'test-key' });
+  assert.deepStrictEqual(vtQueries, [], 'oversized URLs must be skipped rather than truncated');
 
   // Spotify's Windows installer (SpotifySetup.exe) is served from Spotify's CDN
   // download.scdn.co, NOT spotify.com. It must be recognized as a trusted-publisher

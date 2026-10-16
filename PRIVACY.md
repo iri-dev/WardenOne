@@ -1,6 +1,6 @@
 # WardenOne — Privacy Policy
 
-**Last updated: October 10, 2026**
+**Last updated: October 16, 2026**
 
 WardenOne is a browser security extension that protects you against phishing, malware
 downloads, redirect chains, IP grabbers, trackers, token theft, bad certificates, and
@@ -302,7 +302,7 @@ sends that site's registrable domain — `example.com`, never the full URL, neve
 contents, never what you type — to the public RDAP service at **`rdap.org`**, and uses
 the registration date it returns to warn you before you sign in.
 
-This is the one feature that tells an outside party something about where you browse,
+This optional check tells an outside party something about where you browse,
 which is why it is **off by default** even though it needs no API key and costs nothing.
 rdap.org sees the domain and your IP address, as any site you load would. Answers are
 cached on your device (most recent 100 domains) so the same site is not looked up twice;
@@ -312,7 +312,8 @@ on or off with **Login page age check** in the popup.
 ### 5. Reputation providers (opt-in, off by default, most need your own API key)
 
 WardenOne can optionally check a URL, domain, or file hash against third-party threat
-services **only if you enable that provider**. All of these are **off by default**: Google
+services **only if you enable automatic checks or explicitly start a check with your key**.
+Automatic checks are **off by default** for every provider: Google
 Safe Browsing (`safebrowsing.googleapis.com`), VirusTotal (`www.virustotal.com`), urlhaus
 (`urlhaus-api.abuse.ch`), AbuseIPDB (`api.abuseipdb.com`), PhishTank
 (`checkurl.phishtank.com`), and WhoisXML (`www.whoisxmlapi.com`,
@@ -345,11 +346,10 @@ keep provider keys private, and rotate a key if it was copied into a log or shar
 and [Threat Intelligence request guide](https://threat-intelligence.whoisxmlapi.com/api/documentation/making-requests)
 describe these authentication methods.
 
-**Be clear about what switching one on means.** These are not buttons you press per site.
-Once a provider is enabled, WardenOne asks it about pages **as you navigate to them**, on
-its own, for the whole time it stays enabled. Earlier wording here said "the specific
-URL/domain/hash being evaluated is sent", which was true and still left the wrong
-impression. Precisely:
+**Be clear about what switching one on means.** Automatic checks run without a per-site
+button for the whole time their switches stay enabled: some happen as you navigate, others
+when a download begins. Earlier wording here said "the specific URL/domain/hash being
+evaluated is sent", which was true and still left the wrong impression. Precisely:
 
 - **Google Safe Browsing** and **urlhaus** receive the address of every page you open, as
   **scheme, host and path** — `https://example.com/some/page`. The query string (everything
@@ -374,8 +374,21 @@ impression. Precisely:
   without its query string — and the notice says so when something was cut.
 - **AbuseIPDB** is only consulted when a site is reached by bare IP address, and receives
   that IP.
-- **VirusTotal** is only used by File Shield's button, and receives a SHA-256 file hash,
-  never the file.
+- **VirusTotal URL reputation** receives the address of public HTTP(S) downloads when
+  its switch is on and a key is saved, including downloads that otherwise look clean. The
+  automatic request removes URL credentials, the query string and the fragment; the scheme,
+  host and path remain. Local or private-network addresses, and addresses still longer
+  than 2,000 characters after sanitizing, are skipped.
+- **VirusTotal URL-content hash lookup** has a separate switch. For small risky downloads,
+  WardenOne may re-fetch up to 50 MB from the download address, hash the response locally,
+  and send only that SHA-256 to VirusTotal. It cannot read Chrome's saved file, so the
+  re-fetched bytes may differ. File contents are not uploaded to VirusTotal.
+- The popup's **VirusTotal URL scanner** runs only when you press its button. It sends the
+  URL you pasted, including any query string, fragment or credentials embedded in it, using
+  your saved key. Its automatic switch can remain off. Remove private tokens before using
+  this scanner; local and private-network addresses are refused.
+- **File Shield's VirusTotal button** runs only when you press it and sends a SHA-256 hash
+  of the selected local file, never the file or its name.
 - No request introduces WardenOne. Beyond the address and your own key, a provider receives
   nothing that names the extension or its version — with one exception it demands: Safe
   Browsing's API requires a client name and version in every request, and gets `wardenone`
@@ -383,7 +396,7 @@ impression. Precisely:
   with the exact version, which PhishTank never asked for; it no longer does.
 - **OpenPhish** receives nothing, as described above.
 
-Answers are cached on your device so the same address is not sent twice — under a
+Navigation reputation answers are cached on your device so the same address is not sent twice — under a
 fingerprint of the address rather than the address itself, for between five minutes and
 twelve hours depending on the provider and the answer, so the cache is a lookup table and
 not a list of where you have been. `legal.twitch.tv` is the one address excluded

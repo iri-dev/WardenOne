@@ -505,6 +505,7 @@ checkContentBuild();
 checkCommand('security posture checks', ['tools/check-security-posture.js']);
 checkCommand('README document links', ['tools/check-readme-doc-links.js']);
 checkCommand('README link staging tests', ['tools/test-readme-doc-links.js']);
+checkCommand('README control audit', ['tools/test-readme-control-audit.js']);
 checkCommand('repository hygiene', ['tools/check-repository-hygiene.js']);
 checkCommand('repository hygiene tests', ['tools/test-repository-hygiene.js']);
 checkCommand('source bundle tests', ['tools/test-source-bundle.js']);
