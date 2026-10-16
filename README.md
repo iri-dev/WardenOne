@@ -44,8 +44,8 @@ the page you're looking at. And when it blocks something it shows you why.
 **Inspect it for yourself:** [Privacy policy](PRIVACY.md) · [Permissions explained](permissions.html) · [Security policy](SECURITY.md) · [Source](https://github.com/iri-dev/WardenOne) · [Licence](LICENSE)
 
 <p align="center">
-  <a href="docs/screenshots/01-popup-current-overview.webp">
-    <img src="docs/screenshots/01-popup-current-overview.webp" alt="Current WardenOne popup with Settings and Arrange buttons, master switch, recommended protections, site summary, protection status and search" width="620">
+  <a href="docs/screenshots/01-popup-overview-2026-10.webp">
+    <img src="docs/screenshots/01-popup-overview-2026-10.webp" alt="Current WardenOne popup with Settings and Arrange buttons, master switch, recommended protections, site summary, protection status and search" width="620">
   </a>
 </p>
 <p align="center"><em>The main popup. Master switch, current-site summary, protection health and search. Settings and section arrangement are in the top-right. Click any image to see it full size.</em></p>
@@ -1218,8 +1218,8 @@ a vetted replacement if one's needed. The [September 2026 source review](docs/fe
 covers the four feeds with older dates (without removing them).
 
 <p align="center">
-  <a href="docs/screenshots/02-popup-current-site-health.webp">
-    <img src="docs/screenshots/02-popup-current-site-health.webp" alt="Protection Health expanded with switched-on shields, page confirmation, list freshness and diagnostics" width="520">
+  <a href="docs/screenshots/02-protection-health-2026-10.webp">
+    <img src="docs/screenshots/02-protection-health-2026-10.webp" alt="Protection Health expanded with switched-on shields, page confirmation, list freshness and diagnostics" width="520">
   </a>
 </p>
 <p align="center"><em>Protection Health expanded in a fresh profile. Built-in rules are active, and the list-download status stays visible.</em></p>
