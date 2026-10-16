@@ -23,6 +23,7 @@
   "cosmetic-rules.json",
   "cryptominer-detect.js",
   "cryptominer-domains.json",
+  "domain-utils-isolated.js",
   "domain-utils.js",
   "idn-utils.js",
   "download-review.html",

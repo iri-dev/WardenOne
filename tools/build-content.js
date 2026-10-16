@@ -14,6 +14,9 @@ const OUT = path.join(ROOT, 'content.min.js');
 // src/content.js, so the noise a child frame installs is byte for byte the engine's own.
 const REALM_SRC = path.join(ROOT, 'src', 'fingerprint-realm.js');
 const REALM_OUT = path.join(ROOT, 'fingerprint-realm.js');
+/* Separate world assets share one source; the isolated bridge must get its own load. */
+const DOMAIN_SRC = path.join(ROOT, 'domain-utils.js');
+const DOMAIN_ISOLATED_OUT = path.join(ROOT, 'domain-utils-isolated.js');
 // Each region is delimited in src/content.js by a block comment opening with NAME-BEGIN and one
 // reading exactly NAME-END; the bootstrap names it in an @wardenone-include line.
 const REALM_REGIONS = ['AUTH', 'WEBGL-SAVER', 'FINGERPRINT-NOISE'];
@@ -326,6 +329,11 @@ function check() {
     process.exit(1);
   }
   console.log('[ok] fingerprint-realm.js rebuilds exactly from its bootstrap and the engine regions');
+  if (!fs.existsSync(DOMAIN_ISOLATED_OUT) || read(DOMAIN_ISOLATED_OUT) !== read(DOMAIN_SRC)) {
+    console.error('[fail] domain-utils-isolated.js differs from canonical domain-utils.js');
+    process.exit(1);
+  }
+  console.log('[ok] isolated domain helpers match the canonical source exactly');
 }
 
 const arg = process.argv[2] || '--build';
@@ -346,6 +354,8 @@ if (arg === '--format-from-runtime') {
     process.exit(1);
   }
   console.log('[ok] rebuilt fingerprint-realm.js from src/fingerprint-realm.js and the engine regions');
+  write(DOMAIN_ISOLATED_OUT, read(DOMAIN_SRC));
+  console.log('[ok] rebuilt domain-utils-isolated.js from domain-utils.js');
 } else {
   console.error('usage: node tools/build-content.js [--build|--check|--format-from-runtime]');
   process.exit(2);

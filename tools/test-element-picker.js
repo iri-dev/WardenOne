@@ -283,9 +283,9 @@ const looksGenerated = loadLooksGenerated();
     'turning it off would look broken until the next browser start');
 }());
 
-(function theZapperIsPersistentOneShotAndReversible() {
+(function theZapperIsPersistentAndReversible() {
   /* The zapper must not mutilate the DOM. It marks the element, saves a stable
-     selector, and closes after reporting whether the save actually worked. */
+     selector, and reports whether the save actually worked. */
   /* Matched inside the zap function itself. Checking only that the attribute
      NAME appears somewhere passes even if nothing ever sets it. */
   const zapFn = PICKER.slice(PICKER.indexOf('function zap('), PICKER.indexOf('function unzapLast'));
@@ -453,6 +453,11 @@ const looksGenerated = loadLooksGenerated();
   check('and the opening copy does not promise a single pick',
     /Keep going for as long as you like/.test(PICKER)
       && !/Click one thing you do not want to see/.test(PICKER));
+  const guidance = POPUP_HTML.slice(POPUP_HTML.indexOf('Element Zapper for this page'), POPUP_HTML.indexOf('id="hidden-list-wrap"'));
+  check('popup guidance explains multiple selections, finishing and undo',
+    /Keep clicking to hide more/.test(guidance) && /Done or Escape/.test(guidance)
+      && /Undo last or Ctrl\+Z/.test(guidance) && /until the page reloads/.test(guidance)
+      && !/Selection pauses/.test(guidance));
   /* Zap three things quickly and three saves are in flight. Whichever answers
      last must not repaint the panel with its own one-item confirmation. */
   check('a late save cannot repaint a newer zap panel',

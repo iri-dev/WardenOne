@@ -99,6 +99,30 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-config-race.js
 
+      - name: Test audit High regressions with delayed saves and native media in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-audit-highs.js
+
+      - name: Test cookie and WebRTC diagnostic audit regressions in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-audit-mediums.js
+
+      - name: Test delayed DNR batching near quota in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-dnr-reconcile.js
+
+      - name: Test Element Zapper selection, finishing and undo in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-element-zapper.js
+
       - name: Test the page engine, the bridge and a network rule on a real page in Edge
         if: success() || failure()
         env:
@@ -188,6 +212,22 @@ jobs:
       - name: Test simultaneous config writes in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'
         run: node tools/browser-config-race.js
+
+      - name: Test audit High regressions in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-audit-highs.js
+
+      - name: Test cookie and WebRTC diagnostic audit regressions in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-audit-mediums.js
+
+      - name: Test delayed DNR batching near quota in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-dnr-reconcile.js
+
+      - name: Test Element Zapper selection, finishing and undo in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-element-zapper.js
 
       - name: Test the page engine, the bridge and a network rule in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'

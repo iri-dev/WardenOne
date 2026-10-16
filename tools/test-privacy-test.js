@@ -158,23 +158,50 @@ function verdictOf(rows, name) {
 }
 
 /* ---- local addresses -------------------------------------------------------- */
-{
-  const rows = report({ webrtcLocalIps: { available: true, ips: [] } },
-    { webrtcLocalIps: { available: true, ips: ['192.168.1.5'] } }, { blockWebRTCLeak: true });
-  check('no addresses reaching the page while the bare run found some is protected',
-    verdictOf(rows, 'Local network addresses (WebRTC)') === 'protected');
+for (const blockWebRTCLeak of [false, true]) {
+  for (const blockSuspiciousWebRTC of [false, true]) {
+    for (const scope of [{ enabled: true }, { enabled: false }, { enabled: true, allowlisted: true }]) {
+      const settings = { ...scope, blockWebRTCLeak, blockSuspiciousWebRTC };
+      const active = scope.enabled && !scope.allowlisted && blockWebRTCLeak && blockSuspiciousWebRTC;
+      const address = { webrtcLocalIps: { available: true, ips: ['192.168.1.5'] } };
+      const empty = { webrtcLocalIps: { available: true, ips: [] } };
+      for (const [shielded, bare, expected] of [
+        [address, address, active ? 'exposed' : 'design'],
+        [empty, address, 'protected'],
+        [empty, empty, 'minimal'],
+        [{}, address, 'untested'],
+        [address, {}, 'untested'],
+        [{ errors: { webrtcLocalIps: 'offer failed' } }, address, 'untested'],
+        [address, { errors: { webrtcLocalIps: 'offer failed' } }, 'untested'],
+      ]) {
+        const rows = report(shielded, bare, settings);
+        check('WebRTC choice and measurement matrix: ' + JSON.stringify(settings) + ' / ' + expected,
+          verdictOf(rows, 'Local network addresses (WebRTC)') === expected);
+      }
+    }
+  }
 }
 {
-  const rows = report({ webrtcLocalIps: { available: true, ips: ['192.168.1.5'] } },
-    { webrtcLocalIps: { available: true, ips: ['192.168.1.5'] } }, { blockWebRTCLeak: true });
-  check('addresses reaching the page with the guard on is exposed',
-    verdictOf(rows, 'Local network addresses (WebRTC)') === 'exposed');
-}
-{
-  const rows = report({ webrtcLocalIps: { available: true, ips: ['192.168.1.5'] } },
-    { webrtcLocalIps: { available: true, ips: ['192.168.1.5'] } }, { blockWebRTCLeak: false });
-  check('the same reading with the guard off is a choice, not a failure',
-    verdictOf(rows, 'Local network addresses (WebRTC)') === 'design');
+  const start = BG.indexOf('function privacyTestSettings(');
+  const end = BG.indexOf('\nchrome.runtime.onMessage.addListener(', start);
+  check('worker settings helper exists', start >= 0 && end > start);
+  const worker = { activeAllowlist: (cfg) => cfg.allowlist || [],
+    hostMatchesAllowlist: (host, list) => list.some((site) => worker.hostMatchesSite(host, site)) };
+  vm.createContext(worker);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8')
+    + BG.slice(start, end) + '\nglobalThis.settingsFor = privacyTestSettings;', worker);
+  const base = { enabled: true, blockWebRTCLeak: true, blockSuspiciousWebRTC: true, allowlist: [] };
+  for (const key of ['enabled', 'blockWebRTCLeak', 'blockSuspiciousWebRTC']) {
+    const cfg = { ...base, siteOverrides: { 'audit.net': { [key]: false } } };
+    check('site exception reaches self-test: ' + key, worker.settingsFor(cfg, 'sub.audit.net')[key] === false);
+    check('site exception stays host-scoped: ' + key, worker.settingsFor(cfg, 'other.net')[key] === true);
+    check('diagnostic does not mutate stored choice: ' + key, cfg[key] === true);
+  }
+  const cfg = { ...base, blockSuspiciousWebRTC: false,
+    siteOverrides: { 'audit.net': { blockSuspiciousWebRTC: true } } };
+  check('site settings cannot enable globally disabled hardening', worker.settingsFor(cfg, 'audit.net').blockSuspiciousWebRTC === false);
+  check('site allowlist reaches self-test', worker.settingsFor({ ...base, allowlist: ['audit.net'] }, 'sub.audit.net').allowlisted === true);
+  check('worker uses the resolved settings in its response', /settings: privacyTestSettings\(cfg, new URL\(tab\.url\)\.hostname\)/.test(BG));
 }
 {
   const rows = report({}, {}, {});
@@ -218,6 +245,8 @@ function verdictOf(rows, name) {
   check('third-party trackers are never graded either',
     verdictOf(rows, 'Third-party trackers and cookies') === 'untested',
     'finding out whether a tracker is blocked by contacting one does the thing it checks');
+  check('IP lookup endpoint blocking is not inferred from local ICE readings',
+    verdictOf(rows, 'IP lookup services') === 'untested');
 }
 check('the page says what it deliberately cannot measure',
   /deliberately not here/i.test(PAGE_HTML) && /no server/i.test(PAGE_HTML));

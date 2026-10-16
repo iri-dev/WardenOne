@@ -62,8 +62,8 @@ const DYNAMIC_BANDS = { fingerprintScripts: [931500, 80], searchSponsoredAllow: 
 const ORCHESTRATOR = between('const RECONCILE_DEGRADED_KEY = ', '\nfunction searchAiCleanupActive', 'the reconciler');
 const REFRESH = balancedFrom(ORCHESTRATOR, ORCHESTRATOR.indexOf('function refreshExtensionState() {'));
 
-/* The one list, read from the source: run('name', () => applier(...)) or the older run('name', applier(...)). */
-const RUN_CALLS = [...REFRESH.matchAll(/run\('([A-Za-z]+)', (?:\(\) => )?([A-Za-z]+)\(/g)].map((m) => ({ name: m[1], fn: m[2] }));
+/* Include thunks receiving the batch's submit callback and the older direct calls. */
+const RUN_CALLS = [...REFRESH.matchAll(/run\('([A-Za-z]+)', (?:\((?:submitRules)?\) => )?([A-Za-z]+)\(/g)].map((m) => ({ name: m[1], fn: m[2] }));
 const APPLIER_FNS = [...new Set(RUN_CALLS.map((r) => r.fn))];
 /* Every function the two fallback paths used to call by other names. */
 const LEGACY_FALLBACK_FNS = ['refreshPrivacyHeaders', 'refreshAllowlistRules', 'refreshMediaCompatibilityRules', 'refreshLoginCompatibilityRules',
@@ -167,7 +167,7 @@ const offSwitching = (w) => w.calls.filter((c) => c.name.indexOf('LEGACY:') === 
     const namedOnce = RUN_CALLS.map((r) => r.name);
     check('every component is named once', new Set(namedOnce).size === namedOnce.length);
     check('each component runs through a thunk, so one throwing does not skip the rest',
-      RUN_CALLS.length > 0 && (REFRESH.match(/run\('[A-Za-z]+', \(\) => /g) || []).length === RUN_CALLS.length);
+      RUN_CALLS.length > 0 && (REFRESH.match(/run\('[A-Za-z]+', \((?:submitRules)?\) => /g) || []).length === RUN_CALLS.length);
     check('the degraded labels know the reconcile itself as a component', /reconcile: '/.test(ORCHESTRATOR));
   }
 
