@@ -1543,35 +1543,27 @@ element and check the outline before clicking. Use `↑` to select a larger cont
 `↓` to narrow it down. Keep clicking to hide more items, then press **Done** or `Esc` to close
 the tool. `Ctrl+Z` restores the most recent removal while that page is still open.
 
-**Before:** the newsletter card takes up the right side of this example page.
+**1. Choose what to hide.** On [GitHub's Actions page](https://github.com/features/actions), the
+active Zapper outlines the developer newsletter section. The outline shows exactly what the next
+click will hide.
 
 <p align="center">
-  <a href="docs/screenshots/16-element-zapper-before-2026-10.webp">
-    <img src="docs/screenshots/16-element-zapper-before-2026-10.webp" alt="Before using Element Zapper: an article shares the page with a purple newsletter signup card" width="900">
+  <a href="docs/screenshots/16-zapper-github-select-2026-10.webp">
+    <img src="docs/screenshots/16-zapper-github-select-2026-10.webp" alt="Element Zapper active on GitHub's live Actions page, outlining the developer newsletter section before it is hidden" width="900">
   </a>
 </p>
 
-**After:** one click hides the card, and this page's layout gives the article the available width.
-The removal stays in place after reloading and only changes what you see in your own browser.
+**2. Click, and it's gone.** The newsletter section is now missing, the footer links move up,
+and WardenOne confirms **One thing hidden**. The removal stays in place after reloading and only
+changes what you see in your own browser. Keep zapping, press **Done**, or use **Undo last** to
+bring it back.
 
 <p align="center">
-  <a href="docs/screenshots/16-element-zapper-after-2026-10.webp">
-    <img src="docs/screenshots/16-element-zapper-after-2026-10.webp" alt="After using Element Zapper on the same page: the newsletter card is hidden and the article fills the available width" width="900">
+  <a href="docs/screenshots/16-zapper-github-removed-2026-10.webp">
+    <img src="docs/screenshots/16-zapper-github-removed-2026-10.webp" alt="The same GitHub Actions page after the click: the newsletter section is gone, footer links have moved up, and Element Zapper confirms One thing hidden" width="900">
   </a>
 </p>
-<p align="center"><em>The same demonstration page, captured before and after using WardenOne's actual Element Zapper.</em></p>
-
-<details>
-<summary>See the selection outline and controls</summary>
-
-<p align="center">
-  <a href="docs/screenshots/16-element-zapper-select-2026-10.webp">
-    <img src="docs/screenshots/16-element-zapper-select-2026-10.webp" alt="Element Zapper outlines the newsletter card and shows its selection, keyboard and undo controls" width="900">
-  </a>
-</p>
-<p align="center"><em>The outline shows what your next click will hide. Saved removals can be restored individually from Hidden elements.</em></p>
-
-</details>
+<p align="center"><em>Captured on the live GitHub website with WardenOne's actual Element Zapper, before and after the click.</em></p>
 
 ## Cryptojacking protection
 
