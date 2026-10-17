@@ -1,0 +1,87 @@
+<section class="page-hero" aria-labelledby="page-title">
+  <div class="container page-hero-grid">
+    <div><p class="eyebrow">How it works</p><h1 id="page-title">A decision at <span class="grad-text">the right moment.</span></h1><p class="lead">There's no WardenOne server in the middle of your browsing. The work is split across the parts of the browser that actually have the evidence, and it all meets in one place you can inspect.</p></div>
+    <div class="aside-card"><span class="card-icon">{{icon:info}}</span><strong>It won't catch everything</strong>Brand-new scam sites often aren't on any list yet, and some page checks are a best guess. When WardenOne warns you it explains why, but if a page feels wrong and there's no warning, trust your gut.</div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="arch-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">The architecture</p><h2 id="arch-title">Three layers. One worker. All on your device.</h2><p class="lead">Each layer watches a different part of a visit. What they notice ends up in one extension worker and one local store, and every page you use to see, check and control WardenOne reads from there.</p></div>
+    <div class="arch">
+      <div class="arch-row">
+        <div class="arch-node reveal"><span class="card-icon">{{icon:browser}}</span><h3>Page and session layer</h3><p>Deceptive interfaces, sign-ins and passwords, privacy APIs, links and signs of device use.</p></div>
+        <div class="arch-node reveal"><span class="card-icon">{{icon:globe}}</span><h3>Browser network layer</h3><p>Rules for listed destinations and direct private-network targets, enforced by the browser itself.</p></div>
+        <div class="arch-node reveal"><span class="card-icon">{{icon:download}}</span><h3>Download Shield</h3><p>Where a download came from, what it claims to be, and how it behaves.</p></div>
+      </div>
+      <svg class="arch-wires" viewBox="0 0 1200 64" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="wire-side" d="M200 0 C200 40 600 24 600 64"/><path class="wire-center" d="M600 0 V64"/><path class="wire-side" d="M1000 0 C1000 40 600 24 600 64"/></svg>
+      <div class="arch-core stage reveal">
+        <div class="arch-node"><span class="card-icon">{{icon:hub}}</span><h3>Extension worker</h3><p>The only place the layers meet. A dodgy redirect can feed a scam warning, and a download can use the reputation of the page it came from.</p></div>
+        <div class="arch-node"><span class="card-icon">{{icon:database}}</span><h3>Local state and evidence</h3><p>Settings, exceptions and the activity record, kept in browser storage. It never leaves this browser.</p></div>
+      </div>
+      <svg class="arch-wires" viewBox="0 0 1200 64" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path class="wire-side" d="M600 0 C600 40 200 24 200 64"/><path class="wire-center" d="M600 0 V64"/><path class="wire-side" d="M600 0 C600 40 1000 24 1000 64"/></svg>
+      <div class="arch-row">
+        <div class="arch-node reveal"><span class="card-icon">{{icon:activity}}</span><h3>What happened</h3><p>Activity Centre, Notification Centre and Protection Health.</p><strong>Explains</strong></div>
+        <div class="arch-node reveal"><span class="card-icon">{{icon:refresh}}</span><h3>Whether it still works</h3><p>The Privacy Self-Test, and Verify and Repair.</p><strong>Proves</strong></div>
+        <div class="arch-node reveal"><span class="card-icon">{{icon:sliders}}</span><h3>Your decision beats every list</h3><p>Network Logger, Site Firewall and My Rules.</p><strong>Controls</strong></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" aria-labelledby="flow-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">One visit, start to finish</p><h2 id="flow-title">From address to explanation.</h2></div>
+    <ol class="steps">
+      <li class="step reveal"><h3>You open a page</h3><p>The browser starts navigating and requests the resources the page needs.</p></li>
+      <li class="step reveal"><h3>Known destinations are checked</h3><p>Browser-enforced rules can block listed sites or resources before they are delivered.</p></li>
+      <li class="step reveal"><h3>Behaviour is inspected</h3><p>Page checks look for selected scams, redirects, trackers and page tricks as the page runs.</p></li>
+      <li class="step reveal"><h3>You see the decision</h3><p>Relevant blocks and warnings are explained on the page and recorded locally.</p></li>
+    </ol>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="pairs-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">Different evidence, on purpose</p><h2 id="pairs-title">Tools that sound alike, kept apart.</h2><p class="lead">Some tools seem to overlap, but they look at different evidence. They stay separate so nothing gets squashed into one convenient score that promises more than it can back up.</p></div>
+    <div class="pairs">
+      <div class="pair reveal"><h3>Download Shield</h3><p>Knows the browser's context: where a file came from and what it claims to be.</p><p class="pair-vs" aria-hidden="true">versus</p><h3>File Shield</h3><p>Knows the bytes: what is actually inside a file you choose, read locally.</p></div>
+      <div class="pair reveal"><h3>Activity Centre</h3><p>Records the event: what WardenOne blocked, warned about or observed.</p><p class="pair-vs" aria-hidden="true">versus</p><h3>Network Logger</h3><p>Names the request: its type, its destination and the decision made about it.</p></div>
+      <div class="pair reveal"><h3>Privacy Self-Test</h3><p>Measures from the outside, comparing a page with and without the shields.</p><p class="pair-vs" aria-hidden="true">versus</p><h3>Verify and Repair</h3><p>Checks from the inside that the install and its guards are in the state you chose.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" aria-labelledby="look-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">Inspect the interface</p><h2 id="look-title">Three views of one decision.</h2><p class="lead">Pick a real capture to see how WardenOne presents its status, its record and its site-level controls.</p></div>
+    <div class="showcase" data-showcase>
+      <div class="showcase-options">
+        <button type="button" data-showcase-choice aria-pressed="true" data-image="{{root}}images/15-settings-overview.webp" data-alt="WardenOne Settings overview with protection status and category controls" data-caption="Settings: protection state and every control, searchable." data-label="Settings overview"><span>01</span><strong>Protection state</strong><small>Know what is on and what needs attention.</small></button>
+        <button type="button" data-showcase-choice aria-pressed="false" data-image="{{root}}images/03-activity-centre.webp" data-alt="WardenOne Activity Centre showing recent decisions and blocked sites" data-caption="The Activity Centre: decisions and their outcomes, kept locally." data-label="Activity Centre"><span>02</span><strong>Activity record</strong><small>Review actions and their outcomes.</small></button>
+        <button type="button" data-showcase-choice aria-pressed="false" data-image="{{root}}images/08-site-firewall-preview.webp" data-alt="WardenOne Site Firewall showing the domains loaded by a page" data-caption="Site Firewall: advanced per-domain control for one site." data-label="Site Firewall"><span>03</span><strong>Site control</strong><small>See the domains behind the page.</small></button>
+      </div>
+      <figure class="showcase-visual shot"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title" data-showcase-label>Settings overview</span><span class="shot-real">Real capture</span></div><img data-showcase-image src="{{root}}images/15-settings-overview.webp" width="1920" height="1859" alt="WardenOne Settings overview with protection status and category controls" loading="lazy"><figcaption data-showcase-caption>Settings: protection state and every control, searchable.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="limits-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">Limits, said out loud</p><h2 id="limits-title">What WardenOne won't pretend to do.</h2></div>
+    <div class="grid-3">
+      <div class="card reveal"><span class="card-icon">{{icon:eye}}</span><h3>It can't be invisible</h3><p>Some protections have to run inside the page, and a page that goes looking can spot them. Each one is written down with the reason it exists, and anything from the page that leads to a real decision has to be signed with a key the page never had.</p></div>
+      <div class="card reveal"><span class="card-icon">{{icon:lock}}</span><h3>It can't catch everything already inside a page</h3><p>The token and skimmer checks stop the calls they see, but hostile code already running in a page can work around them. Network rules block the destinations they cover; they don't look inside every request for your secrets.</p></div>
+      <div class="card reveal"><span class="card-icon">{{icon:globe}}</span><h3>It has to leave room for the web</h3><p>Video players, sign-ins, payments and classroom tools are sensitive to aggressive blocking. Scoped checks and compatibility exceptions help, and you can pause or adjust any feature for one site.</p></div>
+    </div>
+    <p class="small" style="margin-top:28px">Found a site that breaks? <a class="inline-link" href="{{root}}faq/">See troubleshooting</a> or <a class="inline-link" href="https://github.com/iri-dev/WardenOne/issues/new/choose">report it on GitHub</a>.</p>
+  </div>
+</section>
+
+<section class="cta-wrap" aria-labelledby="how-cta-title">
+  <div class="stage stage-panel cta">
+    <h2 id="how-cta-title" class="reveal">Understand what leaves the browser.</h2>
+    <p class="reveal">Default list updates and optional lookups have different privacy consequences. The privacy page names each one.</p>
+    <div class="button-row reveal"><a class="button button-primary" href="{{root}}privacy/">Read the privacy details {{icon:arrow-right}}</a><a class="button button-ghost" href="{{root}}download/">{{icon:download}} Get WardenOne</a></div>
+  </div>
+</section>

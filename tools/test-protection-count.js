@@ -162,17 +162,29 @@ check('the README no longer claims every feature is toggleable',
   !/Every feature is individually toggleable/.test(README));
 
 /* The public site is the other place a number is printed, and it said "80+" for a year after
-   the README had moved on (FEAT-08, CWS-04). It carries the same total, from the same list,
-   and none of the absolutes the README already gave up. */
-const SITE = fs.readFileSync(path.join(ROOT, 'site', 'index.html'), 'utf8');
-check('the public site says ' + TOTAL + ' protections', SITE.includes(TOTAL + ' protections</li>'),
-  (SITE.match(/\d+\+? protections<\/li>/) || ['(not found)'])[0]);
+   the README had moved on (FEAT-08, CWS-04). It now prints {{stat:protections}}, which
+   site/sync-data.js counts from the settings registry when the site is built, so that registry
+   has to hold the same total as this one. None of the absolutes the README already gave up may
+   come back on any page. */
+const SITE_PAGE_DIR = path.join(ROOT, 'site', 'src', 'pages');
+const SITE = fs.readdirSync(SITE_PAGE_DIR).filter((f) => f.endsWith('.html'))
+  .map((f) => fs.readFileSync(path.join(SITE_PAGE_DIR, f), 'utf8')).join('\n');
+const SITE_SYNC = fs.readFileSync(path.join(ROOT, 'site', 'sync-data.js'), 'utf8');
+const settingsBox = {};
+vm.createContext(settingsBox);
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'settings-data.js'), 'utf8') + '\n;globalThis.registry = SETTINGS_DATA;', settingsBox);
+const siteTotal = settingsBox.registry.shieldKeys.length + settingsBox.registry.watchOnlyKeys.length;
+check('the public site says ' + TOTAL + ' protections',
+  SITE.includes('{{stat:protections}}')
+    && /protections: data\.shieldKeys\.length \+ data\.watchOnlyKeys\.length/.test(SITE_SYNC) && siteTotal === TOTAL,
+  'the site would print ' + siteTotal);
 check('the public site no longer says everything runs locally',
   !/Everything runs locally/.test(SITE), 'opt-in checks contact named services; the privacy policy lists them');
 check('the public site no longer says every feature can be turned off individually',
   !/Every feature can be turned off individually/.test(SITE), 'three watch-only recorders have no switch');
 check('the public site does not promise WebRTC leak protection from the visible switch',
-  !/WebRTC IP-leak protection/.test(SITE) && /hardened WebRTC candidates are a separate opt-in/.test(SITE),
+  !/WebRTC IP-leak protection/.test(SITE)
+    && (!/WebRTC/.test(SITE) || /hardened WebRTC candidates are a separate opt-in/.test(SITE)),
   'the visible switch blocks IP-lookup services; candidate hardening is the opt-in (FEAT-03)');
 
 /* The popup prints the same denominator from the same list, so there is nothing to assert
@@ -184,10 +196,16 @@ check('the popup denominator still comes from this list',
    The README carried "103 individually controllable" two lines under a headline the test
    checked, for as long as the split sentence a thousand lines further down said 104. So every
    surface a reader sees is scanned for every count-shaped claim, and each has to equal the
-   figure it names. The CHANGELOG is history and is left out on purpose. */
+   figure it names. The CHANGELOG is history and is left out on purpose. The website's pages
+   take their figures from synced {{stat:…}} placeholders, so a typed number there is the bug. */
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
 const numberOf = (text) => (/^\d+$/.test(text) ? Number(text) : WORDS.indexOf(String(text).toLowerCase()));
-const SURFACES = ['README.md', 'site/index.html', 'popup.html', 'popup.js', 'onboarding.html', 'onboarding.js', 'PRIVACY.md', 'history.html', 'privacy-test.html'];
+const SITE_PAGES = fs.readdirSync(path.join(ROOT, 'site', 'src', 'pages')).filter((f) => f.endsWith('.html'))
+  .map((f) => 'site/src/pages/' + f);
+check('the website pages are among the scanned surfaces',
+  SITE_PAGES.includes('site/src/pages/home.html') && SITE_PAGES.includes('site/src/pages/features.html'),
+  'the website pages moved; point SURFACES at them again');
+const SURFACES = ['README.md', ...SITE_PAGES, 'popup.html', 'popup.js', 'onboarding.html', 'onboarding.js', 'PRIVACY.md', 'history.html', 'privacy-test.html'];
 {
   const wrong = [];
   for (const file of SURFACES) {

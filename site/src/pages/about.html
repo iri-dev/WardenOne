@@ -1,0 +1,92 @@
+<section class="page-hero" aria-labelledby="page-title">
+  <div class="container page-hero-grid">
+    <div><p class="eyebrow">About</p><h1 id="page-title">Made by one person, <span class="grad-text">in the open.</span></h1><p class="lead">WardenOne is an independent, open-source project by iri. It brings browser protection, practical controls and local visibility together in one extension, and it's built to explain itself.</p></div>
+    <div class="aside-card"><span class="card-icon">{{icon:user}}</span><strong>It's just me</strong>There's no security company behind WardenOne and it hasn't been certified by anyone. It misses things sometimes, too. The code and its known limits are public, so you can look for yourself and take your time deciding whether to trust it.</div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="why-title">
+  <div class="container split" style="align-items:start">
+    <div class="split-copy reveal"><p class="eyebrow">Why it exists</p><h2 id="why-title">Feeling safe online shouldn't take five extensions.</h2></div>
+    <div class="prose reveal">
+      <p>If you care about privacy and security, you probably know the routine. An ad blocker, then a tracker blocker, then something for scams, maybe a download checker if you're being careful. Each one does its own little job, none of them talk to each other, and none of them really explain themselves.</p>
+      <p>I wanted one extension that does the whole job properly and shows its working. When it steps in, you can see what it did and why. When it isn't sure, it says so instead of guessing.</p>
+      <p>And it shouldn't cost you anything, not money and not your data. There's no account, no tracking, and nothing gets sent back to me.</p>
+    </div>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" aria-labelledby="name-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">The name</p><h2 id="name-title">Why “WardenOne”?</h2></div>
+    <div class="grid-2">
+      <div class="card reveal"><span class="card-icon">{{icon:shield}}</span><h3>Warden is the job</h3><p>A good warden keeps watch quietly and only steps in when something is genuinely wrong. That's the goal: stay out of your way, act on real evidence, and never claim to know more than it does.</p></div>
+      <div class="card reveal"><span class="card-icon">{{icon:hub}}</span><h3>One is how it's built</h3><p>Every part of WardenOne reports to the same place. A shady redirect can inform a scam warning, a download can borrow what's known about the page it came from, and when a site breaks you can follow one record straight back to the decision that caused it.</p></div>
+    </div>
+    <p class="small reveal" style="margin-top:22px">It doesn't mean one extension can stop everything bad on the internet. Nothing can, and I'd rather be honest about that than promise you magic.</p>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="build-title">
+  <div class="container split">
+    <div class="split-copy reveal">
+      <p class="eyebrow">How it's built</p><h2 id="build-title">Built slowly, tested properly, fixed in the open.</h2>
+      <p class="prose">WardenOne runs in my own browser while I build it, so I'm usually the first to find out when something breaks. A lot of my time goes into poking at one stubborn site until it behaves, then making sure the fix doesn't break three others.</p>
+      <p class="prose">Nothing ships until it gets through the project's gate: {{stat:testSuites}} automated test suites, plus checks that generated files still match the source they're built from. When I get something wrong, the fix goes up in public, mistakes and all.</p>
+      <div class="button-row"><a class="button button-secondary" href="https://github.com/iri-dev/WardenOne/commits/main">{{icon:code}} See the commit history</a><a class="text-link" href="{{root}}changelog/">Read the changelog {{icon:arrow-right}}</a></div>
+    </div>
+    <figure class="shot reveal"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Activity Centre</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/03-activity-centre.webp" width="1800" height="1286" alt="WardenOne Activity Centre displaying a local record of recent decisions" loading="lazy"><figcaption>A visible record, not a mystery score.</figcaption></figure>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" aria-labelledby="principles-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">What guides it</p><h2 id="principles-title">Useful, inspectable protection.</h2></div>
+    <div class="grid-3">
+      <div class="card reveal"><span class="card-icon">{{icon:code}}</span><h3>Inspect the implementation</h3><p>The extension code, bundled rules, tests and documentation are all in the public repository, under the GNU GPL v3 or later.</p></div>
+      <div class="card reveal"><span class="card-icon">{{icon:eye-off}}</span><h3>Make data flows explicit</h3><p>No WardenOne account and no telemetry. The privacy policy names every automatic request and every optional provider.</p></div>
+      <div class="card reveal"><span class="card-icon">{{icon:globe}}</span><h3>Respect the site you meant to use</h3><p>Protection that breaks a legitimate page is a bug. It needs investigating, scoped rules and a way to recover.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="incident-title">
+  <div class="container split">
+    <div class="split-copy reveal"><p class="eyebrow">Why the source matters</p><h2 id="incident-title">Someone once copied WardenOne to spread malware.</h2><p class="prose">In August 2026 someone republished the project under another account and pointed its downloads at a credential stealer. GitHub took the account and site down. A security extension has a lot of access to your browser, so where you got it from really matters.</p><p class="prose">Releases only ever come from <code>github.com/iri-dev/WardenOne</code>, and WardenOne is never an installer.</p></div>
+    <div class="source-check reveal"><strong>{{icon:alert}} If you ran a WardenOne .exe</strong><p>It wasn't from me. The incident page has the file details, antivirus results and recovery steps.</p><a href="{{root}}stolen">Read the incident notice {{icon:arrow-right}}</a></div>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" aria-labelledby="note-title">
+  <div class="container">
+    <div class="note reveal">
+      <h2 class="eyebrow" id="note-title">Who makes it</h2>
+      <blockquote>
+        <p>Hi, I'm iri (it's pronounced eye-ree). There's no company or team behind WardenOne. Just me, far too many open tabs, and a stubborn belief that software should treat people with respect.</p>
+        <p>If something breaks, or you think I've got something wrong, please tell me. I'd honestly rather hear the hard stuff than collect polite compliments.</p>
+        <p>And take your time with it. Read the code, poke at it, ask me anything. I'll be here, probably fixing one more thing.&nbsp;💜</p>
+      </blockquote>
+      <div class="note-sign"><img class="avatar" src="{{root}}images/iri-avatar.webp" alt="" width="48" height="48"><div><strong>iri</strong><span><a href="https://github.com/iri-dev">github.com/iri-dev</a> · <a href="https://iri-dev.github.io/">iri-dev.github.io</a></span></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="contact" aria-labelledby="contact-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">Say hello</p><h2 id="contact-title">My inbox is always open.</h2><p class="lead">Got a question, an idea, or just want to say hi? I read every message myself and reply when I can. If WardenOne broke a site, a GitHub issue is even better, because then anyone else hitting the same problem can find it too.</p></div>
+    <div class="grid-2">
+      <div class="card contact-card reveal"><span class="card-icon">{{icon:mail}}</span><h3>Email</h3><p><a class="inline-link" href="mailto:iri.devsupport@gmail.com">iri.devsupport@gmail.com</a></p></div>
+      <div class="card contact-card reveal"><span class="card-icon">{{icon:chat}}</span><h3>Discord</h3><p>Add me as <code id="discord-name" data-command="iri.dev">iri.dev</code><button class="copy-button" type="button" data-copy="discord-name">{{icon:copy}}<span>Copy</span></button></p></div>
+    </div>
+    <div class="card tip-card reveal"><span class="card-icon">{{icon:coffee}}</span><div><h3>Buy me a coffee</h3><p>Everything I make stays free. If you'd like to help anyway, there's a tip jar.</p></div><a class="button button-secondary" href="https://buymeacoffee.com/iri.dev">Support my work {{icon:arrow-up-right}}</a></div>
+    <p class="small reveal" style="margin-top:22px">Found a security problem in WardenOne itself? Please use <a class="inline-link" href="https://github.com/iri-dev/WardenOne/security/advisories/new">a private vulnerability report</a> instead, so it isn't public before it's fixed.</p>
+  </div>
+</section>
+
+<section class="cta-wrap" aria-labelledby="about-cta-title">
+  <div class="stage stage-panel cta">
+    <h2 id="about-cta-title" class="reveal">Help make it more useful.</h2>
+    <p class="reveal">Report a bug, suggest an improvement, or read the source on GitHub.</p>
+    <div class="button-row reveal"><a class="button button-primary" href="https://github.com/iri-dev/WardenOne/issues/new/choose">Visit the issue tracker {{icon:arrow-up-right}}</a><a class="button button-ghost" href="{{root}}download/">{{icon:download}} Get WardenOne</a></div>
+  </div>
+</section>

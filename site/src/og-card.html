@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- Source for public/images/og-card.png (1200 × 630). Rendered by make-assets.js; not published. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WardenOne social card</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body { position: relative; color: #f8f1fc; font-family: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif; background: #140b1b; }
+  body::before { content: ""; position: absolute; inset: 0; background:
+    radial-gradient(55% 75% at 92% 8%, rgba(164, 59, 114, .55), transparent 62%),
+    radial-gradient(50% 70% at 0% 100%, rgba(122, 57, 150, .65), transparent 64%); }
+  body::after { content: ""; position: absolute; inset: 0; opacity: .55; background-image: linear-gradient(rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.05) 1px, transparent 1px); background-size: 48px 48px; -webkit-mask-image: radial-gradient(ellipse at 40% 40%, #000 15%, transparent 72%); }
+  .copy { position: absolute; z-index: 2; left: 72px; top: 64px; width: 560px; }
+  .brand { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 750; letter-spacing: -.03em; }
+  .brand img { width: 52px; height: 52px; border-radius: 14px; box-shadow: 0 10px 30px -8px rgba(164, 59, 114, .8); }
+  h1 { margin: 64px 0 0; font-size: 84px; line-height: .98; letter-spacing: -.05em; font-weight: 750; }
+  h1 span { background: linear-gradient(100deg, #dca5f2, #f4a6cb); -webkit-background-clip: text; color: transparent; }
+  p { margin: 26px 0 0; color: #d6c8e0; font-size: 27px; line-height: 1.35; letter-spacing: -.01em; }
+  .meta { position: absolute; z-index: 2; left: 72px; bottom: 54px; display: flex; gap: 12px; }
+  .meta span { padding: 9px 16px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; background: rgba(255,255,255,.06); color: #efe3f6; font-size: 19px; font-weight: 600; }
+  .visual { position: absolute; z-index: 1; right: -70px; top: 120px; width: 560px; transform: rotate(-4deg); }
+  .window { overflow: hidden; border: 1px solid rgba(255,255,255,.16); border-radius: 16px; background: #f4f3f6; box-shadow: 0 40px 90px -20px rgba(0,0,0,.8); }
+  .bar { display: flex; gap: 8px; align-items: center; height: 34px; padding: 0 14px; background: #241a2c; }
+  .bar i { width: 11px; height: 11px; border-radius: 50%; background: #e0727d; }
+  .bar i:nth-child(2) { background: #e3b863; } .bar i:nth-child(3) { background: #6dbd8d; }
+  .window img { display: block; width: 100%; aspect-ratio: 1300 / 703; object-fit: cover; }
+  .popup { position: absolute; left: -64px; top: 238px; width: 250px; overflow: hidden; border: 1px solid rgba(255,255,255,.3); border-radius: 18px; transform: rotate(4deg); box-shadow: 0 30px 60px -16px rgba(0,0,0,.8); }
+  .popup img { display: block; width: 100%; }
+</style>
+</head>
+<body>
+  <div class="copy">
+    <div class="brand"><img src="../public/icons/icon128.png" alt=""> WardenOne</div>
+    <h1>Stop the risky page. <span>See why.</span></h1>
+    <p>Free, open-source browser protection that shows its working.</p>
+  </div>
+  <div class="meta"><span>No account</span><span>No telemetry</span><span>Open source · GPL-3.0</span></div>
+  <div class="visual">
+    <div class="window"><div class="bar"><i></i><i></i><i></i></div><img src="../public/images/14-clickfix-warning.webp" alt=""></div>
+    <div class="popup"><img src="../public/images/hero-popup.webp" alt=""></div>
+  </div>
+</body>
+</html>
