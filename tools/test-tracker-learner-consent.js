@@ -28,6 +28,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -60,7 +61,7 @@ const PIECES = ['normalizeTrackerDomain', 'registrableDomainBg', 'trackerStoreSh
   'isProtectedTrackerDomain', 'looksLikeKnownTrackerHost',
   'ownProviderDomains', 'noteTrackerObservation', 'pruneTrackerLearnerStore', 'saveTrackerLearner',
   'applyTrackerLearnerRules', 'trackerLearnerProposals', 'decideTrackerProposal', 'decideAllTrackerProposals',
-  'trackerLearnerStatus', 'getDynamicRulesInBand', 'dnrValueMatches', 'dnrBandUnchanged'];
+  'trackerLearnerStatus', 'dnrValueMatches', 'dnrBandUnchanged'];
 const CONSTS = BG.slice(BG.indexOf('const TRACKER_LEARNER_KEY ='), BG.indexOf('\n', BG.indexOf('const TRACKER_RESOURCE_TYPES')));
 
 function rig(options) {
@@ -100,6 +101,7 @@ function rig(options) {
   vm.createContext(sandbox);
   /* trackerStoreShape must run before TRACKER_LEARNER is assigned, so declare the pieces first. */
   vm.runInContext(DOMAIN_UTILS + '\nvar __trackerSession=null;var __ownProviderDomains=null;\n' + CONSTS + '\n' + PIECES.map(lift).join('\n')
+    + '\n' + dynamicRuleIo.prelude(BG)
     + '\nvar TRACKER_LEARNER = trackerStoreShape(' + JSON.stringify(o.store || {}) + ');'
     + '\nvar loadTrackerLearner = async () => TRACKER_LEARNER;'
     + '\nglobalThis.api = { note: noteTrackerObservation, shape: trackerStoreShape, proposals: trackerLearnerProposals,'

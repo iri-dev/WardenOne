@@ -25,6 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -94,7 +95,8 @@ function rig(options) {
     + ['masterSwitchOn', 'isWardenOneDynamicRuleId', 'removeWardenOneDynamicRules', 'applyUserFilterRulesFrom', 'applyUserFilterRules',
       'applyFirewallRulesFrom', 'applyFirewallRules', 'applyUserBlocklistRules', 'applyAllowlistRules',
       /* the compare-before-write the blocklist applier now does (PERF-05), and its band read */
-      'dnrValueMatches', 'dnrBandUnchanged', 'getDynamicRulesInBand'].map(lift).join('\n')
+      'dnrValueMatches', 'dnrBandUnchanged'].map(lift).join('\n')
+    + '\n' + dynamicRuleIo.prelude(BG)
     + '\nglobalThis.api = { isMine: isWardenOneDynamicRuleId, removeAll: removeWardenOneDynamicRules, userFilters: applyUserFilterRules,'
     + ' userFiltersFrom: applyUserFilterRulesFrom, firewall: applyFirewallRules, firewallFrom: applyFirewallRulesFrom, blocklist: applyUserBlocklistRules, allowlist: applyAllowlistRules };', ctx);
   return { api: ctx.api, state, band: (base, max) => state.dnr.filter((r) => r.id >= base && r.id < base + max).length };

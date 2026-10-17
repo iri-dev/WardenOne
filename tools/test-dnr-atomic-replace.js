@@ -17,7 +17,7 @@
  * removeRuleIds and addRules as a single transaction, so the shape is the fix.
  *
  * Two readings. The first walks every updateSessionRules / updateDynamicRules call in
- * background.js and requires the argument to carry both keys (a helper whose whole job
+ * background.js, and every writeDynamicRules call that wraps the latter, and requires the argument to carry both keys (a helper whose whole job
  * is removal is named). The second runs the four appliers the audit named against a
  * modelled rule store that snapshots itself after every call resolves -- each snapshot is
  * a place the worker could have died -- and asserts the rule is there in every one of
@@ -30,6 +30,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const resourceTypes = require('./lib/resource-types.js');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -44,12 +45,14 @@ function check(name, cond, detail) {
 /* ---- 1. every replacement in the file is one call ---------------------------------- */
 /* Helpers whose purpose is to take rules away, with nothing to put back. */
 const REMOVAL_ONLY = new Set(['removeWardenOneDynamicRules']);
+/* Where a write reaches Chrome on another's behalf: each passes the caller's change on whole. */
+const PASS_THROUGH = new Set(['createReconcileDnrBatch', 'writeDynamicRules']);
 function enclosingFunction(source, index) {
   const names = [...source.slice(0, index).matchAll(/(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/g)];
   return names.length ? names[names.length - 1][1] : '';
 }
 {
-  const re = /chrome\.declarativeNetRequest\.update(Session|Dynamic)Rules\(/g;
+  const re = /chrome\.declarativeNetRequest\.update(Session|Dynamic)Rules\(|(?<!function )\bwriteDynamicRules\(/g;
   let m;
   let calls = 0;
   const offenders = [];
@@ -74,7 +77,7 @@ function enclosingFunction(source, index) {
        the batch helper is exercised for atomicity and fallback by its own suite. */
     if (arg.trim() === 'change') {
       const nearby = BG.slice(Math.max(0, m.index - 350), m.index);
-      if (fn === 'createReconcileDnrBatch'
+      if (PASS_THROUGH.has(fn)
         || /const change = \{ removeRuleIds: oldIds, addRules(?::|\s*\})/.test(nearby)) continue;
     }
     if (!/removeRuleIds/.test(arg) || !/addRules/.test(arg)) {
@@ -101,7 +104,10 @@ function fnSlice(name) {
 }
 const APPLIERS = slice("let __privacyHeaderRuleEnabled = null;", "let __ipLookupBlockRulesEnabled = null;")
   + "let __thirdPartyCookieRuleEnabled = null;\n" + fnSlice('applyThirdPartyCookieRule')
-  + slice("const HTTPS_UPGRADE_RULE_ID = 910000;", "function refreshHttpsUpgrade()");
+  + slice("const HTTPS_UPGRADE_RULE_ID = 910000;", "function refreshHttpsUpgrade()")
+  /* Force HTTPS reads its persistent copy before deciding to write it. */
+  + dynamicRuleIo.prelude(BG, [[910001, 1]])
+  + slice('function dnrValueMatches(', 'function ownDynamicRuleBands(');
 
 /* Chrome's store, as far as these appliers can tell: a map per store, a call applied as
    one transaction (removals first, then additions, a duplicate id rejected as a whole),
@@ -141,6 +147,9 @@ function harness(options) {
       declarativeNetRequest: {
         updateSessionRules: (update) => apply('session', update),
         updateDynamicRules: (update) => apply('dynamic', update),
+        getDynamicRules: (filter) => Promise.resolve([...stores.dynamic.values()]
+          .filter((rule) => !filter || !filter.ruleIds || filter.ruleIds.includes(rule.id))
+          .map((rule) => JSON.parse(JSON.stringify(rule)))),
       },
     },
   }, resourceTypes.resolveAll(BG));
@@ -213,7 +222,8 @@ const SINGLE_STORE = [
       rule.condition.resourceTypes.join() === 'main_frame' && rule.condition.excludedRequestDomains.includes('localhost'));
     const seeded = harness({ seed: { session: [h.stores().session.get(910000)], dynamic: [h.stores().dynamic.get(910001)] } });
     await seeded.api.applyHttpsUpgradeRule(true);
-    const everyBoundary = seeded.snapshots.length === 2 && seeded.snapshots.every((s) =>
+    /* The persistent copy is already right, so only the session copy is replaced. */
+    const everyBoundary = seeded.snapshots.length === 1 && seeded.snapshots.every((s) =>
       s.session.some((r) => r.id === 910000) && s.dynamic.some((r) => r.id === 910001));
     check('Force HTTPS: a refresh over installed copies never leaves either store empty', everyBoundary,
       seeded.snapshots.map((s) => 'session=' + s.session.length + ' dynamic=' + s.dynamic.length).join(' -> '));
@@ -222,7 +232,7 @@ const SINGLE_STORE = [
     await seeded.api.applyHttpsUpgradeRule(false);
     check('Force HTTPS: switching off clears both stores with no add',
       seeded.stores().session.size === 0 && seeded.stores().dynamic.size === 0 &&
-      seeded.log.slice(2).every((entry) => (entry.update.addRules || []).length === 0));
+      seeded.log.slice(1).every((entry) => (entry.update.addRules || []).length === 0));
   }
   {
     const h = harness({ fail: ['dynamic'] });

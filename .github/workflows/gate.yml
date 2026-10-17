@@ -317,6 +317,8 @@ jobs:
             echo '3. Click **Load unpacked** and pick the folder you unzipped — the one with'
             echo '   `manifest.json` directly inside it.'
             echo
+            echo 'Please leave **Developer mode** on afterwards. Chrome switches unpacked extensions off without it, and WardenOne would stop protecting you until you turned it back on.'
+            echo
             echo '---'
             echo
             echo "This is WardenOne's build from \`main\`, packaged after the gate passed."

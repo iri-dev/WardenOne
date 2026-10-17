@@ -31,6 +31,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -73,7 +74,8 @@ const LIFTED = [
   constLine('__feedLoadRetries', 'const __feedLoadRetries = new Map();'),
   'const GRABBER_FEED_DOMAINS = new Set(); const GRABBER_FEED_RULE_HOSTS = new Map(); const MINER_HOSTS = new Set(); const MINER_POOL_HOSTS = new Set();',
   grabFn(BG, 'dnrValueMatches'), grabFn(BG, 'dnrBandUnchanged'),
-  orElse('getDynamicRulesInBand', 'async function getDynamicRulesInBand() { return chrome.declarativeNetRequest.getDynamicRules(); }'),
+  has(BG, 'getDynamicRulesInBand') ? dynamicRuleIo.prelude(BG, [[740000, 1000], [741000, 1], [741001, 1], [742000, 1000]])
+    : 'async function getDynamicRulesInBand() { return chrome.declarativeNetRequest.getDynamicRules(); }',
   orElse('localGetStrict', 'function localGetStrict(keys) { return localGet(keys); }'),
   orElse('scheduleFeedLoadRetry', 'function scheduleFeedLoadRetry() { return false; }'),
   orElse('clearFeedLoadRetry', 'function clearFeedLoadRetry() {}'),

@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 const webcrypto = require('crypto').webcrypto;
 
 const ROOT = path.resolve(__dirname, '..');
@@ -597,7 +598,8 @@ function runtime() {
     };
     const liveFn = pickFn('async function wardenBlockRuleLive(host) {');
     const dropFn = pickFn('async function wardenDropSiteWorker(host) {');
-    const bandFn = pickFn('async function getDynamicRulesInBand(base, size) {');
+    /* The worker's band read, with the learned band in the read the bands share. */
+    const bandFn = dynamicRuleIo.prelude(BG, [[700000, 2000]]);
     check('the block verifier is still where the test expects it', liveAt >= 0 && !!liveFn);
     check('and the service-worker drop is too', !!dropFn);
     check('the verifier reads the learned band, not every dynamic rule',
