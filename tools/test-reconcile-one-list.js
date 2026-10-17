@@ -29,6 +29,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(process.env.WARDENONE_BACKGROUND || path.join(ROOT, 'background.js'), 'utf8');
@@ -56,9 +57,10 @@ function balancedFrom(src, start) {
 }
 
 const CONFIG_CACHE = between('let __cfgCache = null;', '\n/* These stores are derived from sites visited', 'the config cache');
-const BAND_READ = between('async function getDynamicRulesInBand(', '\nconst MEDIA_COMPAT_RULE_BASE', 'the band read');
 /* The dynamic readers and the band each asks for, as the real appliers do. */
 const DYNAMIC_BANDS = { fingerprintScripts: [931500, 80], searchSponsoredAllow: [931700, 20] };
+/* The worker's band read, with both bands in the one read they share. */
+const BAND_READ = dynamicRuleIo.prelude(BG, Object.values(DYNAMIC_BANDS));
 const ORCHESTRATOR = between('const RECONCILE_DEGRADED_KEY = ', '\nfunction searchAiCleanupActive', 'the reconciler');
 const REFRESH = balancedFrom(ORCHESTRATOR, ORCHESTRATOR.indexOf('function refreshExtensionState() {'));
 
@@ -211,8 +213,8 @@ const offSwitching = (w) => w.calls.filter((c) => c.name.indexOf('LEGACY:') === 
   {
     const w = worker({ session: fakeSession(), config: { enabled: true }, fault: 'snapshot' });
     w.api.refreshExtensionState(); await settle();
-    check('one generation reads each dynamic band once and shares one session snapshot among readers',
-      w.dnrReads.dynamic === Object.keys(DYNAMIC_BANDS).length && w.dnrReads.session === 1,
+    check('one generation reads the dynamic rules once for both its dynamic bands, and shares one session snapshot among readers',
+      w.dnrReads.dynamic === 1 && w.dnrReads.session === 1,
       JSON.stringify(w.dnrReads));
     /* Unfiltered, the read is every dynamic rule (~22,000), built on the browser's UI thread. */
     check('no dynamic read asks for every rule', w.dnrReads.unfiltered === 0, JSON.stringify(w.dnrReads));

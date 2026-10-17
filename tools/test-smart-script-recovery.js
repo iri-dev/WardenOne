@@ -10,6 +10,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -190,7 +191,11 @@ function createHarness(options = {}) {
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    sourceBetween('function normalizeScriptShieldMode', '\nconst FINGERPRINT_SCRIPT_RESOURCE_TYPES')
+    /* Script Shield reads its dynamic band through the worker's shared read, and compares
+       before it writes. */
+    sourceBetween('function dnrValueMatches(', 'function ownDynamicRuleBands(')
+      + dynamicRuleIo.prelude(BACKGROUND, [[930000, 1000]])
+      + sourceBetween('function normalizeScriptShieldMode', '\nconst FINGERPRINT_SCRIPT_RESOURCE_TYPES')
       + '\nthis.__api = {'
       + 'applyScriptShieldRules, buildScriptShieldRulePlan, handleSmartScriptFailure, '
       + 'handleSmartScriptPlayerContext, handleSmartScriptPlayerIntent, clearSmartScriptRecoveryForTab, handleSmartScriptTopNavigation, '

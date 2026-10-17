@@ -14,6 +14,113 @@ is measured separately, under [Cold worker wakes](#cold-worker-wakes).
 machine metadata, video investigations and DevTools traces stay local; this page records
 the conclusions needed to understand release performance decisions.
 
+## Browser-process CPU while idle (2026-10-17)
+
+On 2026-09-05, per-process sampling in Brave put WardenOne at about 34% of one core in the
+browser process while idle (37.5% with every extension loaded, 0% with none), with no extension
+script running. It was not re-measured after the band-filtered rule reads under
+[Cold worker wakes](#cold-worker-wakes). It does not reproduce: idle with six restored tabs, the
+browser process uses about 2% of a core with WardenOne and 0.5% without it.
+
+**Method.** Edge 150.0.4078.48, i5-12400F (6 cores), Windows 10 19045, with other desktop apps
+open. The build is `5a7b336`, exported with `git archive`, so an uncommitted worker change in the
+tree at the time is not included. Each variant has its own disposable profile under `%TEMP%`.
+WardenOne's profiles waited for the remote lists (22,136 dynamic rules, 3,636 remote hosts)
+before any session. A session relaunches with `--restore-last-session` onto six tabs (Wikipedia,
+MDN, GitHub, BBC News, Stack Overflow, the Guardian) and reads the browser process's cumulative
+CPU time from `SystemInfo.getProcessInfo`:
+
+- the first 30 s after launch (restore);
+- the next 60 s (idle with the tabs);
+- 60 s with only about:blank;
+- 57 s browsing eight sites in one tab with wheel scrolling.
+
+The window is off-screen with native occlusion detection disabled, so the active tab still paints.
+Variants alternated within each round, and the second half of each round ran in reverse order.
+*Control* is a minimal extension with one static `declarativeNetRequest` block rule and no
+worker. It shows what Chrome charges any DNR blocker.
+
+Browser process, % of one core, median of two sessions per variant in profiles that had already
+browsed the sites at least four times (see the traps below):
+
+| Window | Off | Control | WardenOne |
+| --- | ---: | ---: | ---: |
+| Idle, six restored tabs | 0.5 | 0.7 | 1.9 |
+| Restore, first 30 s | 7.1 | 9.1 | 30.8 |
+| Browsing, eight sites | 5.4 | 5.2 | 7.5 |
+
+Across the three rounds that used a realistic restart (see the traps), idle with the tabs measured
+0.4-0.5% off and 0.9-2.7% on (median 2.0%, seven sessions each). Idle on about:blank was 0.1% for
+both (three sessions each, first round). The idle cost is under the 5% this re-check was set to
+investigate, and the browser process is not doing continuous work for WardenOne, so the
+2026-09-05 finding no longer holds for the current build.
+
+**What the remaining cost is.** WardenOne's extra browser-process work is mostly Chrome reading
+and rewriting its 22,136 dynamic rules:
+
+- `getDynamicRules({ ruleIds })` reads and parses the whole dynamic-rule file before it filters.
+  A call for a single id costs 114 ms of browser CPU with 22,136 rules and 1.1 ms with 136; an
+  unfiltered call costs 284 ms.
+- `updateDynamicRules` re-indexes the whole set, about 360 ms per write.
+- A trace of one restore counted 23 such reads and 2 writes: 4.7 s, almost all of it on a
+  browser thread-pool thread.
+- A traced worker wake made 8 band reads back to back, about 1 s. The idle windows show the same
+  thing. In every WardenOne session the worker went to sleep and then woke about a minute after
+  launch, and that five-second sample was the only busy one: 17-26% of a core, about 1 s of CPU,
+  with every other sample at 0.0-0.6%. With the remote lists removed, the same wake cost 1.3-1.4%,
+  about 70 ms.
+
+This runs off the UI thread, so it does not freeze the tab strip the way the unfiltered replies
+did. It is still CPU, and it grows with the size of the remote lists. The bands now share one
+read per wake and skip writes that change nothing. A wake's browser CPU fell from about 1.3 s to
+0.47 s; the before and after are under [Cold worker wakes](#cold-worker-wakes). The tables in this
+section were measured before that change.
+
+Ablations in earlier, younger profiles (three sessions each) located the cost:
+
+| Window | Off | WardenOne | AdShield static pack emptied | No remote lists |
+| --- | ---: | ---: | ---: | ---: |
+| Idle, six restored tabs | 0.4 | 2.6 | 2.4 | 0.5 |
+| Restore, first 30 s | 6.6 | 32.6 | 32.3 | 19.7 |
+
+Emptying the 28,024-rule AdShield pack, the bulk of the static rules, changed nothing. Removing
+the always-on `onRuleMatchedDebug` listener, which only unpacked installs fire, changed nothing
+either: restore / idle / browsing measured 30.5 / 1.9 / 7.3, against 30.8 / 1.9 / 7.5 with it.
+Without the remote lists, idle fell to the no-extension level and the restore cost roughly
+halved. The rest of the restore cost is request handling on the UI thread, about 2.5 s in the
+traced restore. Every request there also made the trusted-header round trips
+(`TrustedHeaderClient`) that Chrome adds once an extension has `modifyHeaders` rules. WardenOne
+installs six by default as session rules, one of which sets a `DNT` header on every request. The
+control, which has no such rules, added only 0.6 s of browser CPU over the same 30 s.
+
+**Traps.**
+
+- **A deep profile path silently loses the remote lists.** With the profile under a 165-character
+  scratch path, all 27 sources downloaded but `updateDynamicRules` failed with "Internal error
+  while updating dynamic rules.": Chrome's dynamic-rule file write exceeds the Windows path
+  limit. Profiles directly under `%TEMP%`, as `perf-profile.js` creates them, are fine.
+- **`--load-extension` fires `onInstalled` with reason `install` on every relaunch.** Onboarding
+  reopens, and the install path downloads all 27 lists again and rewrites the 22k rules. A real
+  unpacked install gets `onStartup` instead, which skips lists fetched in the past 12 hours. The
+  first round measured this by mistake: 31% restore, and 66% of a core idle across all processes,
+  most of it the onboarding animation below.
+  Later rounds used a throwaway copy whose install handler takes the startup path and opens no
+  onboarding.
+- **Onboarding's background animation was expensive while visible.** With it as the active tab,
+  Edge's GPU process used 66% of a core and its renderer 14%. With `prefers-reduced-motion:
+  reduce` emulated, both fell to about 0. Most of the cost was the never-ending animation, which
+  makes the browser draw a new frame on every refresh, rather than the blur. The motion now settles
+  within a minute, after which the page uses no measurable CPU.
+- **New profiles spike on first visits.** In a profile's first three or so browsing sessions, the
+  browser process spiked to 40-65% on the BBC, MDN, Guardian and GitHub pages, with or without an
+  extension. Without an extension, browsing measured 12-17% in the first three sessions and 5%
+  afterwards. Early sessions made the control look 13 points more expensive than off while
+  browsing; settled, it measured the same. Compare only profiles that have settled.
+- `SystemInfo.getProcessInfo` reports Edge's GPU process as type `GPU`, not `gpu`, and its utility
+  processes by service name.
+
+The sampling and trace scripts were run from a scratch directory; they are not in `tools/`.
+
 ## IDN helper scope (2026-10-13)
 
 The phishing detector's Unicode lookalike table now loads in the top-page engine and worker.
@@ -354,6 +461,61 @@ popup drag's worst move is 66 ms. The harness above keeps a debugger attached to
 which keeps it awake, so it cannot see any of this; `releaseWorker` in `perf-profile.js` lets
 a tool measure a wake.
 
+The band filter moved the reply off the UI thread but not the work: Chrome parses the whole
+dynamic-rule file before it applies `ruleIds`, about 110 ms of browser CPU per call with the lists
+in, and a wake made eight calls. Since 2026-10-17 the bands share one read per wake, filtered to
+all of WardenOne's own bands at once (about 7,100 ids, never the remote lists) and cut per band in
+the worker. Every dynamic-rule write goes through `writeDynamicRules`, which drops the shared read.
+Writes that would change nothing are skipped too: Chrome re-indexes every dynamic rule on any
+write, even an empty one, and a browser start sent several (Force HTTPS's dynamic copy, Script
+Shield's legacy cleanup, and the empty My Rules and firewall bands). A single unfiltered read was
+the alternative. It costs 284 ms and returns the 22,000 list rules on the UI thread, which is the
+stall this section is about, so it was not used. Measured on 2026-10-17 (Edge 150, 22,136 dynamic
+rules, a sleeping worker woken by closing a tab, two wakes per build):
+
+| Per wake | Before | After |
+| --- | ---: | ---: |
+| `getDynamicRules` calls | 8 | 1 |
+| Rule-API task time, thread pool | 876-901 ms | 104-110 ms |
+| Rule-API task time, UI thread | 66 ms | 9-10 ms |
+| Browser CPU over the 6.3 s window | 1,305-1,323 ms | 460-483 ms |
+
+`browser-cold-wake.js` still passes (no rule-API stall, 88 ms and 17 ms of UI-thread stalls).
+`tools/test-dynamic-rule-reads.js` counts reads and writes in the gate. It runs the real appliers,
+reconcile and queue against a modelled browser: one read and no writes per wake and per browser
+start, against eight reads per wake and 19 reads with five writes per start before. A real
+browser restart was not traced again, because `--load-extension` takes the install path on every
+relaunch.
+
+## Chrome over the DevTools pipe
+
+Chrome 152 ignores `--load-extension`, so the browser tools reach a current Chrome only through a
+launch override that starts it with `--remote-debugging-pipe --enable-unsafe-extension-debugging`
+and sends `Extensions.loadUnpacked` down the pipe. That override must switch developer mode on
+first, from a `chrome://extensions` tab with
+`chrome.developerPrivate.updateProfileConfiguration({ inDeveloperMode: true })`. The setting lives
+in Secure Preferences, so it cannot be written into the profile beforehand.
+
+Without it, Chrome loads and runs the extension as UNPACKED with developer mode off, then disables
+it (`unsupportedDeveloperExtension`) the first time it reloads: `chrome.runtime.reload()`,
+Settings > Erase, the Reload button, or allowing it in incognito. The worker never comes back.
+Every `chrome-extension://` tab turns into an `ERR_BLOCKED_BY_CLIENT` error page, but its target
+URL still reads `chrome-extension://...`, so it looks as if only the worker is missing. A minimal
+MV3 extension (a manifest and an empty worker) fails the same way. On 2026-10-17 this broke
+`browser-settings-data.js`, `browser-config-race.js` and `browser-audit-highs.js` in Chrome
+155.0.8059.82. With developer mode on first, all three pass. CI and Edge load with
+`--load-extension`, which installs as COMMAND_LINE, and developer mode does not gate that.
+
+It is not a product fault. A reader can only Load unpacked with developer mode on, and with it on
+the worker came back every time. The test was a real install through the Load unpacked folder
+picker (UNPACKED, saved in the profile, no pipe or unsafe flag), relaunched with only
+`--remote-debugging-port`. The worker returned after the erase request Settings sends (twice),
+after allowing WardenOne in incognito, after the Reload button, and after
+`chrome.runtime.reload()`. Switching developer mode off disables that install at once, and it
+stays disabled across restarts. That is Chrome's rule for unpacked extensions; WardenOne cannot
+change it. An extension loaded over the pipe is also never saved to the profile, so it is gone
+after a browser restart.
+
 ## How to read one
 
 - **off** is the same browser with no extension; **on** is WardenOne loaded from the working tree.
@@ -375,7 +537,8 @@ a tool measure a wake.
 - The harness fails closed: an "on" variant whose worker does not report the repository's version,
   or whose engine did not stamp its readiness marker in the page, refuses to measure; an "off"
   variant with the marker present refuses too. Chrome 152 no longer loads unpacked extensions
-  from the command line, so the browser is Microsoft Edge, and its version is in every profile.
+  from the command line, so the browser is Microsoft Edge, and its version is in every profile
+  (for Chrome, see [Chrome over the DevTools pipe](#chrome-over-the-devtools-pipe)).
 
 ## 1.0.1 at 4cd3119 (2026-09-20)
 

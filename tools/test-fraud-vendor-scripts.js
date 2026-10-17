@@ -31,6 +31,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -70,8 +71,10 @@ function lift(name) {
 
 const fnStart = BG.indexOf('async function applyFingerprintScriptRules');
 const fnEnd = BG.indexOf('\n}', fnStart) + 2;
-const bandStart = BG.indexOf('async function getDynamicRulesInBand');
-const bandRead = bandStart < 0 ? '' : BG.slice(bandStart, BG.indexOf('\n}', bandStart) + 2);
+/* The builder reads its band and compares before it writes; the read, the write and the
+   comparison all come from the worker. */
+const bandRead = dynamicRuleIo.prelude(BG)
+  + BG.slice(BG.indexOf('function dnrValueMatches('), BG.indexOf('function ownDynamicRuleBands('));
 
 const ctx = { console: { warn() {} }, Object, Array, String, Number };
 vm.createContext(ctx);
@@ -85,7 +88,7 @@ vm.runInContext([
   'const FINGERPRINT_SCRIPT_RULE_BASE = 931500;',
   'const FINGERPRINT_SCRIPT_RULE_MAX = 80;',
   'let captured = [];',
-  'const chrome = { declarativeNetRequest: { getDynamicRules: async () => [],'
+  'const chrome = { declarativeNetRequest: { getDynamicRules: async () => captured,'
     + ' updateDynamicRules: async (x) => { captured = x.addRules; } } };',
   bandRead,
   BG.slice(fnStart, fnEnd),

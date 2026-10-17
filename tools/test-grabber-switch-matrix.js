@@ -76,6 +76,7 @@ async function check(master, resources, warnings, malware) {
     readFeedConfig: async () => cfg,
     getDynamicRulesInBand: async (base, count) => [...dynamic.values()]
       .filter((rule) => rule.id >= base && rule.id < base + count),
+    writeDynamicRules: (change) => chrome.declarativeNetRequest.updateDynamicRules(change),
     dnrBandUnchanged: (left, right) => JSON.stringify(left) === JSON.stringify(right),
     grabberFeedDisabled: (value) => value.enabled === false || (value.blockGrabberResources === false
       && value.warnGrabberDomains === false && value.blockMalwareSites === false),
@@ -122,7 +123,7 @@ async function checkLearnedScope() {
     normalizeLearnedDomain: (host) => host, normalizeUserBlockDomain: (host) => host,
     getDynamicRulesInBand: async () => installed,
     dnrBandUnchanged: () => false,
-    chrome: { declarativeNetRequest: { updateDynamicRules: async ({ addRules }) => { installed = addRules; } } },
+    writeDynamicRules: async ({ addRules }) => { installed = addRules; },
   };
   vm.runInNewContext(lift('applyLearnedRules') + '\nthis.apply = applyLearnedRules;', context);
   const variants = [

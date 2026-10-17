@@ -197,12 +197,15 @@ async function run() {
     if (!combined || !combined.exact || combined.changed.sessionWrites !== 1 || combined.restoredCounts.sessionWrites !== 1) {
       throw new Error('Two session owners did not merge or restore exactly: ' + JSON.stringify(combined));
     }
+    /* The worker's bands share one dynamic-rule read, reused for up to 15 s, so a phase that starts
+       inside that window makes no read and never meets the delay. Each phase drops it first. */
     const dynamicCombined = await evaluate(`(async () => {
       const p=globalThis.__woDnrProfile;
       p.delayBand=931700;
       p.delayedReads={};
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
       p.traces=[];
+      __ownDynamicRulesRead=null;
       let before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:{...p.config,blockFingerprintScripts:false,googleSearchResultCleanup:true}});
       await __woDnrAwaitGeneration(before);
@@ -210,6 +213,7 @@ async function run() {
       const traces=p.traces.slice();
       p.counts={dynamicReads:0,sessionReads:0,dynamicWrites:0,sessionWrites:0};
       p.delayBand=931500;
+      __ownDynamicRulesRead=null;
       before=__refreshExtensionStateGeneration;
       await chrome.storage.local.set({wardenone_config:p.config});
       await __woDnrAwaitGeneration(before);

@@ -4378,28 +4378,97 @@ function dnrValueMatches(desired, installed) {
   }
   return false;
 }
-function dnrBandUnchanged(installed, desired) {
+// `exact` also counts a field the installed rule carries and the desired one does not set. The
+// bands this code builds keep one shape; the reader's own rules do not. Editing `$third-party`
+// off a rule leaves every field the new rule sets as it was, and only an exact comparison sees
+// that the installed rule still has domainType. A field Chrome added makes an exact comparison
+// fail, which only means the band is written as before.
+function dnrBandUnchanged(installed, desired, exact) {
   if (!Array.isArray(installed) || !Array.isArray(desired) || installed.length !== desired.length) return false;
   const byId = new Map();
   for (const rule of installed) if (rule && typeof rule.id === 'number') byId.set(rule.id, rule);
   if (byId.size !== installed.length) return false;
   for (const rule of desired) {
     const have = byId.get(rule && rule.id);
-    if (!have || !dnrValueMatches(rule, have)) return false;
+    if (!have || !dnrValueMatches(rule, have) || (exact && !dnrValueMatches(have, rule))) return false;
   }
   return true;
+}
+// Every dynamic band the worker reads back, as [first id, size]: all of WardenOne's own rules
+// except the remote lists, which only the list update reads. A function, not a const, because
+// most of these are declared further down the file; nothing reads a band before load ends.
+function ownDynamicRuleBands() {
+  return [
+    [LEARNED_RULE_BASE, LEARNED_MAX],
+    [TRACKER_RULE_BASE, TRACKER_RULE_MAX],
+    [GRABBER_FEED_RULE_BASE, GRABBER_FEED_MAX],
+    [GRABBER_NAV_RULE_ID, 1],
+    [GRABBER_MALWARE_NAV_RULE_ID, 1],
+    [MINER_FEED_RULE_BASE, MINER_FEED_MAX],
+    [NEVER_BLOCK_ALLOW_RULE_BASE, NEVER_BLOCK_ALLOW_MAX],
+    [USER_RULE_BASE, USER_RULE_MAX],
+    [FIREWALL_RULE_BASE, FIREWALL_RULE_MAX],
+    [USER_BLOCKLIST_RULE_BASE, USER_BLOCKLIST_RULES_BUDGET],
+    [FINGERPRINT_SCRIPT_RULE_BASE, FINGERPRINT_SCRIPT_RULE_MAX],
+    [GOOGLE_SEARCH_ALLOW_RULE_BASE, GOOGLE_SEARCH_ALLOW_RULE_MAX],
+    [SCRIPT_SHIELD_RULE_BASE, SCRIPT_SHIELD_RULE_MAX],
+    [HTTPS_UPGRADE_DYNAMIC_RULE_ID, 1],
+  ];
 }
 // Read one band, not every dynamic rule. Unfiltered, Chrome answers with all of them -- the
 // remote lists alone are ~22,000 -- and builds that reply on the browser's UI thread, about
 // 200 ms per call. Six appliers read on every wake, so a tab close that woke the worker froze
-// the tab strip for over a second. Callers still filter to their band; this only narrows the
-// reply. No unfiltered fallback: the filter is Chrome 111+ and the manifest requires 121, so a
-// rejection is a transient Chrome error, and answering it with the full read would bring the
-// stall back. Every caller catches and leaves its band for the next wake, as it did before.
+// the tab strip for over a second. No unfiltered fallback: the filter is Chrome 111+ and the
+// manifest requires 121, so a rejection is a transient Chrome error, and answering it with the
+// full read would bring the stall back. Every caller catches and leaves its band for the next
+// wake, as it did before.
+//
+// The filter narrows the reply, not the work. Chrome reads and parses the whole dynamic-rule
+// file before it filters: 114 ms of browser CPU per call with the lists in, even for one id,
+// against 1.1 ms without them, and a wake made eight such calls. So the listed bands share one
+// read, filtered to all of them at once and cut per band here: one parse per wake, and a reply
+// that is still only WardenOne's own bands. One unfiltered read would cost 284 ms and hand back
+// the 22,000 list rules on the UI thread, which is the stall above.
 async function getDynamicRulesInBand(base, size) {
-  const ruleIds = [];
-  for (let i = 0; i < size; i++) ruleIds.push(base + i);
-  return chrome.declarativeNetRequest.getDynamicRules({ ruleIds });
+  if (!ownDynamicBandListed(base, size)) {
+    const ruleIds = [];
+    for (let i = 0; i < size; i++) ruleIds.push(base + i);
+    return chrome.declarativeNetRequest.getDynamicRules({ ruleIds });
+  }
+  const rules = await readOwnDynamicRules();
+  return rules.filter((rule) => rule && rule.id >= base && rule.id < base + size);
+}
+function ownDynamicBandListed(base, size) {
+  return ownDynamicRuleBands().some(([first, count]) => base >= first && base + size <= first + count);
+}
+// The shared read is reused until this worker writes a dynamic rule. Every write goes through
+// writeDynamicRules, which drops it when the write is sent and again when it settles, so a read
+// that was in flight across a write is never handed to a caller that came after it. Only the
+// worker writes these rules; the age limit bounds a long-lived worker anyway. Callers get
+// their own array but share the rule objects, which none of them modifies.
+const OWN_DYNAMIC_RULES_REUSE_MS = 15000;
+let __ownDynamicRuleIds = null;
+let __ownDynamicRulesRead = null;
+function readOwnDynamicRules() {
+  const held = __ownDynamicRulesRead;
+  if (held && Date.now() - held.at < OWN_DYNAMIC_RULES_REUSE_MS) return held.rules;
+  if (!__ownDynamicRuleIds) {
+    const ids = new Set();
+    for (const [first, count] of ownDynamicRuleBands()) for (let i = 0; i < count; i++) ids.add(first + i);
+    __ownDynamicRuleIds = Array.from(ids);
+  }
+  const entry = { at: Date.now(), rules: chrome.declarativeNetRequest.getDynamicRules({ ruleIds: __ownDynamicRuleIds }) };
+  __ownDynamicRulesRead = entry;
+  // A failed read is not kept: the next caller asks Chrome again, still filtered.
+  entry.rules.catch(() => { if (__ownDynamicRulesRead === entry) __ownDynamicRulesRead = null; });
+  return entry.rules;
+}
+function writeDynamicRules(change) {
+  __ownDynamicRulesRead = null;
+  const write = chrome.declarativeNetRequest.updateDynamicRules(change);
+  const forget = () => { __ownDynamicRulesRead = null; };
+  Promise.resolve(write).then(forget, forget);
+  return write;
 }
 const MEDIA_COMPAT_RULE_BASE = 806000;
 const LOGIN_COMPAT_RULE_BASE = 807000;
@@ -4816,7 +4885,8 @@ async function applyLearnedRules() {
     const cfgStore = await localGet('wardenone_config');
     const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     if (cfg.enabled === false) {
-      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: [] });
+      // An empty write still makes Chrome re-index every dynamic rule (~360 ms with the lists in).
+      if (oldIds.length) await writeDynamicRules({ removeRuleIds: oldIds, addRules: [] });
       return;
     }
     const allowlist = activeAllowlist(cfg);
@@ -4874,7 +4944,7 @@ async function applyLearnedRules() {
       };
     }).filter(Boolean);
     // Runs on every wake: an unchanged band must not cost Chrome a rewrite of every dynamic rule.
-    if (!dnrBandUnchanged(mine, addRules)) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules });
+    if (!dnrBandUnchanged(mine, addRules)) await writeDynamicRules({ removeRuleIds: oldIds, addRules });
     return { ok: true, count: addRules.length };
   } catch (e) {
     /* Still logged, but no longer only logged. Swallowing this is what let
@@ -5045,8 +5115,8 @@ async function applyGrabberFeedRules() {
   try {
     const existing = await getDynamicRulesInBand(GRABBER_FEED_RULE_BASE, GRABBER_FEED_MAX);
     const mine = existing.filter((x) => x.id >= GRABBER_FEED_RULE_BASE && x.id < GRABBER_FEED_RULE_BASE + GRABBER_FEED_MAX);
-    const existingNav = await chrome.declarativeNetRequest.getDynamicRules({ ruleIds: [GRABBER_NAV_RULE_ID] });
-    const existingSite = await chrome.declarativeNetRequest.getDynamicRules({ ruleIds: [GRABBER_MALWARE_NAV_RULE_ID] });
+    const existingNav = await getDynamicRulesInBand(GRABBER_NAV_RULE_ID, 1);
+    const existingSite = await getDynamicRulesInBand(GRABBER_MALWARE_NAV_RULE_ID, 1);
     const cfg = await readFeedConfig();
     const domains = grabberFeedDisabled(cfg) ? [] : Array.from(GRABBER_FEED_DOMAINS).slice(0, GRABBER_FEED_MAX);
     const resourcesOn = cfg.enabled !== false && cfg.blockGrabberResources !== false;
@@ -5073,7 +5143,7 @@ async function applyGrabberFeedRules() {
     // The largest band there is, rebuilt on every worker start: skipped when nothing changed.
     if (!dnrBandUnchanged(mine, addRules) || !dnrBandUnchanged(existingNav, navRules)
         || !dnrBandUnchanged(existingSite, siteRules)) {
-      await chrome.declarativeNetRequest.updateDynamicRules({
+      await writeDynamicRules({
         removeRuleIds: mine.concat(existingNav, existingSite).map((x) => x.id),
         addRules: addRules.concat(navRules, siteRules),
       });
@@ -5596,20 +5666,23 @@ async function applyUserFilterRulesFrom(bundle) {
   if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateDynamicRules) {
     return { ok: false, count: 0, error: 'Dynamic rules are not available in this browser.' };
   }
-  let oldIds = [];
+  let mine = [];
   try {
     const existing = await getDynamicRulesInBand(USER_RULE_BASE, USER_RULE_MAX);
-    oldIds = (existing || [])
-      .filter((x) => x.id >= USER_RULE_BASE && x.id < USER_RULE_BASE + USER_RULE_MAX)
-      .map((x) => x.id);
+    mine = (existing || [])
+      .filter((x) => x.id >= USER_RULE_BASE && x.id < USER_RULE_BASE + USER_RULE_MAX);
   } catch (e) {
     return { ok: false, count: 0, error: 'Could not read the rules already in the browser: ' + String((e && e.message) || e).slice(0, 160) };
   }
+  const oldIds = mine.map((x) => x.id);
   // With the master switch down nothing of the reader's goes live either (BUG-02): the text is
   // still stored by the caller, and the band is rebuilt from it when the switch returns.
   const network = (await masterSwitchOn()) ? bundle.network : [];
+  // Every browser start re-applies this band, usually empty. Chrome re-indexes every dynamic
+  // rule on any write, so a band already exactly as wanted is reported as applied, unwritten.
+  if (dnrBandUnchanged(mine, network, true)) return { ok: true, count: network.length, error: '' };
   try {
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: network });
+    await writeDynamicRules({ removeRuleIds: oldIds, addRules: network });
     return { ok: true, count: network.length, error: '' };
   } catch (e) {
     return { ok: false, count: 0, kept: oldIds.length, error: String((e && e.message) || e).slice(0, 200) };
@@ -6552,7 +6625,7 @@ async function applyUserBlocklistRules() {
       .filter((r) => r.id >= USER_BLOCKLIST_RULE_BASE && r.id < USER_BLOCKLIST_RULE_BASE + USER_BLOCKLIST_RULES_BUDGET);
     const addRules = on ? userBlockRulesFrom(live) : [];
     if (!dnrBandUnchanged(mine, addRules)) {
-      await chrome.declarativeNetRequest.updateDynamicRules({
+      await writeDynamicRules({
         removeRuleIds: mine.map((r) => r.id),
         addRules,
       });
@@ -6747,12 +6820,13 @@ async function applyFirewallRulesFrom(rules) {
   try {
     const existing = await getDynamicRulesInBand(FIREWALL_RULE_BASE, FIREWALL_RULE_MAX);
     const mine = (existing || [])
-      .filter((r) => r.id >= FIREWALL_RULE_BASE && r.id < FIREWALL_RULE_BASE + FIREWALL_RULE_MAX)
-      .map((r) => r.id);
+      .filter((r) => r.id >= FIREWALL_RULE_BASE && r.id < FIREWALL_RULE_BASE + FIREWALL_RULE_MAX);
     // With the master switch down nothing of the reader's goes live (BUG-02); the decision is
     // still stored by the caller and comes back with the switch.
     const live = (await masterSwitchOn()) ? rules : [];
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: mine, addRules: live });
+    // Re-applied on every browser start; an identical band is not rewritten (see the user rules).
+    if (dnrBandUnchanged(mine, live, true)) return { ok: true, applied: live.length, error: '' };
+    await writeDynamicRules({ removeRuleIds: mine.map((r) => r.id), addRules: live });
     return { ok: true, applied: live.length, error: '' };
   } catch (e) {
     return { ok: false, applied: 0, error: firewallErrorText(e) };
@@ -6929,7 +7003,7 @@ async function applyMinerFeedRules() {
       condition: { requestDomains: [d], domainType: 'thirdParty', resourceTypes: MINER_POOL_RESOURCE_TYPES },
     })));
     if (dnrBandUnchanged(mine, addRules)) return;
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
+    await writeDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
   } catch (e) { console.warn('[WardenOne] cryptominer feed rules failed', e); }
 }
 // Same shape as loadGrabberFeed, for the same reason (LIFE-02): assembled aside, swapped in
@@ -7310,7 +7384,7 @@ async function applyTrackerLearnerRules() {
     const cfgStore = await localGet('wardenone_config');
     const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     if (cfg.enabled === false || cfg.trackerLearner === false) {
-      await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: [] });
+      if (oldIds.length) await writeDynamicRules({ removeRuleIds: oldIds, addRules: [] });
       return;
     }
     const rules = [];
@@ -7340,7 +7414,7 @@ async function applyTrackerLearnerRules() {
       .sort((a, b) => Number((TRACKER_LEARNER.domains[b] && TRACKER_LEARNER.domains[b].hits) || 0) - Number((TRACKER_LEARNER.domains[a] && TRACKER_LEARNER.domains[a].hits) || 0))
       .forEach((domain) => addRule('block', 1800, domain));
     if (dnrBandUnchanged(mine, rules)) return;
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: oldIds, addRules: rules });
+    await writeDynamicRules({ removeRuleIds: oldIds, addRules: rules });
   } catch (e) {
     console.warn('[WardenOne] tracker learner rules failed', e);
   }
@@ -7634,6 +7708,17 @@ async function setTrackerLearnerSiteMode(url, domain, mode) {
 // In-memory set of known-bad domains (from the loaded blocklists), used to score
 // download sources. Populated by updateRemoteLists and restored from storage on
 // service-worker startup.
+/* Read-only membership shares the security Set instead of indexing those domains twice. */
+function blockedDomainIndex(domains, securityDomains) {
+  const otherDomains = new Set();
+  for (const domain of domains) {
+    if (!securityDomains.has(domain)) otherDomains.add(domain);
+  }
+  return Object.freeze({
+    size: securityDomains.size + otherDomains.size,
+    has(domain) { return securityDomains.has(domain) || otherDomains.has(domain); },
+  });
+}
 let BLOCKED_DOMAINS = new Set();
 /* The malware/scam half of BLOCKED_DOMAINS, kept apart because the merged set also holds
    ad and tracker domains, and "this is an ad server" is not "this is dangerous". Nothing
@@ -7649,9 +7734,9 @@ try {
   __initBlockedDomains = new Promise((resolve) => {
     chrome.storage.local.get(['wardenone_blocked_domains', 'wardenone_blocked_security_count'], (r) => {
       if (r && Array.isArray(r.wardenone_blocked_domains)) {
-        BLOCKED_DOMAINS = new Set(r.wardenone_blocked_domains);
         const n = Math.max(0, Math.min(r.wardenone_blocked_domains.length, Number(r.wardenone_blocked_security_count) || 0));
         SECURITY_DOMAINS = new Set(r.wardenone_blocked_domains.slice(0, n));
+        BLOCKED_DOMAINS = blockedDomainIndex(r.wardenone_blocked_domains, SECURITY_DOMAINS);
       }
       resolve();
     });
@@ -11837,7 +11922,7 @@ function createReconcileDnrBatch(kind) {
   let pending = 0;
   let deadline = null;
   const update = kind === 'dynamic'
-    ? (change) => chrome.declarativeNetRequest.updateDynamicRules(change)
+    ? (change) => writeDynamicRules(change)
     : (change) => chrome.declarativeNetRequest.updateSessionRules(change);
   const api = {
     collect(apply) {
@@ -11988,15 +12073,10 @@ function refreshExtensionState() {
       const generation = ++__refreshExtensionStateGeneration;
       const applied = [];
       const names = [];
-      // Per band: one full snapshot was every dynamic rule (~22,000), built on the browser's UI
-      // thread, on the first settings change of each worker life.
-      const dynamicBandSnapshots = new Map();
+      // Dynamic bands are read through getDynamicRulesInBand, which every applier on this wake
+      // shares; one full snapshot here was every dynamic rule (~22,000), built on the browser's
+      // UI thread, on the first settings change of each worker life.
       let sessionRulesSnapshot = null;
-      const sharedDynamicRules = (base, size) => {
-        const key = base + ':' + size;
-        if (!dynamicBandSnapshots.has(key)) dynamicBandSnapshots.set(key, getDynamicRulesInBand(base, size));
-        return dynamicBandSnapshots.get(key);
-      };
       const sharedSessionRules = () => (sessionRulesSnapshot ||= chrome.declarativeNetRequest.getSessionRules());
       const dynamicBatch = createReconcileDnrBatch('dynamic');
       const sessionBatch = createReconcileDnrBatch('session');
@@ -12048,8 +12128,8 @@ function refreshExtensionState() {
       run('minerDetect', () => reconcileMinerDetectInjection(cfg));
       run('searchJunk', () => reconcileSearchJunkInjection(cfg));
       run('googleCleanupCss', () => reconcileGoogleCleanupCssInjection(cfg));
-      run('fingerprintScripts', (submitRules) => applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true, sharedDynamicRules, submitRules), [on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true].join(','), dynamicBatch);
-      run('searchSponsoredAllow', (submitRules) => applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg), sharedDynamicRules, submitRules), String(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)), dynamicBatch);
+      run('fingerprintScripts', (submitRules) => applyFingerprintScriptRules(on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true, getDynamicRulesInBand, submitRules), [on && cfg.blockFingerprintScripts !== false, on && cfg.blockFraudVendorScripts === true].join(','), dynamicBatch);
+      run('searchSponsoredAllow', (submitRules) => applyGoogleSearchSponsoredAllowRules(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg), getDynamicRulesInBand, submitRules), String(on && cfg.adShield !== false && !searchSponsoredCleanupActive(cfg)), dynamicBatch);
       run('searchParams', (submitRules) => applySearchParamRules(Object.assign({}, cfg, { enabled: on }), sharedSessionRules, submitRules), [on, cfg.safeSearch === true, cfg.googleWebResultsOnly === true].join(','), sessionBatch);
       run('allCookies', () => applyAllCookieBlock(on && cfg.blockAllCookies === true), String(on && cfg.blockAllCookies === true));
       run('geolocation', () => applyGlobalLocationBlock(on && cfg.blockGeolocation === true, locationExemptHosts(cfg)), JSON.stringify([on && cfg.blockGeolocation === true, locationExemptHosts(cfg)]));
@@ -13230,10 +13310,17 @@ async function applyHttpsUpgradeRule(enabled) {
   let sessionOk = false;
   let dynamicOk = false;
   try {
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: [HTTPS_UPGRADE_DYNAMIC_RULE_ID],
-      addRules: enabled ? [httpsUpgradeRule(HTTPS_UPGRADE_DYNAMIC_RULE_ID)] : [],
-    });
+    // Every browser start lands here with a fresh worker, nearly always to confirm "off". The
+    // dynamic copy is written only when it differs; a failed read writes, as before.
+    const want = enabled ? [httpsUpgradeRule(HTTPS_UPGRADE_DYNAMIC_RULE_ID)] : [];
+    let installed = null;
+    try { installed = await getDynamicRulesInBand(HTTPS_UPGRADE_DYNAMIC_RULE_ID, 1); } catch (_) {}
+    if (!installed || !dnrBandUnchanged(installed, want)) {
+      await writeDynamicRules({
+        removeRuleIds: [HTTPS_UPGRADE_DYNAMIC_RULE_ID],
+        addRules: want,
+      });
+    }
     dynamicOk = true;
   } catch (e) {
     if (enabled) console.warn('[WardenOne] persistent https upgrade rule failed', e);
@@ -14068,7 +14155,7 @@ function isWardenOneDynamicRuleId(id) {
 async function removeWardenOneDynamicRules() {
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
   const ids = existing.filter((r) => isWardenOneDynamicRuleId(r.id)).map((r) => r.id);
-  if (ids.length) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: ids });
+  if (ids.length) await writeDynamicRules({ removeRuleIds: ids });
 }
 
 function normalizeScriptShieldMode(mode) {
@@ -14485,20 +14572,23 @@ function applyScriptShieldRules(mode, trustedHosts) {
       // A full dynamic read also deserializes the large remote blocklist.
       const ruleIds = Array.from({ length: SCRIPT_SHIELD_RULE_MAX }, (_, index) => SCRIPT_SHIELD_RULE_BASE + index);
       const [dynamicRules, sessionRules] = await Promise.all([
-        chrome.declarativeNetRequest.getDynamicRules({ ruleIds }),
+        getDynamicRulesInBand(SCRIPT_SHIELD_RULE_BASE, SCRIPT_SHIELD_RULE_MAX),
         chrome.declarativeNetRequest.getSessionRules({ ruleIds }),
       ]);
       const inScriptShieldBand = (rule) => rule.id >= SCRIPT_SHIELD_RULE_BASE
         && rule.id < SCRIPT_SHIELD_RULE_BASE + SCRIPT_SHIELD_RULE_MAX;
-      const oldDynamicIds = dynamicRules.filter(inScriptShieldBand).map((rule) => rule.id);
+      const oldDynamic = dynamicRules.filter(inScriptShieldBand);
       const oldSessionIds = sessionRules.filter(inScriptShieldBand).map((rule) => rule.id);
       // Always remove the old dynamic 930000 blanket and the former host allow
       // rules. Smart's blanket is session-scoped so recovered tabs can be
-      // excluded without creating a broad network allow.
-      await chrome.declarativeNetRequest.updateDynamicRules({
-        removeRuleIds: oldDynamicIds,
-        addRules: plan.dynamicRules,
-      });
+      // excluded without creating a broad network allow. With none left there is
+      // nothing to write: an empty write still re-indexes every dynamic rule.
+      if (!dnrBandUnchanged(oldDynamic, plan.dynamicRules)) {
+        await writeDynamicRules({
+          removeRuleIds: oldDynamic.map((rule) => rule.id),
+          addRules: plan.dynamicRules,
+        });
+      }
       await chrome.declarativeNetRequest.updateSessionRules({
         removeRuleIds: oldSessionIds,
         addRules: plan.sessionRules,
@@ -15191,9 +15281,9 @@ const FINGERPRINT_SCRIPT_URL_FILTERS = FINGERPRINT_LIBRARY_URL_FILTERS
 async function applyFingerprintScriptRules(enabled, blockFraudVendors, readRules, submitRules) {
   try {
     const existing = await (readRules || getDynamicRulesInBand)(FINGERPRINT_SCRIPT_RULE_BASE, FINGERPRINT_SCRIPT_RULE_MAX);
-    const oldIds = existing
-      .filter((r) => r.id >= FINGERPRINT_SCRIPT_RULE_BASE && r.id < FINGERPRINT_SCRIPT_RULE_BASE + FINGERPRINT_SCRIPT_RULE_MAX)
-      .map((r) => r.id);
+    const mine = existing
+      .filter((r) => r.id >= FINGERPRINT_SCRIPT_RULE_BASE && r.id < FINGERPRINT_SCRIPT_RULE_BASE + FINGERPRINT_SCRIPT_RULE_MAX);
+    const oldIds = mine.map((r) => r.id);
     /* The same exclusion every other blocking rule in this file carries. A
        federation or sign-in page that legitimately embeds one of these used to be
        refused with no way back short of allowlisting the whole site. */
@@ -15229,8 +15319,10 @@ async function applyFingerprintScriptRules(enabled, blockFraudVendors, readRules
         }, compatibilityExclusions),
       });
     });
+    // Run by the reconcile on every browser start; unchanged, it is not written.
+    if (dnrBandUnchanged(mine, addRules)) return;
     const change = { removeRuleIds: oldIds, addRules };
-    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateDynamicRules(change));
+    await (submitRules ? submitRules(change) : writeDynamicRules(change));
   } catch (e) {
     console.warn('[WardenOne] fingerprint script rules failed', e);
     return false;
@@ -15441,9 +15533,9 @@ async function applyGoogleSearchSponsoredAllowRules(enabled, readRules, submitRu
   try {
     enabled = !!enabled;
     const existing = await (readRules || getDynamicRulesInBand)(GOOGLE_SEARCH_ALLOW_RULE_BASE, GOOGLE_SEARCH_ALLOW_RULE_MAX);
-    const oldIds = existing
-      .filter((r) => r.id >= GOOGLE_SEARCH_ALLOW_RULE_BASE && r.id < GOOGLE_SEARCH_ALLOW_RULE_BASE + GOOGLE_SEARCH_ALLOW_RULE_MAX)
-      .map((r) => r.id);
+    const mine = existing
+      .filter((r) => r.id >= GOOGLE_SEARCH_ALLOW_RULE_BASE && r.id < GOOGLE_SEARCH_ALLOW_RULE_BASE + GOOGLE_SEARCH_ALLOW_RULE_MAX);
+    const oldIds = mine.map((r) => r.id);
     const addRules = [];
     if (enabled) {
       GOOGLE_SEARCH_SPONSORED_DOMAINS.forEach((domain) => {
@@ -15465,8 +15557,9 @@ async function applyGoogleSearchSponsoredAllowRules(enabled, readRules, submitRu
         });
       });
     }
+    if (dnrBandUnchanged(mine, addRules)) return;
     const change = { removeRuleIds: oldIds, addRules };
-    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateDynamicRules(change));
+    await (submitRules ? submitRules(change) : writeDynamicRules(change));
   } catch (e) {
     console.warn('[WardenOne] Google Search sponsored allow rules failed', e);
     return false;
@@ -15593,7 +15686,7 @@ async function applyNeverBlockAllowRules() {
       });
     }
     if (dnrBandUnchanged(mine, addRules)) return;
-    await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
+    await writeDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
   } catch (e) { console.warn('[WardenOne] never-block allow rules failed', e); }
 }
 /* The boot-time calls of these two appliers live below SERIALIZED_STATE_APPLIERS: called here,
@@ -15866,7 +15959,7 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
 /* Domains where a single security feed's listing disagrees with the other sources checked, so
    WardenOne doesn't act on that one listing: no block, no malware label on search results. This
    suppresses the single-feed verdict only. It does not mark the site safe, and unknown still
-   doesn't mean safe. Each entry covers the domain and its www. host, nothing else: any other
+   doesn't mean safe. Each entry covers that exact name and its www. host, nothing else: any other
    subdomain a feed lists stays blockable, and so do look-alike copies, which are different
    domains. The reader's own lists and rules don't come through this parser, so their choices
    still apply, and so does every other protection on the page.
@@ -15876,8 +15969,15 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
                    feeds don't list it, and the other sources checked disagree with that
                    listing; that is not the same as a clean record. Its fake copies
                    (steamrip-en.pages.dev, steamrip.us.com, steamripzone.com) are listed by
-                   other feeds and stay blocked. Checked 2026-10-02. */
-const FEED_FALSE_POSITIVE_DOMAINS = new Set(['steamrip.com']);
+                   other feeds and stay blocked. Checked 2026-10-02.
+
+     support.metamask.io  MetaMask's own help centre, published by Consensys under the
+                   metamask.io name. Listed by one of the sixteen security feeds (HaGeZi's threat
+                   intelligence feed, medium). MetaMask's phishing config names metamask.io as
+                   legitimate, and no other feed lists it. Look-alikes that wear the name
+                   (metamask.io-token.vip, app-metamask.io, metamask.io.in) are separate
+                   domains and stay blocked. Checked 2026-10-17. */
+const FEED_FALSE_POSITIVE_DOMAINS = new Set(['steamrip.com', 'support.metamask.io']);
 function isFeedFalsePositiveDomain(host) {
   const d = String(host || '').toLowerCase();
   return FEED_FALSE_POSITIVE_DOMAINS.has(d) || (d.startsWith('www.') && FEED_FALSE_POSITIVE_DOMAINS.has(d.slice(4)));
@@ -15929,10 +16029,13 @@ function parseList(text) {
     }
   }
 
+  /* A fuzzylist names the REAL sites a feed protects, the originals its look-alike matching
+     measures against: MetaMask's config lists metamask.io, etherscan.io and opensea.io there.
+     Read as blocks, it put those eight sites on the malware list. */
   function collectJson(value, key, activeBranch) {
     const keyName = String(key || '');
-    if (/^(allow|white|safe|legit|ignore|tolerance|source|report|comment|description|category|title|name|created|updated|date|reason)/i.test(keyName) || /(allow|white)list/i.test(keyName)) return;
-    const blockKey = /^(blocklist|blacklist|fuzzylist|domains?|hosts?|urls?|entries|list)$/i.test(keyName);
+    if (/^(allow|white|safe|legit|ignore|fuzzy|tolerance|source|report|comment|description|category|title|name|created|updated|date|reason)/i.test(keyName) || /(allow|white)list/i.test(keyName)) return;
+    const blockKey = /^(blocklist|blacklist|domains?|hosts?|urls?|entries|list)$/i.test(keyName);
     const active = activeBranch || blockKey;
 
     if (typeof value === 'string') {
@@ -16929,7 +17032,7 @@ async function commitRemoteListRules(removeRuleIds, addRules, unchanged) {
     return { applied: false, disabled: true };
   }
 
-  if (!unchanged) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds, addRules });
+  if (!unchanged) await writeDynamicRules({ removeRuleIds, addRules });
 
   if (!await masterEnabled()) {
     await removeWardenOneDynamicRules();
@@ -17131,7 +17234,7 @@ async function updateRemoteListsCore(reason) {
         sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources, failures: sourceFailures.slice(0, 12) },
       };
     }
-    BLOCKED_DOMAINS = merged;
+    BLOCKED_DOMAINS = blockedDomainIndex(merged, domainBuckets.security);
     SECURITY_DOMAINS = domainBuckets.security;
     /* Storage uses a security-first prefix; every fallback cap is at most this length. */
     const storagePrefix = storedBlockedDomainPrefix(domainBuckets.security, merged);
@@ -21682,7 +21785,7 @@ async function eraseWardenOneSite(rawHost, dryRun) {
       chrome.declarativeNetRequest.getDynamicRules(),
       chrome.declarativeNetRequest.getSessionRules(),
     ]);
-    if (dynamic.length) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: dynamic.map((rule) => rule.id), addRules: [] });
+    if (dynamic.length) await writeDynamicRules({ removeRuleIds: dynamic.map((rule) => rule.id), addRules: [] });
     if (sessionRules.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
     if (chrome.storage.session) await chrome.storage.session.set({ [PRIVACY_ERASE_REBUILD_KEY]: true });
     setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
@@ -21712,7 +21815,7 @@ async function eraseWardenOneData(mode) {
       chrome.declarativeNetRequest.getDynamicRules(),
       chrome.declarativeNetRequest.getSessionRules(),
     ]);
-    if (dynamic.length) await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: dynamic.map((rule) => rule.id), addRules: [] });
+    if (dynamic.length) await writeDynamicRules({ removeRuleIds: dynamic.map((rule) => rule.id), addRules: [] });
     if (sessionRules.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
     await withConfigLock(async () => {
       const latest = await chrome.storage.local.get('wardenone_config');

@@ -235,6 +235,7 @@ function checkContentBuild() {
   'tools/test-xss-event-boundary.js',
   'tools/test-clickfix-guard.js',
   'tools/test-scam-lock.js',
+  'tools/test-feature-page-warnings.js',
   'tools/test-engine-config-ownership.js',
   'tools/test-engine-config-source.js',
   'tools/test-permission-chain-trust.js',
@@ -353,6 +354,7 @@ function checkContentBuild() {
   'tools/test-health-tab-evidence.js',
   'tools/test-rule-cap-honesty.js',
   'tools/test-cold-wake-writes.js',
+  'tools/test-dynamic-rule-reads.js',
   'tools/test-redirect-chain-mirror.js',
   'tools/test-feed-load-safety.js',
   'tools/test-nav-signal-forgery.js',
@@ -411,11 +413,14 @@ function checkContentBuild() {
   'tools/test-onboarding-site-card.js',
   'tools/test-onboarding-pin-guidance.js',
   'tools/test-onboarding-coverage.js',
+  'tools/test-onboarding-motion.js',
   'tools/test-settings-change-log.js',
   'tools/test-settings-page.js',
   'tools/test-security-scan-coverage.js',
   'tools/test-config-write-lock.js',
   'tools/test-browser-test-finish.js',
+  'tools/test-domain-index.js',
+  'tools/bench-domain-index-memory.js',
   'tools/test-workflow-pinning.js',
   'tools/test-education-compat.js',
   'tools/config-write-harness.js',
@@ -546,6 +551,7 @@ checkCommand('Silent mode round-trip tests', ['tools/test-silent-mode-roundtrip.
 checkCommand('protection health tab-evidence tests', ['tools/test-health-tab-evidence.js']);
 checkCommand('rule cap honesty tests', ['tools/test-rule-cap-honesty.js']);
 checkCommand('cold-wake write tests', ['tools/test-cold-wake-writes.js']);
+checkCommand('dynamic-rule read tests', ['tools/test-dynamic-rule-reads.js']);
 checkCommand('redirect-chain mirror tests', ['tools/test-redirect-chain-mirror.js']);
 checkCommand('feed load safety tests', ['tools/test-feed-load-safety.js']);
 checkCommand('navigation signal forgery tests', ['tools/test-nav-signal-forgery.js']);
@@ -581,6 +587,7 @@ checkCommand('XSS sink cost tests', ['tools/test-xss-sink-cost.js']);
 checkCommand('XSS event-boundary tests', ['tools/test-xss-event-boundary.js']);
 checkCommand('ClickFix guard tests', ['tools/test-clickfix-guard.js']);
 checkCommand('Scam Lock tests', ['tools/test-scam-lock.js']);
+checkCommand('feature page warning tests', ['tools/test-feature-page-warnings.js']);
 checkCommand('runtime config lifecycle tests', ['tools/test-runtime-config-lifecycle.js']);
 checkCommand('network compatibility tests', ['tools/test-network-compatibility.js']);
 checkCommand('Smart Script Shield recovery tests', ['tools/test-smart-script-recovery.js']);
@@ -724,6 +731,7 @@ checkCommand('arrange drag tests', ['tools/test-arrange-drag.js']);
 checkCommand('onboarding site card tests', ['tools/test-onboarding-site-card.js']);
 checkCommand('onboarding pin guidance tests', ['tools/test-onboarding-pin-guidance.js']);
 checkCommand('onboarding feature coverage tests', ['tools/test-onboarding-coverage.js']);
+checkCommand('onboarding motion cost tests', ['tools/test-onboarding-motion.js']);
 checkCommand('settings change log tests', ['tools/test-settings-change-log.js']);
 checkCommand('settings-data.js is current with the popup and the worker', ['tools/build-settings-data.js', '--check']);
 checkCommand('Settings page tests', ['tools/test-settings-page.js']);
@@ -755,6 +763,7 @@ checkCommand('clean copy tests', ['tools/test-clean-copy.js']);
 checkCommand('IP privacy tests', ['tools/test-ip-privacy.js']);
 checkCommand('location guard tests', ['tools/test-location-guard.js']);
 checkCommand('supplemental list tests', ['tools/test-supplemental-lists.js']);
+checkCommand('shared domain index tests', ['tools/test-domain-index.js']);
 checkCommand('list integrity enforcement tests', ['tools/test-list-integrity-enforcement.js']);
 checkCommand('list publisher date tests', ['tools/test-list-publisher-dates.js']);
 checkCommand('adult gate tests', ['tools/test-adult-gate.js']);

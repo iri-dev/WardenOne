@@ -71,6 +71,10 @@ earlier builds and may place controls differently.
 2. Open `chrome://extensions` and enable **Developer mode** in the top-right.
 3. Select **Load unpacked**, then choose the unzipped folder containing `manifest.json`.
 
+Please leave **Developer mode** on afterwards. WardenOne isn't on the Web Store, so Chrome counts it
+as an unpacked extension and switches it off the moment Developer mode goes off. It then stops
+protecting you, even after a restart, until you turn Developer mode back on.
+
 The About page in Settings shows both the version and the GitHub build ID. Include both when
 reporting a problem; the version stays the same between rolling builds.
 

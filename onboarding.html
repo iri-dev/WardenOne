@@ -55,16 +55,26 @@
       linear-gradient(155deg, var(--bg-0), var(--bg-1) 45%, var(--bg-2) 100%);
     overflow: hidden;
   }
+  /* Onboarding stays open until the reader closes it. While anything on it moves, the browser
+     draws a frame on every refresh: in Edge 150 (2026-10-17) that was 41% of a core for the
+     small pulse ring alone, and 61-66% with the orbs, whose filter: blur(8px) was redone every
+     frame. So the welcome motion plays for about its first minute and then settles, costing
+     nothing, and the orbs paint their softness instead of filtering it: each image is the old
+     gradient, clipped to the same circle and blurred by the same 8px, drawn once. The box
+     grows by the blur's reach, 24px a side, so its centre and the drift around it stay put. */
   .orb {
     position: absolute;
-    border-radius: 50%;
-    filter: blur(8px);
+    box-sizing: content-box;
+    margin: -24px;
+    padding: 24px;
+    background: center / 100% 100% no-repeat;
     opacity: .5;
-    animation: drift 18s ease-in-out infinite;
+    animation: drift 18s ease-in-out 3;
   }
-  .orb.a { width: 360px; height: 360px; left: -80px; top: 12%; background: radial-gradient(circle at 30% 30%, rgba(176,111,214,.85), transparent 70%); }
-  .orb.b { width: 300px; height: 300px; right: -60px; top: 4%; background: radial-gradient(circle at 30% 30%, rgba(223,108,169,.8), transparent 70%); animation-delay: -6s; }
-  .orb.c { width: 420px; height: 420px; right: 12%; bottom: -160px; background: radial-gradient(circle at 30% 30%, rgba(95,39,121,.9), transparent 70%); animation-delay: -11s; }
+  .orb.a { width: 360px; height: 360px; left: -80px; top: 12%; background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 408 408'><radialGradient id='g' cx='.3' cy='.3' r='.98995'><stop offset='0' stop-color='%23b06fd6' stop-opacity='.85'/><stop offset='.7' stop-color='%23b06fd6' stop-opacity='0'/></radialGradient><filter id='b' x='0' y='0' width='408' height='408' filterUnits='userSpaceOnUse'><feGaussianBlur stdDeviation='8'/></filter><circle cx='204' cy='204' r='180' fill='url(%23g)' filter='url(%23b)'/></svg>"); }
+  .orb.b { width: 300px; height: 300px; right: -60px; top: 4%; background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 348 348'><radialGradient id='g' cx='.3' cy='.3' r='.98995'><stop offset='0' stop-color='%23df6ca9' stop-opacity='.8'/><stop offset='.7' stop-color='%23df6ca9' stop-opacity='0'/></radialGradient><filter id='b' x='0' y='0' width='348' height='348' filterUnits='userSpaceOnUse'><feGaussianBlur stdDeviation='8'/></filter><circle cx='174' cy='174' r='150' fill='url(%23g)' filter='url(%23b)'/></svg>"); animation-delay: -6s; }
+  .orb.c { width: 420px; height: 420px; right: 12%; bottom: -160px; background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 468 468'><radialGradient id='g' cx='.3' cy='.3' r='.98995'><stop offset='0' stop-color='%235f2779' stop-opacity='.9'/><stop offset='.7' stop-color='%235f2779' stop-opacity='0'/></radialGradient><filter id='b' x='0' y='0' width='468' height='468' filterUnits='userSpaceOnUse'><feGaussianBlur stdDeviation='8'/></filter><circle cx='234' cy='234' r='210' fill='url(%23g)' filter='url(%23b)'/></svg>"); animation-delay: -11s; }
+  /* Each cycle ends where it began, at rest, so the third one simply stops. */
   @keyframes drift {
     0%, 100% { transform: translate3d(0,0,0) scale(1); }
     50% { transform: translate3d(26px,-30px,0) scale(1.08); }
@@ -157,9 +167,14 @@
     position: absolute; inset: 0; border-radius: 50%;
     background: conic-gradient(from 200deg, var(--violet), var(--pink), var(--rose), var(--violet));
     filter: blur(2px); opacity: .85;
-    animation: spin 9s linear infinite;
+    animation: spin 54s linear;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  /* Four turns at the old speed, 9s each, then a fifth that slows to a stop: a quadratic ease
+     out over twice the time starts at the same speed and ends at zero, on the starting angle. */
+  @keyframes spin {
+    66.667% { transform: rotate(1440deg); animation-timing-function: cubic-bezier(.333, .667, .667, 1); }
+    to { transform: rotate(1800deg); }
+  }
   .mark .glass {
     position: absolute; inset: 14px; border-radius: 50%;
     background: radial-gradient(circle at 32% 26%, #fff, #f3e7fb 70%);
@@ -170,7 +185,8 @@
   .mark .pulse {
     position: absolute; inset: -10px; border-radius: 50%;
     border: 2px solid rgba(223,108,169,.6);
-    animation: pulse 2.6s ease-out infinite;
+    /* Twenty beats; the last fades out and stays out. */
+    animation: pulse 2.6s ease-out 20 forwards;
   }
   @keyframes pulse {
     0% { transform: scale(.86); opacity: .7; }

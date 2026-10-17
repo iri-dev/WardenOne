@@ -64,6 +64,7 @@ function harness(initialLocal, initialSession, options = {}) {
     siteIdentityBg(host) { return host.endsWith('.webflow.io') ? host : host.split('.').slice(-2).join('.'); },
     localGet: async () => Object.assign({}, local),
     localSet: (values) => sandbox.chrome.storage.local.set(values),
+    writeDynamicRules: (change) => sandbox.chrome.declarativeNetRequest.updateDynamicRules(change),
     setTimeout: (fn, delay) => { if (delay === 400) timers.push(fn); },
   };
   let lock = Promise.resolve();

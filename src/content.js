@@ -7873,7 +7873,8 @@
     }
     if(WO.scamLockGuard&&WO_TOP)try{
       let scamShown=!1,
-      scamRelease=null;
+      scamRelease=null,
+      scamDialogAt=0;
       const releaseScamPanel=()=>{
         scamRelease&&scamRelease(),
         scamRelease=null
@@ -8024,7 +8025,12 @@
               if(dlgTimes=dlgTimes.filter(t=>now-t<6e3),
               dlgTimes.push(now),
               scamShown||dlgTimes.length>3)return scamShown||showScamPanel("repeated pop-up dialogs (browser lock)"),
-              safeRet
+              safeRet;
+              /* A native dialog is the page talking to the reader by construction, so it counts as
+                 the scam's own behaviour for a minute, and what it says is read with the page. */
+              if(scamDialogAt=now,
+              scamScan(String(arguments[0]||"").slice(0,
+              2e3)+"\n"+bodyTextCapped(2e4)))return safeRet
             }
             catch(_){
 
@@ -8044,6 +8050,31 @@
          user messages can otherwise combine into a false browser-lock alert. */
       const SCAM_NEAR=600,
       SCAM_ORDINARY=/windows\s+(defender\s+)?security\s+(alert|center)|critical\s+(security\s+)?(alert|warning)\b|your\s+(data|files|identity)\s+(is|are|may be)\s+at\s+risk|do\s+not\s+(close|restart|shut\s?down|turn\s+off)\s+(this\s+)?(window|computer|pc|browser)|contact\s+(microsoft|apple|windows)\s+support|anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|remote\s+(access|assistance|desktop|support|control|connection)|enter\s+(this\s+|the\s+)?(code|key|pin)\b|(install|download|run)\s+(the\s+)?(support|remote|cleanup)\s+(tool|software|app)/gi,
+      /* The words are not the scam; the scam is what it gets the reader to do. A page that
+         describes the trick -- WardenOne's own feature list says it catches fake "your computer
+         is infected / locked -- call this number" pages -- carries the claim and the call in one
+         line and was locked as the scam it describes. So the claim and the call must come with
+         the means to act on them: a number to dial, a remote-access tool to hand a code to, or a
+         lock already in force. None of these can be had by copying text or markup without
+         giving up the scam itself, which is why no page-authored claim is asked about instead. */
+      SCAM_PHONE=/(?:\+?1[-.\s]?)?\(?8(?:00|33|44|55|66|77|88)\)?[-.\s]?\d{3}[-.\s]?\d{4}\b|\+\d{1,3}[-.\s]?\(?\d{1,4}\)?(?:[-.\s]?\d{2,4}){2,4}\b/,
+      SCAM_REMOTE_STEP=/(?:anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|screenconnect|rustdesk|(?:support|remote|cleanup)\s+(?:tool|software|app))[\s\S]{0,160}?\b(?:enter|type|give|read|share|tell|send)\b[^.\n]{0,60}?\b(?:code|id|pin|key|password)\b|\b(?:enter|type|give|read|share|tell|send)\b[^.\n]{0,60}?\b(?:code|id|pin|key|password)\b[\s\S]{0,160}?(?:anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|screenconnect|rustdesk)/i,
+      /* Behaviour, read when asked: the page opened a dialog in the last minute, holds the
+         pointer, or has taken the whole screen for something that is not a player. A full-screen
+         video, embed or canvas is someone watching or playing, including a video about the scam.
+         A leave-page handler is not counted: every editor with unsaved changes sets one. */
+      SCAM_PLAYER=/^(?:VIDEO|AUDIO|IFRAME|CANVAS|EMBED|OBJECT)$/,
+      scamLockTrick=()=>{
+        try{
+          const d=document,
+          full=d.fullscreenElement||d.webkitFullscreenElement;
+          return Date.now()-scamDialogAt<6e4?"a pop-up dialog":d.pointerLockElement||full&&!SCAM_PLAYER.test(full.tagName)&&(full===d.documentElement||full===d.body||!full.querySelector("video,iframe,canvas,embed,object"))?"a browser lock":""
+        }
+        catch(_){
+          return""
+        }
+
+      },
       scamScan=snapshot=>{
         if(scamShown||trustedMediaHost||conversationHost||searchResultsHost)return!1;
         try{
@@ -8059,7 +8090,9 @@
           to),
           claims=near.replace(SCAM_ORDINARY,
           " / ");
-          CALL.test(near)&&(FEAR.test(claims)||CALL.test(claims))&&showScamPanel("tech-support scam page text")
+          if(!CALL.test(near)||!FEAR.test(claims)&&!CALL.test(claims))return!1;
+          const means=SCAM_PHONE.test(near)?"a number to call":SCAM_REMOTE_STEP.test(near)?"a remote-access step":scamLockTrick();
+          means&&showScamPanel("scam page text with "+means)
         }
         catch(_){
 
@@ -8083,6 +8116,15 @@
       {
         once:!0
       });
+      /* A lock usually starts on the reader's first click, after the text has been read and
+         found wanting, and the scheduler does not read an unchanged page twice. */
+      ["fullscreenchange",
+      "webkitfullscreenchange",
+      "pointerlockchange"].forEach(type=>woOn(document,
+      type,
+      ()=>{
+        scamLockTrick()&&scamScan()
+      }));
       log("scam_lock_guard_active",
       {
 
@@ -8204,9 +8246,11 @@
       },
       clickfixNearestRegexHit=(text,
       pattern,
-      nearIndex)=>{
+      nearIndex,
+      keep)=>{
         const hits=clickfixRegexHits(text,
-        pattern);
+        pattern).filter(hit=>!keep||keep(text,
+        hit));
         if(!hits.length)return null;
         return"number"==typeof nearIndex?hits.sort((a,
         b)=>Math.abs(a.index-nearIndex)-Math.abs(b.index-nearIndex))[0]:hits[0]
@@ -8329,13 +8373,17 @@
           at)
         }
       },
+      clickfixUnquoted=(text,
+      hit)=>!!hit&&(clickfixLineOf(text,
+      hit.index).before.match(/"/g)||[]).length%2==0,
       clickfixLureShaped=(text,
       hit)=>{
         if(!hit)return!1;
         const line=clickfixLineOf(text,
         hit.index);
         if(!line.text||line.text.length>200)return!1;
-        return(line.before.match(/"/g)||[]).length%2==0
+        return clickfixUnquoted(text,
+        hit)
       },
       clickfixDocsMayCorrelate=signal=>!signal.trustedDocumentation||signal.fakeCaptcha||"Enable pasting"===signal.instruction,
       clickfixHighRiskCorrelation=(signal,
@@ -8387,12 +8435,20 @@
         instructionHit=instructionEvidence(bodyText,
         commandHit&&commandHit.index),
         instruction=instructionHit?instructionHit.instruction:"",
+        /* The verification wording is held to the same rule as the steps: in quotation marks it
+           is reported speech. WardenOne's own home page says, in one short sentence, that a fake
+           "verify you're human" page tells you to press Win+R and paste a command, and that
+           sentence was warned about as the lure. A lure that quotes its own heading still has to
+           get past the step and paste checks below, and what it puts on the clipboard is read
+           whatever its text says. */
         humanHit=instructionHit&&clickfixNearestRegexHit(bodyText,
         CLICKFIX_HUMAN_VERIFICATION,
-        instructionHit.index),
+        instructionHit.index,
+        clickfixUnquoted),
         verificationHit=instructionHit&&clickfixNearestRegexHit(bodyText,
         CLICKFIX_VERIFICATION_STEPS,
-        instructionHit.index),
+        instructionHit.index,
+        clickfixUnquoted),
         guidanceHit=instructionHit&&clickfixNearestRegexHit(bodyText,
         CLICKFIX_PASTE_GUIDANCE,
         instructionHit.index),

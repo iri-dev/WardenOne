@@ -36,6 +36,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -83,7 +84,9 @@ const LIFTED = [
   grabFn(BG, 'installWardenContextMenu'),
   orElse(BG, 'dnrValueMatches', 'function dnrValueMatches() { return false; }'),
   orElse(BG, 'dnrBandUnchanged', 'function dnrBandUnchanged() { return false; }'),
-  orElse(BG, 'getDynamicRulesInBand', 'async function getDynamicRulesInBand() { return chrome.declarativeNetRequest.getDynamicRules(); }'),
+  /* The bands a wake rebuilds here share one read, as they do in the worker. */
+  has(BG, 'getDynamicRulesInBand') ? dynamicRuleIo.prelude(BG, [[745000, 200], [970000, 64], [740000, 1000], [741000, 1], [741001, 1], [742000, 1000]])
+    : 'async function getDynamicRulesInBand() { return chrome.declarativeNetRequest.getDynamicRules(); }',
   /* The feed appliers read their switch through these since LIFE-02; older sources read it inline. */
   orElse(BG, 'readFeedConfig', "async function readFeedConfig() { const s = await localGet('wardenone_config'); return Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {}); }"),
   orElse(BG, 'grabberFeedDisabled', 'function grabberFeedDisabled(cfg) { return cfg.enabled === false || (cfg.blockGrabberResources === false && cfg.warnGrabberDomains === false && cfg.blockMalwareSites === false); }'),
