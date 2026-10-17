@@ -24,13 +24,18 @@
 
 ### Changed
 
+- The install steps in the README and in the build notes now say to leave Developer mode on. Current Chrome switches unpacked extensions off when it is turned off, and WardenOne then stays off, even after a restart, until it is turned back on.
+- The worker now shares security-domain membership with its combined blocklist index, reducing duplicate domain storage while keeping the complete loaded lists and their classifications.
+- WardenOne's background worker now reads its own blocking rules from the browser once each time it wakes, not eight times, and a browser start no longer rewrites rule sets that have not changed. With the remote blocklists installed, each read made the browser parse about 22,000 rules. A wake cost about a second of browser CPU for this and now costs about a tenth of one.
 - Onboarding now has a searchable, grouped guide covering every protection and popup control, Settings modes and tools, with direct links and fresh-install default labels. Corrected protection and provider totals, download and WebRTC explanations, stronger-preset warnings, and completion messages that previously implied protection was active regardless of the master switch.
+- Onboarding no longer keeps the browser busy while it is open. Its welcome motion plays for about the first minute and then settles, and the background orbs keep their soft edges without a live blur. The page looks the same, but in Edge it used about two-thirds of a CPU core for as long as it was on screen, and once still it uses none. Reduced motion still turns the motion off.
 - The README's Element Zapper section now shows the active selection outline and the resulting removal on GitHub's live Actions page, with the tool's confirmation and instructions for hiding and restoring elements.
 - The README now maps every protection and popup control to its documented feature, brings newer controls into the main guide, and corrects the explanation of Twitch's two rewind modes. A separate audit records the full control inventory and the older screenshots.
 - Recaptured the README's popup and Protection Health images directly from the extension at high resolution, with complete panels and no browser borders. Fresh image filenames avoid reusing cached earlier captures. Added current Settings, section arrangement, privacy, fingerprinting and Resource Saver screenshots, and kept the original guide's layout with images beside the descriptions.
 - Documented the manual VirusTotal URL scanner and automatic download lookups separately, corrected the privacy policy, and stripped URL credentials before automatic VirusTotal requests.
 - Latest build notes list commits since the prior release only when its tag belongs to the current history. After a history rewrite, they summarize the new build instead of presenting the entire repository history as new work.
 - Phishing Army now uses its recommended canonical domain feed. The publisher says it contains the same data as the legacy extended URL; its linked credit remains in Credits & Attribution.
+- Credits & Attribution now links to StalkPhish following its permission for WardenOne to use its open data through Phishing Army, provided the data is not resold.
 - The worker now shares identical generic AdShield selector arrays across ordinary sites in its cosmetic cache. Site-specific rules, exceptions, scriptlets and player handling are unchanged.
 - The on-page badge now points to the Site Dashboard for network activity instead of implying that an empty badge means nothing was blocked.
 - The overlay cleaner leaves Logicly's circuit component palette visible; a Push Button control no longer counts as a notification prompt.
@@ -50,6 +55,23 @@
 
 ### Fixed
 
+- WardenOne no longer calls its own website a scam. The features page quotes the fake "your
+  computer is infected / locked — call this number" pages the tech-support scam guard catches, and
+  it got the full-page scam warning. The home page's one-line description of ClickFix got the
+  dangerous-command warning. The scam guard now also needs something the reader could act on: a
+  phone number, a request for a remote-access code, or a lock the page has actually put on the
+  browser (taking the full screen for something other than a video, capturing the pointer, or
+  opening a pop-up dialog). So a page that only describes the scam stays quiet. ClickFix now treats a quoted "verify you're human" as a
+  quotation, as it already did with quoted steps. Real scam pages are still caught, including ones
+  that show their number as an image but lock the browser. Numbers written with brackets or an
+  international prefix now count too, and so does a claim made in a pop-up dialog.
+- MetaMask's help centre (support.metamask.io) is no longer labelled "On a malware and scam
+  blocklist" in search results. MetaMask's own phishing feed names the real sites its look-alike
+  check protects, and WardenOne read that list as sites to block, so metamask.io, etherscan.io,
+  opensea.io, myetherwallet.com, cryptokitties.co, makerfoundation.com, satoshilabs.com and
+  launchpad.ethereum.org were treated as malware by the feed meant to protect them. Separately,
+  one of the sixteen security feeds lists the help centre itself, and WardenOne no longer acts on
+  that one listing. Look-alike domains that use MetaMask's name are still blocked.
 - The near-quota browser regression now waits for startup and each settings reconciliation to finish, uses explicit starting choices, and prevents remote feed work from contaminating its rule API measurements.
 - Element Zapper guidance now describes continuous selection, Done and Escape, Undo last, and the page-lifetime Ctrl+Z shortcut.
 - Protection rule reconciliation now merges asynchronously prepared rule changes before writing to the browser, with independent failure fallback and a bounded wait for stalled owners.

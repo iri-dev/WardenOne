@@ -118,6 +118,9 @@ function worker({ session, config, configUnreadable, behaviour }) {
     eyeShieldActiveProfileHosts: () => [],
     consentRejectActive: () => false,
     searchSponsoredCleanupActive: () => false,
+    /* The worker's shared band read, which the reconcile hands to its dynamic-rule owners;
+       they are stubs here, so it is never called. */
+    getDynamicRulesInBand: async () => [],
     /* the failure paths used to run a second list of appliers through these (BUG-08); they are
        gone from the reconciler, and the stubs stay so a regression is a FALLBACK in the calls */
     refreshPrivacyHeaders() { calls.push('FALLBACK'); }, refreshAllowlistRules() { calls.push('FALLBACK'); },

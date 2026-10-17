@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const dynamicRuleIo = require('./lib/dynamic-rule-io.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -133,7 +134,9 @@ function makeStoreTransaction() {
 
 /* ---- the firewall, lifted whole -------------------------------------------------- */
 
-const BAND_READ = between(BG, 'async function getDynamicRulesInBand(', '\nconst MEDIA_COMPAT_RULE_BASE', 'the band read');
+/* The worker's band read and write, and the comparison the firewall makes before writing. */
+const BAND_READ = between(BG, 'function dnrValueMatches(', 'function ownDynamicRuleBands(', 'the band comparison')
+  + dynamicRuleIo.prelude(BG, [[950000, 250]]);
 const FW = BAND_READ + '\n' + between(BG, 'const FIREWALL_RULE_BASE = 950000;', '\n// ---- Cryptojacking guard', 'the firewall');
 const FW_SET = between(BG, "  if (msg && msg.kind === 'firewall-set') {\n", "  if (msg && msg.kind === 'firewall-allow-once') {", 'the firewall-set handler');
 const FW_ONCE = between(BG, "  if (msg && msg.kind === 'firewall-allow-once') {\n", "  if (msg && msg.kind === 'firewall-reset') {", 'the allow-once handler');

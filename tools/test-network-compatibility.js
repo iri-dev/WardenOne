@@ -134,13 +134,9 @@ function loadRemoteListCommitGuard(options = {}) {
   const sandbox = {
     localGet: async () => ({ wardenone_config: Object.assign({}, state.config) }),
     removeWardenOneDynamicRules: async () => { state.removeAllCalls += 1; },
-    chrome: {
-      declarativeNetRequest: {
-        updateDynamicRules: async (update) => {
-          state.updates.push(update);
-          if (typeof options.onUpdate === 'function') await options.onUpdate(state);
-        },
-      },
+    writeDynamicRules: async (update) => {
+      state.updates.push(update);
+      if (typeof options.onUpdate === 'function') await options.onUpdate(state);
     },
   };
   vm.createContext(sandbox);
@@ -298,6 +294,46 @@ test('a single-feed listing is dropped for the domain and www only, and everythi
 
   const fromJson = Array.from(parseList(JSON.stringify({ blocklist: ['steamrip.com', 'steamrip.us.com'] })));
   assert.deepStrictEqual(fromJson, ['steamrip.us.com']);
+});
+
+/* Reported 2026-10-17: Google results for support.metamask.io said "On a malware and scam
+   blocklist". Two causes. MetaMask's own phishing config keeps the real sites its look-alike
+   matching protects under "fuzzylist", and the parser read that key as blocks, so metamask.io,
+   etherscan.io and opensea.io were listed by the very feed that protects them. And one feed,
+   HaGeZi's threat intelligence list, names the help centre itself. */
+test('a feed\'s fuzzylist is never read as blocks, and the MetaMask help centre comes out alone', () => {
+  const { parseList } = loadNetworkParsers();
+  const config = {
+    version: 2,
+    tolerance: 1,
+    fuzzylist: ['metamask.io', 'etherscan.io', 'opensea.io', 'launchpad.ethereum.org'],
+    whitelist: ['metamask.io', 'opensea.io'],
+    blacklist: ['metamask.io-token.vip', 'app-metamask.io', 'etherscan-io.com'],
+  };
+  assert.deepStrictEqual(Array.from(parseList(JSON.stringify(config))),
+    ['metamask.io-token.vip', 'app-metamask.io', 'etherscan-io.com']);
+  assert.deepStrictEqual(Array.from(parseList(JSON.stringify({
+    FuzzyList: ['metamask.io'],
+    list: { fuzzy_list: ['opensea.io'], blocked: ['opensea-io.com'] },
+  }))), ['opensea-io.com']);
+
+  const parsed = Array.from(parseList([
+    '||support.metamask.io^',
+    '0.0.0.0 www.support.metamask.io',
+    'SUPPORT.METAMASK.IO',
+    '||metamask.io.in^',
+    'metamask.io-token.vip',
+    'app-metamask.io',
+    'support-metamask.io',
+    'fake.support.metamask.io',
+  ].join('\n')));
+  assert.deepStrictEqual(parsed, [
+    'metamask.io.in',
+    'metamask.io-token.vip',
+    'app-metamask.io',
+    'support-metamask.io',
+    'fake.support.metamask.io',
+  ]);
 });
 
 /* Parsing a whole feed in one task held the service worker for seconds after a fresh install, and

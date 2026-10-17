@@ -236,6 +236,10 @@ directly for these lists or package their source data in the extension.
   not imply URLAbuse endorsement.
 - **Phishunt** — <https://phishunt.io/> ·
   [CC0 feed terms](https://phishunt.io/tos/). Phishing Army uses its public feed.
+- **StalkPhish** — <https://stalkphish.com/>. Thomas Damonneville confirmed by
+  email to Iris that WardenOne may use its open data through Phishing Army,
+  provided the data is not resold. WardenOne fetches the Phishing Army feed at
+  runtime and does not resell StalkPhish data.
 - **UT1 blacklist** (Université Toulouse Capitole) —
   <https://dsi.ut-capitole.fr/blacklists/> ·
   [CC BY-SA 4.0 terms](https://dsi.ut-capitole.fr/blacklists/download/LICENSE.pdf).

@@ -27,6 +27,8 @@ function harness(fail) {
       updateDynamicRules: (change) => update('dynamic', change),
       updateSessionRules: (change) => update('session', change),
     } },
+    /* Dynamic writes reach Chrome through the worker's writeDynamicRules. */
+    writeDynamicRules: (change) => update('dynamic', change),
     setTimeout: (fn, delay) => { const timer = { fn, delay }; timers.push(timer); return timer; },
     clearTimeout: (timer) => { const at = timers.indexOf(timer); if (at >= 0) timers.splice(at, 1); },
     Promise, Set, Error,

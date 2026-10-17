@@ -2,8 +2,8 @@
 
 ## Affirmative replies received
 
-Iris has received **four yeses** for WardenOne's described use. The original
-emails are in Iris's mailbox. No follow-up email to these four publishers is
+Iris has received **five yeses** for WardenOne's described use. The original
+emails are in Iris's mailbox. No follow-up email to these five publishers is
 needed now.
 
 | Publisher | What the reply established | Recorded action |
@@ -12,10 +12,11 @@ needed now.
 | Peter Lowe (pgl.yoyo.org) | Peter granted Iris permission for the requested WardenOne use. | The direct runtime feed is marked verified in [source-inventory.json](source-inventory.json). |
 | DSP Project (akac) | The direct runtime download of `list.txt` is permitted; no specific notice is required. | The feed is marked verified in the source inventory. |
 | flinteger | WardenOne is free to use the feed, provided it honours the project licence and upstream data licences. | The publisher's grant is recorded separately from review of its aggregate inputs. |
+| StalkPhish (Thomas Damonneville) | WardenOne may use its open data associated with Phishing Army provided the data is not resold. | [CREDITS.md](../CREDITS.md) links to StalkPhish as Thomas requested. |
 
 The remaining rights work is to inspect applicable source terms and notices for
 aggregated data, plus process any replies from other publishers. That review is
-WardenOne project work; it does not undo these four permissions.
+WardenOne project work; it does not undo these five permissions.
 
 ## Phishing Army — October 2026
 
@@ -39,7 +40,7 @@ reviewed below. WardenOne's About page links to CREDITS.md.
 | [OpenPhish](https://openphish.com/) | Iris has already requested permission; no reply is recorded. | Check the reply when it arrives. |
 | [urlscan.io](https://urlscan.io/terms/) | Its terms restrict commercial use and systematic data collection without approval; its [FAQ](https://urlscan.io/docs/faq/) asks product integrators to contact it. | Iris has contacted urlscan.io; wait for its answer. |
 | [PhishStats](https://www.phishstats.info/terms) | Its terms require written permission to redistribute raw feeds. | Iris has contacted PhishStats; check whether its answer covers Phishing Army's derived domain feed and WardenOne's runtime use. |
-| [StalkPhish](https://github.com/drego85/PhishingArmyCore/blob/master/SOURCES.md) | Its API is a subscribed source in Phishing Army's documentation; applicable downstream terms were not established in this review. | Iris has contacted StalkPhish; check its answer. |
+| [StalkPhish](https://stalkphish.com/) | Thomas Damonneville confirmed by email to Iris that WardenOne may use its open data, provided it is not resold. | The requested StalkPhish link is in CREDITS.md; no further message is needed. |
 | [AntiPhish.org](https://github.com/drego85/PhishingArmyCore/blob/master/SOURCES.md) | Phishing Army reports authorization for its own use. | Iris has contacted AntiPhish.org; check whether its reply covers WardenOne. |
 
 Phishing Army also inserts two harmless local test domains. They are the
