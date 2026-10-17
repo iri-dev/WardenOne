@@ -115,26 +115,23 @@ check('the popup is not a candidate while FEAT-02 and FEAT-05 are open',
 
 /* ---- the site shows the current build ------------------------------------------- */
 
-const sitePopup = pngSize(path.join(ROOT, 'docs', 'popup.png'));
-const captureFile = path.join(ROOT, 'docs', 'screenshots', '01-popup-master-switch.png');
-if (fs.existsSync(captureFile)) {
-  const capture = pngSize(captureFile);
-  check('the site\'s popup image is the current capture, not the August one',
-    sitePopup && capture && sitePopup.width === capture.width && sitePopup.height === capture.height
-    && fs.readFileSync(path.join(ROOT, 'docs', 'popup.png')).equals(fs.readFileSync(captureFile)),
-    'docs/popup.png is what the landing page serves');
-} else {
-  check('the site\'s popup image is a PNG with a tracked capture twin (the local PNG source is absent here)',
-    !!sitePopup && fs.existsSync(captureFile.replace(/\.png$/i, '.webp')));
-}
-const site = fs.readFileSync(path.join(ROOT, 'site', 'index.html'), 'utf8');
-check('and the page declares that image\'s real size',
-  sitePopup && site.includes('width="' + sitePopup.width + '" height="' + sitePopup.height + '"'));
-check('and does not describe a scan the image does not show', !/live per-site security scan/.test(site));
+/* The website copies its product captures from docs/screenshots when it is built
+   (site/sync-data.js), so it cannot fall behind them. What can still go wrong is a capture it
+   names that the repository no longer tracks, which would stop the deploy. site/check.js holds
+   each page's declared image sizes to the real files. */
+const SYNC = fs.readFileSync(path.join(ROOT, 'site', 'sync-data.js'), 'utf8');
+const siteCaptures = [...((/const captures = \[([\s\S]*?)\];/.exec(SYNC) || [])[1] || '').matchAll(/'([^']+\.webp)'/g)].map((m) => m[1]);
+check('the site names the captures it copies', siteCaptures.length >= 5, siteCaptures.length + ' found in site/sync-data.js');
+const missingCaptures = siteCaptures.filter((name) => !fs.existsSync(path.join(ROOT, 'docs', 'screenshots', name)));
+check('every capture the site copies is in docs/screenshots', missingCaptures.length === 0, missingCaptures.join(', '));
+const sitePages = fs.readdirSync(path.join(ROOT, 'site', 'src', 'pages')).filter((f) => f.endsWith('.html'))
+  .map((f) => 'site/src/pages/' + f);
+const siteText = sitePages.map((f) => fs.readFileSync(path.join(ROOT, f), 'utf8')).join('\n');
+check('and the site does not describe a scan the images do not show', !/live per-site security scan/.test(siteText));
 
 /* ---- no old branding anywhere a listing is built from --------------------------- */
 
-for (const file of ['README.md', 'PRIVACY.md', 'site/index.html', 'popup.html', 'permissions.html', 'manifest.json', 'docs/store/candidates.json']) {
+for (const file of ['README.md', 'PRIVACY.md', ...sitePages, 'popup.html', 'permissions.html', 'manifest.json', 'docs/store/candidates.json']) {
   check(file + ' carries no WebWarden branding', !/webwarden/i.test(fs.readFileSync(path.join(ROOT, file.replace(/\//g, path.sep)), 'utf8')));
 }
 

@@ -1,0 +1,108 @@
+<section class="page-hero article-hero" aria-labelledby="page-title">
+  <div class="container article-head">
+    <p class="eyebrow">Incident notice</p>
+    <h1 id="page-title">Someone stole WardenOne and used it to hand people malware</h1>
+    <p class="lead">In August 2026 my privacy extension was republished under someone else's name, with every download link pointed at a trojan. Here is exactly what happened.</p>
+    <div class="article-meta"><img class="avatar" src="{{root}}images/iri-avatar.webp" alt="" width="34" height="34"><span>Written 14 August 2026 by Iri&nbsp;💜</span></div>
+  </div>
+</section>
+
+<div class="container doc-layout">
+  <nav class="doc-toc" aria-label="On this page" data-doc-toc hidden></nav>
+  <article class="doc" data-doc>
+
+    <section class="alert-card" aria-labelledby="read-first">
+      <h2 id="read-first" data-toc="Read this first">{{icon:alert}} If you downloaded WardenOne from <code>ajpc6338.github.io</code>, read this first</h2>
+      <p>The file that site gave you was <strong>not WardenOne</strong>. It was not a browser extension at all. It was a Windows program that steals what your browser has saved — passwords, cookies, sessions.</p>
+      <p><strong>If you ran it, please assume your browser data was taken.</strong> I am sorry. Here is what to do, in this order:</p>
+      <ol class="alert-steps">
+        <li><strong>Change your email password first.</strong> Email is what resets everything else, so it comes before your bank, before anything.</li>
+        <li><strong>Then change passwords for anything you were signed into.</strong> From a different device if you have one.</li>
+        <li><strong>Sign out of all sessions</strong> on your important accounts. Most services have this in security settings. Stolen cookies keep working until you do — a new password alone does not always kick them out.</li>
+        <li><strong>Turn on two-factor authentication</strong> wherever it is offered.</li>
+        <li><strong>Run a full antivirus scan.</strong> Windows Defender is fine for this.</li>
+      </ol>
+      <p>WardenOne is a browser extension. It has never been an <code>.exe</code>, an installer or a setup program. If something calling itself WardenOne asks you to run one, it is not mine.</p>
+    </section>
+
+    <h2 id="what-happened">💜 What happened</h2>
+    <p>On 9 August 2026 I found my project on a GitHub account called <code>ajpc6338</code>, at <code>github.com/ajpc6338/WardenOne</code>. Not forked — forking is fine, that is what open source is for, and it would have said so right at the top. This was uploaded as though they had written it.</p>
+    <p>They had not touched much. They did not need to. They changed the links.</p>
+    <p>Every download button, every support link, and the line telling you where the official project lives — all of it now pointed at a website they controlled, <code>ajpc6338.github.io</code>, which their README called "the official repository" for my project. My release file was deleted and replaced with one called <code>Warden-One-1.1.zip</code>. There has never been a version 1.1 of WardenOne. I was on 1.0.0.</p>
+    <p>They also deleted my issue templates. That detail is the one that still bothers me. Those templates are how someone using a security tool tells the person who wrote it that something is wrong. Removing them meant that if the thing they were handing out hurt someone, that person had no way back to me.</p>
+
+    <h2 id="the-download">💜 What the download actually was</h2>
+    <p>It was not my extension with something added. It was not my extension at all.</p>
+    <p>Inside the zip: a <code>.bat</code> file that launched a Windows executable called <code>exbin.exe</code>, alongside an obfuscated script hidden in a file named <code>certs.txt</code> — named to look like something boring and technical so nobody would open it.</p>
+    <div class="table-wrap">
+      <table>
+        <tr><th scope="row">Kaspersky</th><td><code>HEUR:Backdoor.Win32.StealC.gen</code></td></tr>
+        <tr><th scope="row">ESET</th><td><code>Lua/SmartLoader.C</code></td></tr>
+        <tr><th scope="row">Family</th><td><code>matanbuchus</code></td></tr>
+      </table>
+    </div>
+    <p>A loader and a browser credential stealer. You can read <a href="https://www.virustotal.com/gui/file/9baa26a4acec14ecdbfd7e3af73106110012312d0710bc0ecf8093b92e216857">the VirusTotal report</a> yourself — I would rather you checked than took my word for it.</p>
+    <p>I want to be plain about why this one stings. WardenOne asks for broad browser permissions. It has to, to do its job — it reads requests to block trackers, it watches pages to stop phishing. I documented every single one of those permissions on its own page, because asking for that much access means owing people an explanation.</p>
+    <p>Someone took the trust that came with that and used it to hand people a password stealer. They used a tool built to protect people as the bait.</p>
+
+    <h2 id="proof">💜 How I proved it was mine</h2>
+    <p>This part is oddly reassuring, and it is the reason I want other developers to read this.</p>
+    <p>They kept my commit history. All of it. Sixty-two commits, and fifty-nine of them still had my name on them. Only three were theirs — the three where they deleted my release, added their file, and rewrote the README.</p>
+    <p>Better than that: the very first commit in their copy was <code>d51cbec</code>, dated 26 July 2026, authored by me. Byte for byte the same hash as the first commit in mine.</p>
+    <p>A git commit hash is a fingerprint of the file contents, the history behind it, the author, and the timestamp. Two people cannot independently arrive at the same one. It is not "this looks similar to my work" — it is arithmetic. That single line of hex was the whole case.</p>
+    <blockquote>If you ever have to prove something is yours, your git history is the strongest evidence you have, and it is already sitting there.</blockquote>
+
+    <h2 id="my-part">💜 The part where I was in the wrong too</h2>
+    <p>I could leave this bit out. I would rather not.</p>
+    <p>When I checked, I found my repository had <strong>no copyright notice anywhere in it</strong>. The licence file was the stock GPL template with the placeholders never filled in — <code>&lt;year&gt;</code>, <code>&lt;name of author&gt;</code>, exactly as it ships. Not one source file named me as the author.</p>
+    <p>So when people asked whether my name had been stripped out, the honest answer was no. There was nothing there to strip. I had published ninety-six files of work and never once written down that it was mine.</p>
+    <p>Two other things I have to be fair about, because a complaint that overstates is easier to dismiss than one that concedes:</p>
+    <ul>
+      <li><strong>They did not remove the licence.</strong> The GPL text was sitting there, complete and unaltered. I checked before I claimed otherwise.</li>
+      <li><strong>Redistributing my work is allowed.</strong> That is what GPLv3 is <em>for</em>. Anyone may take WardenOne, change it, even sell it. That was never my complaint.</li>
+    </ul>
+    <p>My complaint was narrower and, I think, harder to argue with: GPLv3 section 5(a) says a modified version must carry a prominent notice saying it was changed, and when. Theirs carried none, while calling their own website "the official repository" for my project. And the licence gives nobody the right to use the <em>name</em> of the work to misrepresent where it came from.</p>
+    <p>I fixed my side the same day. Ninety-six files now carry a copyright header naming me, the licence, and the address this project actually lives at, plus a <code>NOTICE</code> file. Any copy made from here either keeps those or visibly tears them out.</p>
+
+    <h2 id="what-i-did">💜 What I did</h2>
+    <ul>
+      <li>Wrote down every fact I could verify, and separately every claim I <em>could not</em> — so nothing I said could be knocked down later.</li>
+      <li>Took a full mirror clone of their repository before anything could be deleted, and archived the site.</li>
+      <li>Reported it to GitHub, both as copyright infringement and as impersonation. Those are two different processes and I nearly assumed one covered both.</li>
+      <li>Reported the download to Google Safe Browsing and VirusTotal, which matters more than the copyright side — that is what stops the next person getting infected.</li>
+      <li>Put a warning at the top of my README while it was still live.</li>
+    </ul>
+    <p>GitHub has since removed the <code>ajpc6338</code> account, and <code>ajpc6338.github.io</code> no longer resolves.</p>
+    <p>I am naming the account rather than the person, deliberately. I know what the account did — it is all recorded above, and every bit of it can be checked. I do not know who was behind it, and I am not going to guess.</p>
+
+    <h2 id="if-this-happens">💜 If this happens to you</h2>
+    <p>I was not ready for this. I had never considered it. So, the short list I wish I had had:</p>
+    <ul>
+      <li><strong>Put your name in your files today.</strong> Not the licence — the licence is a template until you fill it in. Your actual name, in the actual source. It takes an hour and you will never think about it again.</li>
+      <li><strong>Save the evidence before you report anything.</strong> Mirror clone, archive the page, write down the hashes. The moment someone realises they are caught, it disappears.</li>
+      <li><strong>Check the download, not just the code.</strong> I nearly reported this as a licensing problem and stopped there. The code was barely touched — the danger was entirely in the file the site was serving, and I would have missed it.</li>
+      <li><strong>Say the things that weaken your case out loud.</strong> It costs you nothing and it is the reason people believe the rest.</li>
+      <li><strong>Report the malware first, the copyright second.</strong> One of those protects people. The other protects you. Mine was not the urgent one.</li>
+    </ul>
+
+    <h2 id="where-it-lives">💜 Where WardenOne actually lives</h2>
+    <div class="source-card">
+      <span class="card-icon">{{icon:shield}}</span>
+      <div>
+        <p>WardenOne is only ever published from <a href="https://github.com/iri-dev/WardenOne">github.com/iri-dev/WardenOne</a>, and this site, <a href="{{root}}">iri-dev.github.io/WardenOne</a>, is its only official page.</p>
+        <p>It is a browser extension. It is free, it is GPLv3, and every line of it can be read before you install it. There is no account, no telemetry, and there has never been an installer.</p>
+      </div>
+    </div>
+    <p>I am one person. I am not a company and I do not have a team, and honestly this whole thing knocked me sideways for a few days. But everything I make is open source precisely so that you never have to take my word for anything — including this page. All of it is checkable, and I would rather you checked.</p>
+    <p>Thank you for reading. Take care of yourself&nbsp;💜</p>
+    <p class="signoff"><em>— Iri</em></p>
+  </article>
+</div>
+
+<section class="cta-wrap" aria-labelledby="stolen-cta-title">
+  <div class="stage stage-panel cta">
+    <h2 id="stolen-cta-title" class="reveal">Get the real WardenOne.</h2>
+    <p class="reveal">The official build only ever comes from the iri-dev/WardenOne GitHub release. It is a browser extension, never an installer.</p>
+    <div class="button-row reveal"><a class="button button-primary" href="{{root}}download/">{{icon:download}} Official download guide</a><a class="button button-ghost" href="https://github.com/iri-dev/WardenOne">{{icon:code}} Check the source</a></div>
+  </div>
+</section>

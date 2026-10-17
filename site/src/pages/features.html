@@ -1,0 +1,56 @@
+<section class="page-hero" aria-labelledby="page-title">
+  <div class="container page-hero-grid">
+    <div>
+      <p class="eyebrow">Features</p>
+      <h1 id="page-title">{{stat:protections}} protections. <span class="grad-text">Every one explained.</span></h1>
+      <p class="lead">From scam warnings to tab sleeping, this is the whole of WardenOne. The list below is generated from the settings data the extension itself ships with, so every name, description and default matches what you'll see in WardenOne.</p>
+      <div class="hero-chips"><span class="pill"><span class="dot" aria-hidden="true"></span>{{stat:onByDefault}} on from the first run</span><span class="pill">{{stat:switchable}} you can switch individually</span><span class="pill">{{stat:watchOnly}} watch-only</span></div>
+    </div>
+    <div class="aside-card"><span class="card-icon">{{icon:eye}}</span><strong>These are real screenshots</strong>Every picture of WardenOne on this site comes from the extension as it is now. I added the browser frames and labels so they fit the page, but nothing inside them is mocked up.</div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="highlights-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">Highlights</p><h2 id="highlights-title">Three things you'll notice first.</h2></div>
+
+    <div class="story" id="security">
+      <div class="story-copy reveal"><p class="eyebrow">01 · At the risky moment</p><h2>A scam instruction should be interrupted, not silently logged.</h2><p class="lead">A fake verification page may ask you to paste a command into your computer. WardenOne flags that ClickFix pattern on the page and explains why it is dangerous before you follow the instruction.</p><p>It also blocks known malicious and look-alike destinations through browser rules and checks selected deceptive page behaviour. New scams can be missed, and an unflagged page is not a safety verdict.</p><a class="text-link" href="{{root}}how-it-works/">How WardenOne makes a decision {{icon:arrow-right}}</a></div>
+      <figure class="shot reveal"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">ClickFix detection</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/14-clickfix-warning.webp" width="1800" height="703" alt="WardenOne ClickFix warning explaining that a real CAPTCHA never asks the user to paste a command" loading="lazy"><figcaption>The warning appears on the suspicious page and names the behaviour it noticed.</figcaption></figure>
+    </div>
+
+    <div class="story reverse" id="downloads">
+      <div class="story-copy reveal"><p class="eyebrow">02 · Before a file continues</p><h2>Pause and review a download that deserves a closer look.</h2><p class="lead">Download Shield uses the source, file name, type, browser signals and local rules to assess the downloads Chrome reports. A suspicious case opens a review with the reasons and a choice to cancel or continue.</p><p>File Shield is a separate check that starts only when you choose a file. It examines the bytes locally; optional outside lookups are your choice.</p><a class="text-link" href="{{root}}privacy/">See the data and provider choices {{icon:arrow-right}}</a></div>
+      <figure class="shot reveal"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Download review</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/04-download-review-suspicious.webp" width="1800" height="943" alt="WardenOne download review listing a file, its source, observed risk factors and the choice to cancel or continue" loading="lazy"><figcaption>This capture uses a local test file and shows the review before the download proceeds.</figcaption></figure>
+    </div>
+
+    <div class="story" id="visibility">
+      <div class="story-copy reveal"><p class="eyebrow">03 · After the decision</p><h2>See the reason in a local activity record.</h2><p class="lead">The Activity Centre groups recent blocks, warnings and exceptions. Protection Health shows whether core safeguards are running and whether a list or setting needs attention.</p><p>The record covers actions WardenOne observed or took. For request-level detail the Network Logger goes deeper, and an empty count does not prove a page made no risky requests.</p><a class="text-link" href="{{root}}privacy/">How local records are stored {{icon:arrow-right}}</a></div>
+      <figure class="shot reveal"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Activity Centre</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/03-activity-timeline.webp" width="1800" height="1200" alt="WardenOne Activity Centre showing recent events, blocked sites and user-created exceptions" loading="lazy"><figcaption>Recent decisions and your own exceptions appear together in the local record.</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" id="catalogue" aria-labelledby="catalogue-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">The complete list</p><h2 id="catalogue-title">Every feature, control and tool.</h2><p class="lead">{{stat:catalogueEntries}} entries in six groups. Each one says whether it is on from the first run, waits for you to choose a mode, or runs only when you start it.</p></div>
+    <div class="catalogue-tools">
+      <div class="search-field">{{icon:search}}<input type="search" id="catalogue-search" aria-label="Search features" placeholder="Search, for example “cookies”, “Twitch” or “downloads”" autocomplete="off" data-catalogue-search></div>
+      <div class="chip-row" role="group" aria-label="Filter by group">{{catalogue-chips}}</div>
+      <p class="catalogue-status" role="status" aria-live="polite" data-catalogue-status></p>
+    </div>
+    <div class="catalogue" data-catalogue>
+{{catalogue}}
+    </div>
+    <p class="catalogue-empty" data-catalogue-empty hidden>Nothing matches that search. Try a broader word, such as “privacy” or “tabs”.</p>
+    <p class="catalogue-source">Generated from WardenOne {{source:version}} (commit {{source:commit}}): the extension's settings data and onboarding feature guide. Defaults describe a fresh install; the Recommended and Maximum privacy choices at first run can turn more on.</p>
+  </div>
+</section>
+
+<section class="cta-wrap" aria-labelledby="feature-cta-title">
+  <div class="stage stage-panel cta">
+    <h2 id="feature-cta-title" class="reveal">Start with the recommended baseline.</h2>
+    <p class="reveal">The installation guide walks through the official ZIP, browser setup and the first-run choices.</p>
+    <div class="button-row reveal"><a class="button button-primary" href="{{root}}download/">{{icon:download}} Installation guide</a><a class="button button-ghost" href="{{root}}how-it-works/">How it works {{icon:arrow-right}}</a></div>
+  </div>
+</section>

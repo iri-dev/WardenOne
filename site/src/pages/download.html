@@ -1,0 +1,53 @@
+<section class="page-hero" aria-labelledby="page-title">
+  <div class="container page-hero-grid">
+    <div><p class="eyebrow">Download</p><h1 id="page-title">Install WardenOne, <span class="grad-text">step by step.</span></h1><p class="lead">WardenOne installs from an official GitHub ZIP. You extract it, then tell your Chromium browser to load the folder. This guide shows exactly what to choose.</p><div class="button-row"><a class="button button-primary" href="https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip">{{icon:download}} Download the official ZIP</a><a class="button button-secondary" href="https://github.com/iri-dev/WardenOne/releases/latest">Release notes {{icon:arrow-up-right}}</a></div><p class="small" style="margin-top:16px">Free · Open source · Chromium {{stat:minimumChrome}}+ (Chrome, Edge, Brave and Opera)</p></div>
+    <div class="source-check"><strong>{{icon:alert}} Check the address first</strong><p>The file must come from <code>github.com/iri-dev/WardenOne</code>. WardenOne is a browser extension, never a Windows setup program or an <code>.exe</code>.</p><a href="{{root}}stolen">Read the fake-download warning {{icon:arrow-right}}</a></div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="install-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">Manual installation</p><h2 id="install-title">From ZIP to a working extension.</h2><p class="lead">Keep the extracted folder somewhere permanent. Your browser loads WardenOne from it every time it starts.</p></div>
+    <ol class="install">
+      <li class="reveal"><span class="install-no">1</span><div class="install-text"><h3>Download the official ZIP.</h3><p>Use the button above to get <code>WardenOne-latest.zip</code> from the GitHub release. Save it somewhere you can find it, such as Downloads.</p></div><div class="illus"><span class="illus-label">Illustration · ZIP file</span><div class="file-chip"><span class="card-icon">{{icon:package}}</span><div><strong>WardenOne-latest.zip</strong><small style="margin-top:4px">Source: github.com/iri-dev/WardenOne</small></div></div></div></li>
+      <li class="reveal"><span class="install-no">2</span><div class="install-text"><h3>Extract it and keep the folder.</h3><p>Right-click the ZIP and choose <strong>Extract All</strong> on Windows, or use your system's extract option. Open the extracted folder and find <code>manifest.json</code>. This is the folder you will choose later, not the ZIP itself.</p></div><div class="illus"><span class="illus-label">Illustration · extracted folder</span><strong>WardenOne/</strong><pre>├─ manifest.json
+├─ background.js
+└─ icons/ …</pre><small>Choose the folder that directly contains manifest.json.</small></div></li>
+      <li class="reveal"><span class="install-no">3</span><div class="install-text"><h3>Open your browser's extensions page.</h3><p>Type the address for your browser into its address bar. These are browser pages, so they're shown as text rather than links.</p></div><div class="browsers" role="group" aria-label="Browser extension management addresses"><div><strong>Chrome</strong><code>chrome://extensions</code><a href="https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world">Chrome instructions ↗</a></div><div><strong>Edge</strong><code>edge://extensions</code><a href="https://learn.microsoft.com/en-us/microsoft-edge/extensions/getting-started/extension-sideloading">Edge instructions ↗</a></div><div><strong>Brave</strong><code>brave://extensions</code><a href="https://support.brave.com/hc/en-us/articles/360017909112-How-can-I-add-extensions-to-Brave">Brave help ↗</a></div><div><strong>Opera</strong><code>opera:extensions</code><a href="https://help.opera.com/en/extensions/basics/">Opera instructions ↗</a></div></div></li>
+      <li class="reveal"><span class="install-no">4</span><div class="install-text"><h3>Turn on Developer mode and load the folder.</h3><p>On the extensions page, switch on <strong>Developer mode</strong>. Choose <strong>Load unpacked</strong> (Opera may say <strong>Load Unpacked Extension</strong>), then select the folder with <code>manifest.json</code> directly inside it.</p><p class="install-help"><strong>Please leave Developer mode on afterwards.</strong> Chrome switches unpacked extensions off the moment it goes off, so WardenOne would stop protecting you until you turned it back on.</p><p class="install-help">If the browser says the manifest is missing, you probably picked the ZIP or its outer folder. Open the extracted folders until you see <code>manifest.json</code>, then select that folder.</p></div><div class="illus" role="img" aria-label="Illustration of the Developer mode switch and Load unpacked button on a browser extensions page"><span class="illus-label">Illustration · extensions page</span><div class="toggle-row"><span>Developer mode</span><i aria-hidden="true"></i></div><span class="fake-button">Load unpacked</span><small>Labels and placement vary by browser.</small></div></li>
+      <li class="reveal"><span class="install-no">5</span><div class="install-text"><h3>Say hello to the welcome screen.</h3><p>Once the browser loads the extension, WardenOne opens its onboarding guide. Choose your starting protection level and pin the icon if you want quick access.</p><p class="install-help">No welcome screen? Check that WardenOne is listed and enabled on the extensions page. You can also open it from the Extensions menu.</p></div><figure class="shot"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">First run</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/11-onboarding-welcome-2026-10.webp" width="1476" height="1248" alt="The real WardenOne welcome screen confirming installation and offering first-run choices" loading="lazy"><figcaption>The actual welcome screen after a fresh install.</figcaption></figure></li>
+    </ol>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" aria-labelledby="update-title">
+  <div class="container split" style="align-items:start">
+    <div class="split-copy reveal"><p class="eyebrow">Already installed?</p><h2 id="update-title">Updating an unpacked copy.</h2><p class="lead">An unpacked install doesn't update itself. Download the latest official ZIP, extract it, replace the files in your saved WardenOne folder, then press <strong>Reload</strong> on the extensions page.</p><p class="prose">Keep the folder at the same path, or the browser can treat it as a different extension and your settings won't come with it. Settings → About WardenOne shows your version and build ID, and the popup can tell you when a newer complete build exists. It never installs anything for you.</p></div>
+    <div class="reveal"><h3 style="margin-bottom:14px">If something doesn't work</h3>
+      <details class="disclosure"><summary>“Manifest file is missing or unreadable”</summary><div class="answer">Select the extracted folder that directly contains <code>manifest.json</code>. Don't select the ZIP or a parent folder.</div></details>
+      <details class="disclosure"><summary>Developer mode or Load unpacked is unavailable</summary><div class="answer">Check your browser's help page above. A managed browser or device may restrict developer mode; use a personal browser profile where you are allowed to load extensions.</div></details>
+      <details class="disclosure"><summary>WardenOne turned off on its own</summary><div class="answer">Check that <strong>Developer mode</strong> is still on. When it's switched off, Chrome turns unpacked extensions off too, WardenOne included, and they stay off after a restart. Switch it back on and WardenOne starts again.</div></details>
+      <details class="disclosure"><summary>WardenOne loads, but a site stops working</summary><div class="answer">Pause WardenOne for that site, or turn off the relevant protection there while you investigate. The <a href="{{root}}faq/">FAQ</a> explains what to include in a report.</div></details>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="verify-title">
+  <div class="container split">
+    <div class="split-copy reveal"><p class="eyebrow">Optional, for the curious</p><h2 id="verify-title">Check the file you received.</h2><p class="lead">Each release publishes a SHA-256 checksum next to the ZIP and a GitHub build attestation that ties those exact bytes to a build of <code>main</code>.</p><p class="prose">Neither check proves every protection is bug-free, and you don't need them to install. They give you extra evidence about the exact file you downloaded.</p><div class="button-row"><a class="button button-secondary" href="https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip.sha256">{{icon:download}} Checksum file</a><a class="text-link" href="https://github.com/iri-dev/WardenOne#verify-the-github-download">Full verification guide {{icon:arrow-up-right}}</a></div></div>
+    <div class="reveal">
+      <div class="terminal"><div class="terminal-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>Windows PowerShell<button class="copy-button" type="button" data-copy="cmd-ps">{{icon:copy}}<span>Copy</span></button></div><pre id="cmd-ps" data-command="$expected = ((Get-Content .\WardenOne-latest.zip.sha256 -Raw) -split '\s+')[0]
+$actual = (Get-FileHash .\WardenOne-latest.zip -Algorithm SHA256).Hash
+if ($actual -ine $expected) { throw 'WardenOne ZIP checksum mismatch' }
+'SHA-256 matches'"><span class="c"># In the folder holding both files</span>
+<span class="p">PS&gt; </span>$expected = ((Get-Content .\WardenOne-latest.zip.sha256 -Raw) -split '\s+')[0]
+<span class="p">PS&gt; </span>$actual = (Get-FileHash .\WardenOne-latest.zip -Algorithm SHA256).Hash
+<span class="p">PS&gt; </span>if ($actual -ine $expected) { throw 'WardenOne ZIP checksum mismatch' }
+<span class="p">PS&gt; </span>'SHA-256 matches'</pre></div>
+      <div class="terminal"><div class="terminal-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>GitHub CLI · build origin<button class="copy-button" type="button" data-copy="cmd-gh">{{icon:copy}}<span>Copy</span></button></div><pre id="cmd-gh" data-command="gh attestation verify WardenOne-latest.zip --repo iri-dev/WardenOne --signer-workflow iri-dev/WardenOne/.github/workflows/gate.yml --source-ref refs/heads/main"><span class="p">$ </span>gh attestation verify WardenOne-latest.zip \
+    --repo iri-dev/WardenOne \
+    --signer-workflow iri-dev/WardenOne/.github/workflows/gate.yml \
+    --source-ref refs/heads/main</pre></div>
+    </div>
+  </div>
+</section>

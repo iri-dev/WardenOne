@@ -1,0 +1,45 @@
+<section class="page-hero" aria-labelledby="page-title">
+  <div class="container page-hero-grid">
+    <div><p class="eyebrow">Privacy</p><h1 id="page-title">Know what stays. <span class="grad-text">Know what leaves.</span></h1><p class="lead">WardenOne has no account, no analytics and no WardenOne server. It still makes some network requests to keep its protection current, or to answer a question you chose to ask. Here is the plain overview; the full policy has every detail.</p><div class="button-row"><a class="button button-primary" href="{{root}}PRIVACY">Read the full policy {{icon:arrow-up-right}}</a></div></div>
+    <div class="aside-card"><span class="card-icon">{{icon:shield}}</span><strong>I don't see your browsing</strong>WardenOne doesn't send your browsing history to me. Some optional lookups can send a page's address to the service doing the check, but they stay off unless you turn them on.</div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="local-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">On your device</p><h2 id="local-title">The working record stays in the browser.</h2><p class="lead">Settings and a bounded activity record live in browser extension storage. They exist for controls, explanations and troubleshooting, not to build a profile of you.</p></div>
+    <div class="data-list">
+      <div class="data-row reveal"><h3>{{icon:sliders}} Settings and exceptions</h3><p>Your switches, trusted and blocked sites, firewall choices and other configuration are stored locally. WardenOne does not sync them to a cloud of its own.</p></div>
+      <div class="data-row reveal"><h3>{{icon:activity}} Activity history</h3><p>A local log records the security events WardenOne acted on, not every page you visited. It keeps at most 200 events and none older than 30 days, and you can clear it.</p></div>
+      <div class="data-row reveal"><h3>{{icon:alert}} Temporary warning context</h3><p>When a navigation is stopped, the exact destination is held in browser session storage under a random handle so the warning can explain it. It is deleted after your choice or when the tab closes.</p></div>
+      <div class="data-row reveal"><h3>{{icon:download}} Download reviews</h3><p>Local review records hold the file name, grade, reasons and a minimised source address for a limited time. The full policy gives the retention rules.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" aria-labelledby="external-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">Outside requests</p><h2 id="external-title">Some checks need a connection.</h2><p class="lead">What matters is whether a request keeps WardenOne's public data current, checks a browser build, or asks another provider about a site you visit.</p></div>
+    <div class="grid-2">
+      <div class="card reveal"><span class="card-icon">{{icon:refresh}}</span><h3>Automatic maintenance</h3><p>Public blocklists are downloaded to stay current. When the popup opens, a browser-release check and, when needed, a WardenOne build check contact official public sources. These do not send the pages you visit.</p></div>
+      <div class="card reveal"><span class="card-icon">{{icon:browser}}</span><h3>Page-related defaults</h3><p>WardenOne may re-request a third-party script a page already loaded, to check it for tampering. Twitch features call Twitch's own API while you are on Twitch. The policy spells out the conditions.</p></div>
+      <div class="card reveal"><span class="card-icon">{{icon:key}}</span><h3>Optional lookups</h3><p>Reputation services, a login-page age check and password-breach checks are separate controls. Automatic reputation lookups can send the addresses of pages you open to a provider, so they are off by default.</p></div>
+      <div class="card reveal"><span class="card-icon">{{icon:search}}</span><h3>Actions you start</h3><p>Site breach checks, extension checks, a filter list you add and the network self-test make requests when you press their controls. The self-test deliberately reaches named test domains.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="privacy-ui-title">
+  <div class="container split reverse">
+    <figure class="shot reveal"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Settings · Privacy</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/15-settings-privacy.webp" width="1920" height="1415" alt="WardenOne privacy settings showing tracking controls and optional protections" loading="lazy"><figcaption>Privacy controls in Settings, each with its own explanation.</figcaption></figure>
+    <div class="split-copy reveal"><p class="eyebrow">Choice and inspection</p><h2 id="privacy-ui-title">See the switch before you use the service.</h2><p class="prose">Optional checks are labelled in Settings, including when another provider would see information about a site. Leave them off and you still have WardenOne's local and browser-enforced protection.</p><p class="prose">The privacy policy is the authoritative list of data categories, destinations, retention periods and exceptions.</p><div class="button-row"><a class="text-link" href="{{root}}PRIVACY">Read the complete policy {{icon:arrow-right}}</a></div></div>
+  </div>
+</section>
+
+<section class="cta-wrap" aria-labelledby="privacy-cta-title">
+  <div class="stage stage-panel cta">
+    <h2 id="privacy-cta-title" class="reveal">The implementation is public.</h2>
+    <p class="reveal">Read the extension code, the privacy document and every change in the official repository.</p>
+    <div class="button-row reveal"><a class="button button-primary" href="https://github.com/iri-dev/WardenOne">{{icon:code}} Open the repository</a><a class="button button-ghost" href="{{root}}how-it-works/">How it works {{icon:arrow-right}}</a></div>
+  </div>
+</section>

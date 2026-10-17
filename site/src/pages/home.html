@@ -1,0 +1,205 @@
+<section class="stage stage-panel hero" aria-labelledby="hero-title">
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      <p class="hero-kicker"><span>Free and open source</span><span class="hero-kicker-license">GPL-3.0</span></p>
+      <h1 id="hero-title">Stop the risky page.<br><span class="grad-text">See why.</span></h1>
+      <p class="lead">WardenOne interrupts scams, blocks known bad destinations and shows you why. It all runs in your browser: no account, no telemetry, no WardenOne server.</p>
+      <div class="button-row">
+        <a class="button button-primary" href="{{root}}download/">{{icon:download}} Get WardenOne, free</a>
+        <a class="button button-ghost" href="#tour">See it in action {{icon:arrow-down}}</a>
+      </div>
+      <div class="hero-meta"><span>{{icon:browser}} Chrome, Edge, Brave and Opera</span><span>{{icon:lock}} Runs on your device</span><span>{{icon:code}} Every line public</span></div>
+    </div>
+    <figure class="hero-visual">
+      <div class="window"><div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span class="window-url"></span></div><img src="{{root}}images/14-clickfix-warning.webp" width="1800" height="703" alt="WardenOne warning over fake verification steps: these steps look like a ClickFix scam, and a real CAPTCHA never asks you to paste a command" fetchpriority="high"></div>
+      <div class="float-popup"><img src="{{root}}images/hero-popup.webp" width="696" height="525" alt="The WardenOne toolbar popup with its master switch enabled"></div>
+      <span class="callout-tag callout-warning" aria-hidden="true"><b>1</b> Warning on the page</span>
+      <span class="callout-tag callout-popup" aria-hidden="true"><b>2</b> Toolbar popup</span>
+      <figcaption>Real WardenOne captures, arranged for this page.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<div class="container stats-wrap">
+  <div class="stats reveal">
+    <div class="stat"><strong>{{stat:protections}}</strong><span>protections under one master switch</span></div>
+    <div class="stat"><strong>{{stat:networkRules}}</strong><span>built-in network rules, enforced by the browser itself</span></div>
+    <div class="stat"><strong>{{stat:feeds}}</strong><span>public threat and filter lists it can keep current</span></div>
+    <div class="stat"><strong>0</strong><span>accounts, analytics or WardenOne servers</span></div>
+  </div>
+</div>
+
+<section class="section" id="tour" aria-labelledby="tour-title">
+  <div class="container">
+    <div class="section-head center reveal"><p class="eyebrow">See it work</p><h2 id="tour-title">One extension, watching every layer of a visit.</h2><p class="lead">The page, the network, your downloads and your other extensions. WardenOne watches all of them and shares what each part learns, so a dodgy redirect can feed into a scam warning.</p></div>
+    <div class="tour" data-tabs>
+      <div class="tour-tabs" role="tablist" aria-label="Product tour">
+        <button class="tour-tab" type="button" role="tab" id="tab-scams" aria-controls="panel-scams" aria-selected="true">{{icon:alert}} Scam warnings</button>
+        <button class="tour-tab" type="button" role="tab" id="tab-downloads" aria-controls="panel-downloads" aria-selected="false" tabindex="-1">{{icon:download}} Downloads</button>
+        <button class="tour-tab" type="button" role="tab" id="tab-activity" aria-controls="panel-activity" aria-selected="false" tabindex="-1">{{icon:activity}} Activity</button>
+        <button class="tour-tab" type="button" role="tab" id="tab-control" aria-controls="panel-control" aria-selected="false" tabindex="-1">{{icon:sliders}} Site control</button>
+        <button class="tour-tab" type="button" role="tab" id="tab-zapper" aria-controls="panel-zapper" aria-selected="false" tabindex="-1">{{icon:crosshair}} Element Zapper</button>
+        <button class="tour-tab" type="button" role="tab" id="tab-test" aria-controls="panel-test" aria-selected="false" tabindex="-1">{{icon:flask}} Self-Test</button>
+      </div>
+
+      <div class="tour-panel" id="panel-scams" role="tabpanel" aria-labelledby="tab-scams" tabindex="0">
+        <div class="tour-copy">
+          <p class="tour-label">{{icon:alert}} At the risky moment</p>
+          <h3>A scam instruction gets interrupted, not quietly logged.</h3>
+          <p>A fake “verify you're human” page tells you to press Win+R and paste a command. WardenOne recognises the ClickFix trick and explains it before you follow the steps.</p>
+          <ul class="tick-list"><li>{{icon:check}} Phishing and look-alike domains</li><li>{{icon:check}} Fake updates and tech-support scams</li><li>{{icon:check}} Fake sign-in windows and back-button traps</li></ul>
+          <a class="text-link" href="{{root}}features/#cat-security">All scam and threat protections {{icon:arrow-right}}</a>
+        </div>
+        <figure class="shot"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">ClickFix warning</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/14-clickfix-warning.webp" width="1800" height="703" alt="WardenOne ClickFix warning explaining that a real CAPTCHA never asks you to open the Run dialog and paste something" loading="lazy"><figcaption>The warning appears on the page itself and names the behaviour it noticed.</figcaption></figure>
+      </div>
+
+      <div class="tour-panel" id="panel-downloads" role="tabpanel" aria-labelledby="tab-downloads" tabindex="0">
+        <div class="tour-copy">
+          <p class="tour-label">{{icon:download}} Before a file lands</p>
+          <h3>A suspicious download waits for your decision.</h3>
+          <p>Download Shield weighs the source, file name, type and reputation evidence. Known-dangerous files are blocked. Suspicious ones are held for an A–F review that explains why, with a choice to cancel or continue.</p>
+          <ul class="tick-list"><li>{{icon:check}} File Shield inspects a file's actual bytes, locally</li><li>{{icon:check}} Files are never opened, run or uploaded</li><li>{{icon:check}} The optional VirusTotal lookup sends only a hash</li></ul>
+          <a class="text-link" href="{{root}}features/#cat-downloads">All download and file checks {{icon:arrow-right}}</a>
+        </div>
+        <figure class="shot"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Download review</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/04-download-review-suspicious.webp" width="1800" height="943" alt="WardenOne download review listing a file, its source, the risk factors it observed and the choice to cancel or continue" loading="lazy"><figcaption>Captured with a local test file, before the download continued.</figcaption></figure>
+      </div>
+
+      <div class="tour-panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0">
+        <div class="tour-copy">
+          <p class="tour-label">{{icon:activity}} After every decision</p>
+          <h3>Every block and warning, with its reason.</h3>
+          <p>The Activity Centre keeps a local record of what WardenOne blocked, warned about or observed, and on which site. Something it only observed is never dressed up as a confirmed block.</p>
+          <ul class="tick-list"><li>{{icon:check}} Protection Health checks that guards actually reached the page</li><li>{{icon:check}} The Network Logger names the request and the decision</li><li>{{icon:check}} Your own exceptions sit right beside the record</li></ul>
+          <a class="text-link" href="{{root}}features/#cat-control">All evidence and control tools {{icon:arrow-right}}</a>
+        </div>
+        <figure class="shot"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Activity Centre</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/03-activity-centre.webp" width="1800" height="1286" alt="WardenOne Activity Centre with a local timeline of recent decisions and blocked sites" loading="lazy"><figcaption>Recent decisions and your own exceptions, kept in browser storage.</figcaption></figure>
+      </div>
+
+      <div class="tour-panel" id="panel-control" role="tabpanel" aria-labelledby="tab-control" tabindex="0">
+        <div class="tour-copy">
+          <p class="tour-label">{{icon:sliders}} When a site breaks</p>
+          <h3>Back off one step at a time.</h3>
+          <p>Pause WardenOne on one site, switch off a single protection there, or undo one Site Firewall rule. You never have to turn everything off to get a page working again.</p>
+          <ul class="tick-list"><li>{{icon:check}} Site Firewall lists every domain a page loaded</li><li>{{icon:check}} Override individual controls for one site</li><li>{{icon:check}} Write your own rules or add filter lists</li></ul>
+          <a class="text-link" href="{{root}}how-it-works/">How the layers fit together {{icon:arrow-right}}</a>
+        </div>
+        <figure class="shot shot-crop" style="--crop: 16 / 11"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Site Firewall</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/08-site-firewall-preview.webp" width="1800" height="1750" alt="WardenOne Site Firewall showing the domains a page loaded, grouped by request type, with per-domain choices" loading="lazy"><figcaption>Advanced per-site rules, each one visible and reversible.</figcaption></figure>
+      </div>
+
+      <div class="tour-panel" id="panel-zapper" role="tabpanel" aria-labelledby="tab-zapper" tabindex="0">
+        <div class="tour-copy">
+          <p class="tour-label">{{icon:crosshair}} Element Zapper</p>
+          <h3>Point at what you want gone.</h3>
+          <p>Click anything you don't want to see. It's hidden and remembered for that site, it stays gone after a reload, and Ctrl+Z brings it back.</p>
+          <ul class="tick-list"><li>{{icon:check}} Start it from the popup or the right-click menu</li><li>{{icon:check}} Keep zapping, then press Done or Esc</li><li>{{icon:check}} Restore hidden elements one at a time</li></ul>
+          <a class="text-link" href="{{root}}features/#cat-content">All ads, media and page tools {{icon:arrow-right}}</a>
+        </div>
+        <figure class="shot"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Element Zapper on github.com</span><span class="shot-real">Real captures</span></div>
+          <div class="compare compare-live" data-compare>
+            <img src="{{root}}images/16-zapper-github-select-2026-10.webp" width="2560" height="1800" alt="Element Zapper outlining a newsletter box on github.com, with its prompt: point at what you want gone" loading="lazy">
+            <div class="compare-after"><img src="{{root}}images/16-zapper-github-removed-2026-10.webp" width="2560" height="1800" alt="The same page after the newsletter box was hidden, with the confirmation: one thing hidden, saved for this site" loading="lazy"></div>
+            <input type="range" min="0" max="100" value="50" aria-label="Compare the page before and after zapping">
+            <span class="compare-line" aria-hidden="true"></span>
+            <span class="compare-tag before" aria-hidden="true">Before</span><span class="compare-tag after" aria-hidden="true">After</span>
+          </div>
+          <div class="compare-static"><img src="{{root}}images/16-zapper-github-select-2026-10.webp" width="2560" height="1800" alt="Element Zapper outlining a newsletter box on github.com" loading="lazy"><img src="{{root}}images/16-zapper-github-removed-2026-10.webp" width="2560" height="1800" alt="The same page after the newsletter box was hidden" loading="lazy"></div>
+          <figcaption>Drag across the image: selecting the newsletter box, then the page once it's hidden.</figcaption>
+        </figure>
+      </div>
+
+      <div class="tour-panel" id="panel-test" role="tabpanel" aria-labelledby="tab-test" tabindex="0">
+        <div class="tour-copy">
+          <p class="tour-label">{{icon:flask}} Measured, not asserted</p>
+          <h3>Check that it's actually working.</h3>
+          <p>The Privacy Self-Test runs each probe twice on the same page, once with WardenOne's shields and once without, and compares what came back. What it can't measure is reported as untestable, never as a pass.</p>
+          <ul class="tick-list"><li>{{icon:check}} Results come from measurements, not a settings screen</li><li>{{icon:check}} Verify and Repair checks the install from the inside</li><li>{{icon:check}} It reports its limits instead of certifying anonymity</li></ul>
+          <a class="text-link" href="{{root}}how-it-works/">Why the checks are kept separate {{icon:arrow-right}}</a>
+        </div>
+        <figure class="shot shot-crop" style="--crop: 16 / 11"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Privacy Self-Test</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/07-privacy-self-test-preview.webp" width="1800" height="1600" alt="WardenOne Privacy Self-Test asking what this page can actually learn about you, with a measured result and one line per surface" loading="lazy"><figcaption>Measured on github.com, with the raw readings one click away.</figcaption></figure>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="stage stage-panel principles" aria-labelledby="principles-title">
+  <svg class="principles-art" viewBox="0 0 400 440" aria-hidden="true" focusable="false"><defs><linearGradient id="principles-stroke" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#dca5f2"/><stop offset="1" stop-color="#f4a6cb" stop-opacity=".25"/></linearGradient></defs><path class="pulse" style="animation-delay:0.0s" d="M200.0 20.0 L370.0 85.0 L370.0 210.0 C370.0 320.0 300.0 395.0 200.0 425.0 C100.0 395.0 30.0 320.0 30.0 210.0 L30.0 85.0 Z"/><path class="pulse" style="animation-delay:0.6s" d="M200.0 48.0 L346.2 103.9 L346.2 211.4 C346.2 306.0 286.0 370.5 200.0 396.3 C114.0 370.5 53.8 306.0 53.8 211.4 L53.8 103.9 Z"/><path class="pulse" style="animation-delay:1.2s" d="M200.0 76.0 L322.4 122.8 L322.4 212.8 C322.4 292.0 272.0 346.0 200.0 367.6 C128.0 346.0 77.6 292.0 77.6 212.8 L77.6 122.8 Z"/><path class="pulse" style="animation-delay:1.8s" d="M200.0 104.0 L298.6 141.7 L298.6 214.2 C298.6 278.0 258.0 321.5 200.0 338.9 C142.0 321.5 101.4 278.0 101.4 214.2 L101.4 141.7 Z"/><path class="core" style="animation-delay:2.4s" d="M200.0 132.0 L274.8 160.6 L274.8 215.6 C274.8 264.0 244.0 297.0 200.0 310.2 C156.0 297.0 125.2 264.0 125.2 215.6 L125.2 160.6 Z"/><path class="core" d="M150 225 l35 35 l70 -80"/></svg>
+  <div class="container">
+    <p class="eyebrow reveal">The rules it's built on</p>
+    <h2 class="principles-quote reveal" id="principles-title">Unknown does not mean <span class="grad-text">safe.</span></h2>
+    <p class="principles-intro reveal">If WardenOne doesn't know, it says it doesn't know. A file with nothing strange in it isn't called harmless, and a search result never gets a green tick just because nothing matched.</p>
+    <ol class="rules">
+      <li class="rule reveal"><span class="rule-no">01</span><h3>Nothing found means nothing found.</h3><p>When WardenOne finds nothing, it says it found nothing. It won't tell you a page is “safe”.</p></li>
+      <li class="rule reveal"><span class="rule-no">02</span><h3>Failures stay visible.</h3><p>A rule it couldn't apply, a missing part, a verdict it isn't sure about: you get to see it. Nothing is quietly ignored.</p></li>
+      <li class="rule reveal"><span class="rule-no">03</span><h3>Back off a little at a time.</h3><p>If a protection breaks a site, pause that site, turn off one protection there, or undo one rule. Never everything at once.</p></li>
+    </ol>
+    <p class="principles-source reveal">From the rules set out in the project README. <a class="text-link" href="https://github.com/iri-dev/WardenOne#why-wardenone-exists">Read why WardenOne exists {{icon:arrow-up-right}}</a></p>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="caps-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">Everything in one place</p><h2 id="caps-title">{{stat:protections}} protections. One switch.</h2><p class="lead">No more stacking an ad blocker, an anti-tracker, a pop-up blocker and a download scanner and hoping they get along. {{stat:onByDefault}} protections are on from the first run. The rest wait until you want them.</p></div>
+    <div class="cap-grid">{{capabilities}}</div>
+    <div class="button-row"><a class="button button-secondary" href="{{root}}features/#catalogue">Browse all {{stat:catalogueEntries}} features, controls and tools {{icon:arrow-right}}</a></div>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" aria-labelledby="privacy-title">
+  <div class="container">
+    <div class="section-head reveal"><p class="eyebrow">Privacy, plainly</p><h2 id="privacy-title">No account. No telemetry. No WardenOne server.</h2><p class="lead">Your browsing never passes through a server of mine, because there isn't one. A few requests do leave the browser, and every one of them is named.</p></div>
+    <div class="flow-cols">
+      <div class="flow-col local reveal"><span class="card-icon">{{icon:database}}</span><h3>Stays in your browser</h3><p>Your settings, exceptions and a bounded activity record: at most 200 events, none older than 30 days. Clear it whenever you like.</p></div>
+      <div class="flow-col reveal"><span class="card-icon">{{icon:globe}}</span><h3>Talks to public sources</h3><p>List updates and a browser and build check contact their named public sources. Those maintenance requests never include the pages you visit.</p></div>
+      <div class="flow-col optin reveal"><span class="card-icon">{{icon:key}}</span><h3>Only if you turn it on</h3><p>Seven optional reputation providers and breach checks stay off until you switch them on, and Settings tells you what each one would see.</p></div>
+    </div>
+    <div class="button-row"><a class="text-link" href="{{root}}privacy/">Read the privacy overview {{icon:arrow-right}}</a></div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="open-title">
+  <div class="container split">
+    <div class="split-copy reveal">
+      <p class="eyebrow">Built in the open</p>
+      <h2 id="open-title">Don't take my word for it. Check.</h2>
+      <p class="lead">Every line of WardenOne is public under the GPL. Official builds come from GitHub Actions on <code>main</code>, with a SHA-256 checksum and a build attestation you can verify yourself.</p>
+      <ul class="facts">
+        <li><strong>{{stat:testSuites}}</strong><span>automated test suites, run on every change before a build is published</span></li>
+        <li><strong>GPL-3.0</strong><span>free to read, change and share, as long as changes are marked</span></li>
+        <li><strong>1 source</strong><span>official builds only ever come from the iri-dev/WardenOne repository, and never as an .exe</span></li>
+      </ul>
+      <div class="button-row"><a class="button button-secondary" href="https://github.com/iri-dev/WardenOne">{{icon:code}} Read the source</a><a class="text-link" href="https://github.com/iri-dev/WardenOne#verify-the-github-download">How verification works {{icon:arrow-up-right}}</a></div>
+    </div>
+    <div class="reveal">
+      <div class="terminal"><div class="terminal-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>Was this ZIP built from main?<button class="copy-button" type="button" data-copy="cmd-attest">{{icon:copy}}<span>Copy</span></button></div><pre id="cmd-attest" data-command="gh attestation verify WardenOne-latest.zip --repo iri-dev/WardenOne --signer-workflow iri-dev/WardenOne/.github/workflows/gate.yml --source-ref refs/heads/main"><span class="c"># GitHub CLI: ties the ZIP's exact bytes to a build of main</span>
+<span class="p">$ </span>gh attestation verify WardenOne-latest.zip \
+    --repo iri-dev/WardenOne \
+    --signer-workflow iri-dev/WardenOne/.github/workflows/gate.yml \
+    --source-ref refs/heads/main</pre></div>
+      <div class="terminal"><div class="terminal-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>Is it the file that was published?<button class="copy-button" type="button" data-copy="cmd-sha">{{icon:copy}}<span>Copy</span></button></div><pre id="cmd-sha" data-command="sha256sum -c WardenOne-latest.zip.sha256"><span class="c"># Linux. On macOS: shasum -a 256 -c</span>
+<span class="p">$ </span>sha256sum -c WardenOne-latest.zip.sha256</pre></div>
+    </div>
+  </div>
+</section>
+
+<section class="section bg-alt border-y" aria-labelledby="note-title">
+  <div class="container">
+    <div class="note reveal">
+      <h2 class="eyebrow" id="note-title">A note from the person who made it</h2>
+      <blockquote>
+        <p>I made WardenOne because I was tired of security tools that just ask you to trust them. A counter ticks up somewhere, and you never actually find out what happened or why.</p>
+        <p>I'm a recent software engineering graduate who's a little bit obsessed with security, and I know a new developer with a handful of followers is hard to trust. So I'm not asking you to. All of it is open source, it shows you why it stepped in, and when WardenOne isn't sure about something, it tells you.</p>
+        <p>Your browser should be looking out for you, not quietly working against you.&nbsp;💜</p>
+      </blockquote>
+      <div class="note-sign"><img class="avatar" src="{{root}}images/iri-avatar.webp" alt="" width="48" height="48"><div><strong>iri</strong><span>Maker of WardenOne · <a href="https://github.com/iri-dev">github.com/iri-dev</a> · <a href="{{root}}about/#contact">Say hello</a></span></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-wrap" aria-labelledby="cta-title">
+  <div class="stage stage-panel cta">
+    <h2 id="cta-title" class="reveal">Ready when you are.</h2>
+    <p class="reveal">Free, open source, and set up in five short steps from the official GitHub ZIP.</p>
+    <div class="button-row reveal"><a class="button button-primary" href="{{root}}download/">{{icon:download}} Get WardenOne</a><a class="button button-ghost" href="https://github.com/iri-dev/WardenOne">{{icon:code}} View on GitHub</a></div>
+    <p class="small">Chromium {{stat:minimumChrome}}+ · Chrome, Edge, Brave and Opera · Never an .exe</p>
+  </div>
+</section>

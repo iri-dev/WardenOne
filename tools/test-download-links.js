@@ -23,8 +23,8 @@
  * 3. Nothing hardcodes a version number. A link to /releases/tag/v1.0.1 is correct for exactly
  *    as long as it takes to publish v1.0.2, and then it silently becomes the same trap again.
  *
- * The index page is still fine to link to as an index -- the footer nav and the sameAs
- * provenance list both do -- so this checks the download CALLS TO ACTION specifically.
+ * The index page is still fine to link to as an index -- the website's changelog page does --
+ * so this checks the download CALLS TO ACTION specifically.
  *
  * Run: node tools/test-download-links.js
  */
@@ -44,7 +44,14 @@ function check(name, condition, extra) {
 }
 
 const README = read('README.md');
-const SITE = read('site/index.html');
+/* The website is built from site/: the page bodies in site/src/pages and the shell, with its
+   structured data, in site/build.js. A download link can sit on any of them. */
+const SITE_PAGES = fs.readdirSync(path.join(ROOT, 'site', 'src', 'pages')).filter((f) => f.endsWith('.html'))
+  .map((f) => ['site/src/pages/' + f, read('site/src/pages/' + f)]);
+const SITE_BUILD = read('site/build.js');
+const SITE_SURFACES = SITE_PAGES.concat([['site/build.js', SITE_BUILD]]);
+const SITE = SITE_SURFACES.map(([, text]) => text).join('\n');
+const DOWNLOAD_PAGE = read('site/src/pages/download.html');
 const WORKFLOW = read('.github/workflows/gate.yml');
 
 const BARE_INDEX = 'https://github.com/iri-dev/WardenOne/releases';
@@ -58,6 +65,13 @@ function bareIndexLinks(text) {
   let m;
   while ((m = re.exec(text))) if (!m[1]) out.push(m.index);
   return out;
+}
+
+// Release links that are not the rolling ZIP, its checksum, the Latest page or the bare index.
+function oddReleaseLinks(text) {
+  const allowed = new Set([LATEST_ASSET, LATEST_ASSET + '.sha256', LATEST_PAGE, BARE_INDEX]);
+  return [...text.matchAll(/https:\/\/github\.com\/iri-dev\/WardenOne\/releases[^\s"'<>)`]*/g)]
+    .map((m) => m[0]).filter((url) => !allowed.has(url));
 }
 
 // ---------------------------------------------------------------------------
@@ -77,18 +91,25 @@ function bareIndexLinks(text) {
     !!readmeBadge && readmeBadge[1] === LATEST_ASSET,
     readmeBadge ? readmeBadge[1] : 'badge not found');
 
-  const ctaLine = /<a class="btn btn-primary" href="([^"]+)"/.exec(SITE);
+  const ctaLine = /<a class="button button-primary" href="([^"]+)"/.exec(DOWNLOAD_PAGE);
   check('the site download button exists', !!ctaLine);
   if (ctaLine) {
     check('the site download button points straight at the rolling package',
       ctaLine[1] === LATEST_ASSET, ctaLine[1]);
   }
 
-  const stepLink = /<a href="([^"]+)">current build<\/a>/.exec(SITE);
-  check('the site install step points straight at the rolling package',
-    !!stepLink && stepLink[1] === LATEST_ASSET, stepLink ? stepLink[1] : 'link not found');
+  check('the site install step sends readers to that button for the rolling package',
+    /<h3>Download the official ZIP\.<\/h3><p>[^<]*button above[^<]*<code>WardenOne-latest\.zip<\/code>/.test(DOWNLOAD_PAGE));
 
-  const dl = /"downloadUrl":\s*"([^"]+)"/.exec(SITE);
+  /* Every link into the releases, on every page: the rolling ZIP, its checksum, the Latest
+     release page or the bare index (held to a count below). A tag or a versioned asset is the
+     stale-download trap again, wherever it sits. */
+  const releaseLinks = (SITE.match(/https:\/\/github\.com\/iri-dev\/WardenOne\/releases/g) || []).length;
+  const odd = oddReleaseLinks(SITE);
+  check('every release link on the site is the rolling ZIP, its checksum, the Latest page or the index',
+    releaseLinks > 0 && odd.length === 0, odd.join(', '));
+
+  const dl = /downloadUrl:\s*'([^']+)'/.exec(SITE_BUILD);
   check('the structured-data downloadUrl points straight at the rolling package',
     !!dl && dl[1] === LATEST_ASSET, dl ? dl[1] : 'downloadUrl not found');
 }
@@ -228,8 +249,9 @@ function bareIndexLinks(text) {
   check('README and site say verification is optional for advanced users',
     /\*\*Optional, for advanced users\.\*\*/.test(README)
       && /downloading\s+the `\.sha256` file, calculating a hash and using the GitHub CLI are optional/.test(README)
-      && /Only the ZIP is needed to install/.test(SITE)
-      && /optional SHA-256 checksum/.test(SITE));
+      && /Optional, for the curious/.test(DOWNLOAD_PAGE)
+      && /you don't need them to install/.test(DOWNLOAD_PAGE)
+      && DOWNLOAD_PAGE.includes(LATEST_ASSET + '.sha256'));
   check('the site points readers to the verification steps',
     SITE.includes('https://github.com/iri-dev/WardenOne#verify-the-github-download'));
 }
@@ -238,7 +260,7 @@ function bareIndexLinks(text) {
 // 4. No hardcoded version anywhere in a link.
 // ---------------------------------------------------------------------------
 {
-  for (const [label, text] of [['README.md', README], ['site/index.html', SITE]]) {
+  for (const [label, text] of [['README.md', README]].concat(SITE_SURFACES)) {
     const pinned = /github\.com\/iri-dev\/WardenOne\/releases\/(?:tag|download)\/v?\d+\.\d+\.\d+/.exec(text);
     check('no link in ' + label + ' is pinned to one version',
       !pinned, pinned ? pinned[0] + ' goes stale the day the next release ships' : '');
@@ -254,7 +276,7 @@ function bareIndexLinks(text) {
 {
   const bare = bareIndexLinks(SITE);
   check('the site still links the releases index somewhere', bare.length >= 1,
-    'the footer nav and the sameAs provenance list should still point at the index');
+    'the changelog page\'s "Need the exact build?" card should still point at the index');
   check('but not many times', bare.length <= 3,
     bare.length + ' bare index links -- one of them is probably meant to be a download link');
 }
@@ -268,10 +290,15 @@ function bareIndexLinks(text) {
   check('the check would have caught the old README wording',
     !OLD_README.includes(LATEST_ASSET));
 
-  const OLD_CTA = '<a class="btn btn-primary" href="' + LATEST_PAGE + '">';
-  const oldParsed = /<a class="btn btn-primary" href="([^"]+)"/.exec(OLD_CTA);
+  const OLD_CTA = '<a class="button button-primary" href="' + LATEST_PAGE + '">';
+  const oldParsed = /<a class="button button-primary" href="([^"]+)"/.exec(OLD_CTA);
   check('the check would have caught the old download button',
     !!oldParsed && oldParsed[1] !== LATEST_ASSET);
+
+  check('a versioned asset link on a site page would be caught',
+    oddReleaseLinks('<a href="https://github.com/iri-dev/WardenOne/releases/download/v1.0.1/WardenOne-v1.0.1.zip">').length === 1);
+  check('the allowed release links are not',
+    oddReleaseLinks('<a href="' + LATEST_ASSET + '">' + LATEST_ASSET + '.sha256 ' + LATEST_PAGE + ' ' + BARE_INDEX + '"').length === 0);
 
   check('a pinned-version link would be caught',
     /github\.com\/iri-dev\/WardenOne\/releases\/(?:tag|download)\/v?\d+\.\d+\.\d+/

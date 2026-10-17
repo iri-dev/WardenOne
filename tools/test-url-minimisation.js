@@ -469,9 +469,12 @@ function askedAbout(req) {
     check('the policy keeps "nothing to us" apart from "nothing leaves the device"',
       /WardenOne sends nothing to us\./.test(policy) && /a different statement from "nothing leaves your device"/.test(policy)
       && !/does not collect or transmit: your browsing history/.test(policy));
-    const site = fs.readFileSync(path.join(ROOT, 'site', 'index.html'), 'utf8');
+    const sitePages = path.join(ROOT, 'site', 'src', 'pages');
+    const site = fs.readdirSync(sitePages).filter((f) => f.endsWith('.html'))
+      .map((f) => fs.readFileSync(path.join(sitePages, f), 'utf8')).join('\n');
+    const sitePrivacy = fs.readFileSync(path.join(sitePages, 'privacy.html'), 'utf8');
     check('the site no longer says browsing history goes nowhere', !/does not send your browsing history anywhere/.test(site)
-      && /unless you switch on an\s+optional check that has to ask an outside service/.test(site));
+      && /browsing history to me\.[^<]{0,20}optional lookups can send a page's address to the service doing the check/.test(sitePrivacy));
     const ttlMax = Math.max(...['URLHAUS_HIT_TTL_MS', 'WHOISXML_THREAT_CLEAN_TTL_MS', 'PHISHTANK_HIT_TTL_MS', 'SAFE_BROWSING_CLEAN_TTL_MS']
       .map((n) => { const m = new RegExp('const ' + n + ' = ([0-9 *]+);').exec(BG); return m ? eval(m[1]) : 0; }));
     check('the twelve hours the popup and policy state is the longest TTL in the code', ttlMax === 12 * 60 * 60 * 1000 && /twelve hours/.test(policy), String(ttlMax));
