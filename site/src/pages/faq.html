@@ -1,0 +1,48 @@
+<section class="page-hero" aria-labelledby="page-title">
+  <div class="container page-hero-grid">
+    <div><p class="eyebrow">Help</p><h1 id="page-title">Clear answers to <span class="grad-text">practical questions.</span></h1><p class="lead">Installing, updating, privacy and compatibility. For a problem on a specific site, the GitHub issue tracker is the best place to report it.</p></div>
+    <div class="aside-card"><span class="card-icon">{{icon:info}}</span><strong>Reporting a broken page?</strong>Include your browser and version, the site address, and the WardenOne control that changes the behaviour, if you can find it.</div>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="faq-title">
+  <div class="container faq-layout">
+    <nav class="faq-nav" aria-label="Question topics"><a href="#getting-started">Getting started</a><a href="#compatibility">Protection and compatibility</a><a href="#trust">Privacy and trust</a></nav>
+    <div>
+      <h2 class="eyebrow" id="faq-title">Find an answer</h2>
+      <div class="faq-search"><div class="search-field">{{icon:search}}<input type="search" id="faq-search" aria-label="Search questions" placeholder="Try “install”, “privacy” or “video”" autocomplete="off" data-faq-search></div><p class="faq-results" data-faq-status role="status" aria-live="polite">13 questions</p></div>
+
+      <div class="faq-group" data-faq-group><h2 id="getting-started">Getting started</h2>
+        <details class="disclosure" data-item><summary>Where can I download WardenOne?</summary><div class="answer">Use the <a href="{{root}}download/">download page</a>, which points to the latest GitHub release from <code>iri-dev/WardenOne</code>. WardenOne is a ZIP of extension files, not an installer or an executable.</div></details>
+        <details class="disclosure" data-item><summary>How do I install the ZIP?</summary><div class="answer">Unzip it to a folder you will keep, open your browser's extensions page, turn on Developer mode and choose <strong>Load unpacked</strong>. Select the folder with <code>manifest.json</code> directly inside it. Leave Developer mode on afterwards: Chrome switches unpacked extensions off without it. The <a href="{{root}}download/">installation guide</a> has the address for each browser.</div></details>
+        <details class="disclosure" data-item><summary>Which browsers are supported?</summary><div class="answer">WardenOne is built for Chromium browsers and documents Chrome, Edge, Brave and Opera. The manifest declares Chrome {{stat:minimumChrome}} as the minimum version. Browser differences can affect individual features, so include the browser and version in a bug report.</div></details>
+        <details class="disclosure" data-item><summary>How do updates work?</summary><div class="answer">Official GitHub ZIP builds can tell you when a newer complete build is available. To update, download and extract the latest ZIP, replace the files in your saved extension folder and press Reload on the extensions page. Settings → About WardenOne shows your version and build ID.</div></details>
+      </div>
+
+      <div class="faq-group" data-faq-group><h2 id="compatibility">Protection and compatibility</h2>
+        <details class="disclosure" data-item><summary>Can WardenOne guarantee that a site is safe?</summary><div class="answer">No. Blocklists can miss a new threat and behaviour checks can be uncertain. A warning is a reason to stop and look; the absence of a warning is not a safety verdict. <a href="{{root}}how-it-works/">How it works</a> explains the layers and their limits.</div></details>
+        <details class="disclosure" data-item><summary>Why did a legitimate site stop working?</summary><div class="answer">A site may depend on a request or browser behaviour that a protection blocks. Try pausing WardenOne on that site, or turning off the relevant feature there for a moment. If you can reproduce it, <a href="https://github.com/iri-dev/WardenOne/issues/new/choose">report it</a> with the site, browser version and control involved.</div></details>
+        <details class="disclosure" data-item><summary>Will it interfere with video or music?</summary><div class="answer">Media players are sensitive to blocking. WardenOne has dedicated handling for YouTube, Twitch and Spotify, plus compatibility exemptions and fail-open behaviour in selected cases. If playback fails, pause the relevant protection for that site and report the details.</div></details>
+        <details class="disclosure" data-item><summary>Can I control protection for one site?</summary><div class="answer">Yes. The popup and Settings provide site-level exceptions, and Site Firewall offers advanced per-domain rules. Advanced rules can break a page, so review what you changed and undo the rule if needed.</div></details>
+      </div>
+
+      <div class="faq-group" data-faq-group><h2 id="trust">Privacy and trust</h2>
+        <details class="disclosure" data-item><summary>Does WardenOne need an account?</summary><div class="answer">No. It runs without an account or a WardenOne cloud service. Your settings and activity record live in your browser's extension storage.</div></details>
+        <details class="disclosure" data-item><summary>Does it send my browsing history to the developer?</summary><div class="answer">No. WardenOne has no developer-run telemetry service. Some automatic maintenance requests and optional provider lookups still reach outside services; <a href="{{root}}privacy/">the privacy overview</a> explains the difference, and the <a href="{{root}}PRIVACY">full policy</a> lists every detail.</div></details>
+        <details class="disclosure" data-item><summary>What do optional reputation checks share?</summary><div class="answer">When you enable them, automatic reputation providers can receive the addresses of pages you open. They are off by default. Review each provider and its data flow in Settings and the <a href="{{root}}PRIVACY">privacy policy</a> before turning one on.</div></details>
+        <details class="disclosure" data-item><summary>Is WardenOne open source?</summary><div class="answer">Yes. The extension, website source, tests and bundled rules are published in the <a href="https://github.com/iri-dev/WardenOne">official repository</a> under the GNU GPL v3 or later. Some upstream lists have their own rights and credits; see <a href="{{root}}CREDITS">Credits</a>.</div></details>
+        <details class="disclosure" data-item><summary>How can I tell a fake download from the real one?</summary><div class="answer">The only official source is <a href="https://github.com/iri-dev/WardenOne">github.com/iri-dev/WardenOne</a>. A WardenOne <code>.exe</code> or setup program is not genuine. Read the <a href="{{root}}stolen">fake download incident notice</a> if you may have run one.</div></details>
+      </div>
+      <p class="faq-empty" data-faq-empty hidden>No answers match that search. Try a different word, or <a class="inline-link" href="https://github.com/iri-dev/WardenOne/issues/new/choose">ask in the issue tracker</a>.</p>
+    </div>
+  </div>
+</section>
+
+<section class="cta-wrap" aria-labelledby="support-title">
+  <div class="stage stage-panel cta">
+    <h2 id="support-title" class="reveal">Bring the details. I'll take a look.</h2>
+    <p class="reveal">The issue tracker has guided forms for bugs and ideas. For a bug, the site address and the switch that changes the result are the most useful place to start.</p>
+    <div class="button-row reveal"><a class="button button-primary" href="https://github.com/iri-dev/WardenOne/issues/new/choose">Open the issue tracker {{icon:arrow-up-right}}</a></div>
+    <p class="small">Found a security problem in WardenOne itself? Please use <a class="inline-link" href="https://github.com/iri-dev/WardenOne/security/advisories/new">a private vulnerability report</a> instead.</p>
+  </div>
+</section>

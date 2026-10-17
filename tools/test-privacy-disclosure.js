@@ -310,13 +310,20 @@ check('and neither does the Permissions page',
 
 /* 7b. The website said "the few checks that contact an outside service are opt-in". The release
        check is automatic, as are the list downloads, so that sentence was false. */
-const SITE_HTML = fs.readFileSync(path.join(ROOT, 'site', 'index.html'), 'utf8');
+/*     The website is built from site/src/pages, and its privacy page carries the ledger. */
+const SITE_PAGE_DIR = path.join(ROOT, 'site', 'src', 'pages');
+const SITE_HTML = fs.readdirSync(SITE_PAGE_DIR).filter((f) => f.endsWith('.html'))
+  .map((f) => fs.readFileSync(path.join(SITE_PAGE_DIR, f), 'utf8')).join('\n');
+const SITE_PRIVACY = fs.readFileSync(path.join(SITE_PAGE_DIR, 'privacy.html'), 'utf8');
 check('the website does not call every outside contact opt-in',
   !/contact an outside service are opt-in/i.test(SITE_HTML) && !/(checks|requests) that contact an outside service[^<.]{0,40}\bopt-in/i.test(SITE_HTML),
   'filter-list downloads and the browser-release check happen without a switch');
+const automaticCard = SITE_PRIVACY.indexOf('<h3>Automatic maintenance</h3>');
+const optionalCard = SITE_PRIVACY.indexOf('<h3>Optional lookups</h3>');
 check('and names the automatic browser-release check beside the opt-in lookups',
-  /browser-release check when you open the popup/.test(SITE_HTML)
-    && /WardenOne build check/.test(SITE_HTML) && /lookups that would are opt-in/.test(SITE_HTML));
+  automaticCard !== -1 && optionalCard > automaticCard
+    && /When the popup opens, a browser-release check and, when needed, a WardenOne build check/.test(SITE_PRIVACY)
+    && /so they are off by default/.test(SITE_PRIVACY.slice(optionalCard)));
 
 /* 8. The Permissions page inside the extension has its own "What can leave the browser" list,
       and it is the one a reader actually opens from the popup. It listed only the opt-in

@@ -1,7 +1,7 @@
-# Publishes the documents that are meant to be a public web page.
+# Publishes the website in site/ and the documents that are meant to be a public web page.
 #
-# The site is built from a staged directory containing only those pages, so a file
-# that is not copied in the step below cannot be published by accident.
+# The site is built from a staged directory containing only the built site and those
+# documents, so a file that is not copied in the step below cannot be published by accident.
 #
 # Jekyll stays in the loop because PRIVACY.md is the source for the privacy policy
 # the Web Store listing points at, and Jekyll renders it to HTML at /PRIVACY.
@@ -36,38 +36,47 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      # The catalogue, the numbers, the captures, the icon and the documents are copied from
+      # this commit, then the site is built and checked. A failed check stops the deploy, so
+      # the live site stays as it was.
+      - name: Build and check the site
+        run: |
+          node site/sync-data.js
+          node site/build.js
+          node site/check.js
+
       - name: Stage the published pages
         run: |
           # Only what is copied here can be published.
           mkdir -p _pages
-          cp site/index.html _pages/
-          cp site/404.html _pages/
-          cp site/stolen.html _pages/
-          # Search Console verification. Google re-checks periodically, so this has
-          # to stay served rather than just pass once.
-          cp site/google*.html _pages/
-          cp site/robots.txt _pages/
-          cp site/sitemap.xml _pages/
+          # Every page, its assets, the 404 page, robots.txt, the sitemap, the Search Console
+          # verification file and the Jekyll layout the documents are rendered into.
+          cp -R site/dist/. _pages/
+          # The documents, from this commit, rendered at /PRIVACY, /SUPPORT, /CHANGELOG and
+          # /CREDITS. The build already holds the same files; copying them here keeps the
+          # published set visible in one place.
           cp PRIVACY.md _pages/
           cp SUPPORT.md _pages/
-          # Release history and upstream credits, rendered at /CHANGELOG and /CREDITS.
           cp CHANGELOG.md _pages/
           cp CREDITS.md _pages/
-
-          # Images the landing page references, copied individually and renamed so the
-          # page does not depend on the repo's directory layout.
-          mkdir -p _pages/icons
-          cp icons/icon128.png _pages/icons/
+          # The previous site's social preview image. Links shared before the redesign
+          # still point their preview here.
           cp docs/store/promo-440x280.png _pages/promo.png
-          # The unpadded product capture. The Web Store candidates in docs/store are
-          # letterboxed 1280x800 frames built from docs/screenshots by tools/build-store-assets.py.
-          cp docs/popup.png _pages/screenshot-popup.png
 
           cat > _pages/_config.yml <<'CONFIG'
           title: WardenOne
           description: Privacy and security extension for Chromium browsers.
-          # index.html carries its own <head>, so Jekyll must not wrap it in a theme.
-          # PRIVACY.md and SUPPORT.md still get rendered to HTML.
+          # The site's pages carry their own <head> and no front matter, so Jekyll copies them
+          # as they are. The Markdown documents are rendered into _layouts/default.html.
+          defaults:
+            - scope:
+                path: ""
+              values:
+                layout: default
           CONFIG
 
           echo "staged:" && ls -1R _pages
