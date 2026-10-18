@@ -21164,14 +21164,13 @@
           const cs=getComputedStyle(el),
           pos=cs.position;
           if("none"===cs.display||"hidden"===cs.visibility||0===parseFloat(cs.opacity))return!1;
+          if("fixed"!==pos&&"sticky"!==pos&&"absolute"!==pos)return!1;
           const r=el.getBoundingClientRect();
           if(r.top>innerHeight||r.bottom<0)return!1;
           /* Every way below to answer yes needs a fixed, sticky or absolute box:
              closeMarkedPlayerPopup refuses anything else, and both final answers
-             require looksModal, which requires positioned. Asked first, because
-             the innerText read next serialises the element's whole subtree, and
-             the sweep meets the page's largest containers first. */
-          if("fixed"!==pos&&"sticky"!==pos&&"absolute"!==pos)return!1;
+             require looksModal, which requires positioned. Reject static boxes
+             before reading their geometry or serialising their text. */
           const z=parseInt(cs.zIndex,
           10)||0,
           text=(el.innerText||el.textContent||"").slice(0,
