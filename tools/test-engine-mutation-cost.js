@@ -797,18 +797,24 @@ check('the grabber watch skips added nodes with no src before any URL is built',
   vm.createContext(box);
   vm.runInContext('const ' + body + ';this.__isOverlay=isOverlay;', box, { filename: 'content.js:isOverlay' });
   let textReads = 0;
+  let geometryReads = 0;
   const el = {
     nodeType: 1, id: 'promo', className: 'ad-overlay',
     getAttribute: () => null, querySelector: () => null,
-    getBoundingClientRect: () => ({ top: 250, bottom: 550, left: 400, right: 800, width: 400, height: 300 }),
+    getBoundingClientRect: () => {
+      geometryReads++;
+      return { top: 250, bottom: 550, left: 400, right: 800, width: 400, height: 300 };
+    },
     get innerText() { textReads++; return 'Special offer'; },
   };
   box.el = el;
-  check('a box in normal flow is not an overlay, and its text is never read',
-    vm.runInContext('__isOverlay(el)', box) === false && textReads === 0, 'innerText reads: ' + textReads);
+  check('a box in normal flow skips geometry and text',
+    vm.runInContext('__isOverlay(el)', box) === false && geometryReads === 0 && textReads === 0,
+    'geometry / innerText reads: ' + geometryReads + ' / ' + textReads);
   box.position = 'fixed';
   check('the same box positioned fixed and centred is still caught',
-    vm.runInContext('__isOverlay(el)', box) === true && textReads === 1, 'innerText reads: ' + textReads);
+    vm.runInContext('__isOverlay(el)', box) === true && geometryReads === 1 && textReads === 1,
+    'geometry / innerText reads: ' + geometryReads + ' / ' + textReads);
 })();
 (() => {
   const vm = require('vm');

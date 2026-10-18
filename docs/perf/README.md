@@ -467,6 +467,18 @@ On the image-heavy eight-frame fixture, cold task time was 33 / 16 ms lower and 
 30 ms higher / 14 ms lower across the two run orders. That mixed warm result does not establish
 a change to the iframe image logger's cost.
 
+### Overlay geometry reads (2026-10-18)
+
+The overlay cleaner now rejects an element in normal document flow before calling
+`getBoundingClientRect()`. Its existing decision already rejected that element later, so this
+removes a layout read without changing which overlays qualify. A regression test counts geometry
+reads on static and fixed boxes; the Edge player ad-layer fixture still passes.
+
+Two three-run Edge comparisons against the preceding build, in opposite variant orders, gave
+mixed whole-page results. On DOM churn, cold task time changed by -33 ms in one order and +25 ms
+in the other; the article changed by -4 / -3 ms and eight frames by +2 / +36 ms. These do not
+establish a page-level speedup. The raw local profiles are under `docs/perf/traces/`.
+
 ## Cold worker wakes
 
 The worker stops after about thirty quiet seconds, and the next tab close, popup open or
