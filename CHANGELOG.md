@@ -24,7 +24,8 @@
 
 ### Changed
 
-- The overlay cleaner now skips geometry reads for ordinary elements that cannot be overlays.
+- The overlay cleaner now skips geometry reads for ordinary elements and their parents when they cannot be overlays.
+- The top-page engine now receives only adult-list entries that can match the current site, avoiding a transfer and second check of thousands of unrelated hosts on each page.
 - The install steps in the README and in the build notes now say to leave Developer mode on. Current Chrome switches unpacked extensions off when it is turned off, and WardenOne then stays off, even after a restart, until it is turned back on.
 - The worker now shares security-domain membership with its combined blocklist index, reducing duplicate domain storage while keeping the complete loaded lists and their classifications.
 - WardenOne's background worker now reads its own blocking rules from the browser once each time it wakes, not eight times, and a browser start no longer rewrites rule sets that have not changed. With the remote blocklists installed, each read made the browser parse about 22,000 rules. A wake cost about a second of browser CPU for this and now costs about a tenth of one.

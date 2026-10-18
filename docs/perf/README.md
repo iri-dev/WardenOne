@@ -121,6 +121,28 @@ control, which has no such rules, added only 0.6 s of browser CPU over the same 
 
 The sampling and trace scripts were run from a scratch directory; they are not in `tools/`.
 
+## Targeted page work (2026-10-18)
+
+The top-page bridge now sends adult-list entries only when they can match the
+current hostname. The existing normalization, merge order and 3,000-entry cap
+still apply. The engine receives no adult-list entries on ordinary fixture pages
+even when 3,000 are loaded, while matching domains and subdomains retain their
+signed list entry. The overlay cleaner also skips parent geometry reads when
+style and identifiers rule out a floating overlay. Regression tests cover exact
+and subdomain adult matches, a lookalike, a match at the end of the large list,
+and a small fixed overlay parent.
+
+Paired Edge profiles, three cold and warm runs per build in both orders, varied
+widely. The parent-only profiles' cold main-thread differences ranged from -18
+to +8 ms across article, churn and frames. Later profiles with both changes
+also swung in both directions; the committed build's cold churn median itself
+ranged from 447 to 715 ms across sessions. A single article trace measured the
+bridge config callback at 16.5 ms before and 14.0 ms after, and the largest
+`content.min.js` callback at 72.0 ms before and 68.0 ms after. These runs do not
+establish a whole-page speedup. They do confirm the removal of nonmatching host
+list transfer and unnecessary parent geometry reads. The full 287-suite gate
+passed, and a live YouTube page loaded and played with the changed build.
+
 ## IDN helper scope (2026-10-13)
 
 The phishing detector's Unicode lookalike table now loads in the top-page engine and worker.

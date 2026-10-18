@@ -1060,11 +1060,8 @@
     if(!__woAuth.same(m.mac,__woAuth.hmac(__woKey,seq+"\n"+kind+"\n"+String(payload))))return!1;
     return __woLastSeq=seq,!0
   }
-  /* The config's host lists ride beside it under their own MAC, bound to the same sequence
-     number (bridge.js sendConfig), so the frame's other MAIN-world readers, none of which uses
-     them, hash a few KB instead of ~50 KB. Only after __woVerify accepted this message's seq:
-     a MAC lifted from an earlier message names an earlier seq and fails. A part that does not
-     verify is dropped and the config applies without it. */
+  /* Engine-only lists have their own MAC bound to the config sequence. A list from an
+     earlier message fails verification; an invalid part is dropped without the config. */
   function __woConfigWithLists(m){
     const out=Object.assign({},m.overrides),
     lists=m.lists;
@@ -21108,11 +21105,14 @@
               pos=cs.position,
               z=parseInt(cs.zIndex,
               10)||0,
-              r=p.getBoundingClientRect(),
               blob=((p.className||"")+" "+(p.id||"")+" "+(p.getAttribute&&p.getAttribute("aria-label")||"")).toLowerCase(),
-              smallFloat=r&&r.width>=48&&r.height>=48&&r.width<=360&&r.height<=360,
               floaty="fixed"===pos||"sticky"===pos||"absolute"===pos||z>=10||/(bell|notif|notify|push|subscribe|badge)/i.test(blob);
-              climb=!(!smallFloat||!floaty),
+              let smallFloat=!1;
+              if(floaty){
+                const r=p.getBoundingClientRect();
+                smallFloat=!!(r&&r.width>=48&&r.height>=48&&r.width<=360&&r.height<=360)
+              }
+              climb=smallFloat,
               climbs&&climbs.set(p,
               climb)
             }
