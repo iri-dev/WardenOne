@@ -855,21 +855,31 @@ check('the grabber watch skips added nodes with no src before any URL is built',
   check('a hide drops the sweep\'s remembered parent verdicts', /hide\(hit,[\s\S]{0,140}climbs\.clear\(\)/.test(sweep));
 
   let styleReads = 0;
+  let geometryReads = 0;
   const cbox = {
+    position: 'static',
     document: { body: { name: 'body' }, documentElement: { name: 'html' } },
-    getComputedStyle: () => { styleReads++; return { position: 'static', zIndex: 'auto' }; },
+    getComputedStyle: () => { styleReads++; return { position: cbox.position, zIndex: 'auto' }; },
     Map, parseInt,
   };
   vm.createContext(cbox);
   vm.runInContext('const ' + climb.trim() + ';this.__climb=overlayCandidate;', cbox, { filename: 'content.js:overlayCandidate' });
-  const parent = { className: 'row', id: '', getAttribute: () => null, getBoundingClientRect: () => ({ width: 900, height: 40 }), parentElement: cbox.document.body };
+  const parent = { className: 'row', id: '', getAttribute: () => null,
+    getBoundingClientRect: () => { geometryReads++; return { width: 150, height: 100 }; },
+    parentElement: cbox.document.body };
   cbox.a = { parentElement: parent };
   cbox.b = { parentElement: parent };
   vm.runInContext('const climbs = new Map(); this.r = [__climb(a, climbs), __climb(b, climbs)];', cbox);
-  check('siblings share one style read of their parent within a sweep', styleReads === 1 && cbox.r[0] === cbox.a && cbox.r[1] === cbox.b, 'style reads: ' + styleReads);
+  check('siblings share one style read and skip geometry for a normal-flow parent',
+    styleReads === 1 && geometryReads === 0 && cbox.r[0] === cbox.a && cbox.r[1] === cbox.b,
+    'style / geometry reads: ' + styleReads + ' / ' + geometryReads);
   styleReads = 0;
   vm.runInContext('this.r = [__climb(a), __climb(b)];', cbox);
   check('without a sweep\'s memo every call still reads for itself', styleReads === 2);
+  cbox.position = 'fixed';
+  vm.runInContext('this.r = __climb(a, new Map());', cbox);
+  check('a small fixed parent still passes the floating-parent test',
+    cbox.r === parent && geometryReads === 1, 'geometry reads: ' + geometryReads);
 })();
 
 /* ---- the shipped bundle carries all of it ------------------------------- */

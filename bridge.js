@@ -2227,12 +2227,8 @@
     // partial update while Silent is on cannot let a switch back through.
     gateSilentPresentation(clean, bridgeConfig.silentMode === true);
     clean.forgetMeList = sanitizeBridgeHostList(clean.forgetMeList, 1000);
-    // The host lists travel beside the config, not inside it. Every MAIN-world reader of the
-    // config (anti-redirect, the fingerprint realm, permission-chain, the engine, ...) hashes
-    // the whole signed text, and with the remote lists loaded ~50 KB of a ~56 KB config was
-    // hosts that only the engine reads. They carry their own MAC now, under the same
-    // sequence number, which only the engine checks. A child frame has no engine and gets
-    // none (BRIDGE_TOP_FRAME).
+    // Engine-only host lists have a separate MAC, so other MAIN-world readers do not hash
+    // them. Child frames have no engine and receive none.
     let hostLists = null;
     if (BRIDGE_TOP_FRAME) {
       // The stored `raw.*Extra` lists are user/remote supplied and still need the full
@@ -2251,7 +2247,17 @@
         supplementalLists.trustedPaymentHostsExtra);
       hostLists = {};
       if (grabberExtras.length) hostLists.grabberDomainsExtra = grabberExtras;
-      if (adultExtras.length) hostLists.adultDomainsExtra = adultExtras;
+      // The engine checks adult hosts only against this page. Keep the original merged
+      // order and cap, then send only entries that can match its hostname check.
+      const adultHost = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+      const adultSuffixes = new Set();
+      for (let suffix = adultHost; suffix;) {
+        adultSuffixes.add(suffix);
+        const dot = suffix.indexOf('.');
+        suffix = dot < 0 ? '' : suffix.slice(dot + 1);
+      }
+      const matchingAdults = adultExtras.filter((host) => adultSuffixes.has(host));
+      if (matchingAdults.length) hostLists.adultDomainsExtra = matchingAdults;
       if (paymentExtras.length) hostLists.trustedPaymentHostsExtra = paymentExtras;
       if (!Object.keys(hostLists).length) hostLists = null;
     }

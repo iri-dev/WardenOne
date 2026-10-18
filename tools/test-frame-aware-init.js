@@ -169,17 +169,14 @@ check('the refresh path and the config path share one applier',
 }
 
 /* ---- 4. the engine's host lists stay with the engine ------------------------------ *
- * Measured on the eight-frame profile with the remote lists loaded: each frame's signed config
- * was ~56 KB, ~50 KB of it adultDomainsExtra, and every frame re-normalised the lists, signed
- * them and had anti-redirect and the fingerprint realm hash them -- for the engine, which runs in
- * the top frame alone. A child frame no longer asks for them, and the top frame's lists ride
- * beside the config under their own MAC, so only the engine hashes them. */
+ * Child frames need no host lists. The top frame sends only adult entries that can match
+ * its current host, beside the config under a separate MAC. */
 {
   check('a child frame does not ask for the engine\'s host lists',
     /const BRIDGE_TOP_FRAME = window === window\.top;/.test(BRIDGE)
     && /const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME \? \['overrides', 'learned', 'supplemental', 'hidden'\] : \['overrides', 'hidden'\];/.test(BRIDGE));
   const SEND = between(BRIDGE, '  const sendConfig = (overrides) => {', '\n  const bridgeReplay = () => {', 'sendConfig');
-  const run = (top) => {
+  const run = (top, hostname = 'shop.example', adultSupplement = ['adult.example']) => {
     const posted = [];
     const sanitized = [];
     const ctx = {
@@ -196,12 +193,12 @@ check('the refresh path and the config path share one applier',
       mainWorldConfigForHost: (clean) => clean,
       mergeNormalizedHostLists: (limit, ...lists) => [].concat(...lists.map((l) => l || [])),
       learnedGrabberDomains: ['learned.example'],
-      supplementalLists: { adultDomainsExtra: ['adult.example'], grabberDomainsExtra: ['grab.example'], trustedPaymentHostsExtra: ['pay.example'] },
+      supplementalLists: { adultDomainsExtra: adultSupplement, grabberDomainsExtra: ['grab.example'], trustedPaymentHostsExtra: ['pay.example'] },
       postToPage: (m) => posted.push(m),
       signed: (kind, payload, m) => Object.assign(m, { seq: 7, mac: 'm', signedText: payload }),
       signedPart: (kind, payload, m) => kind + ':' + m.seq + ':' + payload,
       TOKEN: 't',
-      location: { hostname: 'shop.example' },
+      location: { hostname },
       document: { dispatchEvent() {} },
       CustomEvent: function CustomEvent(type) { this.type = type; },
     };
@@ -217,10 +214,29 @@ check('the refresh path and the config path share one applier',
   const top = run(true);
   check('the top frame\'s signed config text leaves the lists out',
     !/adult\.example|grab\.example|pay\.example|learned\.example/.test(top.message.signedText), top.message.signedText);
-  check('...and they ride beside it, merged, under a MAC bound to the config\'s seq',
+  check('...and only relevant lists ride beside it under a MAC bound to the config\'s seq',
     JSON.stringify(top.message.lists) === JSON.stringify({ grabberDomainsExtra: ['learned.example', 'grab.example'],
-      adultDomainsExtra: ['own-adult.example', 'adult.example'], trustedPaymentHostsExtra: ['pay.example'] })
+      trustedPaymentHostsExtra: ['pay.example'] })
     && top.message.listsMac === 'config-lists:7:' + JSON.stringify(top.message.lists), JSON.stringify(top.message));
+  for (const [hostname, expected] of [
+    ['adult.example', 'adult.example'],
+    ['sub.adult.example', 'adult.example'],
+    ['www.own-adult.example', 'own-adult.example'],
+  ]) {
+    const matching = run(true, hostname).message;
+    check('adult list delivery matches ' + hostname,
+      JSON.stringify(matching.lists.adultDomainsExtra) === JSON.stringify([expected])
+      && matching.listsMac === 'config-lists:7:' + JSON.stringify(matching.lists), JSON.stringify(matching));
+  }
+  const lookalike = run(true, 'notadult.example').message;
+  check('adult list delivery rejects a lookalike hostname',
+    lookalike.lists.adultDomainsExtra === undefined, JSON.stringify(lookalike.lists));
+  const manyAdults = Array.from({ length: 2998 }, (_, i) => 'site' + i + '.adult.example.com');
+  manyAdults.push('listed.adult.example.com');
+  const largeList = run(true, 'sub.listed.adult.example.com', manyAdults).message;
+  check('a match at the end of a large adult list reaches the engine alone',
+    JSON.stringify(largeList.lists.adultDomainsExtra) === '["listed.adult.example.com"]'
+    && !largeList.signedText.includes('listed.adult.example.com'), JSON.stringify(largeList.lists));
 }
 
 /* ---- 5. the click-layer sweep asks its document-level gates first ------------------- *
