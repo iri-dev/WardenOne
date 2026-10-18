@@ -181,6 +181,12 @@ async function refresh(r) {
     const { main, cosmetic, supplemental, results } = await refresh(r);
     const asked = main.length + cosmetic.length + supplemental.length;
     const distinct = new Set(main.concat(cosmetic, supplemental));
+    const adguardBase = 'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_2_Base/filter.txt';
+    const adguardTracking = 'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt';
+    const adguardMobile = 'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_11_Mobile/filter.txt';
+    check('AdGuard sources use the publisher registry and retain their filter IDs and shared tracking read',
+      cosmetic.includes(adguardBase) && cosmetic.includes(adguardTracking) && cosmetic.includes(adguardMobile)
+      && main.includes(adguardTracking) && ![...distinct].some((u) => new URL(u).hostname === 'filters.adtidy.org'));
     console.log('  [info] ' + asked + ' reads of ' + distinct.size + ' addresses; ' + r.state.calls.length + ' requests, peak ' + r.state.peak + ' in flight');
     check('a default refresh reads ' + asked + ' sources across three pipelines, of which ' + distinct.size + ' are distinct',
       asked === 40 && distinct.size === 37 && distinct.size <= unique.size, asked + ' / ' + distinct.size);
@@ -192,7 +198,7 @@ async function refresh(r) {
     const all = results.main.concat(results.cosmetic, results.supplemental);
     check('every pipeline got its text', all.every((x) => x && x.ok && typeof x.text === 'string' && x.text.indexOf('BODY-OF ' + x.url) === 0),
       all.filter((x) => !x || !x.ok).map((x) => x && (x.url + ': ' + x.error)).join('; ').slice(0, 200));
-    const shared = ['https://easylist.to/easylist/easylist.txt', 'https://filters.adtidy.org/extension/ublock/filters/3.txt', 'https://raw.githubusercontent.com/TMAFE/anti-grabify/master/url_list.txt'];
+    const shared = ['https://easylist.to/easylist/easylist.txt', 'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt', 'https://raw.githubusercontent.com/TMAFE/anti-grabify/master/url_list.txt'];
     check('the three shared sources reached both of their readers from one download',
       shared.every((u) => r.state.calls.filter((c) => c === u).length === 1 && all.filter((x) => x.url === u && x.ok).length === 2));
     check('and nothing is kept once the refresh is over', r.api.LIST_BROKER.stats().bodies === 0 && r.api.LIST_BROKER.stats().holders === 0, JSON.stringify(r.api.LIST_BROKER.stats()));
@@ -220,7 +226,7 @@ async function refresh(r) {
   }
   /* ---- two readers asking at once share the request in flight ----------------------------------- */
   {
-    const url = 'https://filters.adtidy.org/extension/ublock/filters/3.txt';
+    const url = 'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt';
     const r = realm();
     r.api.LIST_BROKER.retain();
     r.api.LIST_BROKER.plan([url, url]);

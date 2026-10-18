@@ -267,13 +267,13 @@ not a claim that a licence is absent or that use is prohibited.
 | Project | Feeds | Files | Rights status |
 | --- | --- | --- | --- |
 | [AdAway/adaway.github.io](https://github.com/AdAway/adaway.github.io) | Network-level ad filtering | 1 | _not yet verified_ |
+| [AdguardTeam/FiltersRegistry](https://github.com/AdguardTeam/FiltersRegistry) | Cosmetic (element-hiding) filtering; Network-level ad filtering | 3 | _not yet verified_ |
 | [blocklistproject/Lists](https://github.com/blocklistproject/Lists) | IP-logger and grabber domains; Tracking and telemetry domains | 2 | _not yet verified_ |
 | [DandelionSprout/adfilt](https://github.com/DandelionSprout/adfilt) | Malware and phishing domains | 1 | _not yet verified_ |
 | [Discord-AntiScam/scam-links](https://github.com/Discord-AntiScam/scam-links) | Web3 wallet drainers and social scams | 1 | Written WardenOne-specific permission from akac (15 Oct 2026; no notice required) |
 | [durablenapkin/scamblocklist](https://github.com/durablenapkin/scamblocklist) | IP-logger and grabber domains | 1 | _not yet verified_ |
 | [easylist-downloads.adblockplus.org/easylist-downloads.adblockplus.org](https://easylist-downloads.adblockplus.org/) | Network-level ad filtering; Cosmetic (element-hiding) filtering | 4 | _not yet verified_ |
 | [easylist.to/easylist.to](https://easylist.to/) | Network-level ad filtering; Cosmetic (element-hiding) filtering | 2 | _not yet verified_ |
-| [filters.adtidy.org/filters.adtidy.org](https://filters.adtidy.org/) | Cosmetic (element-hiding) filtering; Network-level ad filtering | 3 | _not yet verified_ |
 | [flinteger/dnss-blocklists](https://github.com/flinteger/dnss-blocklists) | Malware and phishing domains | 1 | Publisher permission received; source terms under review |
 | [hagezi/dns-blocklists](https://github.com/hagezi/dns-blocklists) | Network-level ad filtering; Tracking and telemetry domains; Malware and phishing domains | 3 | _not yet verified_ |
 | [malware-filter/malware-filter](https://gitlab.com/malware-filter) | Malware and phishing domains | 3 | _not yet verified_ |

@@ -171,8 +171,8 @@ files — **your browsing history is not sent**; the list host only sees the nor
 request (including your IP address, as with any website you load). No personal data is
 attached.
 
-Those downloads reach eight hosts, and this is all of them:
-`raw.githubusercontent.com`, `filters.adtidy.org`, `easylist.to`,
+Those downloads reach seven hosts, and this is all of them:
+`raw.githubusercontent.com`, `easylist.to`,
 `easylist-downloads.adblockplus.org`, `phishing.army`, `malware-filter.gitlab.io`,
 `pgl.yoyo.org` and `ublockorigin.github.io`. An earlier version of this policy named four
 of them behind a "for example", which is not a disclosure. Every individual list, its

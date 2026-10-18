@@ -193,6 +193,7 @@ function checkContentBuild() {
   'tools/build-grabber-rulepacks.js',
   'tools/check-security-posture.js',
   'tools/check-feeds.js',
+  'tools/test-feed-check-coverage.js',
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
   'tools/test-download-review-format.js',
@@ -554,6 +555,7 @@ checkCommand('cold-wake write tests', ['tools/test-cold-wake-writes.js']);
 checkCommand('dynamic-rule read tests', ['tools/test-dynamic-rule-reads.js']);
 checkCommand('redirect-chain mirror tests', ['tools/test-redirect-chain-mirror.js']);
 checkCommand('feed load safety tests', ['tools/test-feed-load-safety.js']);
+checkCommand('feed reachability coverage', ['tools/test-feed-check-coverage.js']);
 checkCommand('navigation signal forgery tests', ['tools/test-nav-signal-forgery.js']);
 checkCommand('redirect interstitial forgery tests', ['tools/test-redirect-interstitial-forgery.js']);
 checkCommand('MAIN-world key isolation and signed signal tests', ['tools/test-main-world-key-isolation.js']);

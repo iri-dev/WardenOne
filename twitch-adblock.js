@@ -1937,10 +1937,11 @@
     // the 2.5s pre-roll budget could use it. This remains below that outer budget
     // and does not delay mid-roll fallback, whose own wait stays bounded at 900ms.
     const BACKUP_POLL_TIMEOUT_MS = 1500;
-    // A clean backup carries no prefetch hints (measured: mobile_feed lists none while the native
-    // playlist does), so the player learns of each backup segment only once it is listed, and only
-    // on its next poll. A poll landing just before the backup publishes added nothing, the player was
-    // holding under one segment, and the picture ran dry -- the spinner at an ad break. Measured live:
+    // A clean backup with no prefetch hints (mobile_feed listed none when this was measured; it
+    // lists them now, and ordinaryMediaPlaylist keeps them) lets the player learn of each backup
+    // segment only once it is listed, and only on its next poll. A poll landing just before the
+    // backup published added nothing, the player was holding under one segment, and the picture
+    // ran dry -- the spinner at an ad break. Measured live:
     // a poll at 215.29 s found no new segment, the buffer hit zero at 216.25 s, the next poll at
     // 216.30 s had it. Such a poll is held and the backup re-polled until it advances, as LL-HLS
     // blocking reload does, within this bound; past it the poll is answered exactly as before.
@@ -2475,6 +2476,11 @@
         ? Math.max(advertisedDuration, targetDuration)
         : 0;
       let programTime = NaN;
+      /* Prefetch hints carry no date of their own. Each one follows the listed edge by about one
+         segment, so it is placed on the clock from the last listed duration -- kept apart from
+         programTime, whose end is the listed edge (edgeWall below). */
+      let lastDuration = 0;
+      let prefetchTime = NaN;
 
       for (let index = 0; index < lines.length; index++) {
         const line = String(lines[index] || '');
@@ -2524,6 +2530,8 @@
             authoritativeRemaining = Math.max(0, authoritativeRemaining - duration);
           }
           if (Number.isFinite(programTime) && duration > 0) programTime += duration * 1000;
+          if (duration > 0) lastDuration = duration;
+          prefetchTime = programTime;
           continue;
         }
         if (/^#EXT-X-PART:/i.test(line)) {
@@ -2559,13 +2567,19 @@
           const uri = line.replace(/^#EXT-X-TWITCH-PREFETCH:/i, '').trim();
           const authoritativeScoped = authoritativeRemaining > 0 &&
             (!Number.isFinite(programTime) || !ranges.length);
+          /* Twitch announces a pod with a timed range that starts on the first prefetch hint, one
+             refresh before any listed entry is an ad (measured live 2026-10-18: twitch-maf-ad
+             START-DATE at the listed edge, the ad listed on the next refresh). A Low Latency player
+             downloads hints as they appear, so a range over a hint is the break. */
+          const hintDuration = lastDuration > 0 ? lastDuration : targetDuration;
           if (knownAdMediaUri(uri) || cueActive || (hasMarker && strongMetadata && !hasLiveTitle) ||
-              authoritativeScoped) {
+              authoritativeScoped || overlapsTimedAd(ranges, prefetchTime, hintDuration)) {
             playable++;
             confirmed++;
             inlineAds.add(index);
             authoritativeRemaining = Math.max(0, authoritativeRemaining - targetDuration);
           }
+          if (Number.isFinite(prefetchTime)) prefetchTime += hintDuration * 1000;
         }
       }
       return {
@@ -3186,11 +3200,41 @@
     // matching EXT-X-PART-INF, which is configuration rather than media.
     const AD_PART_TAG_RE = /^#EXT-X-PART:/i;
 
-    function stripLowLatency(text) {
+    const PREFETCH_TAG_RE = /^#EXT-X-TWITCH-PREFETCH:/i;
+
+    function stripLowLatency(text, keepPrefetch) {
       const lines = String(text || '').replace(/\r/g, '').split('\n');
       const out = [];
       for (const line of lines) {
-        if (LOW_LATENCY_TAG_RE.test(line.trim())) continue;
+        const trimmed = line.trim();
+        if (LOW_LATENCY_TAG_RE.test(trimmed) && !(keepPrefetch && PREFETCH_TAG_RE.test(trimmed))) continue;
+        out.push(line);
+      }
+      return out.join('\n');
+    }
+
+    /* Drops every prefetch hint together with the tags that belong to it -- a marker before a hint
+       is that hint's, as in Twitch's own "DISCONTINUITY, LIVE-SEQUENCE, PREFETCH" -- so no marker
+       is left hanging off the end of the playlist for an entry that is not there. */
+    function withoutPrefetch(text) {
+      const lines = String(text || '').split('\n');
+      const out = [];
+      let group = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (PREFETCH_TAG_RE.test(trimmed)) {
+          group = [];
+          continue;
+        }
+        if (/^#EXT-X-(?:DISCONTINUITY|TWITCH-LIVE-SEQUENCE|PROGRAM-DATE-TIME)\b/i.test(trimmed) &&
+            !/^#EXT-X-DISCONTINUITY-/i.test(trimmed)) {
+          group.push(line);
+          continue;
+        }
+        if (group.length) {
+          out.push(...group);
+          group = [];
+        }
         out.push(line);
       }
       return out.join('\n');
@@ -3199,7 +3243,14 @@
     function ordinaryMediaPlaylist(text) {
       const skipped = sequenceSkippedSegments(text);
       if (skipped === null) return '';
-      let stripped = stripLowLatency(text);
+      /* A clean session's prefetch hints are kept. A Low Latency player stays about two segments
+         ahead of the listed edge by downloading them, and through a break it needs the same lead:
+         without it, the switch left nothing new to fetch until the alternate listed two more
+         entries, and a buffer of about 2.5 s ran dry. Measured live 2026-10-18 on a 2-second
+         channel: 3.0 s spinner at the start of every break, buffer down to 0.4 s through it. The
+         alternates once listed no hints; mobile_feed, popout, embed and mobile_web all do now. A
+         hint inside an announced ad is dropped with the rest (below), never served. */
+      let stripped = stripLowLatency(text, true);
       if (skipped) {
         /* The listed segments follow SKIPPED-SEGMENTS omitted entries. Removing
            the delta tag without advancing the head labels those bytes with old
@@ -3215,7 +3266,12 @@
       if (!lines.some((line) => /^#EXT-X-TARGETDURATION:/i.test(String(line || '').trim()))) return '';
       if (lines.some((line) => /^#EXT-X-STREAM-INF:/i.test(String(line || '').trim()))) return '';
       if (lines.some((line) => /^#EXT-X-ENDLIST\b/i.test(String(line || '').trim()))) return '';
-      if (playlistEvidence(stripped).fullPlayable < 1) return '';
+      const evidence = playlistEvidence(stripped);
+      if (evidence.fullPlayable < 1) return '';
+      /* Hints are the only inline entries left here, so any inline ad is an announced ad ahead of
+         the listed edge: the alternate is about to break too. Its listed media is still judged as
+         before; the hints go, and the player waits for what is listed. */
+      if (evidence.inlineAds.size) stripped = withoutPrefetch(stripped);
       return stripped;
     }
 
@@ -4347,8 +4403,11 @@
         if (!line) continue;
         if (line[0] === '#') {
           if (/^#EXT-X-TWITCH-PREFETCH:/i.test(line)) {
+            /* A hint is an entry like any other: the player downloads it, and a switch can land on
+               it. Twitch marks its own that way -- EXT-X-DISCONTINUITY on the line before the hint
+               at the end of a pre-roll (captured 2026-10-18) -- so a marker goes there too. */
             entries.push({ number: number++, uri: line.replace(/^#EXT-X-TWITCH-PREFETCH:/i, '').trim(),
-              at: -1, marked: false, prefetch: true });
+              at: groupAt >= 0 ? groupAt : index, marked: marked, map: mapped ? '' : map, prefetch: true });
             groupAt = -1;
             marked = false;
             mapped = false;
@@ -4393,7 +4452,6 @@
       const insertAt = [];
       for (let index = 0; index < parsed.entries.length; index++) {
         const entry = parsed.entries[index];
-        if (entry.prefetch) continue;
         const number = entry.number;
         if (!track.downloaded.has(number) && !track.marked.has(number)) {
           let before = track.downloaded.get(number - 1);

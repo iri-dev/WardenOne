@@ -5140,6 +5140,101 @@ test('a pod releases to Twitch\'s own stream once only lingering markers remain'
   }
 });
 
+/* Low Latency, captured live 2026-10-18 on 2-second channels. Twitch lists two prefetch hints past
+   the listed edge on its own playlist and on every alternate, and a Low Latency player downloads
+   the second hint as soon as it appears. A pod is announced by a twitch-maf-ad range starting on
+   the first hint, one refresh before any listed entry is an ad -- by then the player already holds
+   the first ad segment. Stripping the alternate's hints left it nothing new to fetch for two
+   segments while its 2.5 s buffer ran out: a 3 s spinner at the start of every break. Twitch marks
+   a switch onto a hint with EXT-X-DISCONTINUITY directly before the hint. Both sessions list the
+   same broadcast media under the same live number, byte for byte, on the same clock. */
+function lowLatencyPlaylist(options) {
+  const iso = (ms) => new Date(SEQUENCE_BASE_TIME + ms).toISOString();
+  const base = 'https://video-edge-fixture.ttvnw.net/' + options.path + '/';
+  const lines = ['#EXTM3U', '#EXT-X-VERSION:3', '#EXT-X-TARGETDURATION:6',
+    '#EXT-X-MEDIA-SEQUENCE:' + options.sequence, '#EXT-X-TWITCH-LIVE-SEQUENCE:' + options.live,
+    '#EXT-X-DATERANGE:ID="trigger-1",CLASS="twitch-trigger",START-DATE="' + iso(-3600000) +
+      '",END-ON-NEXT=YES,X-TV-TWITCH-TRIGGER-URL="https://video-weaver-fixture.ttvnw.net/trigger"'];
+  for (const range of options.ranges || []) lines.push(range(iso));
+  for (let index = 0; index < 3; index++) {
+    lines.push('#EXT-X-PROGRAM-DATE-TIME:' + iso((options.live - 1000 + index) * 2000));
+    lines.push('#EXTINF:2.000,live');
+    lines.push(base + (options.sequence + index) + '.ts');
+  }
+  if (options.hintMarker) lines.push('#EXT-X-DISCONTINUITY');
+  for (let hint = 3; hint < 5; hint++) lines.push('#EXT-X-TWITCH-PREFETCH:' + base + (options.sequence + hint) + '.ts');
+  return lines.concat('').join('\n');
+}
+
+const mafOnFirstHint = (live) => (iso) => '#EXT-X-DATERANGE:ID="maf-ad-ll",CLASS="twitch-maf-ad",START-DATE="' +
+  iso((live - 1000 + 3) * 2000) + '",PLANNED-DURATION=60.000,END-ON-NEXT=YES,X-TTV-MAF-AD-AD-SESSION-ID="fixture"';
+
+function prefetchHints(body) {
+  return String(body).split('\n').filter((line) => line.startsWith('#EXT-X-TWITCH-PREFETCH:'))
+    .map((line) => line.slice('#EXT-X-TWITCH-PREFETCH:'.length).replace(/^https:\/\/video-edge-fixture\.ttvnw\.net\//, ''));
+}
+
+test('a Low Latency switch keeps the alternate\'s prefetch lead and marks the hint it lands on', async () => {
+  let poll = 0;
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({
+      originalMedia: () => lowLatencyPlaylist({ sequence: 100 + poll, live: 1000 + poll, path: 'll-native',
+        ranges: poll >= 1 ? [mafOnFirstHint(1001)] : [] }),
+      backupMedia: () => lowLatencyPlaylist({ sequence: 9000 + poll, live: 1000 + poll, path: 'll-backup' }),
+    })),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  const native = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  equal(native, lowLatencyPlaylist({ sequence: 100, live: 1000, path: 'll-native' }),
+    'untouched Low Latency playback was rewritten');
+  /* The window to its listed edge 102, then both hints. 104 is the first ad segment; nothing says
+     so yet. */
+  for (const number of [100, 101, 102, 103, 104]) await download(runtime, 'll-native/' + number + '.ts');
+
+  poll = 1;
+  const swapped = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(swapped.includes('/ll-backup/') && servedSequence(swapped) === 101,
+    'an ad announced over the prefetch hints did not start the break on that refresh: ' + servedSequence(swapped));
+  equal(prefetchHints(swapped), ['ll-backup/9004.ts', 'll-backup/9005.ts'],
+    'the alternate\'s prefetch hints were not served, so the player has nothing ahead of its listed edge');
+  const lines = swapped.split('\n');
+  equal(lines.filter((line) => line === '#EXT-X-DISCONTINUITY').length, 1, 'the switch was not marked exactly once');
+  equal(lines[lines.indexOf('#EXT-X-DISCONTINUITY') + 1],
+    '#EXT-X-TWITCH-PREFETCH:https://video-edge-fixture.ttvnw.net/ll-backup/9005.ts',
+    'the switch onto a hint was not marked directly before that hint, as Twitch marks its own');
+  await download(runtime, 'll-backup/9005.ts');
+
+  poll = 2;
+  const stillHinted = (await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text()).split('\n');
+  assert(stillHinted.join('\n').includes('/ll-backup/'), 'the break did not stay on the alternate');
+  equal(stillHinted[stillHinted.indexOf('#EXT-X-DISCONTINUITY') + 1],
+    '#EXT-X-TWITCH-PREFETCH:https://video-edge-fixture.ttvnw.net/ll-backup/9005.ts',
+    'a refresh moved or dropped the marker while its entry was still a hint');
+  poll = 3;
+  const listed = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  equal(markerTargets(listed), ['ll-backup/9005.ts'],
+    'the marker did not stay on its media once that hint was listed');
+  runtime.configure(false);
+});
+
+test('an alternate that announces its own ad keeps its listed media and loses its hints whole', async () => {
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({
+      originalMedia: STITCHED_AD,
+      backupMedia: () => lowLatencyPlaylist({ sequence: 9000, live: 1000, path: 'll-ad-backup',
+        ranges: [mafOnFirstHint(1000)], hintMarker: true }),
+    })),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(body.includes('/ll-ad-backup/9002.ts'), 'the alternate\'s clean listed media was not served');
+  equal(prefetchHints(body), [], 'hints inside an ad the alternate announced were served');
+  assert(!body.includes('#EXT-X-DISCONTINUITY'), 'the hints\' own marker was left behind without them');
+  runtime.configure(false);
+});
+
 (async () => {
   let passed = 0;
   let failed = 0;

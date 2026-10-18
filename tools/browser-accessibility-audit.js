@@ -185,6 +185,9 @@ async function run() {
     assert(zoomedWarning.width <= 320 && zoomedWarning.scroll <= zoomedWarning.width + 1,
       'Safe Browsing fails at 400% browser zoom: ' + JSON.stringify(zoomedWarning));
     console.log('[ok] actual 400% browser zoom: EyeShield and Safe Browsing reflow without horizontal scrolling');
+    /* Edge carries extension-origin zoom into a newly opened action popup. Restore normal zoom
+       before asserting its native 348px width. */
+    await setZoom(1);
     const beforePopup = await cdp.send('Target.getTargets');
     const priorTargets = new Set((beforePopup.targetInfos || []).map((t) => t.targetId));
     const opened = await cdp.send('Runtime.evaluate', {

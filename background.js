@@ -3303,8 +3303,8 @@ const ADSHIELD_NET_LISTS = [
   'https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt',
   // StevenBlack hosts (adware + malware)
   'https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts',
-  // AdGuard DNS filter (ads + trackers)
-  'https://filters.adtidy.org/extension/ublock/filters/3.txt',
+  // AdGuard Tracking Protection filter
+  'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt',
   // EasyList (network filter version)
   'https://easylist.to/easylist/easylist.txt',
   // EasyList China (for Asian ad networks)
@@ -3337,11 +3337,11 @@ const ADSHIELD_COSMETIC_LISTS = [
   // Listed last so its #@# exceptions are seen; reduces false positives.
   'https://ublockorigin.github.io/uAssets/filters/unbreak.txt',
   // AdGuard Base filter (comprehensive ad blocking)
-  'https://filters.adtidy.org/extension/ublock/filters/2.txt',
+  'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_2_Base/filter.txt',
   // AdGuard Tracking Protection filter
-  'https://filters.adtidy.org/extension/ublock/filters/3.txt',
-  // AdGuard Annoyances filter (popups, overlays, cookie notices)
-  'https://filters.adtidy.org/extension/ublock/filters/11.txt',
+  'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt',
+  // AdGuard Mobile Ads filter
+  'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_11_Mobile/filter.txt',
   // Fanboy's Social filter (social media widgets/tracking)
   'https://easylist-downloads.adblockplus.org/fanboy-social.txt',
 ];
