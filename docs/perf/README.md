@@ -441,6 +441,32 @@ select child guard fields directly. A five-run synthetic frame profile measured 
 task time cold / warm, but the reverse-order run measured only 0.7 / 0.7 ms less; that difference
 is too small to establish a reliable page-level speedup.
 
+### Player detection during DOM churn (2026-10-18)
+
+The cosmetic scriptlet path checked the full player selector against every added element, even
+though the shared mutation observer had already reduced each batch to its outermost roots. On the
+deep DOM-churn fixture, that meant thousands of redundant selector matches. Player detection now
+checks each root and its subtree once, then checks any added node that was detached before the
+observer delivered the batch. A player added inside a subtree or removed within the batch still
+switches cosmetics to player-safe mode. The selector methods are captured at document start so
+later page patches cannot hide a player from this path; `test-engine-mutation-cost.js` covers
+the connected, detached and patched cases.
+
+Two three-run Edge 150 comparisons against a copy of the pre-edit working tree, with variant order
+reversed, measured 80 / 102 ms less cold main-thread task time on DOM churn and 117 / 40 ms less
+warm time. After adding the selector-failure fallback, a third three-run comparison measured
+27 ms less cold work and 1 ms less warm work. The final native-selector build measured 23 ms less
+cold work and 75 ms less warm work in a fourth comparison. Script time fell in all four, but the
+size of the page-level win varied with the browser session. Article and eight-frame results also
+varied with run order, so neither has an established improvement. Every build loaded all 3,636
+remote hosts. The player ad-layer fixture and actual video playback fixture passed with the
+changed build. The remaining startup and frame costs need separate changes; this optimization
+does not defer any protection.
+
+On the image-heavy eight-frame fixture, cold task time was 33 / 16 ms lower and warm time was
+30 ms higher / 14 ms lower across the two run orders. That mixed warm result does not establish
+a change to the iframe image logger's cost.
+
 ## Cold worker wakes
 
 The worker stops after about thirty quiet seconds, and the next tab close, popup open or
