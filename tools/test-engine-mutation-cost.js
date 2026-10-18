@@ -84,7 +84,17 @@ check('and at the same 250ms the other branch uses',
   const batchStart = SRC.indexOf('adBatchAddsPlayer=(added,');
   const batchEnd = SRC.indexOf(',\n      pageMutationScriptletRuntimeOn=', batchStart);
   check('the added-player detector is where the test expects it', batchStart >= 0 && batchEnd > batchStart);
+  check('player selectors are captured before the runtime starts',
+    SRC.indexOf('const __woNativeMatches=Element.prototype.matches,') >= 0
+      && SRC.indexOf('const __woNativeMatches=Element.prototype.matches,') < SRC.indexOf('const __woStartRuntime='));
   if (batchStart < 0 || batchEnd <= batchStart) return;
+  box.__woNativeMatches = function (selector) {
+    return this.nativeMatches ? this.nativeMatches(selector) : this.matches(selector);
+  };
+  box.__woNativeQuerySelector = function (selector) {
+    return this.nativeQuerySelector ? this.nativeQuerySelector(selector)
+      : this.querySelector ? this.querySelector(selector) : null;
+  };
   vm.runInContext('const ' + SRC.slice(batchStart, batchEnd)
     + ';this.__batchAddsPlayer=adBatchAddsPlayer;', box,
   { filename: 'content.js:added-player' });
@@ -92,6 +102,36 @@ check('and at the same 250ms the other branch uses',
   box.nestedPlayer = nestedPlayer;
   check('a player nested in a newly added subtree is detected',
     vm.runInContext('__batchAddsPlayer([nestedPlayer], [nestedPlayer])', box) === true);
+  let redundantMatches = 0;
+  const plainRoot = { isConnected: true, matches: () => false, querySelector: () => null };
+  const connectedChildren = Array.from({ length: 1000 }, () => ({
+    isConnected: true, matches: () => { redundantMatches++; return false; },
+  }));
+  box.plainRoot = plainRoot;
+  box.connectedChildren = connectedChildren;
+  check('connected descendants are covered by the root scan once',
+    vm.runInContext('__batchAddsPlayer([plainRoot, ...connectedChildren], [plainRoot])', box) === false
+      && redundantMatches === 0);
+  const removedPlayer = { isConnected: false, matches: () => true };
+  box.removedPlayer = removedPlayer;
+  check('a player removed before mutation delivery is still detected',
+    vm.runInContext('__batchAddsPlayer([plainRoot, removedPlayer], [plainRoot])', box) === true);
+  const playerRoot = { isConnected: true, matches: () => true };
+  box.playerRoot = playerRoot;
+  check('a player added as the root enters safe mode',
+    vm.runInContext('__batchAddsPlayer([playerRoot], [playerRoot])', box) === true);
+  const patchedRoot = { isConnected: true, matches: () => false,
+    querySelector: () => { throw new Error('page-patched selector'); } };
+  const connectedPlayer = { isConnected: true, matches: () => true };
+  box.patchedRoot = patchedRoot;
+  box.connectedPlayer = connectedPlayer;
+  check('a patched root selector falls back to connected added nodes',
+    vm.runInContext('__batchAddsPlayer([patchedRoot, connectedPlayer], [patchedRoot])', box) === true);
+  const patchedPlayerRoot = { isConnected: true, matches: () => false,
+    nativeMatches: () => true, querySelector: () => null };
+  box.patchedPlayerRoot = patchedPlayerRoot;
+  check('a page-patched matches method cannot hide a player root',
+    vm.runInContext('__batchAddsPlayer([patchedPlayerRoot], [patchedPlayerRoot])', box) === true);
 })();
 
 /* The ordinary-page branch, unchanged. */

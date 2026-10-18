@@ -68,6 +68,8 @@ const SHIMS = {
   // lifted fragment never calls it; the shim is an inert stand-in.
   __woTeardown: 'var __woTeardown=function(){};',
   __woOpts: 'var __woOpts=function(o){return o;};',
+  __woNativeMatches: 'var __woNativeMatches=function(selector){return this.matches(selector);};',
+  __woNativeQuerySelector: 'var __woNativeQuerySelector=function(selector){return this.querySelector(selector);};',
   __woNativeMessageDataGetter: 'var __woNativeMessageDataGetter=(function(){try{'
     + 'if(typeof MessageEvent==="undefined")return null;'
     + 'var d=Object.getOwnPropertyDescriptor(MessageEvent.prototype,"data");'

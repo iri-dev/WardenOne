@@ -28,6 +28,9 @@
      twitch-adblock.js (a separate MAIN-world script) and anything debugging can still read it,
      but writing to that copy no longer reaches the engine. */
   const __woConfigStore={};
+  /* Player-safe mode uses these before a page can replace selector methods. */
+  const __woNativeMatches=Element.prototype.matches,
+  __woNativeQuerySelector=Element.prototype.querySelector;
   /* SEC-05: what this realm decided about fingerprint noise, for the realms a page can reach
      from here. A same-origin child frame -- about:blank, srcdoc, a real URL -- is a fresh
      realm with untouched prototypes, and the page can borrow them. The frame module
@@ -10104,8 +10107,19 @@
       adBatchAddsPlayer=(added,
       roots)=>{
         try{
-          for(let i=0;i<added.length;i++)if(added[i].matches&&added[i].matches(PLAYER_PAGE_SELECTOR))return!0;
-          for(let i=0;i<roots.length;i++)if(roots[i].querySelector&&roots[i].querySelector(PLAYER_PAGE_SELECTOR))return!0
+          let rootScanFailed=!1;
+          for(let i=0;i<roots.length;i++){
+            const root=roots[i];
+            try{
+              if(__woNativeMatches.call(root,PLAYER_PAGE_SELECTOR)||__woNativeQuerySelector.call(root,PLAYER_PAGE_SELECTOR))return!0
+            }
+            catch(_){
+              rootScanFailed=!0;
+              break
+            }
+          }
+          /* Removed nodes and failed root scans need the node-level fallback. */
+          for(let i=0;i<added.length;i++)if((rootScanFailed||!added[i].isConnected)&&__woNativeMatches.call(added[i],PLAYER_PAGE_SELECTOR))return!0
         }
         catch(_){
 
