@@ -30,6 +30,7 @@
 const fs = require('fs');
 
 const SOURCE = fs.readFileSync('background.js', 'utf8');
+const FEEDS = JSON.parse(fs.readFileSync('docs/source-inventory.json', 'utf8')).sources;
 
 function constant(name, fallback) {
   const m = SOURCE.match(new RegExp('const ' + name + ' = ([^;]+);'));
@@ -40,30 +41,27 @@ function constant(name, fallback) {
 
 /* Read the real limits out of background.js so this cannot drift from them. */
 const MAX_BYTES = constant('LIST_SOURCE_MAX_BYTES', 18 * 1024 * 1024);
-const COSMETIC_MAX_BYTES = constant('LIST_COSMETIC_SOURCE_MAX_BYTES', 10 * 1024 * 1024);
+const COSMETIC_MAX_BYTES = constant('LIST_COSMETIC_SOURCE_MAX_BYTES', 12 * 1024 * 1024);
 const SUPPLEMENTAL_MAX_BYTES = 8 * 1024 * 1024;
-const TIMEOUT_MS = constant('LIST_FETCH_TIMEOUT_MS', 12000);
+const OPENPHISH_MAX_BYTES = constant('OPENPHISH_FEED_MAX_BYTES', 6 * 1024 * 1024);
+const TIMEOUT_MS = constant('LIST_FETCH_TIMEOUT_MS', 25000);
+const OPENPHISH_TIMEOUT_MS = constant('EXTERNAL_REPUTATION_TIMEOUT_MS', 6500);
 
-/* The cap is PER URL, not one number -- listSourceByteLimit() gives cosmetic
-   lists a smaller one. Checking everything against the largest cap hides the
-   cosmetic list that is over its own: AdGuard's filters/3.txt is 10.4 MB against
-   a 10 MB cosmetic cap and reads as fine under an 18 MB test. */
-const listMembers = (name) => {
-  const block = SOURCE.slice(SOURCE.indexOf('const ' + name + ' = ['));
-  return new Set([...block.slice(0, block.indexOf('];')).matchAll(/'(https:\/\/[^']+)'/g)].map((m) => m[1]));
-};
-const COSMETIC = listMembers('ADSHIELD_COSMETIC_LISTS');
-const SUPPLEMENTAL = listMembers('SUPPLEMENTAL_LIST_SOURCES');
-const capFor = (url) => {
-  if (SUPPLEMENTAL.has(url)) return SUPPLEMENTAL_MAX_BYTES;
-  return COSMETIC.has(url) ? COSMETIC_MAX_BYTES : MAX_BYTES;
+/* The generated inventory names every runtime feed, including URLs with no filter-like
+   words. A shared source uses its strictest cap, as listSourceByteLimit() does. */
+const policyFor = (feed) => {
+  const purposes = feed.purposes || [];
+  if (feed.toggle === 'openPhish') return { url: feed.url, maxBytes: OPENPHISH_MAX_BYTES, timeoutMs: OPENPHISH_TIMEOUT_MS };
+  if (purposes.includes('Supplemental domain lists')) return { url: feed.url, maxBytes: SUPPLEMENTAL_MAX_BYTES, timeoutMs: TIMEOUT_MS };
+  if (purposes.includes('Cosmetic (element-hiding) filtering')) return { url: feed.url, maxBytes: COSMETIC_MAX_BYTES, timeoutMs: TIMEOUT_MS };
+  return { url: feed.url, maxBytes: MAX_BYTES, timeoutMs: TIMEOUT_MS };
 };
 
-const urls = [...new Set(
-  [...SOURCE.matchAll(/https:\/\/[^'"\s]+/g)].map((m) => m[0].replace(/[',;)]+$/, '')),
-)]
-  .filter((u) => /hosts|blocklist|filter|adserver|domains|malware|phish|serverlist/i.test(u))
-  .filter((u) => !/checkurl/.test(u));
+const policies = FEEDS.map(policyFor);
+if (process.argv.includes('--list-json')) {
+  console.log(JSON.stringify(policies));
+  process.exit(0);
+}
 
 const mb = (n) => (n / (1024 * 1024)).toFixed(1) + ' MB';
 
@@ -81,18 +79,17 @@ process.on('uncaughtException', (err) => {
 
 (async () => {
   const bad = [];
-  console.log('Checking ' + urls.length + ' feeds against the extension\'s own limits: '
-    + mb(MAX_BYTES) + ' cap, ' + (TIMEOUT_MS / 1000) + 's timeout.\n');
+  console.log('Checking ' + policies.length + ' configured feeds against their per-source size and timeout limits.\n');
 
-  for (const url of urls) {
+  for (const { url, maxBytes, timeoutMs } of policies) {
     const started = Date.now();
     let line = '';
+    let timer;
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-      const res = await fetch(url, { signal: controller.signal });
+      timer = setTimeout(() => controller.abort(), timeoutMs);
+      const res = await fetch(url, { signal: controller.signal, redirect: 'manual', credentials: 'omit', cache: 'no-cache' });
       if (!res.ok) {
-        clearTimeout(timer);
         bad.push({ url, why: 'HTTP ' + res.status });
         console.log('DEAD  HTTP ' + res.status + '  ' + url);
         continue;
@@ -103,7 +100,7 @@ process.on('uncaughtException', (err) => {
          check waves through. Reading to completion and THEN measuring also made
          Node's fetch assert when the timeout aborted a 25 MB download mid-body,
          so stop at the cap and cancel the stream rather than racing it. */
-      const cap = capFor(url);
+      const cap = maxBytes;
       const reader = res.body.getReader();
       let bytes = 0;
       let over = false;
@@ -114,7 +111,6 @@ process.on('uncaughtException', (err) => {
         if (bytes > cap) { over = true; break; }
       }
       try { await reader.cancel(); } catch (_) { /* already finished */ }
-      clearTimeout(timer);
       const took = Date.now() - started;
       if (over) {
         bad.push({ url, why: 'over its cap: more than ' + mb(cap) });
@@ -122,23 +118,25 @@ process.on('uncaughtException', (err) => {
       } else {
         line = '  ok  ' + mb(bytes).padStart(9) + '  ' + String(took + 'ms').padStart(7);
         /* Comfortably inside the cap and the clock is what "fine" means here. */
-        if (took > TIMEOUT_MS * 0.6) line += '  [slow — close to the timeout]';
+        if (took > timeoutMs * 0.6) line += '  [slow — close to the timeout]';
       }
       console.log(line + '  ' + url);
     } catch (e) {
-      const why = /abort/i.test(String(e && e.message)) ? 'timed out after ' + (TIMEOUT_MS / 1000) + 's'
+      const why = /abort/i.test(String(e && e.message)) ? 'timed out after ' + (timeoutMs / 1000) + 's'
         : String(e && e.message ? e.message : e).slice(0, 60);
       bad.push({ url, why });
       console.log('DEAD  ' + why + '  ' + url);
+    } finally {
+      clearTimeout(timer);
     }
   }
 
   console.log('');
   if (!bad.length) {
-    console.log('All ' + urls.length + ' feeds download inside the extension\'s limits.');
+    console.log('All ' + policies.length + ' feeds download inside the extension\'s limits.');
     return;
   }
-  console.error(bad.length + ' of ' + urls.length + ' feeds would be refused:');
+  console.error(bad.length + ' of ' + policies.length + ' feeds would be refused:');
   for (const d of bad) console.error('  ' + d.why + '  ' + d.url);
   console.error('\nA refused feed does not break WardenOne -- the others still load -- but the'
     + '\nblocked-domain count drops silently and the popup just says "N unreachable".'

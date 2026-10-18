@@ -16,6 +16,49 @@
       "licenceVerified": false
     },
     {
+      "owner": "AdguardTeam",
+      "project": "FiltersRegistry",
+      "home": "https://github.com/AdguardTeam/FiltersRegistry",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_11_Mobile/filter.txt",
+      "purposes": [
+        "Cosmetic (element-hiding) filtering"
+      ],
+      "toggle": "adShield",
+      "kind": "fetched",
+      "note": "AdGuard Mobile Ads filter",
+      "licence": "",
+      "licenceVerified": false
+    },
+    {
+      "owner": "AdguardTeam",
+      "project": "FiltersRegistry",
+      "home": "https://github.com/AdguardTeam/FiltersRegistry",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_2_Base/filter.txt",
+      "purposes": [
+        "Cosmetic (element-hiding) filtering"
+      ],
+      "toggle": "adShield",
+      "kind": "fetched",
+      "note": "AdGuard Base filter (comprehensive ad blocking)",
+      "licence": "",
+      "licenceVerified": false
+    },
+    {
+      "owner": "AdguardTeam",
+      "project": "FiltersRegistry",
+      "home": "https://github.com/AdguardTeam/FiltersRegistry",
+      "url": "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt",
+      "purposes": [
+        "Network-level ad filtering",
+        "Cosmetic (element-hiding) filtering"
+      ],
+      "toggle": "adShield",
+      "kind": "fetched",
+      "note": "AdGuard Tracking Protection filter",
+      "licence": "",
+      "licenceVerified": false
+    },
+    {
       "owner": "blocklistproject",
       "project": "Lists",
       "home": "https://github.com/blocklistproject/Lists",
@@ -168,49 +211,6 @@
       "toggle": "adShield",
       "kind": "fetched",
       "note": "EasyPrivacy (tracker element hiding + privacy cosmetics)",
-      "licence": "",
-      "licenceVerified": false
-    },
-    {
-      "owner": "filters.adtidy.org",
-      "project": "filters.adtidy.org",
-      "home": "https://filters.adtidy.org/",
-      "url": "https://filters.adtidy.org/extension/ublock/filters/11.txt",
-      "purposes": [
-        "Cosmetic (element-hiding) filtering"
-      ],
-      "toggle": "adShield",
-      "kind": "fetched",
-      "note": "AdGuard Annoyances filter (popups, overlays, cookie notices)",
-      "licence": "",
-      "licenceVerified": false
-    },
-    {
-      "owner": "filters.adtidy.org",
-      "project": "filters.adtidy.org",
-      "home": "https://filters.adtidy.org/",
-      "url": "https://filters.adtidy.org/extension/ublock/filters/2.txt",
-      "purposes": [
-        "Cosmetic (element-hiding) filtering"
-      ],
-      "toggle": "adShield",
-      "kind": "fetched",
-      "note": "AdGuard Base filter (comprehensive ad blocking)",
-      "licence": "",
-      "licenceVerified": false
-    },
-    {
-      "owner": "filters.adtidy.org",
-      "project": "filters.adtidy.org",
-      "home": "https://filters.adtidy.org/",
-      "url": "https://filters.adtidy.org/extension/ublock/filters/3.txt",
-      "purposes": [
-        "Network-level ad filtering",
-        "Cosmetic (element-hiding) filtering"
-      ],
-      "toggle": "adShield",
-      "kind": "fetched",
-      "note": "AdGuard DNS filter (ads + trackers)",
       "licence": "",
       "licenceVerified": false
     },

@@ -57,6 +57,20 @@
 
 ### Fixed
 
+- Twitch no longer pauses and spins at the start of an ad break when Low Latency is on. Most
+  channels, including nearly every Tekken and Brawlhalla stream, tell the player about the next
+  two video pieces before they are finished, and a Low Latency player downloads them early. Twitch
+  announces a break only after the player has already taken its first ad piece. AdShield then
+  switched to the clean stream without those early notices, so the player had nothing new to
+  download for about four seconds, and its two or three seconds of video ran out. The clean
+  stream now keeps its early notices through the whole break, marked where it joins Twitch's
+  stream the way Twitch marks its own joins. AdShield also switches as soon as Twitch announces the
+  break, one refresh sooner, so at most one piece of the ad's opening shows, about two seconds on
+  most channels. With Low Latency off, which Steadier Twitch playback chooses unless you turned it
+  on, breaks were already smooth and are unchanged.
+- AdGuard Base, Tracking Protection and Mobile Ads feeds now load from AdGuard's publisher-hosted filter registry on GitHub, avoiding connection timeouts to `filters.adtidy.org` on affected networks. The Tracking Protection feed remains shared between network and cosmetic filtering.
+- The manual feed reachability check now covers every configured list source and applies the source's actual size and timeout limits, including optional OpenPhish and supplemental lists.
+
 - WardenOne no longer calls its own website a scam. The features page quotes the fake "your
   computer is infected / locked — call this number" pages the tech-support scam guard catches, and
   it got the full-page scam warning. The home page's one-line description of ClickFix got the
