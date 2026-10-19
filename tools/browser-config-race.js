@@ -223,6 +223,7 @@ async function run() {
     })()`);
     await until(privateSettings, "typeof __resumePrivateWrite === 'function'", 'private Settings save paused after its read');
     assert.equal((await evaluate(regularSettings, "new Promise((r) => chrome.runtime.sendMessage({kind:'privacy-data-erase',mode:'all'},r))")).ok, true);
+    console.log('[erase race] Erase all acknowledged; releasing the paused private save');
     /* Released, not awaited: Erase all reloads WardenOne 400 ms after it answers, taking this page
        with it, and on a slow runner a wait for the save's promise outlived the page -- the browser
        never answered, and the test ended there with nothing checked. The write itself goes out as
@@ -230,7 +231,8 @@ async function run() {
     assert.equal(await evaluate(privateSettings, "(__resumePrivateWrite(), true)"), true,
       'the paused private Settings save was released after Erase all');
     await sleep(2100);
-    extension = await profile.extensionReady(cdp, port, version);
+    /* The ID survives reload; attaching to the outgoing worker can strand a DevTools command. */
+    console.log('[erase race] opening fresh private Settings after reload');
     const { browserContextId: afterResetContext } = await cdp.send('Target.createBrowserContext', {});
     const { targetId: afterResetId } = await cdp.send('Target.createTarget', { url: `chrome-extension://${extension.id}/settings.html`, browserContextId: afterResetContext });
     const afterReset = await attach(afterResetId);

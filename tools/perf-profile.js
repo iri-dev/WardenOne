@@ -225,13 +225,34 @@ async function fetchJson(url) {
 }
 
 class Cdp {
-  constructor(wsUrl) { this.wsUrl = wsUrl; this.id = 0; this.pending = new Map(); this.listeners = []; }
+  constructor(wsUrl) { this.wsUrl = wsUrl; this.id = 0; this.pending = new Map(); this.listeners = []; this.failure = ''; }
+  commandError(command, reason) {
+    return new Error(command.method + (command.sessionId ? ' (session ' + command.sessionId + ')' : '') + ': ' + reason);
+  }
+  rejectPending(reason, sessionId, browserClosed = false) {
+    for (const [id, pending] of this.pending) {
+      if (sessionId && pending.sessionId !== sessionId) continue;
+      this.pending.delete(id);
+      /* Chrome may shut down without acknowledging Browser.close. */
+      if (browserClosed && pending.method === 'Browser.close') pending.resolve({});
+      else pending.reject(this.commandError(pending, reason));
+    }
+  }
   connect() {
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(this.wsUrl);
       this.ws = ws;
       ws.addEventListener('open', () => resolve());
-      ws.addEventListener('error', (e) => reject(new Error('devtools socket failed: ' + (e && e.message))));
+      ws.addEventListener('error', (e) => {
+        this.failure = 'devtools socket failed' + (e && e.message ? ': ' + e.message : '');
+        this.rejectPending(this.failure);
+        reject(new Error(this.failure));
+      });
+      ws.addEventListener('close', (e) => {
+        this.failure = 'devtools socket closed' + (e && e.code ? ' (' + e.code + ')' : '') + (e && e.reason ? ': ' + e.reason : '');
+        this.rejectPending(this.failure, null, true);
+        reject(new Error(this.failure));
+      });
       ws.addEventListener('message', (ev) => {
         let msg; try { msg = JSON.parse(ev.data); } catch (_) { return; }
         if (msg.id && this.pending.has(msg.id)) {
@@ -239,6 +260,9 @@ class Cdp {
           this.pending.delete(msg.id);
           if (msg.error) no(new Error(msg.error.message)); else ok(msg.result);
         } else if (msg.method) {
+          const detachedSession = msg.method === 'Target.detachedFromTarget' ? msg.params && msg.params.sessionId
+            : msg.method === 'Inspector.detached' ? msg.sessionId : null;
+          if (detachedSession) this.rejectPending('devtools session detached', detachedSession);
           for (const fn of this.listeners) fn(msg);
         }
       });
@@ -249,8 +273,13 @@ class Cdp {
     const payload = { id, method, params: params || {} };
     if (sessionId) payload.sessionId = sessionId;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify(payload));
+      if (this.failure || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        reject(this.commandError(payload, this.failure || 'devtools socket is not open'));
+        return;
+      }
+      this.pending.set(id, { resolve, reject, method, sessionId });
+      try { this.ws.send(JSON.stringify(payload)); }
+      catch (e) { this.pending.delete(id); reject(this.commandError(payload, 'devtools send failed: ' + e.message)); }
     });
   }
   on(fn) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter((f) => f !== fn); }; }
@@ -269,8 +298,7 @@ async function launch(edge, variant, extensionDir, port, profileDir, extraArgs) 
     '--remote-debugging-port=' + port, '--user-data-dir=' + profileDir, '--no-first-run', '--no-default-browser-check',
     '--window-position=-3000,-3000', '--window-size=1280,900', '--force-device-scale-factor=1',
     '--disable-background-networking', '--disable-component-update', '--disable-sync', '--no-service-autorun',
-    '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
-    '--disable-features=CalculateNativeWinOcclusion,msEdgeShoppingUI,msImplicitSignin,msEdgeStartupBoost',
+    '--disable-features=msEdgeShoppingUI,msImplicitSignin,msEdgeStartupBoost',
   ];
   if (process.env.WARDENONE_HEADLESS === '1') args.push('--headless=new');
   if (variant === 'off') args.push('--disable-extensions');
@@ -485,6 +513,11 @@ async function traceOnce(cdp, page, origin, pagePath, outFile, cpuProfile) {
 }
 
 /* ---- one variant, start to finish ---------------------------------------------------------- */
+/* Measurements need unthrottled off-screen fixtures; shared browser regressions use normal scheduling. */
+const PERF_BROWSER_ARGS = [
+  '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+  '--disable-features=CalculateNativeWinOcclusion,msEdgeShoppingUI,msImplicitSignin,msEdgeStartupBoost',
+];
 async function runVariant(variant, ctx) {
   const { edge, runs, throttle, origin, expectedVersion, trace, cpuProfile, traceDir, pages } = ctx;
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wardenone-perf-' + variant.replace(/[^a-z-]/gi, '_') + '-'));
@@ -508,7 +541,7 @@ async function runVariant(variant, ctx) {
     extensionDir = ctx.baseline;
   }
   const port = await freePort();
-  const version = await launch(edge, variant, extensionDir, port, profileDir);
+  const version = await launch(edge, variant, extensionDir, port, profileDir, PERF_BROWSER_ARGS);
   const cdp = new Cdp(version.webSocketDebuggerUrl);
   await cdp.connect();
   const result = { variant, browser: version.Browser, userAgent: version['User-Agent'], pages: {}, readiness: null };
