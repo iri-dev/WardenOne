@@ -24,6 +24,7 @@
 
 ### Changed
 
+- Reduced repeated consent attribute reads during DOM changes and skipped added-subtree player scans when the page is already known to contain a player. New and detached player nodes still bypass a cached negative result.
 - Reduced page work during DOM changes by narrowing consent and script scans, skipping unnecessary visible-text reads in the overlay cleaner, and avoiding repeated badge style writes and player-area media searches. The consent observer skips mutation filtering while a scan is pending and shares ancestor checks across one mutation batch; the social-widget guard reads marker attributes only for matching widgets.
 - The overlay cleaner now skips geometry reads for ordinary elements and their parents when they cannot be overlays.
 - The top-page engine now receives only adult-list entries that can match the current site, avoiding a transfer and second check of thousands of unrelated hosts on each page.

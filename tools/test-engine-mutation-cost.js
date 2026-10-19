@@ -43,10 +43,6 @@ check('an SPA route change reaches player safe mode even with only text churn',
   playerBranch.indexOf('routeChanged') < playerBranch.indexOf('scriptletPlayerPage(routeChanged')
     && playerBranch.indexOf('scriptletPlayerPage(routeChanged') < playerBranch.indexOf('procRules=[]'),
   'generic cosmetic CSS must be cleared when an ordinary SPA enters a player route');
-check('a player element added inside the 300ms cache window bypasses stale false',
-  /const playerAdded=structural&&adBatchAddsPlayer\(added,\s*roots\)/.test(playerBranch)
-    && /if\(playerAdded\|\|scriptletPlayerPage\(routeChanged\|\|structural&&!added\.length\)\)/.test(playerBranch),
-  'a newly added player must enter safe mode even when the document cache still says false');
 check('it no longer scans the whole document on every mutation batch',
   !/collapseLeftovers\(document\);/.test(playerBranch),
   'a direct call here is 0.71ms per batch on a mix page, unthrottled');
@@ -133,6 +129,95 @@ check('and at the same 250ms the other branch uses',
   box.patchedPlayerRoot = patchedPlayerRoot;
   check('a page-patched matches method cannot hide a player root',
     vm.runInContext('__batchAddsPlayer([patchedPlayerRoot], [patchedPlayerRoot])', box) === true);
+
+  const observerStart = SRC.indexOf('woObserve((muts,added,roots,structural)=>{',
+    SRC.indexOf('observedCosmeticUrl=location.href,'));
+  const observerEnd = SRC.indexOf('\n                })', observerStart);
+  check('the AdShield observer is where the test expects it', observerStart >= 0 && observerEnd > observerStart);
+  if (observerStart < 0 || observerEnd <= observerStart) return;
+  const observer = SRC.slice(observerStart + 'woObserve('.length, observerEnd) + '\n}';
+  const runtime = (pathname = '/home') => {
+    const state = {
+      now: 1000, hasPlayer: false, documentQueries: 0, rootQueries: 0, nodeMatches: 0,
+      scheduled: 0, timeouts: [],
+      location: { pathname, href: 'https://example.test' + pathname },
+      observedCosmeticUrl: 'https://example.test' + pathname,
+      procRules: [{}], collapsePending: false, adShieldVideoPlatform: false,
+      styleEl: { isConnected: true, textContent: '.generic-ad{display:none}' },
+      Date: { now: () => state.now },
+      document: { querySelector: () => {
+        state.documentQueries++;
+        return state.hasPlayer ? {} : null;
+      } },
+      __woNativeMatches: function () { state.nodeMatches++; return !!this.player; },
+      __woNativeQuerySelector: function () { state.rootQueries++; return this.nestedPlayer || null; },
+      scheduleProcedural: () => state.scheduled++,
+      setTimeout: (callback, delay) => state.timeouts.push({ callback, delay }),
+    };
+    vm.createContext(state);
+    vm.runInContext('const PLAYER_ROUTE_RE=/watch/;const PLAYER_PAGE_SELECTOR="video";const '
+      + SRC.slice(detectorStart, detectorEnd) + ';const ' + SRC.slice(batchStart, batchEnd)
+      + ';const scriptletPlayerPage=force=>playerPageDetected(force);this.__detect=playerPageDetected;'
+      + 'this.__observe=' + observer + ';', state, { filename: 'content.js:player-observer' });
+    return state;
+  };
+  const plain = { isConnected: true };
+  for (const known of ['route', 'cached player']) {
+    const state = runtime(known === 'route' ? '/watch' : '/home');
+    if (known === 'cached player') {
+      state.hasPlayer = true;
+      state.__detect();
+    }
+    const documentQueries = state.documentQueries;
+    state.__observe([], [plain], [plain], true);
+    check('a known ' + known + ' skips every added-subtree player query',
+      state.rootQueries === 0 && state.nodeMatches === 0
+        && state.documentQueries === documentQueries && state.styleEl.textContent === ''
+        && state.procRules.length === 0);
+  }
+  const staleFalse = runtime();
+  staleFalse.__detect();
+  staleFalse.hasPlayer = true;
+  const inserted = { isConnected: true, nestedPlayer: {} };
+  staleFalse.__observe([], [inserted], [inserted], true);
+  check('a player added inside the negative cache window still enters safe mode',
+    staleFalse.documentQueries === 1 && staleFalse.rootQueries === 1
+      && staleFalse.styleEl.textContent === '' && staleFalse.procRules.length === 0);
+
+  const detached = runtime();
+  detached.__detect();
+  detached.__observe([], [plain, { isConnected: false, player: true }], [plain], true);
+  check('an added player detached before delivery still bypasses the negative cache',
+    detached.documentQueries === 1 && detached.rootQueries === 1
+      && detached.styleEl.textContent === '' && detached.procRules.length === 0);
+
+  for (const remains of [false, true]) {
+    const state = runtime();
+    state.hasPlayer = true;
+    state.__detect();
+    state.hasPlayer = remains;
+    state.__observe([], [], [], true);
+    check('a removal-only batch refreshes cached player presence: ' + remains,
+      state.documentQueries === 2 && state.rootQueries === 0
+        && state.scheduled === (remains ? 0 : 1)
+        && (state.styleEl.textContent === '') === remains);
+  }
+  const textOnly = runtime('/watch');
+  textOnly.__observe([], [], [], false);
+  check('text-only player churn skips both player detection and cosmetic collapse',
+    textOnly.documentQueries === 0 && textOnly.rootQueries === 0
+      && textOnly.nodeMatches === 0 && textOnly.timeouts.length === 0
+      && textOnly.scheduled === 1 && textOnly.procRules.length === 1);
+
+  const routeChange = runtime();
+  routeChange.__detect();
+  routeChange.location.pathname = '/watch';
+  routeChange.location.href = 'https://example.test/watch';
+  routeChange.__observe([], [], [], false);
+  check('an SPA player route change clears generic cosmetics during text-only churn',
+    routeChange.styleEl.textContent === '' && routeChange.procRules.length === 0
+      && routeChange.observedCosmeticUrl === routeChange.location.href
+      && routeChange.rootQueries === 0);
 })();
 
 /* The ordinary-page branch, unchanged. */

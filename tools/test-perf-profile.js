@@ -43,8 +43,15 @@ check('a profile can focus on the churn fixture',
   JSON.stringify(harness.parseArgs(['--pages', '/churn.html']).pages) === '["/churn.html"]');
 check('a profile can focus on the player fixture',
   JSON.stringify(harness.parseArgs(['--pages', '/player.html']).pages) === '["/player.html"]');
+check('a profile can focus on DOM churn beside an existing player',
+  JSON.stringify(harness.parseArgs(['--pages', '/media-churn.html']).pages) === '["/media-churn.html"]'
+    && /page !== '\/media-churn\.html'/.test(SRC));
 check('a profile can focus on the article without a credential form',
   JSON.stringify(harness.parseArgs(['--pages', '/article-neutral.html']).pages) === '["/article-neutral.html"]');
+check('off-screen fixtures keep their timers running without native occlusion',
+  ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows']
+    .every((flag) => SRC.includes("'" + flag + "'")) && SRC.includes('CalculateNativeWinOcclusion,')
+    && SRC.includes('backgroundThrottlingDisabled: true'));
 
 /* ---- statistics ---------------------------------------------------------------------------- */
 check('the median of five is the third', harness.median([5, 1, 4, 2, 3]) === 3);
@@ -90,6 +97,11 @@ check('an empty series is NaN, not zero', Number.isNaN(harness.median([])));
     && churn.indexOf('app.appendChild(c)') < churn.indexOf('grow(c, 6'),
     'a subtree built off-document and appended once arrives as one added node and exercises nothing');
   const player = harness.PAGES['/player.html']();
+  const mediaChurn = harness.PAGES['/media-churn.html']();
+  check('player churn uses the same nested additions beside an existing control shell',
+    /data-player/.test(mediaChurn) && /aria-label="Volume"/.test(mediaChurn)
+      && /grow\(c, 6, String\(batch\)\)/.test(mediaChurn) && /__done = true/.test(mediaChurn)
+      && !/data-player/.test(churn));
   check('the focused player page pins a control shell under the badge on a large DOM',
     /id="player" data-player/.test(player) && /position:fixed;right:0;bottom:0/.test(player)
       && (player.match(/class="row"/g) || []).length === 5000 && /__done = true/.test(player));
