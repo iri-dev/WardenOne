@@ -222,6 +222,7 @@ function checkContentBuild() {
   'tools/test-script-mode-order.js',
   'tools/test-payment-frame-origin.js',
   'tools/test-overlay-evidence.js',
+  'tools/test-auto-skip-prefilter.js',
   'tools/test-background-scope.js',
   'tools/test-toast-mutes.js',
   'tools/test-tracker-cookie-rule.js',
@@ -656,6 +657,7 @@ checkCommand('fingerprint media selection', ['tools/test-fingerprint-media.js'])
 checkCommand('Script Shield mode ordering', ['tools/test-script-mode-order.js']);
 checkCommand('payment frame origin tests', ['tools/test-payment-frame-origin.js']);
 checkCommand('overlay evidence tests', ['tools/test-overlay-evidence.js']);
+checkCommand('auto-skip prefilter tests', ['tools/test-auto-skip-prefilter.js']);
 checkCommand('background scope tests', ['tools/test-background-scope.js']);
 checkCommand('toast mute tests', ['tools/test-toast-mutes.js']);
 checkCommand('tracker cookie rule tests', ['tools/test-tracker-cookie-rule.js']);

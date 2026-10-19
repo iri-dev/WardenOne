@@ -21,16 +21,18 @@ const NODE_MIN = 22;
 
 /* ---- arguments ---------------------------------------------------------------------------- */
 function parseArgs(argv) {
-  const out = { runs: 5, throttle: 1, variants: ['off', 'on'], out: '', edge: '', trace: false, traceDir: '', expectRegression: false, assertOverheadMs: 0, keepProfiles: false, imageFrames: false, pairedLogger: false };
+  const out = { runs: 5, throttle: 1, variants: ['off', 'on'], pages: null, out: '', edge: '', trace: false, cpuProfile: false, traceDir: '', expectRegression: false, assertOverheadMs: 0, keepProfiles: false, imageFrames: false, pairedLogger: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
     if (a === '--runs') out.runs = Math.max(1, parseInt(next(), 10) || 5);
     else if (a === '--throttle') out.throttle = Math.max(1, Number(next()) || 1);
     else if (a === '--variants') out.variants = String(next() || '').split(',').map((s) => s.trim()).filter(Boolean);
+    else if (a === '--pages') out.pages = String(next() || '').split(',').map((s) => s.trim()).filter(Boolean);
     else if (a === '--out') out.out = String(next() || '');
     else if (a === '--edge') out.edge = String(next() || '');
     else if (a === '--trace') out.trace = true;
+    else if (a === '--cpu-profile') out.cpuProfile = true;
     else if (a === '--trace-dir') out.traceDir = String(next() || '');
     else if (a === '--expect-regression') out.expectRegression = true;
     else if (a === '--assert-overhead-ms') out.assertOverheadMs = Number(next()) || 0;
@@ -84,7 +86,7 @@ function applyRegression(text, name) {
 
 /* ---- the synthetic pages ------------------------------------------------------------------- */
 const PIXEL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-function articlePage() {
+function articlePage(withLogin = true) {
   const paras = [];
   for (let i = 0; i < 150; i++) {
     paras.push('<p>Paragraph ' + i + ' of an ordinary article, with a <a href="/article.html#s' + i + '">local link</a>, another to '
@@ -94,8 +96,8 @@ function articlePage() {
   }
   return '<!doctype html><html><head><meta charset="utf-8"><title>Article</title><style>body{font:16px/1.5 system-ui;max-width:800px;margin:0 auto;padding:20px}nav a{margin-right:8px}</style></head><body>'
     + '<nav>' + Array.from({ length: 30 }, (_, i) => '<a href="/section/' + i + '">Section ' + i + '</a>').join('') + '</nav>'
-    + '<form action="/login" method="post"><label>Email <input type="email" name="email" autocomplete="username"></label>'
-    + '<label>Password <input type="password" name="password" autocomplete="current-password"></label><button type="submit">Sign in</button></form>'
+    + (withLogin ? '<form action="/login" method="post"><label>Email <input type="email" name="email" autocomplete="username"></label>'
+      + '<label>Password <input type="password" name="password" autocomplete="current-password"></label><button type="submit">Sign in</button></form>' : '')
     + '<main>' + paras.join('') + '</main>'
     + '<div style="position:fixed;bottom:0;left:0;right:0;padding:8px;background:#eee"><button>Accept</button><button>Settings</button></div>'
     + '<script>window.__done = true;</script></body></html>';
@@ -125,6 +127,13 @@ function churnPage() {
     + '}'
     + 'window.addEventListener("load", () => setTimeout(build, 50));'
     + '</script></body></html>';
+}
+function playerPage() {
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Player corner</title>'
+    + '<style>body{font:14px system-ui}.row{height:20px}#player{position:fixed;right:0;bottom:0;width:320px;height:140px;background:#222;color:#fff}</style>'
+    + '</head><body><main>' + Array.from({ length: 5000 }, (_, i) => '<div class="row">Article line ' + i + '</div>').join('') + '</main>'
+    + '<div id="player" data-player><input type="range" aria-label="Volume" min="0" max="100"></div>'
+    + '<script>window.__done = true;</script></body></html>';
 }
 function framePage() {
   return '<!doctype html><html><head><meta charset="utf-8"><title>Frame</title></head><body style="font:13px system-ui">'
@@ -164,7 +173,9 @@ function imageFramesPage() {
 }
 const PAGES = {
   '/article.html': articlePage,
+  '/article-neutral.html': () => articlePage(false),
   '/churn.html': churnPage,
+  '/player.html': playerPage,
   '/frames.html': framesPage,
   '/frame.html': framePage,
   '/image-frames.html': imageFramesPage,
@@ -363,6 +374,18 @@ async function remoteListsLoaded(cdp, workerSession, timeoutMs) {
     await sleep(1000);
   }
 }
+async function consentScriptReady(cdp, workerSession) {
+  const deadline = Date.now() + 30000;
+  for (;;) {
+    const reply = await cdp.send('Runtime.evaluate', {
+      expression: 'chrome.scripting.getRegisteredContentScripts({ ids: ["wo-consent-reject-dynamic"] }).then((scripts) => scripts.length === 1)',
+      awaitPromise: true, returnByValue: true,
+    }, workerSession);
+    if (!reply.exceptionDetails && reply.result && reply.result.value === true) return true;
+    if (Date.now() > deadline) throw new Error('Consent Auto-Reject was not registered; refusing to profile a partial extension');
+    await sleep(500);
+  }
+}
 async function closeExtensionTabs(cdp, port, id) {
   const list = await fetchJson('http://127.0.0.1:' + port + '/json/list');
   for (const t of list) {
@@ -430,29 +453,36 @@ async function measureOnce(cdp, page, workerSession, origin, pagePath, phase, op
   };
 }
 
-async function traceOnce(cdp, page, origin, pagePath, outFile) {
+async function traceOnce(cdp, page, origin, pagePath, outFile, cpuProfile) {
   const events = [];
   const off = cdp.on((msg) => {
     if (msg.method === 'Tracing.dataCollected' && msg.params && Array.isArray(msg.params.value)) events.push(...msg.params.value);
   });
   await cdp.send('Page.navigate', { url: 'about:blank' }, page);
   await sleep(150);
+  if (cpuProfile) {
+    await cdp.send('Profiler.enable', {}, page);
+    await cdp.send('Profiler.setSamplingInterval', { interval: 1000 }, page);
+    await cdp.send('Profiler.start', {}, page);
+  }
   await cdp.send('Tracing.start', { categories: 'devtools.timeline,v8.execute,blink.user_timing,disabled-by-default-devtools.timeline', transferMode: 'ReportEvents' }, page);
   await cdp.send('Page.navigate', { url: origin + pagePath }, page);
   await waitDone(cdp, page, RUN_TIMEOUT_MS);
   await sleep(600);
+  const cpu = cpuProfile ? (await cdp.send('Profiler.stop', {}, page)).profile : null;
   const done = cdp.waitFor((m) => m.method === 'Tracing.tracingComplete', 30000);
   await cdp.send('Tracing.end', {}, page);
   await done;
   await sleep(200);
   off();
   fs.writeFileSync(outFile, JSON.stringify({ traceEvents: events }));
+  if (cpu) fs.writeFileSync(outFile.replace(/\.trace\.json$/, '.cpuprofile'), JSON.stringify(cpu));
   return events.length;
 }
 
 /* ---- one variant, start to finish ---------------------------------------------------------- */
 async function runVariant(variant, ctx) {
-  const { edge, runs, throttle, origin, expectedVersion, trace, traceDir, pages } = ctx;
+  const { edge, runs, throttle, origin, expectedVersion, trace, cpuProfile, traceDir, pages } = ctx;
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wardenone-perf-' + variant.replace(/[^a-z-]/gi, '_') + '-'));
   let extensionDir = ROOT;
   let cleanupExtensionDir = null;
@@ -495,7 +525,8 @@ async function runVariant(variant, ctx) {
       if (variant === 'on:logger-off' || variant === 'on') await setFrameLogger(variant === 'on');
       const remoteLists = await remoteListsLoaded(cdp, ext.attachedSession, REMOTE_LISTS_WAIT_MS);
       process.stdout.write('  remote host lists: ' + (remoteLists.loaded ? remoteLists.hosts + ' hosts' : 'not loaded within ' + (REMOTE_LISTS_WAIT_MS / 1000) + ' s; measuring without them') + '\n');
-      result.readiness = { extensionId: ext.id, workerVersion: expectedVersion, workerMetrics: ext.workerMetrics, remoteLists };
+      const consentRegistered = await consentScriptReady(cdp, ext.attachedSession);
+      result.readiness = { extensionId: ext.id, workerVersion: expectedVersion, workerMetrics: ext.workerMetrics, remoteLists, consentRegistered };
     }
     const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
     const { sessionId: page } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
@@ -588,7 +619,7 @@ async function runVariant(variant, ctx) {
       for (const pagePath of pages) {
         const file = path.join(traceDir, variant.replace(/[^a-z-]/gi, '_') + pagePath.replace(/[^a-z]/gi, '-') + '.trace.json');
         try {
-          const n = await traceOnce(cdp, tracePage, origin, pagePath, file);
+          const n = await traceOnce(cdp, tracePage, origin, pagePath, file, cpuProfile);
           process.stdout.write('    trace: ' + n + ' events -> ' + path.relative(ROOT, file) + '\n');
         } catch (e) {
           process.stdout.write('    trace of ' + pagePath + ' failed: ' + (e && e.message) + '\n');
@@ -707,10 +738,12 @@ function markdown(profile) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.pairedLogger) {
+    if (args.pages) throw new Error('--paired-logger uses the image-frame fixture');
     args.imageFrames = true;
     args.variants = ['on:logger-off', 'on'];
     if (args.trace || args.expectRegression || args.assertOverheadMs) throw new Error('--paired-logger measures only the iframe warning switch');
   }
+  if (args.cpuProfile && !args.trace) throw new Error('--cpu-profile requires --trace');
   if (args.help) { console.log(fs.readFileSync(__filename, 'utf8').split('*/')[1].split('\n').slice(0, 30).join('\n')); return; }
   if (args.render) {
     const file = path.resolve(ROOT, args.render);
@@ -722,7 +755,10 @@ async function main() {
   const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
   if (nodeMajor < NODE_MIN || typeof WebSocket !== 'function' || typeof fetch !== 'function') throw new Error('Node ' + NODE_MIN + '+ with built-in fetch and WebSocket is required');
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
-  const pages = args.imageFrames ? ['/image-frames.html'] : MEASURED_PAGES;
+  if (args.pages && (!args.pages.length || args.pages.some((page) => !MEASURED_PAGES.includes(page) && page !== '/player.html' && page !== '/article-neutral.html'))) {
+    throw new Error('--pages must name article, article-neutral, churn, frames or player fixture paths');
+  }
+  const pages = args.pages || (args.imageFrames ? ['/image-frames.html'] : MEASURED_PAGES);
   const commit = (spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout || '').trim() || 'unknown';
   const dirty = (spawnSync('git', ['status', '--porcelain'], { cwd: ROOT, encoding: 'utf8' }).stdout || '').trim().length > 0;
   const edge = edgePath(args.edge);
@@ -739,7 +775,7 @@ async function main() {
     for (const variant of args.pairedLogger ? ['on'] : args.variants) {
       console.log('variant ' + variant + ':');
       const measured = await runVariant(variant, { edge, runs: args.runs, throttle: args.throttle, origin,
-        expectedVersion: manifest.version, trace: args.trace, traceDir, keepProfiles: args.keepProfiles,
+        expectedVersion: manifest.version, trace: args.trace, cpuProfile: args.cpuProfile, traceDir, keepProfiles: args.keepProfiles,
         pages, pairedLogger: args.pairedLogger, baseline: args.baseline });
       results.push(...(Array.isArray(measured) ? measured : [measured]));
     }

@@ -143,6 +143,120 @@ establish a whole-page speedup. They do confirm the removal of nonmatching host
 list transfer and unnecessary parent geometry reads. The full 287-suite gate
 passed, and a live YouTube page loaded and played with the changed build.
 
+### Current startup and churn baseline
+
+At commit `91196d4`, two five-run Edge profiles compared WardenOne with no
+extension in opposite variant orders. Both loaded all 3,636 remote hosts. Cold
+main-thread overhead was:
+
+| Fixture | Off then on | On then off |
+| --- | ---: | ---: |
+| Article | +131 ms | +150 ms |
+| DOM churn | +348 ms | +432 ms |
+| Eight frames | +214 ms | +179 ms |
+
+The no-extension medians were fairly stable (article 37–38 ms, churn 189–191 ms,
+frames 55–60 ms). WardenOne's churn median varied from 537 to 623 ms. The
+figures bound the cost on these fixtures but are not precise enough to judge a
+small edit by total page time alone.
+
+Two traces of the current build attributed 60–71 ms of article work to the
+engine's startup/configuration callback and 14–20 ms to the bridge's config
+reply. On churn, Consent Auto-Reject's mutation callback took 36–51 ms, the
+engine's shared mutation callback 37–51 ms, and the bridge's shared observer
+15–23 ms. A sampled CPU profile put about 19 ms of self time in the consent
+node filter, with its descendant selector check the largest sampled line. The
+engine startup sample also spent about 7 ms in its SHA-256 implementation;
+that authentication is a security boundary, so the trace is evidence of cost,
+not a reason to weaken it.
+
+An attempted shortcut for class-only consent nodes did not show a repeatable
+benefit: with both builds confirmed to have the consent script registered, its
+mutation callback measured 42 versus 44 ms in one order and 44 versus 34 ms in
+the other. The shortcut was removed. One earlier comparison had no consent
+callbacks in the edited build's trace and was discarded. The profiler now checks
+dynamic consent registration before measuring, can restrict runs to named
+fixtures with `--pages`, and can save a sampled CPU profile with `--trace
+--cpu-profile`. Raw profiles stay local under `docs/perf/traces/`.
+
+## Mutation and overlay hot paths (2026-10-19)
+
+The consent watcher now walks descendants of a changed subtree directly when
+looking for a possible banner; full-page scans still use the same CSS selector.
+The selector drops substring arms already covered by broader arms. An isolated
+5,000-element negative query took about 118 ms per 100 scans with the direct
+walk, against 358 ms for the shortened CSS query; randomized DOM cases had no
+matching differences. Script Drift likewise checks direct script additions and
+queries only outermost added subtrees. Its isolated negative-batch scan fell
+from 6.6 to 3.9 ms per ten scans. The overlay cleaner now uses cheap text as a
+precheck before asking the browser for visible text during download-ad scans,
+and ignores boxes too small to meet any removal rule before reading their text.
+Unchanged badge positions no longer trigger repeated style writes.
+
+Two five-run Edge comparisons of the complete edited build with untouched
+`91196d4`, one in each order, loaded all 3,636 remote hosts. Median change in
+main-thread task time (edited minus starting build):
+
+| Fixture | Cold, both orders | Warm, both orders |
+| --- | ---: | ---: |
+| Article | -0.3 / +0.1 ms | -1.8 / -0.7 ms |
+| DOM churn | -9.6 / -16.8 ms | -9.1 / -9.3 ms |
+| Eight frames | +0.1 / -1.4 ms | -5.7 / +0.0 ms |
+
+The repeatable whole-page gain is on DOM churn; article and frames are
+effectively flat at this precision. The overlay text precheck alone saved
+11-17 ms cold and 5-9 ms warm on churn in paired runs. The smaller-box guard
+saved 3-6 ms cold on churn, while its article cold medians were 1.5-1.7 ms
+higher; warm results were mixed. Other candidates that did not show a useful
+page gain were reverted. The local player fixture kept its timeline, play
+button, link and server switch working. A live YouTube video with the edited
+extension played for 30 seconds without a media error. Per-run JSON and traces
+remain in the ignored `docs/perf/traces/` directory. The 288-suite
+maintainability gate passed.
+
+A follow-up made the badge skip its nearby-media query when it is already over
+a player shell, where the badge is hidden regardless. A new 5,000-row player
+fixture measured 0.3-0.7 ms less cold and 0.7-1.0 ms less warm main-thread task
+time in two seven-run Edge comparisons, one in each order. The consent observer
+also now skips its mutation filter while a document scan is queued or deferred;
+the pending scan still sees the current document. Paired five-run churn profiles
+measured -6.8/-17.2 ms cold and +0.9/-12.1 ms warm, with enough run-to-run
+variation that the size of this gain is uncertain. An inherited no-ad text hint
+and an overlay style cache were reverted after their paired results were mixed
+or slower. The local player control fixture passed; live YouTube reached 13.5
+seconds of playback without a media error during a 30-second check.
+
+A subsequent CPU trace showed the social-widget guard reading two marker
+attributes for every added node before checking whether it recognized a social
+widget. Moving those reads after provider recognition kept marked widgets
+exempt and unmarked widgets covered in the behavior test. In two five-run
+Edge churn comparisons, warm main-thread task time fell 5.7/4.6 ms; cold was
+1.6/0.1 ms lower. This isolates the change against the immediately preceding
+build, rather than the original `91196d4` baseline.
+
+### Start-to-current comparison
+
+To measure the accumulated effect without adding isolated gains, two direct
+five-run Edge comparisons paired an archived `205c193` extension with the
+current working tree in opposite orders. Both variants loaded 3,636 remote
+hosts; the image-frame comparison confirmed the logger active in all eight
+frames. Median main-thread task time saved by the current build:
+
+| Fixture | Cold, both orders | Warm, both orders |
+| --- | ---: | ---: |
+| Article | 11.0 / 11.5 ms | 8.0 / 8.6 ms |
+| DOM churn | 21.0 / 30.2 ms | 20.9 / 6.7 ms |
+| Eight frames | 3.8 / 7.6 ms | 13.7 / 7.7 ms |
+| Image-heavy frames | 9.4 / 3.0 ms | 9.7 / 13.6 ms |
+
+The original 2026-10-18 stress profiles used a modified working tree at
+`205c193` and three runs per cell. The direct baseline here is the exact
+committed `205c193` tree, so this table is a reproducible start point rather
+than a byte-identical rerun of the original stress build. Timing varied
+substantially between sessions; these paired differences should not be
+subtracted from the original no-extension overhead figures as exact current
+overhead. Raw profiles are in the ignored `docs/perf/traces/` directory.
+
 ## IDN helper scope (2026-10-13)
 
 The phishing detector's Unicode lookalike table now loads in the top-page engine and worker.
@@ -488,6 +602,30 @@ does not defer any protection.
 On the image-heavy eight-frame fixture, cold task time was 33 / 16 ms lower and warm time was
 30 ms higher / 14 ms lower across the two run orders. That mixed warm result does not establish
 a change to the iframe image logger's cost.
+
+### Weak-machine whole-extension pass (2026-10-19)
+
+An Edge trace at 4x CPU throttling covered the full extension on DOM churn and on an article
+without the localhost sign-in form. The ordinary article fixture's sign-in form triggers the
+raw-IP credential warning; its dialog work is real for that warning but misleading as an
+ordinary-article cost. The optional `/article-neutral.html` fixture keeps the article layout
+without that form. On churn, the trace sampled repeated overlay shape checks and consent
+mutation filtering most often. On the neutral article, engine compile/evaluation and the
+config hand-off were larger startup costs. These are sampled locations, not additive shares of
+page overhead. The local CPU and browser traces are under `docs/perf/traces/weak-machine-*` and
+`docs/perf/traces/neutral-article-traces/`.
+
+The consent mutation filter now skips ancestor classification when exactly one node was added
+and remembers proven non-added ancestors across sibling additions in the same batch. It still
+checks each added node for vendor markers and direct consent text. A regression test checks
+both the single-node path and a shared 12-level ancestor chain, along with late nested text.
+
+Two five-run, 4x-throttled Edge comparisons against the preceding working tree, with variant
+order reversed, measured 514 / 47 ms less cold main-thread task time and 268 / 4 ms less warm
+time on `/churn.html`. Script time was lower in both orders. The range is wide and the variants
+use separate fresh browser sessions, so the exact page-level saving is uncertain. The local
+profiles are `consent-batch-x4-a` and `consent-batch-x4-b`. Attempts to cache overlay geometry
+and styles per sweep did not hold up in reversed browser runs and were discarded.
 
 ### Overlay geometry reads (2026-10-18)
 

@@ -36,6 +36,15 @@ function check(name, ok, extra) {
 check('a trace run can use a separate output directory',
   harness.parseArgs(['--trace', '--trace-dir', 'docs/perf/traces/startup']).traceDir
     === 'docs/perf/traces/startup');
+check('CPU sampling is an explicit trace option',
+  harness.parseArgs(['--trace', '--cpu-profile']).cpuProfile === true
+    && /--cpu-profile requires --trace/.test(SRC));
+check('a profile can focus on the churn fixture',
+  JSON.stringify(harness.parseArgs(['--pages', '/churn.html']).pages) === '["/churn.html"]');
+check('a profile can focus on the player fixture',
+  JSON.stringify(harness.parseArgs(['--pages', '/player.html']).pages) === '["/player.html"]');
+check('a profile can focus on the article without a credential form',
+  JSON.stringify(harness.parseArgs(['--pages', '/article-neutral.html']).pages) === '["/article-neutral.html"]');
 
 /* ---- statistics ---------------------------------------------------------------------------- */
 check('the median of five is the third', harness.median([5, 1, 4, 2, 3]) === 3);
@@ -70,12 +79,20 @@ check('an empty series is NaN, not zero', Number.isNaN(harness.median([])));
   const article = harness.PAGES['/article.html']();
   check('the article carries cross-site links, a sign-in form and images -- the shapes the guards look at',
     /https:\/\/example\.net\//.test(article) && /type="password"/.test(article) && /<img /.test(article) && (article.match(/<a /g) || []).length > 300);
+  const neutral = harness.PAGES['/article-neutral.html']();
+  check('the neutral article keeps the same body without the loopback credential warning',
+    !/<form|type="password"/.test(neutral) && /https:\/\/example\.net\//.test(neutral)
+      && (neutral.match(/<img /g) || []).length === (article.match(/<img /g) || []).length);
   check('every page signals __done so a run is waited on, not guessed', harness.MEASURED_PAGES.every((p) => /__done = true/.test(harness.PAGES[p]())));
   const churn = harness.PAGES['/churn.html']();
   check('the churn page builds a deep tree in-document, parent first -- the case the mutation-scan dedup is for',
     /app\.appendChild\(c\);/.test(churn) && /parent\.appendChild\(el\); if \(depth > 1\) grow\(el, depth - 1/.test(churn) && /grow\(c, 6, String\(batch\)\)/.test(churn)
     && churn.indexOf('app.appendChild(c)') < churn.indexOf('grow(c, 6'),
     'a subtree built off-document and appended once arrives as one added node and exercises nothing');
+  const player = harness.PAGES['/player.html']();
+  check('the focused player page pins a control shell under the badge on a large DOM',
+    /id="player" data-player/.test(player) && /position:fixed;right:0;bottom:0/.test(player)
+      && (player.match(/class="row"/g) || []).length === 5000 && /__done = true/.test(player));
   check('the pages fetch nothing off the machine', harness.MEASURED_PAGES.concat(['/frame.html']).every((p) => !/src="https?:/.test(harness.PAGES[p]())));
   const imageFrames = harness.PAGES['/image-frames.html']();
   const imageFrame = harness.PAGES['/image-frame.html']();
@@ -126,7 +143,10 @@ check('--baseline names an extension directory, resolved to an absolute path',
 check('the base variant refuses to run without a baseline that holds a manifest',
   /the base variant needs --baseline <extension directory>/.test(SRC));
 check('an "on" variant waits, bounded, for the remote lists and records what it measured with',
-  /remoteListsLoaded\(cdp, ext\.attachedSession, REMOTE_LISTS_WAIT_MS\)/.test(SRC) && /remoteLists \}/.test(SRC));
+  /remoteListsLoaded\(cdp, ext\.attachedSession, REMOTE_LISTS_WAIT_MS\)/.test(SRC) && /remoteLists, consentRegistered \}/.test(SRC));
+check('an "on" variant refuses to profile before dynamic consent registration',
+  /await consentScriptReady\(cdp, ext\.attachedSession\)/.test(SRC)
+    && /Consent Auto-Reject was not registered; refusing to profile/.test(SRC));
 
 /* ---- fail closed ---------------------------------------------------------------------------- */
 check('an "on" variant refuses to measure without the readiness marker', /refusing to measure an extension that is not running/.test(SRC) && /seen !== expectedVersion/.test(SRC));

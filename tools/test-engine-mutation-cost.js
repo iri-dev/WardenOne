@@ -10,6 +10,7 @@
 'use strict';
 
 const fs = require('fs');
+const vm = require('vm');
 
 const SRC = fs.readFileSync('src/content.js', 'utf8');
 const MIN = fs.readFileSync('content.min.js', 'utf8');
@@ -256,6 +257,31 @@ check('tameMedia still bails on userGestured first',
 check('guardSocialNode still bails on the flag first',
   /guardSocialNode=el=>\{\s*try\{\s*if\(!WO\.socialWidgetGuard\|\|/.test(SRC),
   'the hoist above is only behaviour-preserving while this holds');
+{
+  const body = SRC.slice(SRC.indexOf('guardSocialNode=el=>{'), SRC.indexOf('sweepSocialWidgets=root=>{'));
+  let reads = 0;
+  let placeholders = 0;
+  const sandbox = {
+    WO: { socialWidgetGuard: true },
+    makeSocialPlaceholder() { placeholders++; return {}; },
+    log() {},
+  };
+  vm.createContext(sandbox);
+  vm.runInContext('let guardSocialNode;\n' + body.replace(/,\s*$/, ';') + '\nthis.guard = guardSocialNode;', sandbox);
+  const node = (cls, attrs = {}) => ({
+    tagName: 'DIV', className: cls, id: '',
+    getAttribute(name) { reads++; return attrs[name] || null; },
+    getBoundingClientRect() { return { height: 100 }; },
+    cloneNode() { return {}; },
+    parentNode: { replaceChild() {} },
+  });
+  sandbox.guard(node('ordinary-card'));
+  check('ordinary added nodes need no social marker reads', reads === 0);
+  sandbox.guard(node('fb-post', { 'data-wo-social-loaded': '1' }));
+  check('loaded social widgets keep their marker exemption', placeholders === 0);
+  sandbox.guard(node('fb-post'));
+  check('unmarked social widgets still get a placeholder', placeholders === 1);
+}
 
 /* ---- 2b. gate the CONSUMER, not just the sweep --------------------------- *
  * Hoisting the flag into the sweep stopped the querySelectorAll, but the
@@ -798,12 +824,13 @@ check('the grabber watch skips added nodes with no src before any URL is built',
   vm.runInContext('const ' + body + ';this.__isOverlay=isOverlay;', box, { filename: 'content.js:isOverlay' });
   let textReads = 0;
   let geometryReads = 0;
+  let dimensions = { top: 250, bottom: 550, left: 400, right: 800, width: 400, height: 300 };
   const el = {
     nodeType: 1, id: 'promo', className: 'ad-overlay',
     getAttribute: () => null, querySelector: () => null,
     getBoundingClientRect: () => {
       geometryReads++;
-      return { top: 250, bottom: 550, left: 400, right: 800, width: 400, height: 300 };
+      return dimensions;
     },
     get innerText() { textReads++; return 'Special offer'; },
   };
@@ -814,6 +841,10 @@ check('the grabber watch skips added nodes with no src before any URL is built',
   box.position = 'fixed';
   check('the same box positioned fixed and centred is still caught',
     vm.runInContext('__isOverlay(el)', box) === true && geometryReads === 1 && textReads === 1,
+    'geometry / innerText reads: ' + geometryReads + ' / ' + textReads);
+  dimensions = { top: 250, bottom: 290, left: 400, right: 440, width: 40, height: 40 };
+  check('a tiny positioned box skips text that cannot establish an overlay',
+    vm.runInContext('__isOverlay(el)', box) === false && geometryReads === 2 && textReads === 1,
     'geometry / innerText reads: ' + geometryReads + ' / ' + textReads);
 })();
 (() => {

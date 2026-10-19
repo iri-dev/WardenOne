@@ -769,6 +769,30 @@
     return false;
   }
 
+  // Direct SCRIPT additions include inline code; only outer roots need descendant queries.
+  function scriptDriftBatchHasScript(records) {
+    const added = [];
+    for (const record of records || []) {
+      const nodes = (record && record.addedNodes) || [];
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        if (!node || node.nodeType !== 1) continue;
+        const tag = node.tagName;
+        if (tag === 'SCRIPT' || (tag && tag.length === 6 && tag.toLowerCase() === 'script')) return true;
+        added.push(node);
+      }
+    }
+    if (!added.length) return false;
+    if (added.length === 1) return !!(added[0].querySelector && added[0].querySelector('script[src]'));
+    const inBatch = new Set(added);
+    for (const node of added) {
+      let parent = node.parentElement;
+      while (parent && !inBatch.has(parent)) parent = parent.parentElement;
+      if (!parent && node.querySelector && node.querySelector('script[src]')) return true;
+    }
+    return false;
+  }
+
   // Page-owned selectors and IDs cannot authorize WardenOne controls.
   // Keep direct node references in closed shadow roots; public host markers
   // remain labels for styling and exclusions, never credentials.
@@ -3282,17 +3306,8 @@
       woOn(document, 'wo-bridge-config-ready', () => scheduleScriptDriftScan(300), { once: true });
       try {
         const driftUnwatch = domWatch((muts) => {
-          for (const mut of muts || []) {
-            const added = (mut && mut.addedNodes) || [];
-            for (let i = 0; i < added.length; i++) {
-              const n = added[i];
-              if (n && n.nodeType === 1 && ((n.tagName || '').toUpperCase() === 'SCRIPT' || (n.querySelector && n.querySelector('script[src]')))) {
-                if (!scriptDriftGuardOn()) return;
-                scheduleScriptDriftScan(2500);
-                return;
-              }
-            }
-          }
+          if (!scriptDriftBatchHasScript(muts) || !scriptDriftGuardOn()) return;
+          scheduleScriptDriftScan(2500);
         }, true);
         woTimeout(driftUnwatch, 60000);
       } catch (_) {}

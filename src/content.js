@@ -13054,7 +13054,7 @@
       },
       guardSocialNode=el=>{
         try{
-          if(!WO.socialWidgetGuard||!el||!el.tagName||el.getAttribute("data-wo-social-loaded")||el.getAttribute("data-wo-social-placeholder"))return;
+          if(!WO.socialWidgetGuard||!el||!el.tagName)return;
           if("SCRIPT"===el.tagName)return;
           const provider=(el=>{
             try{
@@ -13089,6 +13089,7 @@
             return""
           })(el);
           if(!provider)return;
+          if(el.getAttribute("data-wo-social-loaded")||el.getAttribute("data-wo-social-placeholder"))return;
           if("SCRIPT"===el.tagName)return el.setAttribute("data-wo-social-guarded",
           "1"),
           el.parentNode&&el.parentNode.removeChild(el),
@@ -20868,6 +20869,7 @@
       let cleanerMonitoring=!1;
       const NUISANCE=/(cookie|consent|gdpr|newsletter|subscribe|sign[\s-]?up for|mailing list|email list|ad ?block|adblock|disable your ad|whitelist|allow ads|notification|paywall|register to (read|continue)|create (a )?free account|allow notifications?|turn on notifications?|enable notifications?|click (the )?bell)/i,
       AD_SIGNAL=/(advertisement|sponsored|ad\s*choices|adchoices|download now|continue to (your )?(download|the site)|no thanks,? (i|continue)|skip ad|your download will (begin|start)|presented by)/i,
+      AUTO_SKIP_AD_HINT=/(advert|sponsor|ad\s*choices|adchoices|download|continue|thanks|skip|presented|box-c21|data-campaign)/i,
       BAIT_SIGNAL=/(notification|bell|subscribe|download now|watch now|continue to (download|watch|stream)|allow notifications?|enable notifications?)/i,
       PROTECT=/(password|sign[\s-]?in|log[\s-]?in|checkout|payment|card number|billing address|add to (cart|basket)|two[\s-]?factor|verification code|confirm (your )?(order|payment|transaction)|delete|are you sure|accept (all )?cookies)/i,
       seen=new WeakSet,
@@ -21167,6 +21169,7 @@
           if("fixed"!==pos&&"sticky"!==pos&&"absolute"!==pos)return!1;
           const r=el.getBoundingClientRect();
           if(r.top>innerHeight||r.bottom<0)return!1;
+          if(r.width<48||r.height<48)return!1;
           /* Every way below to answer yes needs a fixed, sticky or absolute box:
              closeMarkedPlayerPopup refuses anything else, and both final answers
              require looksModal, which requires positioned. Reject static boxes
@@ -21621,6 +21624,8 @@
         let inspected=0;
         for(const el of scan)try{
           if(inspected++>=160)break;
+          const cheap=(el.textContent||"")+" "+(el.className||"")+" "+(el.id||"");
+          if(!AUTO_SKIP_AD_HINT.test(cheap))continue;
           const blob=(el.innerText||"")+" "+(el.className||"")+" "+(el.id||"");
           if(AD_SIGNAL.test(blob)||/box-c21|data-campaign/i.test(blob)){
             adPresent=!0;
@@ -22652,6 +22657,7 @@
 
         }
         badgeHost=null,
+        badgeYieldState.liftApplied=!1,
         badgeButton=null,
         badgePanel=null,
         renderBadge=()=>{
@@ -22733,7 +22739,7 @@
       /* Animate only composited properties to avoid repainting over player controls.
          When a page control sits underneath the badge, it stops taking pointer input
          but stays visible. Player shells count as controls. */
-      badgeYieldState={at:0,sig:"",route:"",profile:!1},
+      badgeYieldState={at:0,sig:"",route:"",profile:!1,liftApplied:!1},
       /* How long a hover-driven answer stays good while the viewport is unchanged. */
       BADGE_YIELD_CACHE_MS=4000,
       /* How far up the badge may move to clear something before it gives up and goes
@@ -23050,7 +23056,7 @@
           hide=fixedHide||badgeOnTwitchChat(homeRect),
           home=hide?null:homeRect,
           under=hide||!home?null:badgeProbe(home),
-          near=!hide&&home?badgeNearMediaControl(home):!1;
+          near=!hide&&home&&"player"!==under.kind?badgeNearMediaControl(home):!1;
           let away=!1,
           inert=!1,
           lift=0;
@@ -23111,9 +23117,10 @@
           how a click misses. It comes home on the next forced check -- resize,
           fullscreen, a player starting -- when nobody is aiming at it. */
           !force&&!away&&lift<badgeLift&&(lift=badgeLift);
-          badgeLift=lift,
+          (!badgeYieldState.liftApplied||badgeLift!==lift)&&(badgeLift=lift,
+          badgeYieldState.liftApplied=!0,
           badgeHost.style.setProperty("--rg-lift",
-          lift+"px"),
+          lift+"px")),
           /* Over a player the badge is HIDDEN, not merely inert. It sits on the volume
           slider and the seek bar, and letting the click through is no comfort when you
           cannot see the thing you are dragging. Over an ordinary anchored control it
@@ -23246,7 +23253,6 @@
             };
             if(renderBadge=()=>{
               if(!badgeHost||!badgeHost.shadowRoot)return;
-              alignBadge();
               const nEl=host.shadowRoot.getElementById("rg-n"),
               listEl=host.shadowRoot.getElementById("rg-list");
               if(WO.__damaged){
