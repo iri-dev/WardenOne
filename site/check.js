@@ -4,7 +4,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const dist = path.join(__dirname, 'dist');
-const routes = ['', 'features/', 'how-it-works/', 'privacy/', 'download/', 'faq/', 'about/', 'changelog/'].map(route => route + 'index.html').concat('stolen.html');
+const routes = ['', 'features/', 'how-it-works/', 'privacy/', 'download/', 'faq/', 'about/'].map(route => route + 'index.html').concat('stolen.html');
 const siteScript = fs.readFileSync(path.join(dist, 'assets', 'site.js'), 'utf8');
 const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'src', 'data', 'catalogue.json'), 'utf8'));
 let checkedLinks = 0;
@@ -51,7 +51,7 @@ function hrefsOpenedFromDisk(html) {
 }
 
 function fileTargetFor(file, url) {
-  if (/^https:\/\/github\.com\/iri-dev\/WardenOne\/blob\/main\/(PRIVACY|CHANGELOG|CREDITS|SUPPORT)\.md$/.test(url)) {
+  if (/^https:\/\/github\.com\/iri-dev\/WardenOne\/blob\/main\/(PRIVACY|CREDITS|SUPPORT)\.md$/.test(url)) {
     checkedFileLinks++;
     return;
   }
@@ -121,7 +121,7 @@ for (const route of routes) {
     assert(/\baria-label="[^"]+"/.test(tag) || (id && html.includes(`for="${id}"`)), `Unlabelled input in ${route}`);
   }
 }
-for (const asset of ['assets/site.css', 'assets/site.js', 'icons/icon128.png', 'images/og-card.png', 'PRIVACY.md', 'CHANGELOG.md', 'CREDITS.md', 'SUPPORT.md', 'THIRD_PARTY_NOTICES.html', 'LICENSE', 'permissions.html', 'sitemap.xml', 'robots.txt', 'stolen.html']) {
+for (const asset of ['assets/site.css', 'assets/site.js', 'icons/icon128.png', 'images/og-card.png', 'PRIVACY.md', 'CREDITS.md', 'SUPPORT.md', 'THIRD_PARTY_NOTICES.html', 'LICENSE', 'permissions.html', 'sitemap.xml', 'robots.txt', 'stolen.html']) {
   assert(fs.existsSync(path.join(dist, asset)), `Missing ${asset}`);
 }
 const layout = fs.readFileSync(path.join(dist, '_layouts', 'default.html'), 'utf8');

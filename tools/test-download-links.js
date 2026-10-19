@@ -23,8 +23,8 @@
  * 3. Nothing hardcodes a version number. A link to /releases/tag/v1.0.1 is correct for exactly
  *    as long as it takes to publish v1.0.2, and then it silently becomes the same trap again.
  *
- * The index page is still fine to link to as an index -- the website's changelog page does --
- * so this checks the download CALLS TO ACTION specifically.
+ * The index page is still fine to link to as an index, so this checks the download
+ * CALLS TO ACTION specifically.
  *
  * Run: node tools/test-download-links.js
  */
@@ -268,15 +268,11 @@ function oddReleaseLinks(text) {
 }
 
 // ---------------------------------------------------------------------------
-// 5. The index page is still allowed where it is genuinely an index.
-//    This is the anti-overcorrection half: if a future edit "fixed" the footer nav and the
-//    provenance list too, the checks above would all still pass and nobody would notice the
-//    index had stopped being linked at all.
+// 5. The release index remains an allowed browsing destination; no site page must link it.
 // ---------------------------------------------------------------------------
 {
   const bare = bareIndexLinks(SITE);
-  check('the site still links the releases index somewhere', bare.length >= 1,
-    'the changelog page\'s "Need the exact build?" card should still point at the index');
+  check('the link policy allows browsing the releases index', oddReleaseLinks(BARE_INDEX).length === 0);
   check('but not many times', bare.length <= 3,
     bare.length + ' bare index links -- one of them is probably meant to be a download link');
 }

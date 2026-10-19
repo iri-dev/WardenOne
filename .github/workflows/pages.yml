@@ -8,8 +8,7 @@
 # Uploading raw markdown would 404 that URL.
 name: Pages
 
-# Deployed on request, not on push: CHANGELOG.md is one of the published files and
-# changes with almost every fix, which would add a deployment per commit.
+# Deployed on request so extension-only changes do not redeploy the website.
 #
 # Run this when something on the site needs to go live -- in particular after
 # editing PRIVACY.md, since the Web Store listing points at the rendered copy.
@@ -56,12 +55,11 @@ jobs:
           # Every page, its assets, the 404 page, robots.txt, the sitemap, the Search Console
           # verification file and the Jekyll layout the documents are rendered into.
           cp -R site/dist/. _pages/
-          # The documents, from this commit, rendered at /PRIVACY, /SUPPORT, /CHANGELOG and
-          # /CREDITS. The build already holds the same files; copying them here keeps the
+          # The documents, from this commit, rendered at /PRIVACY, /SUPPORT and /CREDITS.
+          # The build already holds the same files; copying them here keeps the
           # published set visible in one place.
           cp PRIVACY.md _pages/
           cp SUPPORT.md _pages/
-          cp CHANGELOG.md _pages/
           cp CREDITS.md _pages/
           # The previous site's social preview image. Links shared before the redesign
           # still point their preview here.

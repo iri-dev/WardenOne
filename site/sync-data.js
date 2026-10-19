@@ -1,7 +1,7 @@
 /* Copies the facts the site states about WardenOne out of the extension repository.
    Usage: node sync-data.js [path-to-extension-repo]   (defaults to the folder above site/)
    Writes src/data/catalogue.json, copies the product captures listed below into public/images,
-   and copies the icon and the four published documents (PRIVACY, CHANGELOG, CREDITS, SUPPORT)
+   and copies the icon and the three published documents (PRIVACY, CREDITS, SUPPORT)
    into public/. None of these copies is tracked, so they cannot drift from the repository.
    Everything is read from files the extension itself ships or its gate keeps current, so the
    site's feature list and numbers match the extension instead of being retyped by hand.
@@ -105,8 +105,9 @@ for (const name of captures) {
 }
 fs.mkdirSync(path.join(__dirname, 'public', 'icons'), { recursive: true });
 fs.writeFileSync(path.join(__dirname, 'public', 'icons', 'icon128.png'), readBytes('icons/icon128.png'));
-const documents = ['PRIVACY.md', 'CHANGELOG.md', 'CREDITS.md', 'SUPPORT.md'];
+const documents = ['PRIVACY.md', 'CREDITS.md', 'SUPPORT.md'];
 for (const name of documents) fs.writeFileSync(path.join(__dirname, 'public', name), readBytes(name));
+fs.rmSync(path.join(__dirname, 'public', 'CHANGELOG.md'), { force: true });
 for (const name of ['THIRD_PARTY_NOTICES.html', 'LICENSE']) {
   fs.writeFileSync(path.join(__dirname, 'public', name), readBytes(name));
 }
