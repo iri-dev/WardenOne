@@ -523,20 +523,6 @@ img.avatar { object-fit: cover; }
 .faq-results { margin-top: 10px; color: var(--faint); font-size: .88rem; }
 .faq-empty { padding: 24px 0; color: var(--muted); }
 
-/* ---------- Changelog ---------- */
-.timeline { position: relative; margin: 0; padding: 0 0 0 40px; list-style: none; }
-.timeline::before { content: ""; position: absolute; top: 10px; bottom: 10px; left: 9px; width: 2px; background: linear-gradient(var(--brand), var(--line)); }
-.release { position: relative; padding-bottom: 48px; }
-.release::before { content: ""; position: absolute; top: 4px; left: -39px; width: 20px; height: 20px; border-radius: 50%; background: var(--bg); border: 3px solid var(--brand); }
-.release.current::before { background: var(--grad); border-color: var(--bg); box-shadow: 0 0 0 3px var(--brand); }
-.release-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--faint); font-size: .9rem; }
-.release-meta strong { color: var(--ink); font-size: 1rem; }
-.release h2 { margin-top: 10px; font-size: clamp(1.5rem, 2.6vw, 2.1rem); }
-.release-body { margin-top: 16px; padding: 24px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); color: var(--muted); }
-.release-body ul { margin: 0; padding-left: 1.1em; }
-.release-body li + li { margin-top: 8px; }
-.release-body .text-link { margin-top: 14px; }
-
 /* ---------- Articles and documents ---------- */
 .article-head { display: grid; grid-template-columns: 210px minmax(0, 740px); justify-content: center; column-gap: clamp(32px, 5vw, 72px); }
 .article-head > * { grid-column: 2; }

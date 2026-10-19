@@ -14,7 +14,6 @@ const pages = [
   ['download', 'download/', 'Download and install | WardenOne', 'Get the official WardenOne ZIP from GitHub and install it in Chrome, Edge, Brave or Opera in five steps.'],
   ['faq', 'faq/', 'Frequently asked questions | WardenOne', 'Answers about installing, updating, compatibility, privacy and troubleshooting WardenOne.'],
   ['about', 'about/', 'About WardenOne | WardenOne', 'WardenOne is an independent, open-source browser security extension made by iri. Why it exists, why it is called WardenOne, and how it is built.'],
-  ['changelog', 'changelog/', 'Changelog | WardenOne', 'WardenOne versioned milestones and rolling builds, with a link to the full development changelog.'],
   /* Kept at /stolen (stolen.html): the README, the extension and past notices all link to that address. */
   ['stolen', 'stolen', 'Someone stole WardenOne and used it to hand people malware | WardenOne', 'In August 2026 my privacy extension was republished by the GitHub account ajpc6338, with the download link on ajpc6338.github.io pointed at a trojan. What happened, how I proved the work was mine, and what to do if you ran the file.', {
     file: 'stolen.html',
@@ -203,7 +202,7 @@ function shell({ page, prefix, canonical, title, description, ogType = 'website'
       <div class="footer-top">
         <div><a class="wordmark footer-brand" href="${prefix}"><img src="${prefix}icons/icon128.png" alt="" width="32" height="32"><span>WardenOne</span></a><p>Browser protection that shows its working. Free, open source, and made by one person who cares how software treats you.</p></div>
         <div class="footer-nav">
-          <div><strong>Product</strong><a href="${prefix}features/">Features</a><a href="${prefix}how-it-works/">How it works</a><a href="${prefix}download/">Download</a><a href="${prefix}changelog/">Changelog</a></div>
+          <div><strong>Product</strong><a href="${prefix}features/">Features</a><a href="${prefix}how-it-works/">How it works</a><a href="${prefix}download/">Download</a></div>
           <div><strong>Trust</strong><a href="${prefix}privacy/">Privacy overview</a><a href="${prefix}PRIVACY">Full privacy policy</a><a href="${prefix}CREDITS">Credits</a><a href="${prefix}stolen">Fake download warning</a></div>
           <div><strong>Project</strong><a href="${prefix}about/">About</a><a href="${prefix}about/#contact">Contact me</a><a href="${prefix}faq/">FAQ</a><a href="https://github.com/iri-dev/WardenOne">Source on GitHub</a><a href="https://github.com/iri-dev/WardenOne/issues/new/choose">Report a problem</a></div>
         </div>
@@ -232,8 +231,8 @@ for (const [page, route, title, description, options = {}] of pages) {
   fs.writeFileSync(destination, shell({ page, prefix, canonical: siteUrl + route, title, description, ogType: options.ogType, head: options.head, main: render(fragment, prefix) }));
 }
 
-/* The policy, changelog, credits and support documents stay Markdown so Jekyll keeps rendering them at
-   /PRIVACY, /CHANGELOG, /CREDITS and /SUPPORT (the Web Store listing links to /PRIVACY). This layout gives
+/* The policy, credits and support documents stay Markdown so Jekyll keeps rendering them at
+   /PRIVACY, /CREDITS and /SUPPORT (the Web Store listing links to /PRIVACY). This layout gives
    them the site's header, footer and reading column. Jekyll ignores folders starting with "_" when
    publishing, and preview.js fills the same placeholders locally. */
 const documentLayout = shell({
@@ -241,7 +240,7 @@ const documentLayout = shell({
   prefix: './',
   canonical: `${siteUrl.slice(0, -1)}{{ page.url | replace: ".html", "" }}`,
   title: '{{ page.title | default: "WardenOne" }}{% unless page.title contains "WardenOne" %} | WardenOne{% endunless %}',
-  description: 'A WardenOne project document: the privacy policy, changelog, credits or support guide, published from the official repository.',
+  description: 'A WardenOne project document: the privacy policy, credits or support guide, published from the official repository.',
   raw: true,
   main: `<div class="container doc-layout doc-page">
     <nav class="doc-toc" aria-label="On this page" data-doc-toc hidden></nav>

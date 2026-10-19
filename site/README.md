@@ -13,7 +13,7 @@ From the repository root:
 & "C:\Program Files\nodejs\node.exe" site/preview.js
 ```
 
-Open <http://127.0.0.1:4173/> and stop the server with Ctrl+C. Everything uses Node's built-in modules, so there is no install step. You can also open `site/dist/index.html` straight from disk; `site.js` then points folder links at their `index.html` and the four documents at their GitHub copies.
+Open <http://127.0.0.1:4173/> and stop the server with Ctrl+C. Everything uses Node's built-in modules, so there is no install step. You can also open `site/dist/index.html` straight from disk; `site.js` then points folder links at their `index.html` and the three documents at their GitHub copies.
 
 ## Where the facts come from
 
@@ -21,7 +21,7 @@ The site's numbers, its feature list, its product captures and its documents are
 
 - `src/data/catalogue.json`: the Features catalogue and every `{{stat:…}}` number, from `settings-data.js`, the onboarding feature guide in `onboarding.js`, `manifest.json` and `tools/`.
 - `public/images/`: the real captures from `docs/screenshots/`.
-- `public/icons/icon128.png` and `public/PRIVACY.md`, `CHANGELOG.md`, `CREDITS.md` and `SUPPORT.md`.
+- `public/icons/icon128.png` and `public/PRIVACY.md`, `CREDITS.md` and `SUPPORT.md`.
 
 If a settings group is renamed, the sync stops and names it; add it to a category in `sync-data.js`.
 
@@ -38,7 +38,7 @@ Three images are tracked because they are made, not copied. `make-assets.js` use
 
 `check.js` validates structure, links (including from disk), accessibility references, image width/height against the real files, unfilled placeholders, the catalogue count against the synced data, the social card, the GitHub Pages base path and asset budgets.
 
-The four documents stay Markdown, so Jekyll renders them at `/PRIVACY`, `/CHANGELOG`, `/CREDITS` and `/SUPPORT`. `/PRIVACY` is the privacy-policy address the Web Store listing uses, so it must keep working. `build.js` writes `dist/_layouts/default.html`, the site's header, footer and reading column around Jekyll's `{{ content }}`; Jekyll does not publish folders that start with `_`. The local preview renders the documents into the same layout with its own Markdown renderer.
+The three documents stay Markdown, so Jekyll renders them at `/PRIVACY`, `/CREDITS` and `/SUPPORT`. `/PRIVACY` is the privacy-policy address the Web Store listing uses, so it must keep working. `build.js` writes `dist/_layouts/default.html`, the site's header, footer and reading column around Jekyll's `{{ content }}`; Jekyll does not publish folders that start with `_`. The local preview renders the documents into the same layout with its own Markdown renderer.
 
 The fake-download notice is published as `stolen.html`, so `/stolen` keeps working for the README, the extension and past notices.
 

@@ -1,5 +1,5 @@
 /* Local preview for the WardenOne GitHub Pages working copy.
-   Serves dist/ like GitHub Pages does, and renders the Markdown documents (PRIVACY, CHANGELOG, CREDITS,
+   Serves dist/ like GitHub Pages does, and renders the Markdown documents (PRIVACY, CREDITS,
    SUPPORT) into dist/_layouts/default.html, the same layout Jekyll uses for them in production.
    The renderer here is for previewing only; on Pages, Jekyll's kramdown renders the documents. */
 const http = require('node:http');
@@ -8,7 +8,7 @@ const path = require('node:path');
 
 const root = path.join(__dirname, 'dist');
 const port = Number(process.env.PORT || 4173);
-const documents = new Set(['PRIVACY', 'SUPPORT', 'CHANGELOG', 'CREDITS']);
+const documents = new Set(['PRIVACY', 'SUPPORT', 'CREDITS']);
 const types = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',

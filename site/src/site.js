@@ -7,7 +7,7 @@
   /* Opened straight from dist/ (file://), a link to a folder shows a directory listing.
      Point folder routes at their index.html and the Jekyll-rendered documents at GitHub. */
   if (location.protocol === 'file:') {
-    const documents = ['PRIVACY', 'CHANGELOG', 'CREDITS', 'SUPPORT'];
+    const documents = ['PRIVACY', 'CREDITS', 'SUPPORT'];
     for (const link of $$('a[href]')) {
       const href = link.getAttribute('href');
       if (/^(?:[a-z][a-z\d+.-]*:|#|\/)/i.test(href)) continue;
