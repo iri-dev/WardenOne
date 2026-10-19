@@ -12,10 +12,11 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { execFileSync } = require('node:child_process');
 
-const repo = path.resolve(process.argv[2] || path.join(__dirname, '..'));
+const repo = path.resolve(process.argv.slice(2).find((arg) => arg !== '--working-tree') || path.join(__dirname, '..'));
 const git = (args, encoding = 'utf8') => execFileSync('git', ['-C', repo, ...args], { encoding, maxBuffer: 256 * 1024 * 1024 });
 let commit = null;
 try { commit = git(['rev-parse', '--short', 'HEAD']).trim(); } catch { /* Not a checkout: read the files on disk. */ }
+if (process.argv.includes('--working-tree')) commit = null;
 const readBytes = file => commit ? git(['show', `HEAD:${file}`], 'buffer') : fs.readFileSync(path.join(repo, file));
 const read = file => readBytes(file).toString('utf8');
 const listTools = () => commit
@@ -106,5 +107,14 @@ fs.mkdirSync(path.join(__dirname, 'public', 'icons'), { recursive: true });
 fs.writeFileSync(path.join(__dirname, 'public', 'icons', 'icon128.png'), readBytes('icons/icon128.png'));
 const documents = ['PRIVACY.md', 'CHANGELOG.md', 'CREDITS.md', 'SUPPORT.md'];
 for (const name of documents) fs.writeFileSync(path.join(__dirname, 'public', name), readBytes(name));
+for (const name of ['THIRD_PARTY_NOTICES.html', 'LICENSE']) {
+  fs.writeFileSync(path.join(__dirname, 'public', name), readBytes(name));
+}
+/* The web copy uses its embedded default theme and links home, without extension-only assets. */
+const permissionsPage = read('permissions.html')
+  .replace(/<link[^>]+href="theme.css"[^>]*>\s*/, '')
+  .replace('<script src="theme.js"></script>', '')
+  .replace('href="popup.html" aria-label="Back to WardenOne popup"', 'href="./index.html" aria-label="Back to WardenOne"');
+fs.writeFileSync(path.join(__dirname, 'public', 'permissions.html'), permissionsPage);
 console.log(`Synced ${stats.catalogueEntries} catalogue entries in ${catalogue.length} categories, ${captures.length} captures, the icon and ${documents.length} documents, from ${commit || 'the working copy'}`);
 console.log(JSON.stringify(stats));

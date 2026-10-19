@@ -593,7 +593,7 @@ const PROJECT_LINKS = {
   releases: 'https://github.com/iri-dev/WardenOne/releases',
   privacy: 'https://github.com/iri-dev/WardenOne/blob/main/PRIVACY.md',
   license: 'https://github.com/iri-dev/WardenOne/blob/main/LICENSE',
-  credits: 'https://github.com/iri-dev/WardenOne/blob/main/CREDITS.md',
+  credits: 'THIRD_PARTY_NOTICES.html',
   readme: 'https://github.com/iri-dev/WardenOne#readme'
 };
 function infoLink(url, label, description, symbol) {

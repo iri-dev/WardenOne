@@ -383,7 +383,7 @@ img.avatar { object-fit: cover; }
 .page-hero .lead { max-width: 640px; margin-top: 22px; }
 .aside-card { padding: 24px; border: 1px solid var(--line); border-radius: var(--r-m); background: var(--surface); box-shadow: var(--shadow-sm); color: var(--muted); font-size: .96rem; }
 .aside-card strong { display: block; margin-bottom: 8px; color: var(--ink); font-size: 1rem; }
-.aside-card .card-icon { margin-bottom: 14px; }
+.aside-card .card-icon, .aside-card .avatar { margin-bottom: 14px; }
 .aside-card a { color: var(--brand-ink); }
 .hero-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
 .hero-chips .pill { box-shadow: none; }

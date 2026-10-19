@@ -25,6 +25,11 @@ The site's numbers, its feature list, its product captures and its documents are
 
 If a settings group is renamed, the sync stops and names it; add it to a category in `sync-data.js`.
 
+The sync also copies `THIRD_PARTY_NOTICES.html`, `LICENSE` and `permissions.html`
+so the website’s source acknowledgments and permissions links work locally.
+Use `node site/sync-data.js --working-tree` to preview uncommitted edits; the
+default continues to describe the published commit.
+
 Three images are tracked because they are made, not copied. `make-assets.js` uses a local Chrome or Edge to derive `public/images/hero-popup.webp` (the popup in the homepage hero) and `public/images/og-card.png` (the 1200 × 630 social card drawn by `src/og-card.html`); run it again after replacing the popup capture or editing the card. `public/images/iri-avatar.webp` is iri's GitHub profile picture at 144 × 144, served from the site so visitors never load anything from GitHub's avatar host.
 
 ## Where to edit

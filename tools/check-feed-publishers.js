@@ -70,7 +70,7 @@ async function main() {
   let errors = 0;
   const staleAfter = 30 * 24 * 60 * 60 * 1000;
   for (const result of results) {
-    const label = (result.source.owner || 'Unknown owner').padEnd(19);
+    const label = result.source.publisher.padEnd(19);
     if (result.error) {
       errors++;
       console.log('ERROR    ' + label + ' ' + result.error + '  ' + result.source.url);

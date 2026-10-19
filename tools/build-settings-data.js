@@ -104,10 +104,10 @@ function sourceSummary(inventory) {
   }));
   const feeds = Array.from(byPurpose, ([purpose, list]) => {
     const owners = new Map();
-    list.forEach((s) => owners.set(s.owner, (owners.get(s.owner) || 0) + 1));
+    list.forEach((s) => owners.set(s.publisher, (owners.get(s.publisher) || 0) + 1));
     const named = Array.from(owners).sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]), 'en', { sensitivity: 'base' })).map(([owner]) => String(owner));
     const toggles = new Map();
-    list.forEach((s) => { const t = s.toggle || 'always'; toggles.set(t, (toggles.get(t) || 0) + 1); });
+    list.forEach((s) => s.toggles.forEach((t) => toggles.set(t, (toggles.get(t) || 0) + 1)));
     const toggle = Array.from(toggles).sort((a, b) => b[1] - a[1])[0][0];
     return { purpose, count: list.length, owners: named.length > 4 ? named.slice(0, 4).concat('and ' + (named.length - 4) + ' more') : named, toggle };
   });

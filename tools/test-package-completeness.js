@@ -185,6 +185,10 @@ check('the scan covers a realistic surface', required.size >= 30, required.size 
 {
   const INTENDED_DOCS = ['LICENSE', 'NOTICE', 'CREDITS.md'];
   for (const doc of INTENDED_DOCS) check(doc + ' travels with the package', packaged.has(doc));
+  for (const file of ['THIRD_PARTY_NOTICES.html', ...JSON.parse(read('docs/source-licensing.json')).licenseFiles]) {
+    check(file + ' travels with the package', packaged.has(file));
+  }
+  check('the compiler source snapshot stays in the repository source', !packaged.has('docs/filter-source-snapshot.json.gz'));
   const strayDocs = [...packaged].filter((f) => !f.includes('/') && /\.(md|txt|markdown)$/i.test(f) && !INTENDED_DOCS.includes(f)).sort();
   check('no other document is in the package', strayDocs.length === 0, strayDocs.join(', ') + ' -- ships because nothing excludes it');
   const attributes = fs.readFileSync(path.join(ROOT, '.gitattributes'), 'utf8');

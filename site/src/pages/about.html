@@ -1,7 +1,7 @@
 <section class="page-hero" aria-labelledby="page-title">
   <div class="container page-hero-grid">
     <div><p class="eyebrow">About</p><h1 id="page-title">Made by one person, <span class="grad-text">in the open.</span></h1><p class="lead">WardenOne is an independent, open-source project by iri. It brings browser protection, practical controls and local visibility together in one extension, and it's built to explain itself.</p></div>
-    <div class="aside-card"><span class="card-icon">{{icon:user}}</span><strong>It's just me</strong>There's no security company behind WardenOne and it hasn't been certified by anyone. It misses things sometimes, too. The code and its known limits are public, so you can look for yourself and take your time deciding whether to trust it.</div>
+    <div class="aside-card"><img class="avatar" src="{{root}}images/iri-avatar.webp" alt="iri's GitHub profile photo" width="48" height="48"><strong>It's just me</strong>There's no security company behind WardenOne and it hasn't been certified by anyone. It misses things sometimes, too. The code and its known limits are public, so you can look for yourself and take your time deciding whether to trust it.</div>
   </div>
 </section>
 
@@ -33,7 +33,6 @@
       <p class="eyebrow">How it's built</p><h2 id="build-title">Built slowly, tested properly, fixed in the open.</h2>
       <p class="prose">WardenOne runs in my own browser while I build it, so I'm usually the first to find out when something breaks. A lot of my time goes into poking at one stubborn site until it behaves, then making sure the fix doesn't break three others.</p>
       <p class="prose">Nothing ships until it gets through the project's gate: {{stat:testSuites}} automated test suites, plus checks that generated files still match the source they're built from. When I get something wrong, the fix goes up in public, mistakes and all.</p>
-      <div class="button-row"><a class="button button-secondary" href="https://github.com/iri-dev/WardenOne/commits/main">{{icon:code}} See the commit history</a><a class="text-link" href="{{root}}changelog/">Read the changelog {{icon:arrow-right}}</a></div>
     </div>
     <figure class="shot reveal"><div class="shot-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="shot-title">Activity Centre</span><span class="shot-real">Real capture</span></div><img src="{{root}}images/03-activity-centre.webp" width="1800" height="1286" alt="WardenOne Activity Centre displaying a local record of recent decisions" loading="lazy"><figcaption>A visible record, not a mystery score.</figcaption></figure>
   </div>
@@ -43,7 +42,7 @@
   <div class="container">
     <div class="section-head reveal"><p class="eyebrow">What guides it</p><h2 id="principles-title">Useful, inspectable protection.</h2></div>
     <div class="grid-3">
-      <div class="card reveal"><span class="card-icon">{{icon:code}}</span><h3>Inspect the implementation</h3><p>The extension code, bundled rules, tests and documentation are all in the public repository, under the GNU GPL v3 or later.</p></div>
+      <div class="card reveal"><span class="card-icon">{{icon:code}}</span><h3>Inspect the implementation</h3><p>WardenOne's own code is public under the GNU GPL v3 or later. Third-party lists, data and assets keep their own licenses and notices.</p></div>
       <div class="card reveal"><span class="card-icon">{{icon:eye-off}}</span><h3>Make data flows explicit</h3><p>No WardenOne account and no telemetry. The privacy policy names every automatic request and every optional provider.</p></div>
       <div class="card reveal"><span class="card-icon">{{icon:globe}}</span><h3>Respect the site you meant to use</h3><p>Protection that breaks a legitimate page is a bug. It needs investigating, scoped rules and a way to recover.</p></div>
     </div>

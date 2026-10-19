@@ -20,7 +20,7 @@ const DOC = path.join(ROOT, 'docs', 'store-single-purpose.md');
 const DOC_BEGIN = '<!-- BEGIN GENERATED FEATURE TABLE -->';
 const DOC_END = '<!-- END GENERATED FEATURE TABLE -->';
 /* Keep source and repository docs out of the Store ZIP; retain licence and privacy files. */
-const NON_RUNTIME = [/^\.github\//, /^tools\//, /^docs\//, /^site\//, /^src\//, /^\.gitignore$/, /^\.gitattributes$/, /^\.node-version$/, /^CHANGELOG\.md$/, /^CREDITS\.md$/, /^README\.md$/, /^icons\/README\.md$/, /^SECURITY\.md$/, /^SUPPORT\.md$/, /\.zip$/i];
+const NON_RUNTIME = [/^\.github\//, /^tools\//, /^docs\//, /^site\//, /^src\//, /^\.gitignore$/, /^\.gitattributes$/, /^\.node-version$/, /^CHANGELOG\.md$/, /^README\.md$/, /^icons\/README\.md$/, /^SECURITY\.md$/, /^SUPPORT\.md$/, /\.zip$/i];
 /* Omitted-file references are allowed only behind the checked profile guards. */
 const GUARDED_REFERENCES = {
   // Loaders and integrity checks drop omitted files at run time.

@@ -18,7 +18,9 @@ assert.match(workflow, /node tools\/release-changes\.js "\$PREV_TAG" > changes\.
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wardenone-release-notes-'));
 function git(...args) {
-  const result = spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+  const env = { ...process.env };
+  delete env.GIT_INDEX_FILE; // This fixture owns a separate repository and index.
+  const result = spawnSync('git', args, { cwd: dir, encoding: 'utf8', env });
   assert.strictEqual(result.status, 0, result.stderr);
   return result.stdout.trim();
 }
