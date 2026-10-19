@@ -54,6 +54,7 @@ const WATCHER_SRC = [
   lift('domWatchStop'),
   lift('domWatch'),
   lift('domRecordsHaveElementMutation'),
+  lift('scriptDriftBatchHasScript'),
 ].join('\n');
 
 // A MutationObserver stand-in that records connect/disconnect and lets the test
@@ -286,14 +287,37 @@ function check(name, cond, detail) {
   const driftStart = BRIDGE.indexOf('const driftUnwatch = domWatch');
   const driftEnd = BRIDGE.indexOf('woTimeout(driftUnwatch', driftStart);
   const driftSrc = BRIDGE.slice(driftStart, driftEnd);
-  check('script-drift checks configuration only after finding an added script',
-    driftStart >= 0
-      && driftSrc.indexOf("=== 'SCRIPT'") >= 0
-      && driftSrc.indexOf('scriptDriftGuardOn()') > driftSrc.indexOf("=== 'SCRIPT'"));
+  check('script-drift checks configuration only when an added script is present',
+    driftStart >= 0 && /!scriptDriftBatchHasScript\(muts\) \|\| !scriptDriftGuardOn\(\)/.test(driftSrc));
 }
 
 // ---------------------------------------------------------------------------
-// 10. Source-level guards against the three observers coming back.
+// 10. Script Drift scans each added subtree once and retains direct script detection.
+// ---------------------------------------------------------------------------
+{
+  const h = makeSandbox();
+  h.run('globalThis.hasScript = scriptDriftBatchHasScript;');
+  let rootQueries = 0;
+  let nestedQueries = 0;
+  const root = { nodeType: 1, tagName: 'DIV', parentElement: null,
+    querySelector() { rootQueries++; return null; } };
+  const children = Array.from({ length: 100 }, () => ({ nodeType: 1, tagName: 'DIV', parentElement: root,
+    querySelector() { nestedQueries++; return null; } }));
+  h.sandbox.nestedBatch = [{ addedNodes: [root] }, { addedNodes: children }];
+  check('Script Drift ignores an ordinary nested batch', h.run('hasScript(nestedBatch)') === false);
+  check('Script Drift queries only the outermost added subtree', rootQueries === 1 && nestedQueries === 0);
+  h.sandbox.directInline = [{ addedNodes: [root, { nodeType: 1, tagName: 'SCRIPT', parentElement: root }] }];
+  check('Script Drift still sees a directly added inline script', h.run('hasScript(directInline)') === true);
+  h.sandbox.mixedCaseScript = [{ addedNodes: [{ nodeType: 1, tagName: 'Script' }] }];
+  check('Script Drift still sees a mixed-case script element', h.run('hasScript(mixedCaseScript)') === true);
+  h.sandbox.prebuilt = [{ addedNodes: [{ nodeType: 1, tagName: 'SECTION', parentElement: null,
+    querySelector(selector) { return selector === 'script[src]' ? {} : null; } }] }];
+  check('Script Drift still sees an external script inside an off-document-built subtree',
+    h.run('hasScript(prebuilt)') === true);
+}
+
+// ---------------------------------------------------------------------------
+// 11. Source-level guards against the three observers coming back.
 // ---------------------------------------------------------------------------
 {
   const count = (BRIDGE.match(/new MutationObserver/g) || []).length;

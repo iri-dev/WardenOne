@@ -112,6 +112,7 @@
   const clicked = new WeakSet();
   const opened = new WeakSet();
 
+  // Broad substrings cover cookieyes/cookielaw/cookiehub, qc-cmp and privacy-manager.
   const CONTAINER_SELECTOR = [
     '[role="dialog"]',
     '[aria-modal="true"]',
@@ -136,10 +137,6 @@
     '[class*="trustarc" i]',
     '[id*="sourcepoint" i]',
     '[class*="sourcepoint" i]',
-    '[id*="qc-cmp" i]',
-    '[class*="qc-cmp" i]',
-    '[id*="cookieyes" i]',
-    '[class*="cookieyes" i]',
     '[id="cky" i]',
     '[id^="cky-" i]',
     '[class~="cky" i]',
@@ -153,12 +150,6 @@
     '[class*="axeptio" i]',
     '[id*="truste" i]',
     '[class*="truste" i]',
-    '[id*="cookielaw" i]',
-    '[class*="cookielaw" i]',
-    '[id*="cookiehub" i]',
-    '[class*="cookiehub" i]',
-    '[id*="privacy-manager" i]',
-    '[class*="privacy-manager" i]',
     '[aria-label*="cookie" i]',
     '[aria-label*="consent" i]',
     '[aria-label*="privacy" i]',
@@ -1004,7 +995,7 @@
         const parentText = String(node.parentElement && node.parentElement.textContent || '').slice(0, 2400);
         if (hasConsentLanguage(parentText)) return true;
       }
-      return !nested && !!(node.querySelector && node.querySelector(CONTAINER_SELECTOR));
+      return !nested && descendantMayMatchConsentContainer(node);
     } catch (_) {
       return false;
     }
@@ -1012,6 +1003,31 @@
 
   function consentHint(value) {
     return !!value && CONSENT_FRAME_HINT_RE.test(value);
+  }
+
+  // The CSS union stays for full scans; a direct walk is cheaper on mutation roots.
+  // Keep these terms aligned with CONTAINER_SELECTOR.
+  const CONTAINER_ID_CLASS_RE = /cookie|consent|privacy|gdpr|cmp|onetrust|didomi|usercentrics|trustarc|sourcepoint|osano|termly|axeptio|truste/i;
+  const CONTAINER_LABEL_RE = /cookie|consent|privacy/i;
+  const CONTAINER_CKY_CLASS_RE = /(?:^|[ \t\n\r\f])cky(?:$|[ \t\n\r\f])/i;
+  function descendantMayMatchConsentContainer(node) {
+    if (!node.getElementsByTagName) return !!(node.querySelector && node.querySelector(CONTAINER_SELECTOR));
+    const descendants = node.getElementsByTagName('*');
+    for (let i = 0; i < descendants.length; i++) {
+      const el = descendants[i];
+      if (el.localName === 'dialog') return true;
+      const id = el.getAttribute('id');
+      if (id && (CONTAINER_ID_CLASS_RE.test(id) || /^cky(?:-|$)/i.test(id))) return true;
+      const cls = el.getAttribute('class');
+      if (cls && (CONTAINER_ID_CLASS_RE.test(cls) || /^cky-/i.test(cls) || / cky-/i.test(cls)
+          || CONTAINER_CKY_CLASS_RE.test(cls))) return true;
+      if (el.getAttribute('role') === 'dialog' || el.getAttribute('aria-modal') === 'true') return true;
+      const aria = el.getAttribute('aria-label');
+      if (aria && CONTAINER_LABEL_RE.test(aria)) return true;
+      const test = el.getAttribute('data-testid');
+      if (test && CONTAINER_LABEL_RE.test(test)) return true;
+    }
+    return false;
   }
 
   function mutationsMayAffectConsent(records) {
@@ -1024,11 +1040,22 @@
         }
         for (const node of record.addedNodes || []) added.push(node);
       }
+      if (added.length === 1) return mutationNodeMayAffectConsent(added[0], false, true);
+      if (!added.length) return false;
       const batch = new Set(added);
+      const clear = new Set();
+      const chain = [];
       for (const node of added) {
         let ancestor = node.parentNode || node.parentElement;
-        while (ancestor && !batch.has(ancestor)) ancestor = ancestor.parentNode || ancestor.parentElement;
-        const nested = !!ancestor;
+        let nested = false;
+        chain.length = 0;
+        while (ancestor) {
+          if (batch.has(ancestor)) { nested = true; break; }
+          if (clear.has(ancestor)) break;
+          chain.push(ancestor);
+          ancestor = ancestor.parentNode || ancestor.parentElement;
+        }
+        if (!nested) for (const parent of chain) clear.add(parent);
         if (mutationNodeMayAffectConsent(node, nested, !nested)) return true;
       }
     } catch (_) {}
@@ -1041,6 +1068,7 @@
     // (records, observer), and a records array is truthy, so the throttle has to be
     // asked for by identity rather than inferred from the argument.
     observer = woObserver((records) => {
+      if (scanFinished || scanQueued || scanDeferred || !active) return;
       if (mutationsMayAffectConsent(records)) queueScan(true);
     });
     try {

@@ -174,6 +174,13 @@ function run(options) {
   return api;
 }
 
+{
+  const r = run();
+  const initialWrites = r.lifts.length;
+  r.update(true);
+  assert.strictEqual(r.lifts.length, initialWrites, 'an unchanged badge lift does not invalidate style again');
+}
+
 /* Discord's member pane occupies the chip's corner on guild routes. Switching between
    guild channels and DMs is an SPA navigation, so the same mounted badge must change
    without a reload. Profiles and lookalike hosts must keep the ordinary behaviour. */
@@ -270,6 +277,7 @@ function run(options) {
   assert.strictEqual(r.kind(), 'player', 'a player shell under the badge is a player');
   assert.strictEqual(r.toggled.away, true, 'and the badge gets out of the way entirely -- inert is not enough over a slider');
   assert.strictEqual(r.toggled.inert, true, 'and takes no input on the way out');
+  assert.strictEqual(r.calls.query, 0, 'a player under the badge needs no second document-wide media query');
 }
 
 /* ---- THE SECOND REPORT: ordinary content must not disable the badge ------------------------ */

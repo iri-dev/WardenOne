@@ -136,6 +136,33 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
     'class must still be watched -- it is how banners actually toggle visible');
 }
 {
+  const observerSource = consent.slice(consent.indexOf('function startObserver()'),
+    consent.indexOf('function start()'));
+  let onMutation;
+  let filterCalls = 0;
+  let scanCalls = 0;
+  const sandbox = {
+    document: { documentElement: {} },
+    woObserver(callback) { onMutation = callback; return { observe() {}, disconnect() {} }; },
+    woTimeout() {},
+    mutationsMayAffectConsent() { filterCalls++; return true; },
+    queueScan() { scanCalls++; },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext('let scanFinished = false, scanQueued = false, scanDeferred = null, active = true, observer = null;\n'
+    + observerSource + '\nstartObserver();', sandbox);
+  assert.strictEqual(typeof onMutation, 'function');
+  for (const state of ['scanQueued', 'scanDeferred', 'scanFinished', 'active']) {
+    vm.runInContext(state + ' = ' + (state === 'active' ? 'false' : 'true'), sandbox);
+    onMutation([{ type: 'childList', addedNodes: [] }]);
+    assert.strictEqual(filterCalls, 0, 'a pending or inactive scan must skip the mutation filter: ' + state);
+    vm.runInContext(state + ' = ' + (state === 'active' ? 'true' : 'false'), sandbox);
+  }
+  onMutation([{ type: 'childList', addedNodes: [] }]);
+  assert.strictEqual(filterCalls, 1, 'an idle observer still filters new mutations');
+  assert.strictEqual(scanCalls, 1, 'a matching mutation still schedules a scan');
+}
+{
   /* The 250ms throttle only caps how often a scan can happen; it does not make an
      1800-node scan cheap. Run the real mutation filter so a range control changing
      its state class and value label cannot wake that scan at all. */
@@ -151,6 +178,18 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   const sandbox = {};
   vm.createContext(sandbox);
   vm.runInContext(declarations + '\nthis.testMutations = mutationsMayAffectConsent;', sandbox);
+  const containerSelector = vm.runInContext('CONTAINER_SELECTOR', sandbox);
+  for (const [broad, covered] of [
+    ['cookie', ['cookieyes', 'cookielaw', 'cookiehub']],
+    ['cmp', ['qc-cmp']],
+    ['privacy', ['privacy-manager']],
+  ]) {
+    assert(containerSelector.includes('[id*="' + broad + '" i]')
+      && containerSelector.includes('[class*="' + broad + '" i]'),
+    'the broad consent selector must cover ' + covered.join(', '));
+    for (const specific of covered) assert(!containerSelector.includes('"' + specific + '"'),
+      specific + ' must not add a redundant selector arm');
+  }
   const node = (values) => Object.assign({
     nodeType: 1, id: '', className: '', textContent: '', parentElement: null,
     getAttribute() { return null; }, matches() { return false; }, querySelector() { return null; },
@@ -166,6 +205,13 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert.strictEqual(sandbox.testMutations([
     { type: 'childList', addedNodes: [node({ textContent: 'We use cookies. Reject all or accept all.' })] },
   ]), true, 'an obfuscated consent banner with no useful attributes must still wake the scanner');
+  {
+    let parentReads = 0;
+    const single = node({ textContent: 'We use cookies. Reject all or accept all.' });
+    Object.defineProperty(single, 'parentElement', { get() { parentReads++; return null; } });
+    assert.strictEqual(sandbox.testMutations([{ type: 'childList', addedNodes: [single] }]), true);
+    assert.strictEqual(parentReads, 0, 'one added node cannot be nested in the same batch');
+  }
   let rootReads = 0;
   let childReads = 0;
   let descendantQueries = 0;
@@ -183,6 +229,35 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert.strictEqual(rootReads, 1, 'the added subtree should be read once');
   assert.strictEqual(childReads, 0, 'nested additions should not rebuild their subtree text');
   assert.strictEqual(descendantQueries, 1, 'the consent selector should inspect the outer root once');
+  const subtree = (attrs, localName = 'div') => node({
+    textContent: 'ordinary content',
+    getElementsByTagName() { return [{ localName, getAttribute(name) { return attrs[name] || null; } }]; },
+    querySelector() { throw new Error('broad descendant selector ran'); },
+  });
+  for (const [attrs, localName] of [
+    [{ id: 'cookieyes-banner' }], [{ class: 'qc-cmp-cleanslate' }],
+    [{ class: 'privacy-manager' }], [{ class: 'x cky-panel' }], [{ id: 'cky' }],
+    [{ role: 'dialog' }], [{ 'aria-modal': 'true' }],
+    [{ 'aria-label': 'Privacy choices' }], [{ 'data-testid': 'cookie-banner' }],
+    [{}, 'dialog'],
+  ]) {
+    assert.strictEqual(sandbox.testMutations([{ type: 'childList', addedNodes: [subtree(attrs, localName)] }]), true,
+      'a nested consent marker still wakes the scanner: ' + JSON.stringify(attrs));
+  }
+  for (const attrs of [{ class: 'card' }, { class: 'tricky' }, { 'data-test': 'cookie-banner' }]) {
+    assert.strictEqual(sandbox.testMutations([{ type: 'childList', addedNodes: [subtree(attrs)] }]), false,
+      'ordinary descendants do not wake the scanner: ' + JSON.stringify(attrs));
+  }
+  for (const [, attribute, token] of containerSelector.matchAll(/\[(id|class|aria-label|data-testid)\*="([^"]+)" i\]/g)) {
+    const attrs = { [attribute]: 'x' + token + 'y' };
+    assert.strictEqual(sandbox.testMutations([{ type: 'childList', addedNodes: [subtree(attrs)] }]), true,
+      'the direct descendant scan must cover ' + attribute + '*=' + token);
+  }
+  for (const attrs of [{ class: 'cky' }, { class: 'x\tcky\ny' }, { class: 'cky-panel' },
+    { class: 'x cky-panel' }, { id: 'cky-panel' }]) {
+    assert.strictEqual(sandbox.testMutations([{ type: 'childList', addedNodes: [subtree(attrs)] }]), true,
+      'the direct descendant scan must cover the cky selector: ' + JSON.stringify(attrs));
+  }
   /* DOM-shaped children: the filter walks firstChild/nextSibling, as a real element offers. */
   const withChildren = (list) => {
     list.forEach((c, i) => { c.nextSibling = list[i + 1] || null; });
@@ -192,6 +267,19 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert.strictEqual(sandbox.testMutations([
     { type: 'childList', addedNodes: [root, late] },
   ]), true, 'direct consent text in a nested addition should still wake the scanner');
+
+  {
+    let ancestorReads = 0;
+    let parent = null;
+    for (let i = 0; i < 12; i++) {
+      const above = parent;
+      parent = node();
+      Object.defineProperty(parent, 'parentElement', { get() { ancestorReads++; return above; } });
+    }
+    const leaves = Array.from({ length: 100 }, () => node({ parentElement: parent }));
+    assert.strictEqual(sandbox.testMutations([{ type: 'childList', addedNodes: leaves }]), false);
+    assert(ancestorReads < 24, 'sibling additions should share the ancestor walk within one mutation batch');
+  }
 
   /* The per-node test must answer exactly as the joined form it replaced, which built a fresh
      array of identity fields per node and joined the direct text nodes with spaces. That form is
