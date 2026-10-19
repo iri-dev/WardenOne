@@ -14,6 +14,78 @@ is measured separately, under [Cold worker wakes](#cold-worker-wakes).
 machine metadata, video investigations and DevTools traces stay local; this page records
 the conclusions needed to understand release performance decisions.
 
+## Page-cost reprofile (2026-10-19)
+
+A five-run Edge 150 profile of the edited build, against untouched `498883e`
+and no extension, loaded all 3,636 remote hosts. With background timer throttling
+and native window occlusion disabled, median main-thread task overhead was:
+
+| Fixture | Cold | Warm |
+| --- | ---: | ---: |
+| Article | +133 ms | +112 ms |
+| DOM churn | +241 ms | +233 ms |
+| Eight frames, whole page | +170 ms | +153 ms |
+| DOM churn beside a player | +223 ms | +214 ms |
+
+These replace the older roughly 900 ms churn and 60 ms-per-frame figures for this
+build and machine. The frame row includes the top page and all eight frames; it
+does not isolate the cost of one child. The article has a localhost sign-in form,
+which triggers a credential warning; `/article-neutral.html` omits that form.
+This is synthetic page work on an i5-12400F at normal CPU speed, measured through
+fixture completion plus 600 ms, with the worker held awake. It is not a claim
+about typical sites or cold worker wakes. Raw runs, medians, tails, traces and
+sampled CPU profiles are local under `docs/perf/traces/page-cost-controlled/`.
+
+An initial trace of the starting build attributed 37 ms to Consent Auto-Reject's mutation callbacks and
+40 ms to the engine's shared observer. The sampled consent node filter accounted
+for 18 ms of self time; player detection accounted for 8 ms. On the article,
+engine startup/configuration took 51 ms and the bridge config reply took 14 ms.
+The engine applied configuration once: the other message callbacks were small
+handshake messages. These are attribution samples, not additive overhead shares.
+
+The consent filter now leaves each added descendant's container identity check
+to that node's existing hint/text pass. Prebuilt descendants still receive the
+root's scan. A negative ordinary nested addition avoids six duplicate attribute reads;
+broad container markers, SVG classes, detached nodes and split text retain their
+checks. AdShield now consults the existing player detector before scanning added
+subtrees, skipping that scan when the route or current player cache already
+answers yes. A negative cache still checks new and detached player nodes.
+
+An isolated Edge check alternated the actual before/after consent filters over
+the same real DOM mutation records, with extensions disabled and DOM creation
+outside the timing. Across 35 paired rounds after seven warmups, the nested
+fixture's median fell from 13.87 to 12.27 ms per 16 batches (about 12%); the
+edited filter was faster in 32 rounds. Prebuilt trees measured 4.25 / 4.31 ms
+and flat additions 21.42 / 21.39 ms, effectively unchanged. These are warmed
+filter timings, not whole-page overhead. Raw rounds are in the local
+`docs/perf/traces/consent-filter-bench.json`.
+
+Initial whole-page comparisons in both orders had 10–17-second fixture stalls
+and changes in both directions. They do not establish a page-level speedup.
+The profiler now disables background timer throttling and native window
+occlusion, as the isolated image benchmark already did, and records that
+condition in its metadata and report. The new `/media-churn.html` fixture
+keeps the same nested additions beside an existing player shell. The controlled
+rerun had no multi-second stalls. Edited minus starting build, median task time:
+
+| Fixture | Cold | Warm |
+| --- | ---: | ---: |
+| Article | +7.8 ms | +2.2 ms |
+| DOM churn | +6.0 ms | -7.6 ms |
+| Eight frames | +6.0 ms | +0.2 ms |
+| DOM churn beside a player | +1.7 ms | -9.2 ms |
+
+These totals do not establish a whole-page speedup. The repeatable measured
+improvement is the isolated nested consent filter; the player regression also
+verifies that known-player batches make no added-subtree selector calls. Startup
+and frame overhead remain substantial.
+
+The local player regression kept seeking, play, legitimate links and server
+switching working while blocking its ad layers and redirects. With the edited
+extension and all 3,636 remote hosts, a live YouTube video advanced from 0.7 to
+31.5 seconds during a 30-second check, unpaused and at ready state 4 in both samples.
+The rebuilt engine and full 288-suite maintainability gate passed.
+
 ## Browser-process CPU while idle (2026-10-17)
 
 On 2026-09-05, per-process sampling in Brave put WardenOne at about 34% of one core in the

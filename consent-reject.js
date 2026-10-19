@@ -962,7 +962,7 @@
   // field is tested on its own rather than joined into a fresh array -- no hint word holds a
   // space, so a match in the space-joined string always lay inside one field -- and the direct
   // text is joined while walking siblings. The answers are the ones the joined form gave.
-  function mutationNodeMayAffectConsent(node, nested, fullText) {
+  function mutationNodeMayAffectConsent(node, nested, fullText, batch) {
     try {
       if (!node) return false;
       if (node.nodeType === 3) return hasConsentLanguage(String(node.nodeValue || ''));
@@ -970,14 +970,21 @@
       const attributed = typeof node.hasAttributes !== 'function' || node.hasAttributes();
       const read = attributed && !!node.getAttribute;
       const role = read ? node.getAttribute('role') : null;
-      if (attributed && (consentHint(node.id)
-          || consentHint(typeof node.className === 'string' ? node.className : '')
+      const id = attributed ? node.id : '', cls = attributed ? node.className : '';
+      let aria, test;
+      if (attributed && (consentHint(id)
+          || consentHint(typeof cls === 'string' ? cls : '')
           || consentHint(role)
-          || (read && (consentHint(node.getAttribute('aria-label'))
-            || consentHint(node.getAttribute('data-testid'))
+          || (read && (consentHint(aria = node.getAttribute('aria-label'))
+            || consentHint(test = node.getAttribute('data-testid'))
             || consentHint(node.getAttribute('data-test')))))) return true;
       if (String(node.tagName || '').toLowerCase() === 'dialog' || role === 'dialog'
           || (read && node.getAttribute('aria-modal') === 'true')) return true;
+      if (nested && batch) {
+        if (node.localName === 'dialog') return true;
+        if (read && (consentContainerNamesMatch(id, typeof cls === 'string' ? cls : node.getAttribute('class'))
+            || (aria && CONTAINER_LABEL_RE.test(aria)) || (test && CONTAINER_LABEL_RE.test(test)))) return true;
+      }
       if (!nested && node.matches && node.matches(CONTAINER_SELECTOR)) return true;
       let text;
       if (nested && node.childNodes) {
@@ -995,7 +1002,7 @@
         const parentText = String(node.parentElement && node.parentElement.textContent || '').slice(0, 2400);
         if (hasConsentLanguage(parentText)) return true;
       }
-      return !nested && descendantMayMatchConsentContainer(node);
+      return !nested && descendantMayMatchConsentContainer(node, batch);
     } catch (_) {
       return false;
     }
@@ -1010,17 +1017,21 @@
   const CONTAINER_ID_CLASS_RE = /cookie|consent|privacy|gdpr|cmp|onetrust|didomi|usercentrics|trustarc|sourcepoint|osano|termly|axeptio|truste/i;
   const CONTAINER_LABEL_RE = /cookie|consent|privacy/i;
   const CONTAINER_CKY_CLASS_RE = /(?:^|[ \t\n\r\f])cky(?:$|[ \t\n\r\f])/i;
-  function descendantMayMatchConsentContainer(node) {
+  function consentContainerNamesMatch(id, cls) {
+    return !!((id && (CONTAINER_ID_CLASS_RE.test(id) || /^cky(?:-|$)/i.test(id)))
+      || (cls && (CONTAINER_ID_CLASS_RE.test(cls) || /^cky-/i.test(cls) || / cky-/i.test(cls)
+        || CONTAINER_CKY_CLASS_RE.test(cls))));
+  }
+
+  function descendantMayMatchConsentContainer(node, batch) {
     if (!node.getElementsByTagName) return !!(node.querySelector && node.querySelector(CONTAINER_SELECTOR));
     const descendants = node.getElementsByTagName('*');
     for (let i = 0; i < descendants.length; i++) {
       const el = descendants[i];
+      // Added descendants receive the same container check alongside their hint/text pass.
+      if (batch && batch.has(el)) continue;
       if (el.localName === 'dialog') return true;
-      const id = el.getAttribute('id');
-      if (id && (CONTAINER_ID_CLASS_RE.test(id) || /^cky(?:-|$)/i.test(id))) return true;
-      const cls = el.getAttribute('class');
-      if (cls && (CONTAINER_ID_CLASS_RE.test(cls) || /^cky-/i.test(cls) || / cky-/i.test(cls)
-          || CONTAINER_CKY_CLASS_RE.test(cls))) return true;
+      if (consentContainerNamesMatch(el.getAttribute('id'), el.getAttribute('class'))) return true;
       if (el.getAttribute('role') === 'dialog' || el.getAttribute('aria-modal') === 'true') return true;
       const aria = el.getAttribute('aria-label');
       if (aria && CONTAINER_LABEL_RE.test(aria)) return true;
@@ -1056,7 +1067,7 @@
           ancestor = ancestor.parentNode || ancestor.parentElement;
         }
         if (!nested) for (const parent of chain) clear.add(parent);
-        if (mutationNodeMayAffectConsent(node, nested, !nested)) return true;
+        if (mutationNodeMayAffectConsent(node, nested, !nested, batch)) return true;
       }
     } catch (_) {}
     return false;

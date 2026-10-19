@@ -11184,10 +11184,9 @@
                 woObserve((muts,added,roots,structural)=>{
                   const routeChanged=observedCosmeticUrl!==location.href;
                   routeChanged&&(observedCosmeticUrl=location.href);
-                  const playerAdded=structural&&adBatchAddsPlayer(added,
-                  roots);
                   if(!structural&&!routeChanged)return void scheduleProcedural();
-                  if(playerAdded||scriptletPlayerPage(routeChanged||structural&&!added.length)){
+                  if(scriptletPlayerPage(routeChanged||structural&&!added.length)||structural&&adBatchAddsPlayer(added,
+                  roots)){
                     /* Coalesced, exactly as the ordinary-page branch below already
                        does it. This called collapseLeftovers(document) directly on
                        every mutation batch -- a whole-document nine-selector scan,

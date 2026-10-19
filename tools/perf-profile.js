@@ -107,9 +107,11 @@ function articlePage(withLogin = true) {
    container and everything under it as separate added nodes. That is the shape the engine's
    outermost-node dedup exists for; a subtree built off-document and appended once would arrive
    as a single added node and exercise nothing. */
-function churnPage() {
+function churnPage(withPlayer = false) {
   return '<!doctype html><html><head><meta charset="utf-8"><title>Churn</title><style>body{font:14px system-ui}.card{padding:4px;border:1px solid #ddd;margin:2px}</style></head><body>'
-    + '<h1>An application that builds itself</h1><div id="app"></div>'
+    + '<h1>An application that builds itself</h1>'
+    + (withPlayer ? '<div data-player style="position:fixed;right:0;bottom:0;width:320px;height:140px;background:#222"><input type="range" aria-label="Volume" min="0" max="100"></div>' : '')
+    + '<div id="app"></div>'
     + '<script>'
     + 'const app = document.getElementById("app"); let batch = 0; const total = 16;'
     /* A batch is a tree six levels deep with three children per node (1,093 elements), appended
@@ -175,6 +177,7 @@ const PAGES = {
   '/article.html': articlePage,
   '/article-neutral.html': () => articlePage(false),
   '/churn.html': churnPage,
+  '/media-churn.html': () => churnPage(true),
   '/player.html': playerPage,
   '/frames.html': framesPage,
   '/frame.html': framePage,
@@ -266,7 +269,8 @@ async function launch(edge, variant, extensionDir, port, profileDir, extraArgs) 
     '--remote-debugging-port=' + port, '--user-data-dir=' + profileDir, '--no-first-run', '--no-default-browser-check',
     '--window-position=-3000,-3000', '--window-size=1280,900', '--force-device-scale-factor=1',
     '--disable-background-networking', '--disable-component-update', '--disable-sync', '--no-service-autorun',
-    '--disable-features=msEdgeShoppingUI,msImplicitSignin,msEdgeStartupBoost',
+    '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+    '--disable-features=CalculateNativeWinOcclusion,msEdgeShoppingUI,msImplicitSignin,msEdgeStartupBoost',
   ];
   if (process.env.WARDENONE_HEADLESS === '1') args.push('--headless=new');
   if (variant === 'off') args.push('--disable-extensions');
@@ -694,7 +698,8 @@ function markdown(profile) {
   lines.push('# WardenOne performance profile', '');
   lines.push('- commit `' + profile.meta.commit + (profile.meta.dirty ? '` (working tree modified)' : '`') + ', extension ' + profile.meta.extensionVersion);
   lines.push('- ' + profile.meta.browser + ' on ' + profile.meta.cpu + ' (' + profile.meta.cores + ' cores), CPU throttle x' + profile.meta.throttle + ', ' + profile.meta.runs + ' runs per cell, ' + profile.meta.date);
-  lines.push('- variants: ' + profile.meta.variants.join(', ') + '; pages served from 127.0.0.1; nothing left the machine');
+  lines.push('- variants: ' + profile.meta.variants.join(', ') + '; fixture pages and resources served from 127.0.0.1');
+  if (profile.meta.backgroundThrottlingDisabled) lines.push('- Background timer throttling and native window occlusion disabled for off-screen fixtures.');
   if (profile.meta.pairedLogger) lines.push('- Iframe logger settings alternated between runs in one browser profile.');
   const workerMetrics = Object.values(profile.meta.readiness || {}).some((r) => r && r.workerMetrics);
   lines.push('- readiness: ' + Object.entries(profile.meta.readiness || {}).map(([v, r]) => v + ' = ' + (r && r.extensionId
@@ -755,8 +760,8 @@ async function main() {
   const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
   if (nodeMajor < NODE_MIN || typeof WebSocket !== 'function' || typeof fetch !== 'function') throw new Error('Node ' + NODE_MIN + '+ with built-in fetch and WebSocket is required');
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
-  if (args.pages && (!args.pages.length || args.pages.some((page) => !MEASURED_PAGES.includes(page) && page !== '/player.html' && page !== '/article-neutral.html'))) {
-    throw new Error('--pages must name article, article-neutral, churn, frames or player fixture paths');
+  if (args.pages && (!args.pages.length || args.pages.some((page) => !MEASURED_PAGES.includes(page) && page !== '/player.html' && page !== '/article-neutral.html' && page !== '/media-churn.html'))) {
+    throw new Error('--pages must name article, article-neutral, churn, frames, player or media-churn fixture paths');
   }
   const pages = args.pages || (args.imageFrames ? ['/image-frames.html'] : MEASURED_PAGES);
   const commit = (spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout || '').trim() || 'unknown';
@@ -788,6 +793,7 @@ async function main() {
       commit, dirty, extensionVersion: manifest.version, browser: results[0].browser, userAgent: results[0].userAgent,
       cpu: os.cpus()[0].model.trim(), cores: os.cpus().length, memoryGB: Math.round(os.totalmem() / 1e9), platform: os.platform() + ' ' + os.release(),
       throttle: args.throttle, runs: args.runs, variants: args.variants, pairedLogger: args.pairedLogger,
+      backgroundThrottlingDisabled: true,
       date: new Date().toISOString(), pages,
       readiness: Object.fromEntries(results.map((r) => [r.variant, r.readiness])),
     },

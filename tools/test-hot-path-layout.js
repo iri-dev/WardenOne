@@ -320,7 +320,8 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
     '}',
   ].join('\n');
   const shippedText = consent.slice(consent.indexOf('function mutationNodeMayAffectConsent('), consent.indexOf('function consentHint('));
-  assert(/consentHint\(node\.id\)/.test(shippedText), 'the shipped filter is the per-field form');
+  assert(/id = attributed \? node\.id/.test(shippedText) && /consentHint\(id\)/.test(shippedText),
+    'the shipped filter caches each reflected identity field before testing it');
   const referenceRealm = {};
   vm.createContext(referenceRealm);
   vm.runInContext(declarations.replace(shippedText, REFERENCE + '\n'), referenceRealm);
@@ -354,6 +355,115 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
     }
   }
   assert(positives > 1000 && positives < 7000, 'the random nodes exercise both answers (' + positives + ' of 8000 positive)');
+
+  /* Without the batch argument the root still checks every descendant, as before.
+     Compare that path with mixed added/prebuilt trees, including detached subtrees. */
+  const batchReferenceRealm = {};
+  vm.createContext(batchReferenceRealm);
+  vm.runInContext(declarations.replace('mutationNodeMayAffectConsent(node, nested, !nested, batch)',
+    'mutationNodeMayAffectConsent(node, nested, !nested)')
+    + '\nthis.testMutations = mutationsMayAffectConsent;', batchReferenceRealm);
+  const namesMatch = vm.runInContext('consentContainerNamesMatch', sandbox);
+  const labelMatch = /cookie|consent|privacy/i;
+  const batchStats = { attributes: 0 };
+  const makeElement = (attrs = {}, children = [], options = {}) => {
+    const el = node({
+      nodeType: 1, localName: options.dialog ? 'dialog' : 'div', tagName: options.dialog ? 'DIALOG' : 'DIV',
+      id: attrs.id || '', className: options.svg ? {} : attrs.class || '',
+      hasAttributes: () => Object.keys(attrs).length > 0,
+      getAttribute(name) { batchStats.attributes++; return attrs[name] || null; },
+      matches() {
+        return el.localName === 'dialog' || namesMatch(attrs.id, attrs.class) || attrs.role === 'dialog'
+          || attrs['aria-modal'] === 'true' || labelMatch.test(attrs['aria-label'] || '')
+          || labelMatch.test(attrs['data-testid'] || '');
+      },
+      getElementsByTagName() {
+        const descendants = [];
+        const visit = (parent) => {
+          for (const child of parent.childNodes || []) if (child.nodeType === 1) {
+            descendants.push(child);
+            visit(child);
+          }
+        };
+        visit(el);
+        return descendants;
+      },
+      querySelector() { return el.getElementsByTagName('*').find((child) => child.matches()) || null; },
+    });
+    Object.assign(el, withChildren(children));
+    for (const child of children) child.parentNode = child.parentElement = el;
+    Object.defineProperty(el, 'textContent', {
+      get() { return children.map((child) => child.nodeType === 3 ? child.nodeValue || '' : child.textContent).join(''); },
+    });
+    return el;
+  };
+  const text = (value) => ({ nodeType: 3, nodeValue: value });
+  for (const attrs of [
+    { id: 'xcookiey' }, { class: 'xconsenty' }, { class: 'x cky-panel' }, { class: 'x\tcky\ny' },
+    { 'aria-label': 'xprivacyy' }, { 'data-testid': 'xcookiey' }, { 'data-test': 'sp_message' },
+    { role: 'dialog' }, { 'aria-modal': 'true' },
+  ]) {
+    const child = makeElement(attrs);
+    const parent = makeElement({}, [child]);
+    assert.strictEqual(sandbox.testMutations([{ addedNodes: [parent, child] }]), true,
+      'batch descendants preserve both broad container markers and identity hints: ' + JSON.stringify(attrs));
+  }
+  for (const child of [makeElement({ class: 'CookieConsent' }, [], { svg: true }),
+    makeElement({}, [], { dialog: true })]) {
+    const parent = makeElement({}, [child]);
+    assert.strictEqual(sandbox.testMutations([{ addedNodes: [parent, child] }]), true,
+      'nested SVG class attributes and attribute-free dialogs retain their container checks');
+  }
+  {
+    const child = makeElement({}, [text('x'), text('cookie'), text('y')]);
+    const parent = makeElement({}, [child]);
+    assert.strictEqual(parent.textContent, 'xcookiey');
+    assert.strictEqual(sandbox.testMutations([{ addedNodes: [parent, child] }]), true,
+      'a nested addition still checks direct text with spaces between sibling text nodes');
+  }
+  {
+    const children = Array.from({ length: 100 }, () => makeElement({ class: 'card' }));
+    const parent = makeElement({}, children);
+    const records = [{ addedNodes: [parent] }, { addedNodes: children }];
+    batchStats.attributes = 0;
+    assert.strictEqual(batchReferenceRealm.testMutations(records), false);
+    const before = batchStats.attributes;
+    batchStats.attributes = 0;
+    assert.strictEqual(sandbox.testMutations(records), false);
+    assert.strictEqual(batchStats.attributes, 500,
+      'each nested negative identity is read in one pass, alongside its hint/text check');
+    assert.strictEqual(before - batchStats.attributes, 600,
+      'a hundred nested additions avoid six duplicate attribute reads each');
+  }
+  let negativeBatches = 0;
+  let positiveBatches = 0;
+  const markers = ['card', 'ordinary', 'xcookiey', 'sp_message', 'xprivacyy', 'x cky-panel', 'tricky'];
+  for (let i = 0; i < 1200; i++) {
+    const added = [];
+    const grow = (depth) => {
+      const attrs = {};
+      if (!rnd(2)) attrs.class = 'card';
+      if (!rnd(8)) attrs[['id', 'class', 'aria-label', 'data-testid', 'data-test'][rnd(5)]] = markers[rnd(markers.length)];
+      if (!rnd(40)) attrs[['role', 'aria-modal'][rnd(2)]] = rnd(2) ? 'dialog' : 'true';
+      const children = depth ? Array.from({ length: rnd(4) }, () => grow(depth - 1)) : [];
+      if (!rnd(8)) children.push(text(rnd(2) ? 'ordinary' : 'cookie'));
+      const el = makeElement(attrs, children, { svg: !rnd(16), dialog: !rnd(80) });
+      if (rnd(3)) added.push(el);
+      return el;
+    };
+    const root = grow(3);
+    added.push(root);
+    if (!rnd(3)) added.reverse();
+    if (!rnd(5)) added.push(makeElement({ 'data-test': 'sp_choice' }));
+    const records = [{ type: 'childList', addedNodes: added }];
+    if (!rnd(7)) records.unshift({ type: 'attributes', target: grow(0), attributeName: 'class' });
+    const expected = batchReferenceRealm.testMutations(records);
+    assert.strictEqual(sandbox.testMutations(records), expected,
+      'mixed added/prebuilt/detached trees preserve the pre-batch filter answer at case ' + i);
+    if (expected) positiveBatches++; else negativeBatches++;
+  }
+  assert(positiveBatches > 100 && negativeBatches > 100,
+    'mixed-tree comparisons exercise both filter answers: ' + positiveBatches + '/' + negativeBatches);
 }
 {
   const declarations = [
