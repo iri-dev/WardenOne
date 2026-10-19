@@ -121,10 +121,19 @@ for (const route of routes) {
     assert(/\baria-label="[^"]+"/.test(tag) || (id && html.includes(`for="${id}"`)), `Unlabelled input in ${route}`);
   }
 }
-for (const asset of ['assets/site.css', 'assets/site.js', 'icons/icon128.png', 'images/og-card.png', 'PRIVACY.md', 'CHANGELOG.md', 'CREDITS.md', 'SUPPORT.md', 'sitemap.xml', 'robots.txt', 'stolen.html']) {
+for (const asset of ['assets/site.css', 'assets/site.js', 'icons/icon128.png', 'images/og-card.png', 'PRIVACY.md', 'CHANGELOG.md', 'CREDITS.md', 'SUPPORT.md', 'THIRD_PARTY_NOTICES.html', 'LICENSE', 'permissions.html', 'sitemap.xml', 'robots.txt', 'stolen.html']) {
   assert(fs.existsSync(path.join(dist, asset)), `Missing ${asset}`);
 }
 const layout = fs.readFileSync(path.join(dist, '_layouts', 'default.html'), 'utf8');
+for (const name of ['THIRD_PARTY_NOTICES.html', 'permissions.html']) {
+  const file = path.join(dist, name);
+  const html = fs.readFileSync(file, 'utf8');
+  for (const match of html.matchAll(/(?:href|src)="([^"]+)"/g)) {
+    targetFor(file, match[1]);
+    fileTargetFor(file, match[1]);
+  }
+  assert(!/not yet verified|terms under review|blank licence/.test(html), name + ' has obsolete rights labels');
+}
 assert(layout.includes('{{ content }}') && layout.includes('data-doc') && layout.includes('aria-label="Main navigation"'), 'Document layout lost its content slot or site shell');
 assert(fs.statSync(path.join(dist, 'assets/site.css')).size < 60_000, 'CSS bundle exceeds 60 KB');
 assert(fs.statSync(path.join(dist, 'assets/site.js')).size < 12_000, 'JavaScript bundle exceeds 12 KB');

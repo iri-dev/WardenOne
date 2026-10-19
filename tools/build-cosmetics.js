@@ -31,10 +31,29 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const crypto = require('crypto');
+const zlib = require('zlib');
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'cosmetic-rules.json');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const SNAPSHOT = path.join(ROOT, 'docs', 'filter-source-snapshot.json.gz');
+
+function cosmeticSource(text) {
+  /* Network records do not generate the packaged command rules. Keep original
+     cosmetic source and comments, including publisher notices and provenance. */
+  return text.split(/\r?\n/).filter((line) => /^\s*(?:!|\[|$)/.test(line) || /#(?:\?#|\$#|%#|#|@#)/.test(line)).join('\n');
+}
+
+function sourceSnapshot() {
+  const snapshot = JSON.parse(zlib.gunzipSync(fs.readFileSync(SNAPSHOT)).toString('utf8'));
+  if (!Array.isArray(snapshot.sources) || !snapshot.sources.length) throw new Error('Empty filter source snapshot');
+  for (const source of snapshot.sources) {
+    if (crypto.createHash('sha256').update(source.text).digest('hex') !== source.textSha256) {
+      throw new Error('Filter source snapshot hash mismatch: ' + source.url);
+    }
+  }
+  return snapshot;
+}
 
 // ---------------------------------------------------------------------------
 // Lift the real parser out of background.js.
@@ -125,6 +144,14 @@ if (process.argv.includes('--check')) {
     console.error('[fail] cosmetic-rules.json has no provenance (builtAt / sources).');
     process.exit(1);
   }
+  const snapshot = sourceSnapshot();
+  const inputRecords = snapshot.sources.map(({ text, textSha256, ...record }) => record);
+  const rebuilt = makeParser().parseCosmeticFilters(snapshot.sources.map((source) => source.text).join('\n'));
+  if (snapshot.builtAt !== doc.builtAt || JSON.stringify(inputRecords) !== JSON.stringify(doc.sources)
+    || JSON.stringify(rebuilt.scriptlets) !== JSON.stringify(doc.scriptlets)
+    || JSON.stringify(rebuilt.procedural) !== JSON.stringify(doc.procedural)) {
+    throw new Error('Packaged cosmetic rules disagree with their supplied corresponding source');
+  }
   // Staleness. These rules used to refresh themselves daily from the network; they do not any
   // more, which is the point, but it means they now go stale silently and the only symptom is ad
   // blocking quietly getting worse on sites whose defences moved on.
@@ -172,6 +199,8 @@ if (process.argv.includes('--check')) {
 // ---------------------------------------------------------------------------
 (async () => {
   const { parseCosmeticFilters, ADSHIELD_COSMETIC_LISTS } = makeParser();
+  const snapshot = process.argv.includes('--from-snapshot') ? sourceSnapshot() : null;
+  const feeds = snapshot ? snapshot.sources.map((source) => source.url) : ADSHIELD_COSMETIC_LISTS;
   console.log('  parser lifted from background.js; ' + ADSHIELD_COSMETIC_LISTS.length + ' feeds');
 
   const CACHE = path.join(ROOT, ".publish", "feed-cache");
@@ -180,12 +209,14 @@ if (process.argv.includes('--check')) {
 
   const texts = [];
   const sources = [];
-  for (const url of ADSHIELD_COSMETIC_LISTS) {
+  for (const url of feeds) {
     const cached = path.join(CACHE, crypto.createHash("sha1").update(url).digest("hex") + ".txt");
     process.stdout.write('  ' + url + ' ... ');
     try {
       let text;
-      if (!fresh && fs.existsSync(cached)) {
+      if (snapshot) {
+        text = snapshot.sources.find((source) => source.url === url).text;
+      } else if (!fresh && fs.existsSync(cached)) {
         text = fs.readFileSync(cached, "utf8");
         process.stdout.write("cached ");
       } else {
@@ -195,7 +226,7 @@ if (process.argv.includes('--check')) {
         fs.writeFileSync(cached, text, "utf8");
       }
       texts.push(text);
-      sources.push({
+      sources.push(snapshot ? (({ text, textSha256, ...record }) => record)(snapshot.sources.find((source) => source.url === url)) : {
         url,
         bytes: text.length,
         sha256: crypto.createHash('sha256').update(text).digest('hex'),
@@ -206,8 +237,8 @@ if (process.argv.includes('--check')) {
     }
   }
 
-  if (sources.length < ADSHIELD_COSMETIC_LISTS.length) {
-    console.log('  [warn] ' + (ADSHIELD_COSMETIC_LISTS.length - sources.length)
+  if (sources.length < feeds.length) {
+    console.log('  [warn] ' + (feeds.length - sources.length)
       + ' feed(s) did not download. Compiling from what arrived would silently ship reduced');
     console.log('         coverage, so this is a hard stop. Re-run when the network is healthy.');
     process.exit(1);
@@ -218,7 +249,7 @@ if (process.argv.includes('--check')) {
   // Only the command-bearing halves are packaged. Passive selectors keep coming from the daily
   // refresh, which is what the policy permits and what keeps ordinary hiding rules fresh.
   const doc = {
-    builtAt: new Date().toISOString().slice(0, 10),
+    builtAt: snapshot ? snapshot.builtAt : new Date().toISOString().slice(0, 10),
     note: 'Compiled at release time from the feeds listed below. The runtime does not accept '
       + 'scriptlet or procedural records from network refreshes; it reads them only from here.',
     sources,
@@ -232,6 +263,14 @@ if (process.argv.includes('--check')) {
   const proceduralRules = Object.values(doc.procedural).reduce((n, a) => n + a.length, 0);
 
   fs.writeFileSync(OUT, JSON.stringify(doc), 'utf8');
+  if (!snapshot) fs.writeFileSync(SNAPSHOT, zlib.gzipSync(Buffer.from(JSON.stringify({
+    builtAt: doc.builtAt,
+    selection: 'Original cosmetic source and comments; unused network records omitted. sha256 identifies the original full input; textSha256 identifies the supplied source subset.',
+    sources: sources.map((source, index) => {
+      const text = cosmeticSource(texts[index]);
+      return { ...source, text, textSha256: crypto.createHash('sha256').update(text).digest('hex') };
+    }),
+  })), { level: 9 }));
 
   console.log('  ---------------------------------------------');
   console.log('  scriptlets:  ' + scriptletRules + ' rules across ' + scriptletDomains + ' domains');

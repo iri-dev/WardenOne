@@ -1,127 +1,77 @@
-/* WardenOne — Copyright (C) 2026 iri
-   Licensed under the GNU General Public License v3 or later. See LICENSE.
-   Official source: https://github.com/iri-dev/WardenOne
-   Upstream filter-list attribution: CREDITS.md
-   Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
-   with the date, and to keep these notices intact. */
-/*
- * Every upstream source has a provenance record (L20).
- *
- * CREDITS.md substantively credited four groupings while the default runtime reached more than
- * fifteen further projects. A hand-written attribution file drifts the moment a list is added,
- * which is how that gap opened -- so the inventory is generated from the constants that drive the
- * fetches, and this fails when anything the runtime can reach has no record.
- *
- * It checks provenance, not permission. Licence terms are a release-owner judgement recorded in
- * the inventory; nothing here asserts a licence or its compatibility.
- *
- * Run: node tools/test-source-inventory.js
- */
+/* Inventory drift and trust-boundary metadata regressions. */
 'use strict';
-
+const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
-
+const { build, runtimeFeeds } = require('./build-source-inventory.js');
+const { documented, unresolvedRights } = require('./check-store-rights.js');
 const ROOT = path.resolve(__dirname, '..');
-const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-const CREDITS = fs.readFileSync(path.join(ROOT, 'CREDITS.md'), 'utf8');
-const INVENTORY = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs', 'source-inventory.json'), 'utf8'));
+const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
+const bg = read('background.js');
+const inventory = JSON.parse(read('docs/source-inventory.json'));
+const metadata = JSON.parse(read('docs/source-licensing.json'));
+assert.deepStrictEqual(build(), inventory);
 
-let failed = 0;
-function check(name, condition, extra) {
-  if (condition) { console.log('  ok  - ' + name); return; }
-  failed++;
-  console.error('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
+/* Independently inspect every URL in the feed declaration region, including future arrays. */
+const declaration = bg.slice(bg.indexOf('const REMOTE_LISTS = ['), bg.indexOf('// ======================= AdShield cosmetic engine'));
+const expected = new Set([...declaration.matchAll(/^\s*(?:url:\s*)?'(https:\/\/[^']+)'/gm)].map((m) => m[1]));
+for (const m of bg.matchAll(/^const \w*(?:FEED_URL|LIST_URL|MANIFEST_URL) = '(https:\/\/[^']+)';/gm)) expected.add(m[1]);
+assert.deepStrictEqual(new Set(inventory.sources.map((s) => s.url)), expected);
+assert.strictEqual(inventory.summary.runtimeFeeds, expected.size);
+assert.strictEqual(inventory.sources.length, expected.size);
+assert.deepStrictEqual(new Set(runtimeFeeds(bg).map((s) => s.url)), expected);
+const extra = bg.replace('const REMOTE_LISTS = [', "const REMOTE_LISTS = [\n  'https://example.test/undocumented.txt',");
+assert.throws(() => build(metadata, extra), /Document the exact new source/);
+const changed = bg.replace(inventory.sources[0].url, 'https://example.test/replacement.txt');
+assert.throws(() => build(metadata, changed), /Document the exact new source/);
+const duplicate = JSON.parse(JSON.stringify(metadata));
+duplicate.profiles.adaway.urls.push(duplicate.profiles.blocklist.urls[0]);
+assert.throws(() => build(duplicate), /Duplicate source policy/);
+const stale = JSON.parse(JSON.stringify(metadata));
+stale.profiles.adaway.urls.push('https://example.test/retired.txt');
+assert.throws(() => build(stale), /Stale policy URL/);
+assert.throws(() => runtimeFeeds(bg + '\nconst NEW_LISTS = [];'), /Register the new feed array/);
+assert.throws(() => runtimeFeeds(bg.replace('const REMOTE_LISTS = [', 'const REMOTE_LISTS = [\n  ...generatedFeeds,')), /document dynamic generation/);
+const undated = JSON.parse(JSON.stringify(metadata));
+delete undated.profiles.adaway.checkedAt;
+assert.throws(() => build(undated), /Missing source review date/);
+
+const statuses = new Set(['implemented','clarification-required','restricted-or-incompatible']);
+for (const source of [...inventory.sources, ...inventory.buildSources]) {
+  assert(statuses.has(source.compliance.status), source.url);
+  assert(source.evidence.length && source.evidence.every((e) => e.finding && (e.reference || /^https:\/\//.test(e.url))), source.url);
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(source.checkedAt));
+  assert(source.license && source.permission && source.attribution && source.compliance.conditions.length);
+  if (source.compliance.status === 'implemented') assert(documented(source), source.url);
+  else assert(source.compliance.issueIds.length, source.url);
+  assert(!('licenceVerified' in source), 'Unrelated decisions must not collapse into a boolean');
+  assert(read('THIRD_PARTY_NOTICES.html').includes(source.name.replace(/&/g,'&amp;').replace(/’/g,'’')));
 }
-
-// Read runtime feed URLs independently of the generator so omitted constants are caught.
-function urlsInRuntimeFeeds() {
-  const names = ['REMOTE_LISTS', 'TOKEN_AND_SCAM_LISTS', 'MALWARE_LISTS', 'TRACKER_LISTS',
-    'ADSHIELD_NET_LISTS', 'ADSHIELD_COSMETIC_LISTS', 'SUPPLEMENTAL_LIST_SOURCES'];
-  const urls = new Set();
-  for (const name of names) {
-    const start = BACKGROUND.indexOf('const ' + name + ' = [');
-    if (start < 0) { check('source array ' + name + ' still exists', false); continue; }
-    const end = BACKGROUND.indexOf('\n];', start);
-    const block = BACKGROUND.slice(start, end);
-    (block.match(/'https?:\/\/[^']+'/g) || []).forEach((q) => urls.add(q.slice(1, -1)));
-  }
-  const direct = BACKGROUND.match(/const OPENPHISH_FEED_URL\s*=\s*'(https?:\/\/[^']+)'/);
-  check('the direct OpenPhish feed constant still exists', !!direct);
-  if (direct) urls.add(direct[1]);
-  return urls;
+const grants = inventory.sources.filter((s) => s.permission.status === 'granted');
+assert.strictEqual(grants.length, 4);
+for (const [id, date, scope] of [['discord','2026-10-15','Direct runtime'],['peter','2026-10','direct pgl'],['army','2026-10','Chrome Web Store'],['flinteger','2026-10-16','upstream']]) {
+  const source = grants.find((s) => s.policyId === id);
+  assert(source && source.permission.date === date && source.permission.scope.includes(scope), id);
 }
-
-const declared = urlsInRuntimeFeeds();
-const recorded = new Set(INVENTORY.sources.map((s) => s.url));
-
-check('the source arrays are still findable', declared.size > 20, declared.size + ' urls');
-
-const missing = [...declared].filter((u) => !recorded.has(u));
-check('every list the runtime fetches has an inventory record',
-  missing.length === 0,
-  missing.join(', ') + ' -- add it by running: node tools/build-source-inventory.js');
-
-const stale = [...recorded].filter((u) => !declared.has(u));
-check('the inventory records nothing the runtime no longer fetches', stale.length === 0, stale.join(', '));
-
-// A record is only useful if it says who and what.
-const incomplete = INVENTORY.sources.filter((s) => !s.owner || !s.project || !s.home
-  || !Array.isArray(s.purposes) || !s.purposes.length || s.kind !== 'fetched');
-check('every record names an owner, a project, a home and what it feeds',
-  incomplete.length === 0, incomplete.map((s) => s.url).join(', '));
-
-// Redistribution is a different obligation from fetching, so it is recorded separately.
-check('the rulesets that ship inside the package are recorded as redistributed',
-  INVENTORY.generated.length >= 3 && INVENTORY.generated.every((g) => g.kind === 'redistributed' && g.file && g.builtBy),
-  JSON.stringify(INVENTORY.generated.map((g) => g.file)));
-INVENTORY.generated.forEach((g) => {
-  check('the redistributed ' + g.file + ' is actually in the package',
-    fs.existsSync(path.join(ROOT, g.file)));
-  check('and its build script exists', fs.existsSync(path.join(ROOT, g.builtBy)));
-});
-
-// The gap this finding is about: CREDITS.md must name everything, not a subset.
-//
-// Matched on the table row rather than anywhere in the file. A bare includes() also matches the
-// project's own URL inside the link href, so a row whose visible name had been changed still
-// passed -- the check read as covering the reader-facing text while only ever seeing the link.
-const ownersInCredits = INVENTORY.sources.filter((s) => !CREDITS.includes('| [' + s.owner + '/' + s.project + ']'));
-check('CREDITS.md names every project the runtime reaches',
-  ownersInCredits.length === 0,
-  [...new Set(ownersInCredits.map((s) => s.owner + '/' + s.project))].join(', '));
-
-check('the CREDITS block is marked generated, so it is not hand-edited into drift',
-  CREDITS.includes('<!-- BEGIN GENERATED SOURCE INVENTORY -->')
-    && CREDITS.includes('tools/build-source-inventory.js'));
-
-// Provenance, not permission. An unverified licence has to READ as unverified rather than blank.
-const asserted = INVENTORY.sources.filter((s) => s.licence && !s.licenceVerified);
-check('no licence is recorded as fact without being marked verified',
-  asserted.length === 0, asserted.map((s) => s.project).join(', '));
-const publisherGrants = INVENTORY.sources.filter((s) => s.publisherPermission === 'granted');
-check('publisher grants retain reply evidence',
-  publisherGrants.every((s) => !!s.permissionEvidence),
-  publisherGrants.filter((s) => !s.permissionEvidence).map((s) => s.project).join(', '));
-check('publisher grants remain visible in the generated credits',
-  !publisherGrants.length || CREDITS.includes('Publisher permission received; source terms under review'));
-check('unverified terms are visible in CREDITS rather than silently empty',
-  !INVENTORY.sources.some((s) => !s.licenceVerified) || /_not yet verified_/.test(CREDITS));
-
-// The hand-written sections say things a table cannot -- what was re-implemented rather than
-// copied, and why. The generator inserts around them, so they have to be checked for survival.
-//
-// Matched on the entry line, not on the name appearing anywhere: these projects are named several
-// times each in the surrounding prose, so a bare includes() stayed true even with the entry gone.
-[
-  '- **AdGuard Filters**',
-  '- **TwitchAdSolutions** (pixeltris)',
-  '- **EasyList & EasyPrivacy**',
-  '- **uBlock-Origin-dev-filter** (quenhus)',
-].forEach((entry) => {
-  check('the written credit entry ' + entry.replace('- **', '').replace('**', '') + ' survives',
-    CREDITS.includes(entry));
-});
-
-if (failed) { console.error('\n' + failed + ' source inventory check(s) failed'); process.exit(1); }
-console.log('\nevery upstream source the runtime reaches has a provenance record');
+assert.deepStrictEqual(inventory.sources.find((s) => s.policyId === 'peter').toggles.sort(), ['adShield','blockTrackers']);
+const snapshot = JSON.parse(read('cosmetic-rules.json'));
+const all = new Set([...inventory.sources, ...inventory.buildSources].map((s) => s.url));
+for (const input of snapshot.sources) assert(all.has(input.url), input.url);
+for (const artifact of inventory.generated) {
+  assert(fs.existsSync(path.join(ROOT, artifact.file)));
+  if (artifact.builtBy) assert(fs.existsSync(path.join(ROOT, artifact.builtBy)));
+  for (const file of artifact.sourceFiles) assert(fs.existsSync(path.join(ROOT, file)));
+}
+const manifest = JSON.parse(read('manifest.json'));
+for (const rule of manifest.declarative_net_request.rule_resources) assert(inventory.generated.some((a) => a.file === rule.path), rule.path);
+const credits = read('CREDITS.md');
+for (const entry of ['- **AdGuard Filters**','- **TwitchAdSolutions** (pixeltris)','- **EasyList & EasyPrivacy**','- **uBlock-Origin-dev-filter** (quenhus)']) assert(credits.includes(entry));
+assert(credits.includes('<!-- BEGIN GENERATED SOURCE INVENTORY -->'));
+assert(!/not yet verified|terms under review|blank licence|review .*still open/i.test(credits));
+for (const file of metadata.licenseFiles) assert(read('THIRD_PARTY_NOTICES.html').includes(path.basename(file)));
+assert(/credits: 'THIRD_PARTY_NOTICES.html'/.test(read('settings.js')));
+assert(!require('./build-store-package.js').NON_RUNTIME.some((re) => re.test('CREDITS.md')));
+assert(!require('./build-store-package.js').NON_RUNTIME.some((re) => re.test('THIRD_PARTY_NOTICES.html')));
+const exceptions = inventory.sources.filter((s) => s.compliance.status !== 'implemented').map((s) => s.url).sort();
+assert.deepStrictEqual(unresolvedRights(inventory).sort(), exceptions);
+console.log('Source inventory: runtime/build coverage, exact URL matching, scoped grants, offline notices and specific release exceptions verified');

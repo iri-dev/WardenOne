@@ -15,13 +15,15 @@ build-profile.js export-subst
 *.woff2 binary
 *.crx binary
 *.pem binary
+*.gz binary
 
 # Dev-only paths kept out of the packaged Release zip (`git archive`). They stay
 # in the repo but don't bloat the download people load unpacked: unminified
 # source (the manifest loads content.min.js), the test/build tooling, README
 # screenshots, issue templates, and repo-meta / store docs. Every file in the
 # zip is there on purpose: LICENSE and NOTICE travel with the work because the
-# GPL requires it, and CREDITS.md carries the upstream filter-list attribution.
+# GPL requires it; CREDITS.md, THIRD_PARTY_NOTICES.html and licenses/ carry
+# the upstream attribution and license texts.
 # Every other document is excluded below, each with its reason; nothing ships
 # because no rule happened to remove it (tools/test-package-completeness.js
 # checks the archive's document set against this intent).

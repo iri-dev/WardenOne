@@ -51,7 +51,7 @@ const OPENPHISH_TIMEOUT_MS = constant('EXTERNAL_REPUTATION_TIMEOUT_MS', 6500);
    words. A shared source uses its strictest cap, as listSourceByteLimit() does. */
 const policyFor = (feed) => {
   const purposes = feed.purposes || [];
-  if (feed.toggle === 'openPhish') return { url: feed.url, maxBytes: OPENPHISH_MAX_BYTES, timeoutMs: OPENPHISH_TIMEOUT_MS };
+  if (feed.toggles.includes('openPhish')) return { url: feed.url, maxBytes: OPENPHISH_MAX_BYTES, timeoutMs: OPENPHISH_TIMEOUT_MS };
   if (purposes.includes('Supplemental domain lists')) return { url: feed.url, maxBytes: SUPPLEMENTAL_MAX_BYTES, timeoutMs: TIMEOUT_MS };
   if (purposes.includes('Cosmetic (element-hiding) filtering')) return { url: feed.url, maxBytes: COSMETIC_MAX_BYTES, timeoutMs: TIMEOUT_MS };
   return { url: feed.url, maxBytes: MAX_BYTES, timeoutMs: TIMEOUT_MS };

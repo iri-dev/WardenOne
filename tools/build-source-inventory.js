@@ -1,287 +1,183 @@
-/* WardenOne — Copyright (C) 2026 iri
-   Licensed under the GNU General Public License v3 or later. See LICENSE.
-   Official source: https://github.com/iri-dev/WardenOne
-   Upstream filter-list attribution: CREDITS.md
-   Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
-   with the date, and to keep these notices intact. */
-/*
- * Generates the upstream source inventory from the code, not from memory (L20).
- *
- * CREDITS.md substantively credited four groupings while the runtime referenced more than fifteen
- * more. A hand-written attribution file drifts the moment a list is added, which is exactly how
- * that gap opened -- so the inventory is derived from the constants that actually drive the
- * fetches, and tools/check-maintainability.js fails when a source has no record.
- *
- * What this asserts and what it deliberately does not: it records provenance -- project, owner,
- * exact URL, what it feeds, which toggle gates it, and whether the bytes are fetched at runtime or
- * redistributed inside the package. It does NOT decide licence compatibility. Every record carries
- * a licence field the release owner fills in and a verified flag; nothing here is legal advice and
- * no licence is asserted from guesswork.
- *
- *   node tools/build-source-inventory.js            # rewrite docs/source-inventory.json
- *   node tools/build-source-inventory.js --check    # fail if it is out of date
- */
+/* WardenOne — Copyright (C) 2026 iri; GPL-3.0-or-later. See LICENSE. */
 'use strict';
-
 const fs = require('fs');
 const path = require('path');
-
+const crypto = require('crypto');
 const ROOT = path.resolve(__dirname, '..');
-const OUT = path.join(ROOT, 'docs', 'source-inventory.json');
-const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-
-// Which array feeds what, and which setting gates it. Keyed by the constant name so a renamed or
-// deleted array is a loud failure rather than a silently empty section.
-const ARRAYS = [
-  { name: 'REMOTE_LISTS', purpose: 'IP-logger and grabber domains', toggle: 'blockGrabberResources' },
-  { name: 'TOKEN_AND_SCAM_LISTS', purpose: 'Web3 wallet drainers and social scams', toggle: 'blockMalwareSites' },
-  { name: 'MALWARE_LISTS', purpose: 'Malware and phishing domains', toggle: 'blockMalwareSites' },
-  { name: 'TRACKER_LISTS', purpose: 'Tracking and telemetry domains', toggle: 'blockTrackers' },
-  { name: 'ADSHIELD_NET_LISTS', purpose: 'Network-level ad filtering', toggle: 'adShield' },
-  { name: 'ADSHIELD_COSMETIC_LISTS', purpose: 'Cosmetic (element-hiding) filtering', toggle: 'adShield' },
-];
-
-const DIRECT_FEEDS = [
-  { name: 'OPENPHISH_FEED_URL', purpose: 'Optional phishing intelligence', toggle: 'openPhish' },
-];
-
-// Generated rulesets that ship inside the package. These are redistribution rather than fetching,
-// so they are listed separately and carry their build input.
-const GENERATED = [
-  { file: 'rules-adshield.json', builtBy: 'tools/build-adshield-dnr.js', from: 'EasyList network-filter input' },
-  { file: 'rules-easyprivacy.json', builtBy: 'tools/build-easyprivacy-dnr.js', from: 'EasyPrivacy input plus rules-trackers.json' },
-  { file: 'cosmetic-rules.json', builtBy: 'tools/build-cosmetics.js', from: 'ADSHIELD_COSMETIC_LISTS' },
-  // Not a filter list: the Public Suffix List's private section, which decides site identity
-  // (SEC-07). Fetched by the build tool only, never at runtime; the file carries its list version.
-  { file: 'psl-private.js', builtBy: 'tools/build-psl.js', from: 'Public Suffix List (publicsuffix.org), private section' },
-];
-
-function arrayEntries(name) {
-  const start = BACKGROUND.indexOf('const ' + name + ' = [');
-  if (start < 0) throw new Error('source array not found in background.js: ' + name);
-  const end = BACKGROUND.indexOf('\n];', start);
-  if (end < 0) throw new Error('source array has no end: ' + name);
-  const block = BACKGROUND.slice(start, end);
-  const out = [];
-  let comment = '';
-  for (const raw of block.split('\n')) {
-    const line = raw.trim();
-    if (line.startsWith('//')) {
-      const text = line.replace(/^\/\/\s?/, '').trim();
-      comment = comment ? comment + ' ' + text : text;
-      continue;
-    }
-    const m = line.match(/^'(https?:\/\/[^']+)'/);
-    if (m) { out.push({ url: m[1], note: comment }); comment = ''; }
-  }
-  return out;
-}
-
-function objectEntries(name) {
-  const start = BACKGROUND.indexOf('const ' + name + ' = [');
-  if (start < 0) throw new Error('source array not found in background.js: ' + name);
-  const end = BACKGROUND.indexOf('\n];', start);
-  const block = BACKGROUND.slice(start, end);
-  const out = [];
-  const re = /url:\s*'(https?:\/\/[^']+)'[\s\S]{0,120}?label:\s*'([^']+)'/g;
-  let m;
-  while ((m = re.exec(block))) out.push({ url: m[1], note: m[2] });
-  return out;
-}
-
-function constantUrl(name) {
-  const match = BACKGROUND.match(new RegExp('const\\s+' + name + "\\s*=\\s*'(https?:\\/\\/[^']+)'\\s*;"));
-  if (!match) throw new Error('source URL constant not found in background.js: ' + name);
-  return match[1];
-}
-
-// Owner and project from the URL, so the inventory cannot disagree with the fetch.
-function identify(url) {
-  const u = new URL(url);
-  const host = u.hostname.toLowerCase();
-  const gh = host === 'raw.githubusercontent.com' ? u.pathname.split('/').filter(Boolean) : null;
-  if (gh && gh.length >= 2) {
-    return { owner: gh[0], project: gh[1], home: 'https://github.com/' + gh[0] + '/' + gh[1] };
-  }
-  if (host.endsWith('github.io')) {
-    const owner = host.split('.')[0];
-    const project = u.pathname.split('/').filter(Boolean)[0] || owner;
-    return { owner, project, home: 'https://github.com/' + owner + '/' + project };
-  }
-  if (host.endsWith('gitlab.io')) {
-    const owner = host.split('.')[0];
-    return { owner, project: owner, home: 'https://gitlab.com/' + owner };
-  }
-  return { owner: host, project: host, home: u.origin + '/' };
-}
-
-function build() {
-  /* Keep release-owner decisions when regenerating the mechanically discovered list.
-     Matching by the exact input means a changed URL starts unreviewed. */
-  let previous = { sources: [], generated: [] };
-  try { previous = JSON.parse(fs.readFileSync(OUT, 'utf8')); } catch (_) {}
-  const previousSources = new Map((previous.sources || []).map((s) => [s.url, s]));
-  const previousGenerated = new Map((previous.generated || []).map((g) => [g.file, g]));
-  const reviewFields = (old) => {
-    const fields = old && old.licenceVerified === true
-      ? { licence: old.licence || '', licenceVerified: true, rightsReview: old.rightsReview || null }
-      : { licence: '', licenceVerified: false };
-    if (old && old.publisherPermission === 'granted') {
-      fields.publisherPermission = 'granted';
-      fields.permissionEvidence = old.permissionEvidence || '';
-    }
-    return fields;
-  };
-  const sources = [];
-  const seen = new Map();
-  const add = (url, note, purpose, toggle, kind) => {
-    const id = identify(url);
-    const key = url;
-    if (seen.has(key)) {
-      const prior = seen.get(key);
-      if (!prior.purposes.includes(purpose)) prior.purposes.push(purpose);
-      return;
-    }
-    const record = {
-      owner: id.owner,
-      project: id.project,
-      home: id.home,
-      url,
-      purposes: [purpose],
-      toggle,
-      kind,                       // 'fetched' = bytes arrive at runtime
-      note: note || '',
-      ...reviewFields(previousSources.get(url)),
-    };
-    seen.set(key, record);
-    sources.push(record);
-  };
-
-  for (const group of ARRAYS) {
-    for (const entry of arrayEntries(group.name)) {
-      add(entry.url, entry.note, group.purpose, group.toggle, 'fetched');
-    }
-  }
-  for (const entry of objectEntries('SUPPLEMENTAL_LIST_SOURCES')) {
-    add(entry.url, entry.note, 'Supplemental domain lists', 'always', 'fetched');
-  }
-  for (const feed of DIRECT_FEEDS) {
-    add(constantUrl(feed.name), feed.name, feed.purpose, feed.toggle, 'fetched');
-  }
-
-  const generated = GENERATED.map((g) => ({
-    file: g.file,
-    builtBy: g.builtBy,
-    derivedFrom: g.from,
-    kind: 'redistributed',       // these bytes ship inside the package
-    ...reviewFields(previousGenerated.get(g.file)),
-  }));
-
-  sources.sort((a, b) => (a.owner + a.project + a.url).localeCompare(b.owner + b.project + b.url));
-  return {
-    note: 'Generated by tools/build-source-inventory.js. Do not hand-edit the source list; edit the '
-      + 'constants in background.js. licence/licenceVerified, publisherPermission, and review evidence are release-owner '
-      + 'decisions preserved by exact input when this list is regenerated; nothing here asserts '
-      + 'a licence or its compatibility.',
-    sources,
-    generated,
-  };
-}
-
-function stable(value) {
-  return JSON.stringify(value, null, 2) + '\n';
-}
-
-// The human-facing half. CREDITS.md keeps its hand-written sections -- they say things a table
-// cannot -- and gains a generated block that cannot fall behind the code, because it is written
-// from the same inventory.
-const CREDITS = path.join(ROOT, 'CREDITS.md');
+const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8');
+const stable = (value) => JSON.stringify(value, null, 2) + '\n';
+const hash = (file) => crypto.createHash('sha256').update(fs.readFileSync(path.join(ROOT, file))).digest('hex');
+const ARRAYS = {
+  REMOTE_LISTS: ['IP-logger and grabber domains', 'blockGrabberResources'],
+  TOKEN_AND_SCAM_LISTS: ['Web3 wallet drainers and social scams', 'blockMalwareSites'],
+  MALWARE_LISTS: ['Malware and phishing domains', 'blockMalwareSites'],
+  TRACKER_LISTS: ['Tracking and telemetry domains', 'blockTrackers'],
+  ADSHIELD_NET_LISTS: ['Network-level ad filtering', 'adShield'],
+  ADSHIELD_COSMETIC_LISTS: ['Cosmetic (element-hiding) filtering', 'adShield'],
+  SUPPLEMENTAL_LIST_SOURCES: ['Supplemental domain lists', 'always'],
+};
+const DIRECT = {
+  OPENPHISH_FEED_URL: ['Optional phishing intelligence', 'openPhish'],
+  REMOTE_LIST_URL: ['Additional logger list', 'blockGrabberResources'],
+  SUPPLEMENTAL_MANIFEST_URL: ['Publisher supplemental manifest', 'always'],
+};
 const BEGIN = '<!-- BEGIN GENERATED SOURCE INVENTORY -->';
 const END = '<!-- END GENERATED SOURCE INVENTORY -->';
 
+function runtimeFeeds(background) {
+  for (const match of background.matchAll(/^const ([A-Z0-9_]*(?:_LISTS|_LIST_SOURCES)) = \[/gm)) {
+    if (!(match[1] in ARRAYS)) throw new Error('Register the new feed array in the inventory: ' + match[1]);
+  }
+  const found = new Map();
+  const add = (url, purpose, toggle) => {
+    if (!found.has(url)) found.set(url, { url, purposes: [], toggles: [], kind: 'fetched' });
+    const entry = found.get(url);
+    if (!entry.purposes.includes(purpose)) entry.purposes.push(purpose);
+    if (!entry.toggles.includes(toggle)) entry.toggles.push(toggle);
+  };
+  for (const [name, [purpose, toggle]] of Object.entries(ARRAYS)) {
+    const match = background.match(new RegExp('const ' + name + ' = \\[([\\s\\S]*?)\\n\\];'));
+    if (!match) throw new Error('Missing runtime source array: ' + name);
+    const body = match[1].replace(/^\s*\/\*[\s\S]*?\*\//gm, '');
+    for (const line of body.split('\n')) {
+      const url = line.match(/^\s*(?:url:\s*)?'(https:\/\/[^']+)'\s*(?:,|$)/);
+      if ((!url && /^\s*url:/.test(line))
+        || (name !== 'SUPPLEMENTAL_LIST_SOURCES' && line.trim() && !/^\s*\/\//.test(line) && !url)) {
+        throw new Error('Feed discovery requires literal HTTPS addresses; document dynamic generation explicitly: ' + name);
+      }
+      if (url) add(url[1], purpose, toggle);
+    }
+  }
+  for (const [name, [purpose, toggle]] of Object.entries(DIRECT)) {
+    const match = background.match(new RegExp('const ' + name + " = '([^']*)';"));
+    if (!match) throw new Error('Missing runtime source constant: ' + name);
+    if (match[1]) add(match[1], purpose, toggle);
+  }
+  return [...found.values()];
+}
+
+function build(metadata = JSON.parse(read('docs/source-licensing.json')), background = read('background.js')) {
+  const bindings = new Map();
+  for (const [id, profile] of Object.entries(metadata.profiles)) {
+    for (const url of profile.urls) {
+      if (bindings.has(url)) throw new Error('Duplicate source policy: ' + url);
+      bindings.set(url, { id, profile });
+    }
+  }
+  const used = new Set();
+  const policy = (entry) => {
+    const binding = bindings.get(entry.url);
+    if (!binding) throw new Error('Document the exact new source in docs/source-licensing.json: ' + entry.url);
+    used.add(entry.url);
+    const { urls, ...profile } = binding.profile;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(profile.checkedAt || '')) throw new Error('Missing source review date: ' + binding.id);
+    return { ...entry, policyId: binding.id, ...profile };
+  };
+  const sources = runtimeFeeds(background).map(policy).sort((a, b) => a.url.localeCompare(b.url));
+  const runtimeUrls = new Set(sources.map((s) => s.url));
+  const cosmetic = JSON.parse(read('cosmetic-rules.json'));
+  const inputs = cosmetic.sources.map((s) => ({ url: s.url, purpose: 'Packaged cosmetic rules', artifact: 'cosmetic-rules.json', inputSha256: s.sha256 }));
+  for (const input of metadata.buildInputs) {
+    const code = read(input.builtBy);
+    const match = code.match(new RegExp('const ' + input.constant + " = '(https://[^']+)';"));
+    if (!match) throw new Error('Build URL constant missing: ' + input.builtBy + ':' + input.constant);
+    inputs.push({ url: match[1], purpose: input.purpose, artifact: input.artifact });
+  }
+  const buildSources = inputs.filter((s) => !runtimeUrls.has(s.url)).map((s) => policy({ ...s, kind: 'build-input' }));
+  for (const url of bindings.keys()) if (!used.has(url)) throw new Error('Stale policy URL; remove or record it as retired: ' + url);
+  const generated = metadata.artifacts.map((entry) => ({ ...entry, kind: 'redistributed', sha256: hash(entry.file) }));
+  const unresolved = sources.filter((s) => s.compliance.status !== 'implemented');
+  return {
+    schemaVersion: 2,
+    note: 'Generated from runtime constants, embedded build provenance and docs/source-licensing.json. Edit policy metadata, not this file. Counts include optional configured feeds; license and permission counts can overlap.',
+    checkedAt: metadata.checkedAt,
+    summary: {
+      runtimeFeeds: sources.length,
+      publishers: new Set(sources.map((s) => s.publisher)).size,
+      publishedLicenseCoveredFeeds: sources.filter((s) => s.license.type === 'published-license' && s.compliance.status === 'implemented').length,
+      writtenPermissionFeeds: sources.filter((s) => s.permission.status === 'granted').length,
+      resolvedFeeds: sources.length - unresolved.length,
+      unresolvedFeeds: unresolved.length,
+      buildOnlyInputs: buildSources.length,
+      redistributedArtifacts: generated.length,
+    },
+    sources, buildSources, generated,
+    externalServices: metadata.externalServices,
+    retired: metadata.retired,
+  };
+}
+
+function basis(source) {
+  const parts = [];
+  if (source.license.id) parts.push(source.license.id);
+  if (source.permission.status === 'granted') parts.push('Written permission (' + source.permission.date + ')');
+  if (source.compliance.issueIds.length) parts.push('Specific upstream/use-scope exception — see source review');
+  return parts.join('; ');
+}
+
 function creditsBlock(inv) {
-  const byOwner = new Map();
+  const groups = new Map();
   for (const s of inv.sources) {
-    const key = s.owner + '/' + s.project;
-    if (!byOwner.has(key)) byOwner.set(key, { owner: s.owner, project: s.project, home: s.home, purposes: new Set(), urls: [], licences: new Set(), allVerified: true, allPublisherGranted: true });
-    const e = byOwner.get(key);
-    s.purposes.forEach((p) => e.purposes.add(p));
-    e.urls.push(s.url);
-    e.allVerified = e.allVerified && s.licenceVerified === true && !!s.licence;
-    e.allPublisherGranted = e.allPublisherGranted && s.publisherPermission === 'granted';
-    if (s.licence) e.licences.add(s.licence);
+    if (!groups.has(s.policyId)) groups.set(s.policyId, { source: s, count: 0 });
+    groups.get(s.policyId).count++;
   }
   const lines = [BEGIN, '',
-    '_Generated by `tools/build-source-inventory.js` from the source constants in `background.js`._',
-    '_Do not edit this block by hand; the release gate rebuilds and checks it._',
-    '_Machine-readable form, including per-source URLs: `docs/source-inventory.json`._',
+    'WardenOne uses independently maintained protection lists. Their maintainers retain ownership and credit.',
+    'Published licenses and written permissions are separate permission grants; no personal reply is needed when the applicable license covers the use.',
+    'The inventory records exact addresses, local processing, evidence and any specific scope exception.',
     '',
-    'Every upstream list the default runtime can reach. Publisher permission is shown when received;',
-    'aggregate source terms are reviewed separately. An unverified entry is a documentation gap,',
-    'not a claim that a licence is absent or that use is prohibited.',
-    '',
-    '| Project | Feeds | Files | Rights status |',
-    '| --- | --- | --- | --- |'];
-  [...byOwner.values()]
-    .sort((a, b) => (a.owner + a.project).toLowerCase().localeCompare((b.owner + b.project).toLowerCase()))
-    .forEach((e) => {
-      lines.push('| [' + e.owner + '/' + e.project + '](' + e.home + ') | '
-        + [...e.purposes].join('; ') + ' | ' + e.urls.length + ' | '
-        + (e.allVerified ? [...e.licences].join('; ')
-          : e.allPublisherGranted ? 'Publisher permission received; source terms under review'
-            : '_not yet verified_') + ' |');
-    });
-  lines.push('', 'Rulesets compiled from the above and **redistributed inside the package**:', '');
-  lines.push('| File | Built by | From |', '| --- | --- | --- |');
-  inv.generated.forEach((g) => lines.push('| `' + g.file + '` | `' + g.builtBy + '` | `' + g.derivedFrom + '` |'));
+    '[' + inv.sources.length + ' runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)',
+    '', '| Source | Runtime feeds | License or permission |', '| --- | --- | --- |'];
+  for (const { source, count } of groups.values()) lines.push('| [' + source.name + '](' + source.home + ') | ' + count + ' | ' + basis(source) + ' |');
+  lines.push('', 'Build-only inputs (not daily runtime downloads):', '');
+  for (const source of inv.buildSources) lines.push('- [' + source.name + '](' + source.url + ') → `' + source.artifact + '` (' + source.license.id + ').');
+  lines.push('', 'Bundled and derived material:', '', '| File | Provenance | Distribution terms |', '| --- | --- | --- |');
+  for (const entry of inv.generated) lines.push('| `' + entry.file + '` | ' + entry.provenance + ' | ' + entry.license + ' |');
   lines.push('', END);
   return lines.join('\n');
 }
 
-function writeCredits(inv) {
-  const text = fs.readFileSync(CREDITS, 'utf8');
-  const block = creditsBlock(inv);
-  const from = text.indexOf(BEGIN);
-  const to = text.indexOf(END);
-  if (from >= 0 && to > from) {
-    return text.slice(0, from) + block + text.slice(to + END.length);
-  }
-  // First run: insert ahead of the closing Notes section so the prose still reads last.
-  const anchor = text.indexOf('## Notes');
-  if (anchor < 0) return text.trimEnd() + '\n\n## Upstream source inventory\n\n' + block + '\n';
-  return text.slice(0, anchor) + '## Upstream source inventory\n\n' + block + '\n\n' + text.slice(anchor);
+function credits(inv) {
+  const current = read('CREDITS.md');
+  const start = current.indexOf(BEGIN), end = current.indexOf(END);
+  if (start < 0 || end < start) throw new Error('Missing CREDITS inventory markers');
+  return current.slice(0, start) + creditsBlock(inv) + current.slice(end + END.length);
 }
 
-const inventory = build();
-const arg = process.argv[2] || '--build';
-if (arg === '--check') {
-  const problems = [];
-  let current = '';
-  try { current = fs.readFileSync(OUT, 'utf8'); } catch (_) {}
-  if (current !== stable(inventory)) problems.push('docs/source-inventory.json is out of date');
-  if (fs.readFileSync(CREDITS, 'utf8') !== writeCredits(inventory)) problems.push('the CREDITS.md inventory block is out of date');
-  // The requirement this finding asks the release to enforce: a record for every source.
-  const orphan = inventory.sources.filter((s) => !s.owner || !s.project || !s.url || !s.purposes.length);
-  if (orphan.length) problems.push(orphan.length + ' source(s) have an incomplete record');
-  if (problems.length) {
-    problems.forEach((p) => console.error('[fail] ' + p));
-    console.error('[info] run: node tools/build-source-inventory.js');
-    process.exit(1);
+const esc = (text) => String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function notices(inv) {
+  const profiles = [...new Map([...inv.sources, ...inv.buildSources].map((s) => [s.policyId, s])).values()];
+  const lines = ['<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WardenOne — Third-party notices</title><style>body{max-width:70rem;margin:3rem auto;padding:0 1.5rem;font:16px/1.65 system-ui;color:#172033;background:#fafbff}a{color:#1548a5}section{border-top:1px solid #ccc;padding:1rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 monospace}h1,h2{line-height:1.2}</style></head><body>',
+    '<h1>Third-party protection sources</h1>',
+    '<p>WardenOne uses independently maintained filtering and threat-intelligence lists to identify advertisements, trackers, phishing sites, scams and malicious domains. These sources remain the work of their respective maintainers; WardenOne does not claim ownership of their data.</p>',
+    '<p>Published licenses and separate written permissions provide the bases described below. Specific scope exceptions remain for OpenPhish and aggregators that include it; the <a href="https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md">source review</a> explains them. Those feeds remain configured. This notice does not describe them as cleared for redistribution.</p>',
+    '<p>Runtime lists are downloaded directly by your browser and parsed, normalized, deduplicated and capped into local domain, URL or selector rules. They are not bundled as raw feeds. Packaged rules are selected, converted and supplemented by WardenOne. Attribution does not imply endorsement. Review date: ' + esc(inv.checkedAt) + '.</p>',
+    '<p><a href="CREDITS.md">Additional code, media and data credits</a> · <a href="LICENSE">WardenOne GPL license</a> · <a href="https://github.com/iri-dev/WardenOne">Source, build scripts and filter-source snapshots</a></p>'];
+  for (const s of profiles) {
+    lines.push('<section><h2>' + esc(s.name) + '</h2><p><a href="' + esc(s.home) + '">' + esc(s.publisher) + '</a> — ' + esc(basis(s)) + '</p>',
+      '<p>' + esc(s.attribution) + '</p>',
+      '<p>Terms: <a href="' + esc(s.license.url || s.home) + '">' + esc(s.license.id || 'Publisher permission') + '</a>. ' + esc(s.compliance.conditions.join(' ')) + '</p>');
+    if (s.upstream?.length) lines.push('<p>Upstream contributions: ' + s.upstream.map((u) => '<a href="' + esc(u.url) + '">' + esc(u.name) + '</a> (' + esc(u.license) + ')').join('; ') + '.</p>');
+    lines.push('</section>');
   }
-  const publisherGranted = inventory.sources.filter((s) => !s.licenceVerified && s.publisherPermission === 'granted').length;
-  const otherReview = inventory.sources.filter((s) => !s.licenceVerified && s.publisherPermission !== 'granted').length;
-  console.log('[ok] every upstream source has an inventory record ('
-    + inventory.sources.length + ' fetched, ' + inventory.generated.length + ' redistributed)');
-  if (publisherGranted) {
-    console.log('[info] ' + publisherGranted + ' source(s) have publisher permission with aggregate terms under review');
+  lines.push('<section><h2>Bundled data and modifications</h2>');
+  for (const artifact of inv.generated) lines.push('<p><strong>' + esc(artifact.file) + '</strong>: ' + esc(artifact.provenance) + '. ' + esc(artifact.license) + '. ' + esc(artifact.modifications) + '</p>');
+  lines.push('<p>Have I Been Pwned breach information: <a href="https://haveibeenpwned.com">Troy Hunt / Have I Been Pwned</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Optional breach responses are selected and formatted for local display; no breach database is packaged.</p></section>');
+  for (const file of JSON.parse(read('docs/source-licensing.json')).licenseFiles) lines.push('<section><h2>' + esc(file) + '</h2><pre>' + esc(read(file)) + '</pre></section>');
+  lines.push('</body></html>\n');
+  return lines.join('\n');
+}
+
+function main() {
+  const inv = build();
+  for (const [file, text] of [['docs/source-inventory.json', stable(inv)], ['CREDITS.md', credits(inv)], ['THIRD_PARTY_NOTICES.html', notices(inv)]]) {
+    if (process.argv.includes('--check')) {
+      if (!fs.existsSync(path.join(ROOT, file)) || read(file) !== text) throw new Error(file + ' is stale; run tools/build-source-inventory.js');
+    } else fs.writeFileSync(path.join(ROOT, file), text);
   }
-  if (otherReview) {
-    console.log('[info] ' + otherReview + ' other source(s) await release-owner rights review');
-  }
-} else {
-  fs.mkdirSync(path.dirname(OUT), { recursive: true });
-  fs.writeFileSync(OUT, stable(inventory), 'utf8');
-  fs.writeFileSync(CREDITS, writeCredits(inventory), 'utf8');
-  console.log('[ok] wrote docs/source-inventory.json and the CREDITS.md block ('
-    + inventory.sources.length + ' fetched sources, ' + inventory.generated.length + ' redistributed rulesets)');
+  console.log('[ok] source inventory and notices: ' + JSON.stringify(inv.summary));
+}
+module.exports = { runtimeFeeds, build, basis, creditsBlock, notices };
+if (require.main === module) {
+  try { main(); } catch (error) { console.error('[fail] ' + error.message); process.exitCode = 1; }
 }

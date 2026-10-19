@@ -1,0 +1,2163 @@
+{
+  "schemaVersion": 2,
+  "checkedAt": "2026-10-19",
+  "profiles": {
+    "adaway": {
+      "name": "AdAway hosts",
+      "publisher": "AdAway contributors",
+      "home": "https://github.com/AdAway/adaway.github.io",
+      "urls": [
+        "https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "CC-BY-3.0",
+        "url": "https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "AdAway default blocklist; contributions by Kicelo, Dominik Schuermann and contributors recorded in upstream history.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Credit the authors, link the license and source, identify modifications, and do not imply endorsement."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt",
+          "documentSha256": "8c925c37a5eaa5e1c582c76e12301797861addee5ad0fa0e6e46c9dd0136fe55",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "adguard": {
+      "name": "AdGuard Base, Tracking Protection and Mobile Ads filters",
+      "publisher": "AdGuard Team",
+      "home": "https://github.com/AdguardTeam/AdguardFilters",
+      "urls": [
+        "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_11_Mobile/filter.txt",
+        "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_2_Base/filter.txt",
+        "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt",
+        "https://filters.adtidy.org/extension/ublock/filters/2.txt",
+        "https://filters.adtidy.org/extension/ublock/filters/3.txt",
+        "https://filters.adtidy.org/extension/ublock/filters/11.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "GPL-3.0",
+        "url": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "AdGuard Team and AdGuard filter contributors. These three filter headers identify AdguardFilters GPL terms; FiltersRegistry’s LGPL infrastructure license is not substituted for them.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives.",
+          "Private local use does not require publishing a user’s local rules or licensing the browser."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped.",
+          "Packaged cosmetic derivatives are GPL-covered; corresponding source records/comments, original input identities and the compiler are supplied in the public source tree."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/LICENSE",
+          "documentSha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "blocklist": {
+      "name": "Block List Project scam and tracking lists",
+      "publisher": "Block List Project",
+      "home": "https://github.com/blocklistproject/Lists",
+      "urls": [
+        "https://raw.githubusercontent.com/blocklistproject/Lists/master/scam.txt",
+        "https://raw.githubusercontent.com/blocklistproject/Lists/master/tracking.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "Unlicense",
+        "url": "https://raw.githubusercontent.com/blocklistproject/Lists/master/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "The Block List Project contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Public-domain dedication with fallback permission and warranty disclaimer."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/blocklistproject/Lists/master/LICENSE",
+          "documentSha256": "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "dandelion": {
+      "name": "Dandelion Sprout Anti-Malware domains",
+      "publisher": "Dandelion Sprout",
+      "home": "https://github.com/DandelionSprout/adfilt",
+      "urls": [
+        "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/Alternate%20versions%20Anti-Malware%20List/AntiMalwareDomains.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "LicenseRef-Dandelicence-1.4",
+        "url": "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/LICENSE.md"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Dandelion Sprout and contributors; borrowed uBlock Badware entries retain their upstream GPL terms.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Retain the Dandelicence text or link for near-unmodified redistribution; preserve borrowed-material terms; do not imply endorsement.",
+          "The geographic availability and limited paid-copy conditions concern redistribution; WardenOne makes direct local downloads and does not bundle this feed."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/DandelionSprout/adfilt/master/LICENSE.md",
+          "documentSha256": "1207acfe88e7654c8c9ad91be4523f4560ff8bfe1119e4dff53a0b5cfe9006f6",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "uBlock filters – Badware risks",
+          "url": "https://github.com/uBlockOrigin/uAssets",
+          "license": "GPL-3.0",
+          "note": "The consumed file explicitly marks copied entries. Other report/issue links document observations, not blanket incorporation of whole datasets."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "discord": {
+      "name": "Discord-AntiScam / DSP Project scam-links",
+      "publisher": "akac and Discord Scam Prevention Project contributors",
+      "home": "https://github.com/Discord-AntiScam/scam-links",
+      "urls": [
+        "https://raw.githubusercontent.com/Discord-AntiScam/scam-links/main/list.txt"
+      ],
+      "license": {
+        "type": "written-permission",
+        "id": "",
+        "url": "https://github.com/Discord-AntiScam/scam-links"
+      },
+      "permission": {
+        "status": "granted",
+        "date": "2026-10-15",
+        "scope": "Direct runtime use of scam-links/list.txt in WardenOne, including users’ browsers downloading it directly. No specific notice required.",
+        "evidenceRef": "permission-dsp-2026-10-15",
+        "evidence": "Owner-confirmed permission record; Iris retains the original reply privately. No correspondence is reproduced."
+      },
+      "attribution": "Discord-AntiScam / DSP Project, akac and contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "WardenOne-specific permission covers direct runtime download of list.txt; no particular notice required. Does not authorize unrelated feed redistribution."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "reference": "permission-dsp-2026-10-15",
+          "finding": "Owner-confirmed record migrated without expanding its scope."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "durable": {
+      "name": "Scam Blocklist",
+      "publisher": "durablenapkin",
+      "home": "https://github.com/durablenapkin/scamblocklist",
+      "urls": [
+        "https://raw.githubusercontent.com/durablenapkin/scamblocklist/master/hosts.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT",
+        "url": "https://raw.githubusercontent.com/durablenapkin/scamblocklist/master/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2019 durablenapkin.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/durablenapkin/scamblocklist/master/LICENSE",
+          "documentSha256": "c802885de660ba305ba01a04b223ed91344bd45e506f61baae56fccbf9f20e27",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "easylist": {
+      "name": "EasyList and EasyPrivacy",
+      "publisher": "The EasyList authors",
+      "home": "https://easylist.to/",
+      "urls": [
+        "https://easylist.to/easylist/easylist.txt",
+        "https://easylist.to/easylist/easyprivacy.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "GPL-3.0-or-later OR CC-BY-SA-3.0-or-later",
+        "url": "https://easylist.to/pages/licence.html"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "The EasyList authors (https://easylist.to/).",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Credit the authors, link the license and source, identify modifications, and do not imply endorsement.",
+          "WardenOne selects GPLv3 for packaged cosmetic compilation and CC BY-SA 3.0 for the separate EasyList/EasyPrivacy DNR data files; adaptations of those data files retain CC BY-SA 3.0."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://easylist.to/pages/licence.html",
+          "documentSha256": "0a1611181ed86ffee331ac92ec07dd1d2d6f073104342b85f7f8bfc4fcfdaa56",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "china": {
+      "name": "EasyList China",
+      "publisher": "EasyList China contributors",
+      "home": "https://github.com/easylist/easylistchina",
+      "urls": [
+        "https://easylist-downloads.adblockplus.org/easylistchina.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "GPL-3.0-or-later OR CC-BY-SA-3.0-or-later",
+        "url": "https://easylist.to/pages/licence.html"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "EasyList China contributors and The EasyList authors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Credit the authors, link the license and source, identify modifications, and do not imply endorsement.",
+          "Its own consumed header explicitly points to the EasyList license page. Local processing only; no regional raw list is packaged."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://easylist-downloads.adblockplus.org/easylistchina.txt",
+          "documentSha256": "ba042f508ce2a1d32e0590ca251db9ece7f6b80aadec6796f7f5fa1e6a3fe69a",
+          "finding": "The consumed regional file itself declares the license URL; this is not inferred merely from the main list."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "dutch": {
+      "name": "EasyList Dutch",
+      "publisher": "EasyList Dutch contributors",
+      "home": "https://github.com/easylist/easylistdutch",
+      "urls": [
+        "https://easylist-downloads.adblockplus.org/easylistdutch.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "GPL-3.0-or-later OR CC-BY-SA-3.0-or-later",
+        "url": "https://easylist.to/pages/licence.html"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "EasyList Dutch contributors and The EasyList authors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Credit the authors, link the license and source, identify modifications, and do not imply endorsement.",
+          "Its own consumed header explicitly points to the EasyList license page."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://easylist-downloads.adblockplus.org/easylistdutch.txt",
+          "documentSha256": "6e694b8f930df446c6133fd3c2ba806f92421fba86b6cd6eba9893005c30ffec",
+          "finding": "The consumed regional header declares the applicable license URL."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "fanboy": {
+      "name": "Fanboy’s Annoyance and Social Blocking lists",
+      "publisher": "Fanboy and EasyList contributors",
+      "home": "https://easylist.to/",
+      "urls": [
+        "https://easylist-downloads.adblockplus.org/fanboy-annoyance.txt",
+        "https://easylist-downloads.adblockplus.org/fanboy-social.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "CC-BY-3.0",
+        "url": "https://creativecommons.org/licenses/by/3.0/"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Fanboy and The EasyList authors. Social-list rules are selected and compiled into packaged cosmetic rules; both lists also supply local runtime data.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Credit the authors, link the license and source, identify modifications, and do not imply endorsement."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://easylist-downloads.adblockplus.org/fanboy-annoyance.txt",
+          "documentSha256": "e13ab0060b0e8c104ba9af9d31f22b95931d41394375e0cdf4e537d77fc1c012",
+          "finding": "File-specific header declares CC BY 3.0, not the main EasyList dual license."
+        },
+        {
+          "url": "https://easylist-downloads.adblockplus.org/fanboy-social.txt",
+          "documentSha256": "4b32a0cd021d924e9ab2976b6421b193ad88e72caa5bbab2960d4c1885c16fa9",
+          "finding": "File-specific header declares CC BY 3.0, not the main EasyList dual license."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "hagezi": {
+      "name": "HaGeZi Light, Pro and Threat Intelligence Feed Medium",
+      "publisher": "HaGeZi",
+      "home": "https://github.com/hagezi/dns-blocklists",
+      "urls": [
+        "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
+        "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
+        "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.medium.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "GPL-3.0",
+        "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "HaGeZi and dns-blocklists contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives.",
+          "Private local use does not require publishing a user’s local rules or licensing the browser."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/LICENSE",
+          "documentSha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+          "finding": "GPLv3 text."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/README.md",
+          "documentSha256": "9f8ed1a58b950c5a36298f74008314bfcd72cba7031b8a90e0957cc6a7a0f019",
+          "finding": "The publisher expressly licenses the Lists as published under GPLv3. Its warning about using upstream data directly does not turn WardenOne’s downloads of the published Lists into direct upstream API use."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "urlhaus": {
+      "name": "malware-filter URLhaus hosts",
+      "publisher": "Ming Di Leom / malware-filter",
+      "home": "https://gitlab.com/malware-filter/urlhaus-filter",
+      "urls": [
+        "https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-hosts.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT OR CC0-1.0",
+        "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2023 Ming Di Leom; URLhaus / abuse.ch.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md",
+          "documentSha256": "6b19cb313a6c234ad851ee253ef8ef444de784481fe66622daac745512f4ab40",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "URLhaus / abuse.ch",
+          "url": "https://urlhaus.abuse.ch/",
+          "license": "CC0-1.0",
+          "note": ""
+        },
+        {
+          "name": "Tranco",
+          "url": "https://tranco-list.eu/",
+          "license": "MIT",
+          "note": "False-positive exclusion input, not republished as ranking data."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "vn": {
+      "name": "malware-filter VN Badsite hosts",
+      "publisher": "Ming Di Leom / malware-filter",
+      "home": "https://gitlab.com/malware-filter/vn-badsite-filter",
+      "urls": [
+        "https://malware-filter.gitlab.io/vn-badsite-filter/vn-badsite-filter-hosts.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT OR CC0-1.0",
+        "url": "https://gitlab.com/malware-filter/vn-badsite-filter/-/raw/main/README.md"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2023 Ming Di Leom; ChongLuaDao, operated by Hieu Minh Ngo.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://gitlab.com/malware-filter/vn-badsite-filter/-/raw/main/README.md",
+          "documentSha256": "5ea138db9c660200ed5920f41074b562ce989553c03703bd1b8bb0ff6491eaa3",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "ChongLuaDao",
+          "url": "https://chongluadao.vn",
+          "license": "CC0-1.0",
+          "note": "The publisher’s license section identifies the upstream data dedication; updates stopped in May 2025, a freshness issue rather than a missing permission."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "phishingfilter": {
+      "name": "malware-filter Phishing hosts",
+      "publisher": "Ming Di Leom / malware-filter",
+      "home": "https://gitlab.com/malware-filter/phishing-filter",
+      "urls": [
+        "https://malware-filter.gitlab.io/malware-filter/phishing-filter-hosts.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "CC-BY-SA-4.0",
+        "url": "https://gitlab.com/malware-filter/phishing-filter/-/raw/main/README.md"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Ming Di Leom / malware-filter; OpenPhish, IPThreat and PhishTank.",
+      "compliance": {
+        "status": "clarification-required",
+        "conditions": [
+          "Credit the authors, link the license and source, identify modifications, and do not imply endorsement.",
+          "Share adaptations under compatible share-alike terms. This license applies to filters, while src/ code is MIT/CC0."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": [
+          "OP-1"
+        ]
+      },
+      "evidence": [
+        {
+          "url": "https://gitlab.com/malware-filter/phishing-filter/-/raw/main/README.md",
+          "documentSha256": "eaf7eae96ec55af9af2c71d04b8e600acae6941d51bf16f17eb03ec30aa623f3",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "OpenPhish",
+          "url": "https://openphish.com/terms.html",
+          "license": "Scope clarification pending",
+          "note": ""
+        },
+        {
+          "name": "IPThreat",
+          "url": "https://ipthreat.net/",
+          "license": "CC-BY-SA-4.0",
+          "note": ""
+        },
+        {
+          "name": "PhishTank",
+          "url": "https://phishtank.org/terms.php",
+          "license": "Published API data terms",
+          "note": ""
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "manic": {
+      "name": "Emerging Malicious Domain Blocklist",
+      "publisher": "manic-code",
+      "home": "https://github.com/manic-code/Emerging-Malicious-Domain-Blocklist",
+      "urls": [
+        "https://raw.githubusercontent.com/manic-code/Emerging-Malicious-Domain-Blocklist/main/hosts.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT",
+        "url": "https://raw.githubusercontent.com/manic-code/Emerging-Malicious-Domain-Blocklist/main/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2023 manic-code.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/manic-code/Emerging-Malicious-Domain-Blocklist/main/LICENSE",
+          "documentSha256": "d21bb94ea41b1642f363149c419599b1c02d8811c8d0351d512c9a55c1ccbd01",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "metamask": {
+      "name": "MetaMask eth-phishing-detect",
+      "publisher": "MetaMask / kumavis and contributors",
+      "home": "https://github.com/MetaMask/eth-phishing-detect",
+      "urls": [
+        "https://raw.githubusercontent.com/MetaMask/eth-phishing-detect/main/src/config.json"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "LicenseRef-DBAD-1.2",
+        "url": "https://raw.githubusercontent.com/MetaMask/eth-phishing-detect/main/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (C) 2018 kumavis; MetaMask eth-phishing-detect contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Attribute the original work; do not sell an unmodified copy as your own or introduce hidden harmful content. The full custom license is included."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/MetaMask/eth-phishing-detect/main/LICENSE",
+          "documentSha256": "ae38934d7e645663d0d762cb624f9c553a3bb341af5e04fb5c26f2f344beef87",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "database": {
+      "name": "Phishing.Database",
+      "publisher": "Mitchell Krog, Nissar Chababy and Phishing.Database contributors",
+      "home": "https://github.com/mitchellkrogza/Phishing.Database",
+      "urls": [
+        "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/phishing-domains-ACTIVE.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT",
+        "url": "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2018–2025 Mitchell Krog, Nissar Chababy and Phishing.Database Contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/LICENSE",
+          "documentSha256": "15b88ef6f0adab34f352be63895135d56f1e1b39832eb2f1944c701961c36491",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "destroy": {
+      "name": "PhishDestroy Destroylist",
+      "publisher": "PhishDestroy",
+      "home": "https://github.com/phishdestroy/destroylist",
+      "urls": [
+        "https://raw.githubusercontent.com/phishdestroy/destroylist/main/rootlist/formats/primary_active/domains.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT",
+        "url": "https://raw.githubusercontent.com/phishdestroy/destroylist/main/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2019 PhishDestroy.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/phishdestroy/destroylist/main/LICENSE",
+          "documentSha256": "362a139d27061c725cdaad49d3ba2e61501cdfb33bcdf640c153aa259c8716f4",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/phishdestroy/destroylist/main/scripts/smart_aggregator.py",
+          "finding": "External sources, including OpenPhish, are written to community/blocklist.json, not the curated primary feed WardenOne consumes."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/phishdestroy/destroylist/main/README.md",
+          "finding": "The published feeds distinguish curated Primary and aggregated Community datasets. WardenOne uses rootlist/formats/primary_active/domains.txt."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "openphish": {
+      "name": "OpenPhish Community Feed",
+      "publisher": "OpenPhish",
+      "home": "https://openphish.com/",
+      "urls": [
+        "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt"
+      ],
+      "license": {
+        "type": "usage-terms",
+        "id": "LicenseRef-OpenPhish-Terms",
+        "url": "https://openphish.com/terms.html"
+      },
+      "permission": {
+        "status": "contacted-awaiting-response",
+        "scope": "Whether WardenOne’s direct end-user security use, normalization and local blocking are covered.",
+        "evidence": "Owner reports prior outreach; no permission reply is recorded."
+      },
+      "attribution": "OpenPhish Community Phishing Feed.",
+      "compliance": {
+        "status": "clarification-required",
+        "conditions": [
+          "Personal/research restrictions and a written-consent requirement for third-party disclosure and derivative sharing; the free community label is not an open license."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": [
+          "OP-1"
+        ]
+      },
+      "evidence": [
+        {
+          "url": "https://openphish.com/terms.html",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "peter": {
+      "name": "Peter Lowe ad and tracking servers",
+      "publisher": "Peter Lowe",
+      "home": "https://pgl.yoyo.org/adservers/",
+      "urls": [
+        "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext"
+      ],
+      "license": {
+        "type": "written-permission",
+        "id": "",
+        "url": "https://pgl.yoyo.org/adservers/"
+      },
+      "permission": {
+        "status": "granted",
+        "date": "2026-10",
+        "scope": "Requested WardenOne use of the direct pgl.yoyo.org runtime feed.",
+        "evidenceRef": "permission-pgl-2026-10",
+        "evidence": "Owner-confirmed permission record; Iris retains the original reply privately. No correspondence is reproduced."
+      },
+      "attribution": "Peter Lowe’s ad and tracking server list — https://pgl.yoyo.org/adservers/.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "WardenOne-specific permission for the direct pgl.yoyo.org runtime feed; do not expand it to every third-party aggregation or arbitrary redistribution."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "reference": "permission-pgl-2026-10",
+          "finding": "Owner-confirmed permission; original reply retained privately."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "army": {
+      "name": "Phishing Army",
+      "publisher": "Phishing Army",
+      "home": "https://phishing.army/",
+      "urls": [
+        "https://phishing.army/download/phishing-army-domains.txt"
+      ],
+      "license": {
+        "type": "written-permission",
+        "id": "",
+        "url": "https://phishing.army/"
+      },
+      "permission": {
+        "status": "granted",
+        "date": "2026-10",
+        "scope": "WardenOne use including GitHub and Chrome Web Store distribution; visible credit and mention of upstream providers requested. Covers publisher’s contribution.",
+        "evidenceRef": "permission-phishing-army-2026-10",
+        "evidence": "Owner-confirmed permission record; Iris retains the original reply privately. No correspondence is reproduced."
+      },
+      "attribution": "Phishing Army — https://phishing.army/. Feed domains are extracted, normalized and formatted by Phishing Army; WardenOne imports them for local blocking.",
+      "compliance": {
+        "status": "clarification-required",
+        "conditions": [
+          "Written permission covers Phishing Army’s aggregation/formatting contribution, including GitHub and Chrome Web Store distribution; visible linked credit requested. Upstream rights remain separate."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": [
+          "OP-1",
+          "PA-1"
+        ]
+      },
+      "evidence": [
+        {
+          "reference": "permission-phishing-army-2026-10",
+          "finding": "Owner-confirmed scope preserved."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/drego85/PhishingArmyCore/master/SOURCES.md",
+          "documentSha256": "20b071fcc60e4787df9d938b5755368aa434f32d89aeeb1856ce5d2ce89f472d",
+          "finding": "Current nine intelligence providers plus separate whitelist and shared-platform boundary inputs."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "PhishTank / Cisco Talos",
+          "url": "https://phishtank.org/terms.php",
+          "license": "Published API data terms",
+          "note": ""
+        },
+        {
+          "name": "CERT Polska",
+          "url": "https://cert.pl/lista-ostrzezen/",
+          "license": "Published browser/filter use",
+          "note": ""
+        },
+        {
+          "name": "Phishunt",
+          "url": "https://phishunt.io/tos/",
+          "license": "CC0-1.0",
+          "note": ""
+        },
+        {
+          "name": "URLAbuse / NetSSR",
+          "url": "https://urlabuse.com/terms.html",
+          "license": "CC-BY-4.0",
+          "note": ""
+        },
+        {
+          "name": "StalkPhish / Thomas Damonneville",
+          "url": "https://stalkphish.com/",
+          "license": "WardenOne-specific permission; no resale",
+          "note": "Owner-confirmed reply; original retained privately."
+        },
+        {
+          "name": "OpenPhish",
+          "url": "https://openphish.com/terms.html",
+          "license": "Scope clarification pending",
+          "note": ""
+        },
+        {
+          "name": "urlscan.io",
+          "url": "https://urlscan.io/terms/",
+          "license": "Scope clarification pending",
+          "note": ""
+        },
+        {
+          "name": "PhishStats",
+          "url": "https://www.phishstats.info/terms",
+          "license": "Raw-feed restriction; derived-domain scope pending",
+          "note": ""
+        },
+        {
+          "name": "AntiPhish.org",
+          "url": "https://github.com/drego85/PhishingArmyCore/blob/master/SOURCES.md",
+          "license": "Publisher reports authorization for Phishing Army",
+          "note": "WardenOne does not query the upstream API."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "flinteger": {
+      "name": "dnss-blocklists malicious domains",
+      "publisher": "flinteger",
+      "home": "https://github.com/flinteger/dnss-blocklists",
+      "urls": [
+        "https://raw.githubusercontent.com/flinteger/dnss-blocklists/release/blocklists/malicious.domains.txt"
+      ],
+      "license": {
+        "type": "written-permission",
+        "id": "",
+        "url": "https://github.com/flinteger/dnss-blocklists"
+      },
+      "permission": {
+        "status": "granted",
+        "date": "2026-10-16",
+        "scope": "WardenOne may use the feed provided it honors the project and upstream data licenses.",
+        "evidenceRef": "permission-flinteger-2026-10-16",
+        "evidence": "Owner-confirmed permission record; Iris retains the original reply privately. No correspondence is reproduced."
+      },
+      "attribution": "flinteger / dnss-blocklists; contributing upstreams credited below.",
+      "compliance": {
+        "status": "clarification-required",
+        "conditions": [
+          "Written permission is conditional on honoring project and upstream licenses; no repository LICENSE was found on master/release. This is not itself an absence of permission from flinteger."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": [
+          "OP-1",
+          "PA-1",
+          "FL-1"
+        ]
+      },
+      "evidence": [
+        {
+          "reference": "permission-flinteger-2026-10-16",
+          "finding": "Owner-confirmed conditional grant preserved."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/flinteger/dnss-blocklists/release/sources/malicious.json",
+          "documentSha256": "c0a634372cd138c1c597e0d2daa2240da57c3d7809b3bada9bb0866c69655272",
+          "finding": "Exact ten configured upstream inputs."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/flinteger/dnss-blocklists/master/scripts/process.py",
+          "documentSha256": "be14d76f489bc9c9804c96ccad6b8b89aca10be8b6503b4248be22971cca059d",
+          "finding": "Failed downloads are skipped, not read from cached source files."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "Phishing Army",
+          "url": "https://phishing.army/",
+          "license": "Publisher permission plus upstream terms",
+          "note": ""
+        },
+        {
+          "name": "OpenPhish",
+          "url": "https://openphish.com/terms.html",
+          "license": "Scope clarification pending",
+          "note": ""
+        },
+        {
+          "name": "Mitchell Krog Badd-Boyz-Hosts",
+          "url": "https://github.com/mitchellkrogza/Badd-Boyz-Hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "Mitchell Krog hacked-malware sites",
+          "url": "https://github.com/mitchellkrogza/The-Big-List-of-Hacked-Malware-Web-Sites",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "UT1 / Université Toulouse Capitole",
+          "url": "https://dsi.ut-capitole.fr/blacklists/",
+          "license": "CC-BY-SA-4.0",
+          "note": "Malware and phishing categories; mirrored through olbat/ut1-blacklists."
+        },
+        {
+          "name": "Hosh / adblock-nocoin-list",
+          "url": "https://github.com/hoshsadiq/adblock-nocoin-list",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "Mandiant APT1 Appendix D via ethanr",
+          "url": "https://bitbucket.org/ethanr/dns-blacklists/",
+          "license": "No reuse grant identified for Appendix D",
+          "note": "The configured mirror still returns 200; this is an actual active input, not a hypothetical concern."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "quenhus": {
+      "name": "uBlock-Origin-dev-filter domains",
+      "publisher": "quenhus and contributors",
+      "home": "https://github.com/quenhus/uBlock-Origin-dev-filter",
+      "urls": [
+        "https://raw.githubusercontent.com/quenhus/uBlock-Origin-dev-filter/main/dist/other_format/domains/all.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "Unlicense",
+        "url": "https://raw.githubusercontent.com/quenhus/uBlock-Origin-dev-filter/main/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "quenhus / uBlock-Origin-dev-filter contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Public-domain dedication with fallback permission; WardenOne uses only domain data, not the project’s Google DOM cosmetic rules."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/quenhus/uBlock-Origin-dev-filter/main/LICENSE",
+          "documentSha256": "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "tmafe": {
+      "name": "Anti-Grabify",
+      "publisher": "TMAFE and contributors",
+      "home": "https://github.com/TMAFE/anti-grabify",
+      "urls": [
+        "https://raw.githubusercontent.com/TMAFE/anti-grabify/master/url_list.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MPL-2.0",
+        "url": "https://raw.githubusercontent.com/TMAFE/anti-grabify/master/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "TMAFE / Anti-Grabify contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep MPL notices and source availability for distributed covered files. Runtime local conversion does not require publishing a user’s private cache. Larger-work terms do not replace MPL rights in covered source."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/TMAFE/anti-grabify/master/LICENSE",
+          "documentSha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "uassets": {
+      "name": "uBlock Origin uAssets",
+      "publisher": "uBlock Origin contributors",
+      "home": "https://github.com/uBlockOrigin/uAssets",
+      "urls": [
+        "https://ublockorigin.github.io/uAssets/filters/badware.txt",
+        "https://ublockorigin.github.io/uAssets/filters/filters.txt",
+        "https://ublockorigin.github.io/uAssets/filters/privacy.txt",
+        "https://ublockorigin.github.io/uAssets/filters/quick-fixes.txt",
+        "https://ublockorigin.github.io/uAssets/filters/unbreak.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "GPL-3.0",
+        "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "uBlock Origin / uAssets contributors. Packaged cosmetic rules are selected and converted; exact compiler inputs and scripts accompany the repository source.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives.",
+          "Private local use does not require publishing a user’s local rules or licensing the browser."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped.",
+          "Packaged cosmetic derivatives are GPL-covered; corresponding source records/comments, original input identities and the compiler are supplied in the public source tree."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/LICENSE",
+          "documentSha256": "589ed823e9a84c56feb95ac58e7cf384626b9cbf4fda2a907bc36e103de1bad2",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "steven-base": {
+      "name": "StevenBlack unified hosts",
+      "publisher": "Steven Black and upstream maintainers",
+      "home": "https://github.com/StevenBlack/hosts",
+      "urls": [
+        "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT AND upstream terms",
+        "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/license.txt"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright © 2026 Steven Black. Upstream names and original source links follow; noncommercial/share-alike conditions stay with the relevant material.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material.",
+          "Credit the authors, link the license and source, identify modifications, and do not imply endorsement.",
+          "MVPS retained material is CC BY-NC-SA 4.0; Dan Pollock permits noncommercial copying/distribution with attribution and original URL. WardenOne is free and noncommercial and uses direct runtime downloads only.",
+          "Do not bundle/relicense the aggregate as MIT-only or use it commercially on the strength of this record."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/readmeData.json",
+          "documentSha256": "e9e02c8bb328795dc77f4bea2ff6d7199120bc90a8ab9782c4240298bd33bb75",
+          "finding": "Sixteen base inputs, including paused AdAway, MVPS and yoyo data."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/data/mvps.org/hosts",
+          "documentSha256": "c432740317c123e1da86be537f9fd6db28f302353c96322b82b8e79338c4b4ba",
+          "finding": "Retained MVPS header explicitly specifies CC BY-NC-SA 4.0."
+        },
+        {
+          "url": "https://someonewhocares.org/hosts/zero/hosts",
+          "documentSha256": "5a0e9dc3b94fd47bc4e95e72cea649d5eebfbd7f999967fe751d9f3f1f7e7d93",
+          "finding": "Dan Pollock permits noncommercial redistribution with original URL and attribution."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "Steven Black's ad-hoc list",
+          "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/data/StevenBlack/hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "AdAway",
+          "url": "https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt",
+          "license": "CC BY 3.0",
+          "note": "Updates paused; retained material can still contribute."
+        },
+        {
+          "name": "add.2o7Net",
+          "url": "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.2o7Net/hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "add.Dead",
+          "url": "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Dead/hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "add.Risk",
+          "url": "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Risk/hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "add.Spam",
+          "url": "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Spam/hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "Mitchell Krog's - Badd Boyz Hosts",
+          "url": "https://raw.githubusercontent.com/mitchellkrogza/Badd-Boyz-Hosts/master/hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "hostsVN",
+          "url": "https://raw.githubusercontent.com/bigdargon/hostsVN/master/option/hosts-VN",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "KADhosts",
+          "url": "https://raw.githubusercontent.com/FiltersHeroes/KADhosts/master/KADhosts.txt",
+          "license": "CC BY-SA 4.0",
+          "note": ""
+        },
+        {
+          "name": "minecraft-hosts",
+          "url": "https://raw.githubusercontent.com/jamiemansfield/minecraft-hosts/master/lists/tracking.txt",
+          "license": "CC0-1.0",
+          "note": ""
+        },
+        {
+          "name": "MVPS hosts file",
+          "url": "https://winhelp2002.mvps.org/hosts.txt",
+          "license": "CC BY-NC-SA 4.0",
+          "note": "Updates paused; retained material can still contribute."
+        },
+        {
+          "name": "Dan Pollock – [someonewhocares](https://someonewhocares.org/)",
+          "url": "https://someonewhocares.org/hosts/zero/hosts",
+          "license": "non-commercial with attribution",
+          "note": ""
+        },
+        {
+          "name": "Tiuxo hostlist - ads",
+          "url": "https://raw.githubusercontent.com/tiuxo/hosts/master/ads",
+          "license": "CC BY 4.0",
+          "note": ""
+        },
+        {
+          "name": "UncheckyAds",
+          "url": "https://raw.githubusercontent.com/FadeMind/hosts.extras/master/UncheckyAds/hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "URLHaus",
+          "url": "https://urlhaus.abuse.ch/downloads/hostfile/",
+          "license": "CC0",
+          "note": ""
+        },
+        {
+          "name": "yoyo.org",
+          "url": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&mimetype=plaintext&useip=0.0.0.0",
+          "license": "Publisher terms",
+          "note": "Updates paused; retained material can still contribute."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "steven-porn": {
+      "name": "StevenBlack porn-only hosts",
+      "publisher": "Steven Black and upstream maintainers",
+      "home": "https://github.com/StevenBlack/hosts",
+      "urls": [
+        "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT AND CC-BY-4.0",
+        "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/readmeData.json"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Steven Black; BigDargon, brijrajparmar27, Clefspeare13 / Niclas / Spirillen, Sinfonietta and Tiuxo.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material.",
+          "Credit the authors, link the license and source, identify modifications, and do not imply endorsement.",
+          "The porn-only alternate explicitly excludes the unified hosts file. Its six extension inputs do not inherit the base list’s MVPS/Dan Pollock restrictions."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/readmeData.json",
+          "documentSha256": "e9e02c8bb328795dc77f4bea2ff6d7199120bc90a8ab9782c4240298bd33bb75",
+          "finding": "Six porn-only inputs and their separate MIT/CC BY 4.0 declarations."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/porn/clefspeare13/hosts",
+          "documentSha256": "0af2d8d380778600b3865131eaf1d88f94479e96afabb0ff4d5537afb7923ca1",
+          "finding": "Retained source header declares MIT and identifies contributors even though the original repository license link now returns 404."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "BigDargon's adult domain blocking hosts file",
+          "url": "https://raw.githubusercontent.com/bigdargon/hostsVN/master/extensions/adult/hosts-VN",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "brijrajparmar27 - pornography",
+          "url": "https://raw.githubusercontent.com/brijrajparmar27/host-sources/master/Porn/hosts",
+          "license": "CC BY 4.0",
+          "note": ""
+        },
+        {
+          "name": "pornhosts -- a consolidated anti porn hosts file",
+          "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/extensions/porn/clefspeare13/hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "Sinfonietta's porn blocking hosts file",
+          "url": "https://raw.githubusercontent.com/Sinfonietta/hostfiles/master/pornography-hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "Sinfonietta's snuff-site blocking hosts file",
+          "url": "https://raw.githubusercontent.com/Sinfonietta/hostfiles/master/snuff-hosts",
+          "license": "MIT",
+          "note": ""
+        },
+        {
+          "name": "Tiuxo hostlist - pornography",
+          "url": "https://raw.githubusercontent.com/tiuxo/hosts/master/porn",
+          "license": "CC BY 4.0",
+          "note": ""
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "psl": {
+      "name": "Public Suffix List private section",
+      "publisher": "Mozilla Foundation / Public Suffix List contributors",
+      "home": "https://publicsuffix.org/",
+      "urls": [
+        "https://publicsuffix.org/list/public_suffix_list.dat"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MPL-2.0",
+        "url": "https://www.mozilla.org/MPL/2.0/"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Public Suffix List contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Preserve MPL notice and make covered source available under MPL."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Build-time selection of the PSL private section into MPL-covered psl-private.js; its source-form data, version/commit, builder and MPL text remain available."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://www.mozilla.org/MPL/2.0/",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "unicode": {
+      "name": "Unicode confusables",
+      "publisher": "Unicode, Inc.",
+      "home": "https://www.unicode.org/",
+      "urls": [
+        "https://www.unicode.org/Public/security/latest/confusables.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "Unicode-3.0",
+        "url": "https://www.unicode.org/license.txt"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright © 1991–2026 Unicode, Inc.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Preserve copyright and permission notice; do not use the holder’s name to imply endorsement."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Build-time selection/compaction of Unicode confusables into domain-utils.js; the full Unicode copyright/permission notice is retained."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://www.unicode.org/license.txt",
+          "documentSha256": "e7a93b009565cfce55919a381437ac4db883e9da2126fa28b91d12732bc53d96",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    "ublock-media": {
+      "name": "uBlock Origin silent media",
+      "publisher": "uBlock Origin contributors",
+      "home": "https://github.com/gorhill/uBlock",
+      "urls": [
+        "https://raw.githubusercontent.com/gorhill/uBlock/master/src/web_accessible_resources/noop-1s.mp4"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "GPL-3.0",
+        "url": "https://raw.githubusercontent.com/gorhill/uBlock/master/LICENSE.txt"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "uBlock Origin contributors; noop-1s.mp4 copied without modification as spotify-silent-1s.mp4 and an inline data URL.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives.",
+          "Private local use does not require publishing a user’s local rules or licensing the browser."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "An unmodified, hash-pinned copy is packaged as spotify-silent-1s.mp4 and identical inline bytes. Source links, builder and GPL text are retained."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/gorhill/uBlock/master/LICENSE.txt",
+          "documentSha256": "e73d33841f942fa73aa5a63d4a6399cc39a29564db1dbca0915485842fcb236d",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    }
+  },
+  "buildInputs": [
+    {
+      "builtBy": "tools/build-psl.js",
+      "constant": "SOURCE_URL",
+      "artifact": "psl-private.js",
+      "purpose": "Site identity boundaries"
+    },
+    {
+      "builtBy": "tools/build-idn-confusables.js",
+      "constant": "SOURCE_URL",
+      "artifact": "domain-utils.js",
+      "purpose": "Unicode confusable subset"
+    },
+    {
+      "builtBy": "tools/build-spotify-media.js",
+      "constant": "URL",
+      "artifact": "spotify-silent-1s.mp4",
+      "purpose": "Silent replacement media"
+    }
+  ],
+  "artifacts": [
+    {
+      "file": "rules-adshield.json",
+      "license": "CC-BY-SA-3.0",
+      "provenance": "The EasyList authors; selected network rules plus WardenOne compatibility edits",
+      "builtBy": "tools/build-adshield-dnr.js",
+      "modifications": "Converted to Chrome DNR, selected and supplemented; adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.",
+      "sourceFiles": [],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "rules-easyprivacy.json",
+      "license": "CC-BY-SA-3.0",
+      "provenance": "The EasyList authors; EasyPrivacy plus WardenOne tracker rules",
+      "builtBy": "tools/build-easyprivacy-dnr.js",
+      "modifications": "Hosts normalized, batched and capped; curated tracker additions. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.",
+      "sourceFiles": [],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "cosmetic-rules.json",
+      "license": "GPL-3.0; Fanboy CC-BY-3.0 attribution retained",
+      "provenance": "EasyList, EasyPrivacy, uAssets, AdGuard and Fanboy Social",
+      "builtBy": "tools/build-cosmetics.js",
+      "modifications": "Selected scriptlet and procedural rules compiled on 2026-08-13. Corresponding cosmetic source records/comments were extracted from ten hash-matched full inputs; unused network records omitted. No rule changes made by this review.",
+      "sourceFiles": [
+        "docs/filter-source-snapshot.json.gz"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "psl-private.js",
+      "license": "MPL-2.0",
+      "provenance": "Public Suffix List private section",
+      "builtBy": "tools/build-psl.js",
+      "modifications": "Private entries selected and converted into JavaScript; original version/commit recorded in the file. MPL covers list material.",
+      "sourceFiles": [
+        "psl-private.js",
+        "tools/build-psl.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "domain-utils.js",
+      "license": "GPL-3.0-or-later with Unicode-3.0 data notice",
+      "provenance": "WardenOne code with Unicode UTS #39 confusable subset",
+      "builtBy": "tools/build-idn-confusables.js",
+      "modifications": "ASCII brand-relevant mappings selected and compacted; source version/date/hash retained in the file.",
+      "sourceFiles": [
+        "domain-utils.js",
+        "tools/build-idn-confusables.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "spotify-silent-1s.mp4",
+      "license": "GPL-3.0",
+      "provenance": "uBlock Origin noop-1s.mp4",
+      "builtBy": "tools/build-spotify-media.js",
+      "modifications": "Unmodified; SHA-256 pinned by builder. Identical bytes embedded in spotify-adblock.js.",
+      "sourceFiles": [
+        "tools/build-spotify-media.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "rules.json",
+      "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
+      "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
+      "builtBy": null,
+      "modifications": "Maintained as editable source data; no new upstream dataset introduced by this review.",
+      "sourceFiles": [
+        "rules.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "rules-trackers.json",
+      "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
+      "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
+      "builtBy": null,
+      "modifications": "Maintained as editable source data; no new upstream dataset introduced by this review.",
+      "sourceFiles": [
+        "rules-trackers.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "grabber-extra.json",
+      "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
+      "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
+      "builtBy": null,
+      "modifications": "Maintained as editable source data; no new upstream dataset introduced by this review.",
+      "sourceFiles": [
+        "grabber-extra.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "malware-hashes.json",
+      "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
+      "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
+      "builtBy": null,
+      "modifications": "Maintained as editable source data; no new upstream dataset introduced by this review.",
+      "sourceFiles": [
+        "malware-hashes.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "cryptominer-domains.json",
+      "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
+      "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
+      "builtBy": null,
+      "modifications": "Maintained as editable source data; no new upstream dataset introduced by this review.",
+      "sourceFiles": [
+        "cryptominer-domains.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "search-junk-domains.json",
+      "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
+      "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
+      "builtBy": null,
+      "modifications": "Maintained as editable source data; no new upstream dataset introduced by this review.",
+      "sourceFiles": [
+        "search-junk-domains.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "supplemental-manifest.json",
+      "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
+      "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
+      "builtBy": null,
+      "modifications": "Maintained as editable source data; no new upstream dataset introduced by this review.",
+      "sourceFiles": [
+        "supplemental-manifest.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "extension-reputation.json",
+      "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
+      "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
+      "builtBy": null,
+      "modifications": "Maintained as editable source data; no new upstream dataset introduced by this review.",
+      "sourceFiles": [
+        "extension-reputation.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "rules-grabber-compat.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "WardenOne rules.json domain subset",
+      "builtBy": "tools/build-grabber-rulepacks.js",
+      "modifications": "Domain rules grouped into browser DNR rule packs.",
+      "sourceFiles": [
+        "rules.json",
+        "tools/build-grabber-rulepacks.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "rules-grabber-malware-navigation.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "WardenOne rules.json domain subset",
+      "builtBy": "tools/build-grabber-rulepacks.js",
+      "modifications": "Domain rules grouped into browser DNR rule packs.",
+      "sourceFiles": [
+        "rules.json",
+        "tools/build-grabber-rulepacks.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "rules-grabber-navigation.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "WardenOne rules.json domain subset",
+      "builtBy": "tools/build-grabber-rulepacks.js",
+      "modifications": "Domain rules grouped into browser DNR rule packs.",
+      "sourceFiles": [
+        "rules.json",
+        "tools/build-grabber-rulepacks.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "rules-grabber-resources.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "WardenOne rules.json domain subset",
+      "builtBy": "tools/build-grabber-rulepacks.js",
+      "modifications": "Domain rules grouped into browser DNR rule packs.",
+      "sourceFiles": [
+        "rules.json",
+        "tools/build-grabber-rulepacks.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "rules-spotify-media.json",
+      "license": "GPL-3.0",
+      "provenance": "uAssets Spotify media rules with WardenOne request-type compatibility changes",
+      "builtBy": null,
+      "modifications": "Dedicated ad-media redirects and shared-media compatibility allowances; editable JSON source. Original uAssets attribution in CREDITS.md.",
+      "sourceFiles": [
+        "rules-spotify-media.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      }
+    }
+  ],
+  "externalServices": [
+    {
+      "name": "Google Safe Browsing",
+      "endpoints": [
+        "https://safebrowsing.googleapis.com/v4/threatMatches:find?key={user-key}"
+      ],
+      "terms": "https://developers.google.com/safe-browsing/v4/terms",
+      "use": "Optional end-user key; noncommercial Safe Browsing API use.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "VirusTotal",
+      "endpoints": [
+        "https://www.virustotal.com/api/v3/urls/{encoded-url}",
+        "https://www.virustotal.com/api/v3/users/current",
+        "https://www.virustotal.com/api/v3/files/{sha256}"
+      ],
+      "terms": "https://docs.virustotal.com/reference/public-vs-premium-api",
+      "use": "Optional user key and local reputation lookups; public API’s noncommercial and quota terms apply.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "WhoisXML API",
+      "endpoints": [
+        "https://www.whoisxmlapi.com/whoisserver/WhoisService",
+        "https://domain-reputation.whoisxmlapi.com/api/v2",
+        "https://threat-intelligence.whoisxmlapi.com/api/v1"
+      ],
+      "terms": "https://main.whoisxmlapi.com/terms-of-service",
+      "use": "Optional user account/key, enabled services and quotas.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "PhishTank",
+      "endpoints": [
+        "https://checkurl.phishtank.com/checkurl/"
+      ],
+      "terms": "https://phishtank.org/terms.php",
+      "use": "Optional lookup using user key; API data terms separately permit commercial data use.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "AbuseIPDB",
+      "endpoints": [
+        "https://api.abuseipdb.com/api/v2/check"
+      ],
+      "terms": "https://www.abuseipdb.com/legal",
+      "use": "Optional user-key IP lookup.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "URLhaus",
+      "endpoints": [
+        "https://urlhaus-api.abuse.ch/v1/url/",
+        "https://urlhaus-api.abuse.ch/v1/host/",
+        "https://urlhaus-api.abuse.ch/v1/urls/recent/limit/1/"
+      ],
+      "terms": "https://urlhaus.abuse.ch/api/",
+      "use": "Optional user-key URL/host lookup and one-record key probe.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "RDAP bootstrap",
+      "endpoints": [
+        "https://rdap.org/domain/{registrable-domain}"
+      ],
+      "terms": "https://about.rdap.org/",
+      "use": "Optional login-page domain age check; follows referral to the authoritative registry. Registry response terms vary; no universal open-data license asserted.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "Have I Been Pwned",
+      "endpoints": [
+        "https://api.pwnedpasswords.com/range/{sha1-prefix}",
+        "https://haveibeenpwned.com/api/v3/breaches?Domain={domain}"
+      ],
+      "terms": "https://haveibeenpwned.com/API/v3#License",
+      "use": "Optional password prefix check and user-started domain breach lookup; CC BY 4.0 breach-data attribution supplied.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "GitHub release metadata",
+      "endpoints": [
+        "https://api.github.com/repos/iri-dev/WardenOne/releases/latest",
+        "https://api.github.com/repos/iri-dev/WardenOne/compare/{installed}...{latest}"
+      ],
+      "terms": "https://docs.github.com/en/site-policy/github-terms/github-terms-of-service",
+      "use": "WardenOne’s own release metadata; no third-party threat feed.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "Chrome Web Store",
+      "endpoints": [
+        "https://chromewebstore.google.com/detail/x/{extension-id}"
+      ],
+      "terms": "https://policies.google.com/terms",
+      "use": "User-started extension status page retrieval; no store catalog redistributed.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "Twitch",
+      "endpoints": [
+        "https://gql.twitch.tv/gql",
+        "Twitch-authorized HLS/CDN URLs returned by the player"
+      ],
+      "terms": "https://www.twitch.tv/p/en/legal/terms-of-service/",
+      "use": "Transient player/ad handling and optional rewind on Twitch pages, not a third-party blocklist.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "User-selected and page-derived addresses",
+      "endpoints": [
+        "User-entered HTTPS filter URLs",
+        "Current download URL and bounded HTTPS redirects",
+        "Up to 14 script URLs already loaded by the current page",
+        "Loaded page styles/images for local rendering",
+        "Self-test favicons at www.pornhub.com, xvideos.com, testsafebrowsing.appspot.com, www.google.com and www.cloudflare.com"
+      ],
+      "terms": "https://github.com/iri-dev/WardenOne/blob/main/PRIVACY.md",
+      "use": "Dynamic URLs are determined by user input or already-loaded page resources. No fixed publisher license can cover arbitrary user-added data. Self-test assets are tested locally, not bundled.",
+      "disposition": "Runtime service responses only; no provider database redistributed. Account/tier terms remain separate from feed permissions."
+    },
+    {
+      "name": "Browser release information",
+      "endpoints": [
+        "https://versions.brave.com/latest/release-{platform}-{arch}.version",
+        "https://brave.com/latest/",
+        "https://versionhistory.googleapis.com/v1/chrome/platforms/{platform}/channels/stable/versions?pageSize=1",
+        "https://edgeupdates.microsoft.com/api/products/stable"
+      ],
+      "terms": "https://github.com/iri-dev/WardenOne/blob/main/PRIVACY.md",
+      "use": "Update Guardian reads the detected browser maker’s public release version; metadata is displayed locally, not packaged as a third-party database.",
+      "disposition": "Runtime version responses only, not a community protection list."
+    }
+  ],
+  "retired": [
+    {
+      "url": "https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt",
+      "status": "source-no-longer-used",
+      "reason": "Replaced earlier because it exceeded the runtime byte cap; not an active feed."
+    },
+    {
+      "url": "https://mirror.cedia.org.ec/malwaredomains/immortal_domains.txt",
+      "status": "upstream-download-unavailable",
+      "reason": "404 on review date; flinteger process.py skips failed source downloads. No new permission request justified by this dead endpoint."
+    },
+    {
+      "url": "https://raw.githubusercontent.com/cbuijs/shallalist/master/spyware/domains",
+      "status": "upstream-download-unavailable",
+      "reason": "404 on review date; flinteger skips failed source downloads."
+    }
+  ],
+  "licenseFiles": [
+    "licenses/MIT-NOTICES.txt",
+    "licenses/MPL-2.0.txt",
+    "licenses/Dandelicence-1.4.txt",
+    "licenses/DBAD-1.2.txt",
+    "licenses/Unlicense.txt",
+    "licenses/Unicode-3.0.txt"
+  ]
+}

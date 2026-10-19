@@ -4,6 +4,8 @@
 
 ### Added
 
+- Third-party source records now distinguish published licenses, written permissions and specific scope exceptions. Offline attribution and license notices are available in Settings → About and are retained in both distribution profiles; the source inventory also covers historical build inputs and bundled data.
+
 - Official GitHub ZIPs now check whether their packaged build is behind the latest complete WardenOne release. A quiet popup notice appears only when GitHub confirms the installed commit is an ancestor; Settings → About WardenOne shows the comparison, manual update steps, and Check again. Source, Store, offline, and unrelated builds are not called outdated.
 
 - Known IP-logger destinations open a WardenOne warning before the page loads. The Activity Center records confirmed logger image blocks and warns about suspicious embedded images when blocking cannot be confirmed, without saving image URL tokens.
@@ -24,6 +26,7 @@
 
 ### Changed
 
+- The About page now uses iri's GitHub profile photo and no longer prompts visitors to read the commit history or changelog.
 - Reduced repeated consent attribute reads during DOM changes and skipped added-subtree player scans when the page is already known to contain a player. New and detached player nodes still bypass a cached negative result.
 - Reduced page work during DOM changes by narrowing consent and script scans, skipping unnecessary visible-text reads in the overlay cleaner, and avoiding repeated badge style writes and player-area media searches. The consent observer skips mutation filtering while a scan is pending and shares ancestor checks across one mutation batch; the social-widget guard reads marker attributes only for matching widgets.
 - The overlay cleaner now skips geometry reads for ordinary elements and their parents when they cannot be overlays.

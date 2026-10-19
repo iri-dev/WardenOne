@@ -1987,3 +1987,8 @@ modified versions under the licence, as long as the changes are marked and the n
 WardenOne wouldn't exist without the open-source blocking community. AdGuard, EasyList,
 EasyPrivacy, TwitchAdSolutions, scamorza/TwitchAdBlock, GosuDRM/TTV-AB, uBlock Origin uAssets and
 more. The full list of sources and credits is in [CREDITS.md](CREDITS.md).
+
+**Settings → About WardenOne → Licenses & credits** opens the packaged notices
+offline. Third-party data retains its applicable terms; the generated
+[source inventory](docs/source-inventory.json) distinguishes published licenses,
+scoped written permissions and [specific exceptions](docs/source-rights-review.md).

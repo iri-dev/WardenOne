@@ -135,7 +135,19 @@ async function run() {
     assert.equal(await value(settings, "document.querySelector('.about-version').textContent"), `Version ${version}`);
     assert(await value(settings, "document.querySelector('.about-maker').textContent.includes('Built by iri.dev')"));
     const aboutLinks = await value(settings, "[...document.querySelectorAll('#pane .info-link')].map(a => a.href)");
-    for (const file of ['PRIVACY.md', 'LICENSE', 'CREDITS.md']) assert(aboutLinks.some((href) => href.endsWith('/' + file)), file + ' link');
+    for (const file of ['PRIVACY.md', 'LICENSE', 'THIRD_PARTY_NOTICES.html']) assert(aboutLinks.some((href) => href.endsWith('/' + file)), file + ' link');
+    assert(aboutLinks.includes(`chrome-extension://${extension.id}/THIRD_PARTY_NOTICES.html`), 'credits open from the installed package');
+    const notices = await open('THIRD_PARTY_NOTICES.html');
+    await until(notices, "document.readyState === 'complete' && document.querySelector('h1')?.textContent === 'Third-party protection sources'", 'offline source notices');
+    assert(await value(notices, "document.body.textContent.includes('Phishing Army') && document.body.textContent.includes('MIT License') && document.body.textContent.includes('Mozilla Public License')"));
+    assert(await value(notices, "document.querySelectorAll('script,img,link[rel=stylesheet]').length === 0 && performance.getEntriesByType('resource').length === 0"), 'displaying notices loads no remote or runtime resources');
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 800, deviceScaleFactor: 1, mobile: false }, notices.sessionId);
+    assert(await value(notices, 'document.documentElement.scrollWidth <= innerWidth + 1'), 'notices fit a narrow window');
+    if (process.env.WARDENONE_SETTINGS_INFO_DIR) {
+      const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }, notices.sessionId);
+      fs.writeFileSync(path.join(process.env.WARDENONE_SETTINGS_INFO_DIR, 'notices-preview.png'), Buffer.from(shot.data, 'base64'));
+    }
+    await cdp.send('Target.closeTarget', { targetId: notices.targetId });
     assert.equal(await value(settings, "document.querySelector('.about-maker a').href"), 'https://github.com/iri-dev');
     assert(await value(settings, "document.querySelector('.about-page').textContent.includes('phishing and scams')"));
     await until(settings, "document.querySelector('#wo-build-status')?.dataset.state === 'local'", 'local source build status');

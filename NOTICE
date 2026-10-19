@@ -47,3 +47,25 @@ Upstream work
 WardenOne builds on filter lists and filtering techniques from the wider
 ad-blocking and privacy community. Sources are identified in CREDITS.md, and
 their copyright and attribution rights are retained.
+
+THIRD_PARTY_NOTICES.html and licenses/ accompany both extension profiles.
+Settings → About WardenOne opens the packaged notices without a network request.
+Third-party material retains its own terms; WardenOne's GPL does not relicense
+all upstream data. In particular rules-adshield.json and rules-easyprivacy.json
+are adaptations of EasyList/EasyPrivacy under CC BY-SA 3.0:
+https://creativecommons.org/licenses/by-sa/3.0/
+They contain selected, converted and supplemented rules; modification notice
+recorded 2026-10-19. Other list-specific notices identify the applicable terms.
+
+The corresponding cosmetic filter source, retaining original headers and
+full-input/source-subset SHA-256 identifiers, is in
+docs/filter-source-snapshot.json.gz in the public source repository. Unused
+network records are omitted. tools/build-cosmetics.js --from-snapshot rebuilds the packaged
+artifact from those inputs. The same source tree includes the source-form
+rules, adapters, MPL-covered list material and build scripts. A distributor
+must keep that corresponding source available alongside its build:
+https://github.com/iri-dev/WardenOne
+
+Four configured feeds have specific scope exceptions documented in
+docs/source-rights-review.md. Written permissions for Phishing Army and
+flinteger remain granted; those exceptions concern identified upstream inputs.
