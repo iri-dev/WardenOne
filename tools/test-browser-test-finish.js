@@ -14,6 +14,7 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const profile = require('./perf-profile.js');
 
 const root = path.resolve(__dirname, '..');
 const profilePath = JSON.stringify(path.join(__dirname, 'perf-profile.js'));
@@ -44,4 +45,112 @@ for (const file of browserTests) {
   check(file + ' runs through mustFinish', /\bmustFinish\(run, '[\w-]+'\)/.test(source) && !/^run\(\)\.catch\(/m.test(source));
 }
 
-console.log('[ok] browser tests cannot pass by exiting early: ' + checks + ' checks');
+async function checkCdpLifecycle() {
+  const originalWebSocket = globalThis.WebSocket;
+  class MockWebSocket {
+    static OPEN = 1;
+    constructor() { MockWebSocket.last = this; this.readyState = 0; this.listeners = new Map(); this.sent = []; }
+    addEventListener(type, fn) {
+      if (!this.listeners.has(type)) this.listeners.set(type, []);
+      this.listeners.get(type).push(fn);
+    }
+    emit(type, event = {}) { for (const fn of this.listeners.get(type) || []) fn(event); }
+    open() { this.readyState = MockWebSocket.OPEN; this.emit('open'); }
+    send(payload) { if (this.sendError) throw this.sendError; this.sent.push(JSON.parse(payload)); }
+    message(payload) { this.emit('message', { data: JSON.stringify(payload) }); }
+    close() { this.readyState = 3; this.emit('close', { code: 1000, reason: 'browser stopped' }); }
+  }
+  async function connected() {
+    const cdp = new profile.Cdp('ws://fixture');
+    const opened = cdp.connect();
+    const ws = MockWebSocket.last;
+    ws.open();
+    await opened;
+    return { cdp, ws };
+  }
+  async function rejects(label, promise, pattern) { checks++; await assert.rejects(promise, pattern, label); }
+  globalThis.WebSocket = MockWebSocket;
+  try {
+    {
+      const { cdp, ws } = await connected();
+      const response = cdp.send('Runtime.evaluate', { expression: '42' }, 'page');
+      assert.deepEqual(ws.sent[0], { id: 1, method: 'Runtime.evaluate', params: { expression: '42' }, sessionId: 'page' });
+      checks++;
+      ws.message({ id: 1, result: { value: 42 } });
+      assert.deepEqual(await response, { value: 42 });
+      checks++;
+      const failed = rejects('protocol errors still reject', cdp.send('Runtime.evaluate', {}, 'page'), /evaluation failed/);
+      ws.message({ id: 2, error: { message: 'evaluation failed' } });
+      await failed;
+      check('normal replies remove pending commands', cdp.pending.size === 0);
+    }
+    {
+      const cdp = new profile.Cdp('ws://fixture');
+      await rejects('send before connect rejects with its method', cdp.send('Target.getTargets'), /Target\.getTargets: devtools socket is not open/);
+      const opening = rejects('socket closure before open rejects connect', cdp.connect(), /devtools socket closed/);
+      MockWebSocket.last.close();
+      await opening;
+      check('a closed connection retains no pending command', cdp.pending.size === 0);
+    }
+    {
+      const cdp = new profile.Cdp('ws://fixture');
+      const opening = rejects('socket error before open rejects connect', cdp.connect(), /devtools socket failed: refused/);
+      MockWebSocket.last.emit('error', { message: 'refused' });
+      await opening;
+    }
+    {
+      const { cdp, ws } = await connected();
+      ws.readyState = 2;
+      await rejects('send on a closing socket rejects', cdp.send('Target.getTargets'), /Target\.getTargets: devtools socket is not open/);
+      check('send on a closing socket leaves no pending command', cdp.pending.size === 0 && ws.sent.length === 0);
+      ws.readyState = MockWebSocket.OPEN;
+      ws.sendError = new Error('write failed');
+      await rejects('a synchronous send failure identifies the command and session', cdp.send('Runtime.evaluate', {}, 'page'), /Runtime\.evaluate \(session page\): devtools send failed: write failed/);
+      check('a synchronous send failure removes its pending entry', cdp.pending.size === 0);
+    }
+    {
+      const { cdp, ws } = await connected();
+      const pending = Promise.all([
+        rejects('socket error rejects a pending page command', cdp.send('Runtime.evaluate', {}, 'page'), /Runtime\.evaluate \(session page\): devtools socket failed: reset/),
+        rejects('socket error rejects every pending command', cdp.send('Target.getTargets'), /Target\.getTargets: devtools socket failed: reset/),
+      ]);
+      ws.emit('error', { message: 'reset' });
+      await pending;
+      await rejects('send after a socket error rejects immediately', cdp.send('Browser.getVersion'), /Browser\.getVersion: devtools socket failed: reset/);
+      check('socket errors drain pending commands', cdp.pending.size === 0);
+    }
+    {
+      const { cdp, ws } = await connected();
+      const failed = rejects('socket close identifies the interrupted page call', cdp.send('Runtime.evaluate', {}, 'page'), /Runtime\.evaluate \(session page\): devtools socket closed \(1000\): browser stopped/);
+      const closing = cdp.send('Browser.close');
+      ws.close();
+      await failed;
+      assert.deepEqual(await closing, {});
+      checks++;
+      check('shutdown without a Browser.close acknowledgement drains pending commands', cdp.pending.size === 0);
+      await rejects('send after close rejects immediately', cdp.send('Target.getTargets'), /Target\.getTargets: devtools socket closed/);
+    }
+    for (const method of ['Target.detachedFromTarget', 'Inspector.detached']) {
+      const { cdp, ws } = await connected();
+      let delivered = false;
+      cdp.on((event) => { if (event.method === method) delivered = true; });
+      const failed = rejects(method + ' rejects only its session', cdp.send('Runtime.evaluate', {}, 'removed'), /Runtime\.evaluate \(session removed\): devtools session detached/);
+      const unaffected = cdp.send('Runtime.evaluate', {}, 'kept');
+      const event = method === 'Target.detachedFromTarget'
+        ? { method, sessionId: 'parent', params: { sessionId: 'removed' } }
+        : { method, sessionId: 'removed', params: { reason: 'target closed' } };
+      ws.message(event);
+      await failed;
+      check(method + ' leaves other sessions pending and still reaches listeners', cdp.pending.size === 1 && delivered);
+      ws.message({ method: 'Inspector.detached', params: { reason: 'no session supplied' } });
+      check('a detach event without a session cannot reject unrelated commands', cdp.pending.size === 1);
+      ws.message({ id: 2, result: { value: 'still attached' } });
+      assert.deepEqual(await unaffected, { value: 'still attached' });
+      checks++;
+    }
+  } finally { globalThis.WebSocket = originalWebSocket; }
+}
+
+profile.mustFinish(checkCdpLifecycle, 'CDP transport tests').then(() => {
+  console.log('[ok] browser tests finish or report interrupted calls: ' + checks + ' checks');
+}).catch((error) => { console.error(error); process.exitCode = 1; });

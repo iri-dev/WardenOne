@@ -20,6 +20,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
 const harness = require('./perf-profile.js');
@@ -48,10 +49,41 @@ check('a profile can focus on DOM churn beside an existing player',
     && /page !== '\/media-churn\.html'/.test(SRC));
 check('a profile can focus on the article without a credential form',
   JSON.stringify(harness.parseArgs(['--pages', '/article-neutral.html']).pages) === '["/article-neutral.html"]');
-check('off-screen fixtures keep their timers running without native occlusion',
-  ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows']
-    .every((flag) => SRC.includes("'" + flag + "'")) && SRC.includes('CalculateNativeWinOcclusion,')
-    && SRC.includes('backgroundThrottlingDisabled: true'));
+
+async function checkLaunchScheduling() {
+  const launches = [];
+  const stop = new Error('stop after capturing the browser launch');
+  const mockedModule = { exports: {} };
+  vm.runInNewContext(SRC + '\nmodule.exports.runVariant = runVariant; freePort = async () => 9222;', {
+    __dirname, module: mockedModule, process,
+    require: (id) => {
+      if (id === 'fs') return Object.assign({}, fs, { mkdtempSync: () => path.join(ROOT, 'mock-profile'), rmSync: () => {} });
+      if (id === 'child_process') return Object.assign({}, require(id), {
+        spawn: (_browser, args) => { launches.push(Array.from(args)); return { unref() {} }; },
+      });
+      return require(id);
+    },
+    fetch: async () => ({ json: async () => ({ webSocketDebuggerUrl: 'ws://mock-browser' }) }),
+    WebSocket: class { constructor() { throw stop; } },
+  }, { filename: path.join(__dirname, 'perf-profile.js') });
+  const mocked = mockedModule.exports;
+  const timingFlags = ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
+  const features = (args) => args.filter((arg) => arg.startsWith('--disable-features=')).at(-1).split('=')[1].split(',');
+  await mocked.launch('mock-browser', 'on', ROOT, 9222, 'mock-profile');
+  const shared = launches.pop();
+  check('shared browser regressions keep normal background scheduling',
+    timingFlags.every((flag) => !shared.includes(flag)) && !features(shared).includes('CalculateNativeWinOcclusion'));
+  for (const variant of ['off', 'on']) {
+    try { await mocked.runVariant(variant, { edge: 'mock-browser' }); }
+    catch (error) { if (error !== stop) throw error; }
+    const measured = launches.pop();
+    check(variant + ' performance runs explicitly disable background throttling and occlusion',
+      timingFlags.every((flag) => measured.includes(flag)) && features(measured).includes('CalculateNativeWinOcclusion'));
+    check(variant + ' performance runs retain the shared Edge feature exclusions',
+      features(shared).every((feature) => features(measured).includes(feature)));
+  }
+  check('performance metadata records its unthrottled scheduling', SRC.includes('backgroundThrottlingDisabled: true'));
+}
 
 /* ---- statistics ---------------------------------------------------------------------------- */
 check('the median of five is the third', harness.median([5, 1, 4, 2, 3]) === 3);
@@ -187,5 +219,7 @@ check('a regression the harness cannot see fails the run', /the harness is not s
   }
 }
 
-if (failed) { console.error('\n' + failed + ' failed, ' + passed + ' passed'); process.exit(1); }
-console.log('\nperf profile harness: ' + passed + ' checks passed');
+checkLaunchScheduling().then(() => {
+  if (failed) { console.error('\n' + failed + ' failed, ' + passed + ' passed'); process.exitCode = 1; }
+  else console.log('\nperf profile harness: ' + passed + ' checks passed');
+}).catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
