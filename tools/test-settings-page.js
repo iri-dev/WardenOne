@@ -187,4 +187,51 @@ for (const entry of ['Master protection: true → false', 'paused.example', 'scr
 check('the import preview renders entries as text, not file-supplied markup',
   /entries\.textContent = section\.entries\.join/.test(settingsJs) && /dialog\.showModal\(\);\s*cancel\.focus\(\)/.test(settingsJs));
 check('settings imports identify their filter source to the worker', /kind: 'user-rules-set', source: 'settings-import'/.test(settingsJs));
+{
+  const start = settingsJs.indexOf('function reviewSettingsImport(');
+  const end = settingsJs.indexOf('\nasync function importSettings(', start);
+  const harness = () => {
+    let current;
+    class Result {
+      constructor(executor) { this.count = 0; executor((v) => { this.value = v; this.count++; }); }
+      static resolve(v) { return new Result((resolve) => resolve(v)); }
+    }
+    const document = {
+      getElementById: () => current || null,
+      body: { append(dialog) { current = dialog; } },
+      createElement(tag) {
+        return { tag, children: [], handlers: {}, open: false,
+          setAttribute() {}, append(...children) { this.children.push(...children); },
+          addEventListener(type, callback) { this.handlers[type] = callback; },
+          showModal() { this.open = true; }, focus() {},
+          close(value) { this.open = false; this.returnValue = value; },
+          remove() { if (current === this) current = null; },
+        };
+      },
+    };
+    const box = { document, Promise: Result };
+    vm.runInNewContext(settingsJs.slice(start, end), box);
+    const result = box.reviewSettingsImport('Fixture', []);
+    return { result, dialog: current, review: box.reviewSettingsImport, document };
+  };
+  for (const [choice, approved] of [['Apply import', true], ['Cancel', false]]) {
+    const h = harness();
+    check(choice + ' waits for an explicit choice', h.result.count === 0);
+    const button = h.dialog.children[2].children.find((node) => node.textContent === choice);
+    button.handlers.click();
+    check(choice + ' settles even when the native close event is delayed', h.result.count === 1
+      && h.result.value === approved && !h.document.getElementById('import-review'));
+    h.dialog.handlers.close();
+    check(choice + ' ignores a later native close notification', h.result.count === 1 && h.result.value === approved);
+  }
+  const escape = harness();
+  escape.dialog.handlers.cancel?.({ preventDefault() {} });
+  check('Escape cancels without waiting for another event', escape.result.count === 1 && escape.result.value === false);
+  const closed = harness();
+  closed.dialog.close('apply'); closed.dialog.handlers.close();
+  check('a native close alone cannot approve an import', closed.result.count === 1 && closed.result.value === false);
+  const duplicate = harness();
+  const refused = duplicate.review('Second review', []);
+  check('a second import cannot replace an unresolved review', refused.value === false && duplicate.result.count === 0);
+}
 console.log('settings page: ' + checks + ' checks passed');

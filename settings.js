@@ -2041,6 +2041,16 @@ function reviewSettingsImport(message, sections) {
   if (document.getElementById('import-review')) return Promise.resolve(false);
   return new Promise((resolve) => {
     const dialog = document.createElement('dialog');
+    let settled = false;
+    /* Chromium can defer close events until a frame. Explicit choices must
+       settle the review even when rendering is paused. */
+    const finish = (approved) => {
+      if (settled) return;
+      settled = true;
+      if (dialog.open) dialog.close(approved ? 'apply' : 'cancel');
+      dialog.remove();
+      resolve(approved);
+    };
     dialog.id = 'import-review';
     dialog.className = 'import-review';
     dialog.setAttribute('aria-labelledby', 'import-review-title');
@@ -2068,18 +2078,15 @@ function reviewSettingsImport(message, sections) {
     const cancel = document.createElement('button');
     cancel.className = 'btn';
     cancel.textContent = 'Cancel';
-    cancel.addEventListener('click', () => dialog.close('cancel'));
+    cancel.addEventListener('click', () => finish(false));
     const apply = document.createElement('button');
     apply.className = 'btn primary';
     apply.textContent = 'Apply import';
-    apply.addEventListener('click', () => dialog.close('apply'));
+    apply.addEventListener('click', () => finish(true));
     actions.append(cancel, apply);
     dialog.append(title, body, actions);
-    dialog.addEventListener('close', () => {
-      const approved = dialog.returnValue === 'apply';
-      dialog.remove();
-      resolve(approved);
-    }, { once: true });
+    dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(false); });
+    dialog.addEventListener('close', () => finish(false), { once: true });
     document.body.append(dialog);
     dialog.showModal();
     cancel.focus();
