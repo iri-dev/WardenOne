@@ -144,11 +144,11 @@ function framePage() {
     + Array.from({ length: 30 }, (_, i) => '<p>Line ' + i + ' <a href="/f/' + i + '">link</a></p>').join('')
     + '</body></html>';
 }
-function framesPage() {
+function framesPage(count = 8) {
   return '<!doctype html><html><head><meta charset="utf-8"><title>Frames</title></head><body style="font:14px system-ui">'
-    + '<h1>Eight same-origin frames</h1>'
-    + Array.from({ length: 8 }, (_, i) => '<iframe src="/frame.html?n=' + i + '" width="300" height="160"></iframe>').join('')
-    + '<script>let left = 8; document.querySelectorAll("iframe").forEach((f) => f.addEventListener("load", () => { if (--left === 0) setTimeout(() => { window.__done = true; }, 200); }));'
+    + '<h1>' + count + ' same-origin frames</h1>'
+    + Array.from({ length: count }, (_, i) => '<iframe src="/frame.html?n=' + i + '" width="300" height="160"></iframe>').join('')
+    + '<script>let left = ' + count + '; document.querySelectorAll("iframe").forEach((f) => f.addEventListener("load", () => { if (--left === 0) setTimeout(() => { window.__done = true; }, 200); }));'
     + 'window.addEventListener("load", () => setTimeout(() => { window.__done = true; }, 3000));</script></body></html>';
 }
 function imageFramePage() {
@@ -180,6 +180,7 @@ const PAGES = {
   '/media-churn.html': () => churnPage(true),
   '/player.html': playerPage,
   '/frames.html': framesPage,
+  '/frames-heavy.html': () => framesPage(30),
   '/frame.html': framePage,
   '/image-frames.html': imageFramesPage,
   '/image-frame.html': imageFramePage,
@@ -449,14 +450,14 @@ async function measureOnce(cdp, page, workerSession, origin, pagePath, phase, op
   const url = origin + pagePath;
   if (phase === 'cold') {
     await cdp.send('Network.clearBrowserCache', {}, page);
-    await cdp.send('Page.navigate', { url: 'about:blank' }, page);
-    await sleep(150);
   }
+  // Navigation resets renderer counters; start both cache conditions from the same empty document.
+  await cdp.send('Page.navigate', { url: 'about:blank' }, page);
+  await sleep(150);
   const before = await metricsOf(cdp, page);
   const workerBefore = workerSession ? await metricsOf(cdp, workerSession).catch(() => ({})) : {};
   const t0 = Date.now();
-  if (phase === 'cold') await cdp.send('Page.navigate', { url }, page);
-  else await cdp.send('Page.reload', { ignoreCache: false }, page);
+  await cdp.send('Page.navigate', { url }, page);
   await waitDone(cdp, page, RUN_TIMEOUT_MS);
   await sleep(600);  /* let the extension's post-load work land */
   const wall = Date.now() - t0;
@@ -793,7 +794,7 @@ async function main() {
   const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
   if (nodeMajor < NODE_MIN || typeof WebSocket !== 'function' || typeof fetch !== 'function') throw new Error('Node ' + NODE_MIN + '+ with built-in fetch and WebSocket is required');
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
-  if (args.pages && (!args.pages.length || args.pages.some((page) => !MEASURED_PAGES.includes(page) && page !== '/player.html' && page !== '/article-neutral.html' && page !== '/media-churn.html'))) {
+  if (args.pages && (!args.pages.length || args.pages.some((page) => !MEASURED_PAGES.includes(page) && page !== '/player.html' && page !== '/article-neutral.html' && page !== '/media-churn.html' && page !== '/frames-heavy.html'))) {
     throw new Error('--pages must name article, article-neutral, churn, frames, player or media-churn fixture paths');
   }
   const pages = args.pages || (args.imageFrames ? ['/image-frames.html'] : MEASURED_PAGES);

@@ -280,8 +280,9 @@ console.log('\nhistory privacy checks passed');
     const box = {
       __histTimer: null,
       __histWriting: false,
+      __histInFlight: [],
       /* Stamped, as every real entry is: the writer now ages the store by `at` (PRIV-08). */
-      __histBuffer: [{ url: 'https://a.example/', t: 1, at: Date.now() }, { url: 'https://b.example/', t: 2, at: Date.now() }],
+      __histBuffer: options.buffer || [{ url: 'https://a.example/', t: 1, at: Date.now() }, { url: 'https://b.example/', t: 2, at: Date.now() }],
       __histPersistTimer: null,
       persistCalls: 0,
       sessionRemoved: 0,
@@ -304,13 +305,20 @@ console.log('\nhistory privacy checks passed');
       chrome: {
         runtime: { lastError: options.getError || null },
         storage: {
-          session: { remove() { box.sessionRemoved++; return { catch: () => {} }; } },
+          session: {
+            remove() { box.sessionRemoved++; return { catch: () => {} }; },
+            set(data) { box.sessionBuffer = JSON.parse(JSON.stringify(data.__wardenone_hist_buffer)); return Promise.resolve(); },
+          },
           local: {
-            get(_k, cb) { cb({ wardenone_history: storedValue }); },
+            get(_k, cb) {
+              if (options.holdGet) box.finishRead = () => cb({ wardenone_history: storedValue });
+              else cb({ wardenone_history: storedValue });
+            },
             set(obj, cb) {
               box.setCalls.push(obj.wardenone_history);
               sandbox.chrome.runtime.lastError = options.setError || null;
-              cb();
+              if (options.holdSet) box.finishWrite = cb;
+              else cb();
             },
           },
         },
@@ -322,6 +330,7 @@ console.log('\nhistory privacy checks passed');
       __histTimer: { get: () => box.__histTimer, set: (v) => { box.__histTimer = v; }, configurable: true },
       __histWriting: { get: () => box.__histWriting, set: (v) => { box.__histWriting = v; }, configurable: true },
       __histBuffer: { get: () => box.__histBuffer, set: (v) => { box.__histBuffer = v; }, configurable: true },
+      __histInFlight: { get: () => box.__histInFlight, set: (v) => { box.__histInFlight = v; }, configurable: true },
       __histPersistTimer: { get: () => box.__histPersistTimer, set: (v) => { box.__histPersistTimer = v; }, configurable: true },
     });
     vm.createContext(sandbox);
@@ -330,7 +339,11 @@ console.log('\nhistory privacy checks passed');
     const pruneFrom = source.indexOf('const HISTORY_MAX = ');
     const pruneTo = source.indexOf('async function pruneHistoryStore(', pruneFrom);
     const pruner = pruneFrom >= 0 && pruneTo > pruneFrom ? source.slice(pruneFrom, pruneTo) : '';
-    vm.runInContext(pruner + '\n' + source.slice(writerFrom, writerTo) + '\nthis.__flush = flushHistory;', sandbox);
+    const persistFrom = source.indexOf('function persistHistBufferNow()');
+    const persistTo = source.indexOf('\nfunction persistHistBuffer()', persistFrom);
+    vm.runInContext(pruner + '\n' + source.slice(persistFrom, persistTo) + '\n'
+      + source.slice(writerFrom, writerTo) + '\nthis.__flush = flushHistory; this.__persist = persistHistBufferNow;', sandbox);
+    box.persistNow = () => sandbox.__persist();
     try { sandbox.__flush(); } catch (e) { box.thrown = e; }
     return box;
   }
@@ -371,6 +384,22 @@ console.log('\nhistory privacy checks passed');
   }
 
   // The Activity Log must survive the same corrupt value.
+  for (const phase of ['holdGet', 'holdSet']) {
+    const held = runWriter([], { [phase]: true });
+    held.__histBuffer.push({ url: 'https://c.example/', t: 3, at: Date.now() });
+    held.persistNow();
+    check('a new entry preserves the in-flight batch during ' + phase,
+      held.sessionBuffer.length === 3 && held.sessionBuffer.map((entry) => entry.t).join(',') === '1,2,3');
+    const cold = runWriter([], { buffer: held.sessionBuffer });
+    check('termination during ' + phase + ' replays every session-backed entry',
+      cold.setCalls.length === 1 && cold.setCalls[0].map((entry) => entry.t).sort().join(',') === '1,2,3');
+    if (phase === 'holdGet') held.finishRead();
+    else held.finishWrite();
+    held.persistNow();
+    check('acknowledged history leaves only the newly queued entry in session storage',
+      held.sessionBuffer.length === 1 && held.sessionBuffer[0].t === 3 && held.__histInFlight.length === 0);
+  }
+
   {
     const ui = fs.readFileSync('history.js', 'utf8');
     check('M16 the Activity Log normalises a corrupt history value',

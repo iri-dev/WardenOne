@@ -112,6 +112,7 @@ function worker({ session, config, configUnreadable, behaviour }) {
     locationExemptHosts: (cfg) => (cfg && cfg.allowlist) || [],
     scheduleSitePauseExpiry: () => {},
     eyeShieldThemingActive: () => false,
+    resourceSaverScriptFiles: () => [],
     eyeShieldPreloadFile: () => '',
     eyeShieldRegistrationScope: () => ({ matches: ['<all_urls>'], excludeMatches: [] }),
     eyeShieldUsesBootstrap: () => false,
@@ -134,6 +135,7 @@ function worker({ session, config, configUnreadable, behaviour }) {
       if (b === 'false') return Promise.resolve(false);
       if (b === 'reject') return Promise.reject(new Error('chrome said no'));
       if (b === 'sync-false') return false;
+      if (b === 'stall') return new Promise(() => {});
       return Promise.resolve(undefined);
     };
   }
@@ -234,6 +236,44 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 40));
   }
 
   /* the budget */
+  {
+    const session = fakeSession();
+    const dying = worker({ session, config: { forceHttps: true }, behaviour: { allowlist: 'stall' } });
+    dying.api.refreshExtensionState();
+    await settle();
+    check('an unfinished reconcile records intent before owners run', !!session.__store.wardenone_reconcile_pending);
+    check('a stalled owner has not committed the desired state', dying.api.key() === '');
+    check('an interrupted run need not have reached failure reporting', !session.__store.wardenone_reconcile_degraded);
+    const cold = worker({ session, config: { forceHttps: true } });
+    check('a fresh worker retries interrupted work without a failure delay', await cold.api.retryDegradedReconcileOnWake());
+    await settle(300);
+    check('interrupted work runs the complete owner list', cold.calls.length === RUN_CALLS.length);
+    check('a completed retry clears pending intent', !session.__store.wardenone_reconcile_pending && cold.api.key() !== '');
+  }
+  {
+    const session = fakeSession();
+    const set = session.set;
+    let release;
+    session.set = (data) => data.wardenone_reconcile_pending
+      ? new Promise((resolve) => { release = () => set(data).then(resolve); }) : set(data);
+    const w = worker({ session, config: {} });
+    w.api.refreshExtensionState();
+    await settle();
+    check('owners wait until intent storage acknowledges the write', w.calls.length === 0 && typeof release === 'function');
+    release();
+    await settle();
+    check('acknowledged intent releases the owners', w.calls.length === RUN_CALLS.length);
+  }
+  {
+    const session = fakeSession();
+    const set = session.set;
+    session.set = (data) => data.wardenone_reconcile_pending ? Promise.reject(Error('session unavailable')) : set(data);
+    const w = worker({ session, config: {} });
+    w.api.refreshExtensionState();
+    await settle();
+    check('failed intent storage leaves installed rules alone', w.calls.length === 0 && w.api.key() === '');
+    check('failed intent storage reports an unapplied reconciliation', !!session.__store.wardenone_reconcile_degraded);
+  }
   {
     const session = fakeSession();
     session.__store.wardenone_reconcile_degraded = { failed: ['allowlist'], attempts: 6, at: Date.now() - 5 * 60 * 1000, stateKey: 'k' };

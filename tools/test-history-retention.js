@@ -75,7 +75,7 @@ const LIFTED = [
   grabFn('safeLogSegment'), grabFn('safeLogPath'), grabFn('safeUrlForLog'), grabFn('sanitizeHistoryDetail'),
   orElse('pruneHistoryEntries', 'function pruneHistoryEntries(hist) { const h = Array.isArray(hist) ? hist.slice() : []; if (h.length > 200) h.length = 200; return h; }'),
   orElse('pruneHistoryStore', 'async function pruneHistoryStore() { return false; }'),
-  'let __histBuffer = []; let __histTimer = null; let __histWriting = false; let __histPersistTimer = null; let __histRecoveryDone = true;',
+  'let __histBuffer = []; let __histInFlight = []; let __histTimer = null; let __histWriting = false; let __histPersistTimer = null; let __histRecoveryDone = true;',
   'const INCOGNITO_CONTEXT = false;',
   grabFn('persistHistBufferNow'), grabFn('persistHistBuffer'), grabFn('queueHistory'), grabFn('scheduleHistoryFlush'), grabFn('flushHistory'),
 ].join('\n');

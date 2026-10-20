@@ -52,4 +52,14 @@ for (const [item, expected] of cases) {
 }
 assert.strictEqual(sandbox.format([]), '');
 assert.strictEqual(sandbox.format(cases.slice(0, 2).map(([item]) => item)), 'VirusTotal: rate limited · VirusTotal: lookup failed (HTTP 503)');
+vm.runInContext(source.slice(end, source.indexOf('\nfunction formatChromeDanger(', end))
+  + '\nthis.hashFormat = formatHashReputation;', sandbox);
+assert.strictEqual(sandbox.hashFormat({ hashReputation: {
+  local: true, checked: true, ok: true, hit: true, diagnostic: true,
+} }), 'Local SHA-256 list: EICAR diagnostic match');
+assert.strictEqual(sandbox.hashFormat({ hashReputation: {
+  local: true, checked: false, skipped: true, reason: 'Only the EICAR test signature is loaded.',
+} }), 'Only the EICAR test signature is loaded.');
+assert.match(sandbox.hashFormat({ fileHash: { sha256: 'ab'.repeat(32), source: 'url-refetch', exactFile: false } }),
+  /not guaranteed to match the saved file/, 'URL re-fetch results retain their saved-file caveat');
 console.log('[ok] download-review provider summaries (' + cases.length + ' cases)');

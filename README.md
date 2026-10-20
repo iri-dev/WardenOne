@@ -557,6 +557,14 @@ locally and sends only the hash. It cannot read the file Chrome saved, so the re
 not be the same. WhoisXML domain registration, domain reputation and threat intelligence are also
 separate choices that use the same key.
 
+The bundled local SHA-256 list contains only the **EICAR antivirus test signature**. It is a
+diagnostic mechanism and supplies no real-world malware-signature coverage. Download Shield
+skips automatic URL re-fetches for that seed alone. Additional signatures can be supplied through
+the existing `wardenone_malware_hashes` local-storage key; no maintained hash feed is included.
+With additional signatures, local checks may re-fetch eligible reviewed downloads up to 50 MB.
+The hash describes that response, which may differ from the saved file. Other download checks
+and the opt-in VirusTotal lookup are separate protections.
+
 The popup also has a manual **VirusTotal URL scanner**. Paste a link and press **Scan URL with
 VirusTotal** to check its report using your saved key; this works without turning on automatic
 VirusTotal checks. The pasted URL, including its query string, goes to VirusTotal, so remove any
@@ -597,7 +605,7 @@ flowchart TB
     Pick["File you hand it"] --> Format["Identify the real format from its signature"]
     Format --> Parse["Parse the structure — never open, extract or run"]
     Parse --> Inspect["Inspect what is inside: program imports · script lines · archive index · document actions"]
-    Inspect --> Hash["Hash locally and compare with the bundled known-malware list"]
+    Inspect --> Hash["Hash locally and compare with configured signatures and the EICAR diagnostic seed"]
     Hash --> Report["Evidence-based report — findings, not a verdict"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
     class Pick,Format,Parse,Inspect,Hash,Report warden
@@ -617,7 +625,7 @@ extracted or run.
 - **Shortcuts.** The actual command a Windows `.lnk` file would run when you double-click it.
 - **Archives.** The index gets checked without extracting anything. Executables, path traversal, encryption, nesting, macros, files that claim they'll expand to something enormous.
 - **Documents.** Office macros and PDF actions that can run scripts, launch programs or carry embedded files.
-- **SHA-256.** Checked locally against the known-malware hashes that ship with WardenOne. A match means those exact bytes are known.
+- **SHA-256.** Checked offline against the EICAR diagnostic seed and any additional local signatures. The bundled seed alone provides no real-world malware coverage, and a non-match does not establish safety.
 - **Optional VirusTotal lookup.** There's a button for this, but it only sends the SHA-256 (with your own API key) and only when you press it. The file and its name never leave your computer.
 
 You can drop a bunch of files or a whole folder at once, and copy the report to send back to

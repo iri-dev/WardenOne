@@ -112,7 +112,7 @@ check('webNavigation is a required permission, so its events are never absent',
   Array.isArray(manifest.permissions) && manifest.permissions.includes('webNavigation')
     && !(manifest.optional_permissions || []).includes('webNavigation'));
 check('the badge count is reset by onBeforeNavigate for the top frame',
-  /chrome\.webNavigation\?\.onBeforeNavigate\?\.addListener\(\(details\) => \{\s*if \(details\.frameId === 0\) \{[\s\S]{0,200}counts\[details\.tabId\] = 0;/.test(bg));
+  /chrome\.webNavigation\?\.onBeforeNavigate\?\.addListener\(\(details\) => \{\s*if \(details\.frameId === 0\) \{[\s\S]{0,200}resetBadge\(details\.tabId\);/.test(bg));
 check('and no tabs.onUpdated listener resets it a second time',
   !/chrome\.tabs\.onUpdated\.addListener\([\s\S]{0,400}counts\[tabId\] = 0;/.test(bg));
 

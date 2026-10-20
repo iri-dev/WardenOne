@@ -512,12 +512,24 @@ async function readArchive(entries) {
     'a .doc is not a zip, so the vbaProject.bin check cannot see it');
 
   /* ---- the offline known-malware list ---- */
+  box.crypto = require('crypto').webcrypto;
+  box.setTimeout = () => 0;
+  const analyse = vm.runInContext('analyse', box);
+  for (const diagnostic of [true, false]) {
+    box.chrome.runtime.sendMessage = (_message, callback) => callback({ ok: true, hit: true, diagnostic,
+      listSize: diagnostic ? 1 : 2, signatureCount: diagnostic ? 0 : 1 });
+    const result = await analyse(new File(['fixture'], 'sample.bin'), () => {});
+    const finding = result.findings.find((entry) => /EICAR diagnostic|local malware signature/.test(entry.title));
+    check(diagnostic ? 'an EICAR hit is diagnostic information' : 'a configured signature hit remains dangerous',
+      finding && finding.level === (diagnostic ? 'info' : 'danger'));
+  }
   check('the real file hash is checked against the bundled list',
     /kind: 'file-scan-known'/.test(JS) && /MALWARE_HASHES\.has/.test(BG));
   check('a match says it is this exact file',
     /This is the real file you picked,[\s\S]{0,30}not a guess from its name/.test(JS));
   check('a miss is reported too, with its own limits',
-    /Not on the known-malware list/.test(JS) && /missing from it means very[\s\S]{0,20}little/.test(JS),
+    /No local SHA-256 match/.test(JS) && /does not establish safety/.test(JS)
+      && /bundled list contains only the EICAR test signature/.test(JS),
     'a check that only speaks when it fires cannot be told apart from one that never ran');
   check('the list check cannot hang the scan', /setTimeout\(\(\) => done\(null\), \d+\)/.test(JS));
   check('the known-list kind is not reachable from a web page',

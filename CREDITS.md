@@ -283,7 +283,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [Discord-AntiScam / DSP Project scam-links](https://github.com/Discord-AntiScam/scam-links) | 1 | Written permission (2026-10-15) |
 | [Scam Blocklist](https://github.com/durablenapkin/scamblocklist) | 1 | MIT |
 | [dnss-blocklists malicious domains](https://github.com/flinteger/dnss-blocklists) | 1 | Written permission (2026-10-16); Specific upstream/use-scope exception — see source review |
-| [HaGeZi Light, Pro and Threat Intelligence Feed Medium](https://github.com/hagezi/dns-blocklists) | 3 | GPL-3.0 |
+| [HaGeZi Light, Pro and Threat Intelligence Feed Medium](https://github.com/hagezi/dns-blocklists) | 3 | GPL-3.0; Written permission (2026-10-20) |
 | [Emerging Malicious Domain Blocklist](https://github.com/manic-code/Emerging-Malicious-Domain-Blocklist) | 1 | MIT |
 | [MetaMask eth-phishing-detect](https://github.com/MetaMask/eth-phishing-detect) | 1 | LicenseRef-DBAD-1.2 |
 | [Phishing.Database](https://github.com/mitchellkrogza/Phishing.Database) | 1 | MIT |

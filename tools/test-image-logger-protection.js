@@ -21,8 +21,11 @@ assert(redirect.priority > Math.max(...blocks.map((rule) => rule.priority)));
 assert.deepEqual(redirect.condition.resourceTypes, ['main_frame']);
 assert.deepEqual(new Set(redirect.condition.requestDomains),
   new Set(blocks.flatMap((rule) => rule.condition.requestDomains)));
-assert(manifest.web_accessible_resources.some((entry) => entry.resources.includes('ip-logger-warning.html')
-  && entry.resources.includes('ip-logger-warning.js') && entry.matches.includes('<all_urls>')));
+for (const resource of ['ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js']) {
+  const entries = manifest.web_accessible_resources.filter((entry) => entry.resources.includes(resource));
+  assert(entries.some((entry) => entry.matches.includes('<all_urls>')), resource + ' supports warning redirects');
+  assert(entries.every((entry) => entry.use_dynamic_url === true), resource + ' must not expose a stable URL to websites');
+}
 assert(manifest.content_scripts.some((entry) => entry.js.includes('frame-image-logger.js')
   && entry.js.indexOf('bridge.js') < entry.js.indexOf('frame-image-logger.js')
   && entry.all_frames === true && entry.world === 'ISOLATED'),
@@ -523,7 +526,7 @@ async function testBackground() {
   const timers = [];
   const sandbox = {
     chrome: {
-      runtime: { getURL: (name) => 'chrome-extension://wo/' + name },
+      runtime: { id: 'wo', getURL: (name) => 'chrome-extension://session-id/' + name },
       webRequest: {
         onBeforeRequest: { addListener(fn) { listeners.before = fn; } },
         onErrorOccurred: { addListener(fn) { listeners.error = fn; } },
@@ -560,12 +563,20 @@ async function testBackground() {
     for (const timer of timers.splice(0)) if (!timer.canceled) await timer.fn();
   }
   const sender = { tab: { id: 7 }, url: 'chrome-extension://wo/ip-logger-warning.html', frameId: 0 };
-  const wrong = await sandbox.navStatus({ ...sender, url: 'https://site.example/' });
-  assert.equal(wrong.status, 'observed_unconfirmed', 'only the extension warning page can request the verdict');
+  for (const wrong of [
+    { url: 'https://site.example/' },
+    { url: 'chrome-extension://other/ip-logger-warning.html' },
+    { url: 'chrome-extension://wo/popup.html' },
+    { frameId: 1 },
+    { tab: undefined },
+  ]) {
+    assert.equal((await sandbox.navStatus({ ...sender, ...wrong })).status, 'observed_unconfirmed',
+      'only the top-level extension warning page can request the verdict');
+  }
   listeners.before({ tabId: 7, url: 'https://grabify.link/x?token=NAVSECRET' });
   matched = [{ rule: { rulesetId: 'grabber_navigation', ruleId: 168 }, tabId: 7, timeStamp: Date.now() }];
   const result = await sandbox.navStatus(sender);
-  assert.equal(result.status, 'blocked');
+  assert.equal(result.status, 'blocked', 'the canonical warning sender is recognised when getURL uses a session ID');
   assert.equal(result.host, 'grabify.link');
   assert.equal(history.length, 1);
   assert(!JSON.stringify(history).includes('NAVSECRET'));

@@ -1,12 +1,12 @@
 {
   "schemaVersion": 2,
   "note": "Generated from runtime constants, embedded build provenance and docs/source-licensing.json. Edit policy metadata, not this file. Counts include optional configured feeds; license and permission counts can overlap.",
-  "checkedAt": "2026-10-19",
+  "checkedAt": "2026-10-20",
   "summary": {
     "runtimeFeeds": 38,
     "publishers": 24,
     "publishedLicenseCoveredFeeds": 32,
-    "writtenPermissionFeeds": 4,
+    "writtenPermissionFeeds": 7,
     "resolvedFeeds": 34,
     "unresolvedFeeds": 4,
     "buildOnlyInputs": 6,
@@ -1227,8 +1227,11 @@
         "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/LICENSE"
       },
       "permission": {
-        "status": "not-required",
-        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+        "status": "granted",
+        "date": "2026-10-20",
+        "scope": "The publisher confirms WardenOne may download, process and use the published lists under GPLv3, including in a free, open-source extension.",
+        "evidenceRef": "permission-hagezi-2026-10-20",
+        "evidence": "Owner-supplied screenshot of the publisher's reply reviewed on 20 October 2026. Iris retains the original email privately; correspondence and key material are not reproduced."
       },
       "attribution": "HaGeZi and dns-blocklists contributors.",
       "compliance": {
@@ -1257,9 +1260,13 @@
           "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/README.md",
           "documentSha256": "9f8ed1a58b950c5a36298f74008314bfcd72cba7031b8a90e0957cc6a7a0f019",
           "finding": "The publisher expressly licenses the Lists as published under GPLv3. Its warning about using upstream data directly does not turn WardenOne’s downloads of the published Lists into direct upstream API use."
+        },
+        {
+          "reference": "permission-hagezi-2026-10-20",
+          "finding": "Direct publisher confirmation of WardenOne's download, processing and use of the published lists under GPLv3; owner-supplied reply dated 20 October 2026. GPL obligations remain in place."
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-10-20"
     },
     {
       "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt",
@@ -1280,8 +1287,11 @@
         "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/LICENSE"
       },
       "permission": {
-        "status": "not-required",
-        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+        "status": "granted",
+        "date": "2026-10-20",
+        "scope": "The publisher confirms WardenOne may download, process and use the published lists under GPLv3, including in a free, open-source extension.",
+        "evidenceRef": "permission-hagezi-2026-10-20",
+        "evidence": "Owner-supplied screenshot of the publisher's reply reviewed on 20 October 2026. Iris retains the original email privately; correspondence and key material are not reproduced."
       },
       "attribution": "HaGeZi and dns-blocklists contributors.",
       "compliance": {
@@ -1310,9 +1320,13 @@
           "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/README.md",
           "documentSha256": "9f8ed1a58b950c5a36298f74008314bfcd72cba7031b8a90e0957cc6a7a0f019",
           "finding": "The publisher expressly licenses the Lists as published under GPLv3. Its warning about using upstream data directly does not turn WardenOne’s downloads of the published Lists into direct upstream API use."
+        },
+        {
+          "reference": "permission-hagezi-2026-10-20",
+          "finding": "Direct publisher confirmation of WardenOne's download, processing and use of the published lists under GPLv3; owner-supplied reply dated 20 October 2026. GPL obligations remain in place."
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-10-20"
     },
     {
       "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.medium.txt",
@@ -1333,8 +1347,11 @@
         "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/LICENSE"
       },
       "permission": {
-        "status": "not-required",
-        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+        "status": "granted",
+        "date": "2026-10-20",
+        "scope": "The publisher confirms WardenOne may download, process and use the published lists under GPLv3, including in a free, open-source extension.",
+        "evidenceRef": "permission-hagezi-2026-10-20",
+        "evidence": "Owner-supplied screenshot of the publisher's reply reviewed on 20 October 2026. Iris retains the original email privately; correspondence and key material are not reproduced."
       },
       "attribution": "HaGeZi and dns-blocklists contributors.",
       "compliance": {
@@ -1363,9 +1380,13 @@
           "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/README.md",
           "documentSha256": "9f8ed1a58b950c5a36298f74008314bfcd72cba7031b8a90e0957cc6a7a0f019",
           "finding": "The publisher expressly licenses the Lists as published under GPLv3. Its warning about using upstream data directly does not turn WardenOne’s downloads of the published Lists into direct upstream API use."
+        },
+        {
+          "reference": "permission-hagezi-2026-10-20",
+          "finding": "Direct publisher confirmation of WardenOne's download, processing and use of the published lists under GPLv3; owner-supplied reply dated 20 October 2026. GPL obligations remain in place."
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-10-20"
     },
     {
       "url": "https://raw.githubusercontent.com/manic-code/Emerging-Malicious-Domain-Blocklist/main/hosts.txt",
@@ -2682,7 +2703,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "811cfa1cf68d36cfc1af6d0760a94324b4b05b38ecdcedc7d90c385d609552e0"
+      "sha256": "5781390a13e3c7d33970489541f4be7185b58f40ca5fc9ae30a0594e37ebb994"
     },
     {
       "file": "cryptominer-domains.json",

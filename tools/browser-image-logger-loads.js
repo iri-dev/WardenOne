@@ -152,10 +152,24 @@ async function run() {
         const nav = await openTab(safeUrl);
         await waitFor(nav, `location.href === ${JSON.stringify(safeUrl)} && document.readyState === 'complete'`,
           'safe page loaded before logger navigation');
+        for (const resource of ['ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js']) {
+          const dynamicUrl = await evaluate(extension.attachedSession,
+            `chrome.runtime.getURL(${JSON.stringify(resource)})`);
+          const stableUrl = `chrome-extension://${extension.id}/${resource}`;
+          assert.notEqual(dynamicUrl, stableUrl, resource + ' has a session URL');
+          const probes = await evaluate(nav, `Promise.all(${JSON.stringify([stableUrl, dynamicUrl])}.map(async (url) => {
+            try { return (await fetch(url)).ok; } catch (_) { return false; }
+          }))`);
+          assert.deepEqual(probes, [false, true], resource + ' rejects fixed-ID probes and permits its session URL');
+        }
         await cdp.send('Page.navigate', { url: navUrl }, nav);
         const warningReady = `location.href === ${JSON.stringify(warningUrl)} &&
           document.getElementById('status')?.textContent === 'Blocked before connecting'`;
         await waitFor(nav, warningReady, 'extension warning rendered');
+        const rejected = await evaluate(nav, `Promise.all(['protection-health', 'content-config-get',
+          'future-privileged-kind'].map((kind) => chrome.runtime.sendMessage({ kind })))`);
+        assert(rejected.every((result) => result?.ok === false
+          && result.error === 'Not allowed from this context.'), 'the public warning cannot use other message routes');
         const warning = await evaluate(nav, `(() => ({
           title: document.title,
           heading: document.getElementById('title')?.textContent,

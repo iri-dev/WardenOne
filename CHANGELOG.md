@@ -26,6 +26,11 @@
 
 ### Changed
 
+- The frame redirect guard now honours existing login compatibility checks, preventing a recent player classification from interrupting Copilot's Microsoft and Google sign-in redirects.
+- Navigation resets now persist through the badge queue, failed badge writes retry without being marked saved, and new activity entries preserve the history batch still being written. Settings reconciliation records pending intent before applying rules so an interrupted worker can resume it on the next wake.
+- Optional Resource Saver scripts now load only when their controls are enabled. With all three controls off, each frame skips both modules and their startup state requests; live controls and early security hooks keep their existing behavior.
+- DNR capacity checks now enforce separate dynamic, session and unsafe-action quotas with at least 1,000 spare rules per quota. Corrected Script Shield's maximum recovery allocation without reducing any protection's capacity.
+- Recorded HaGeZi's 20 October 2026 publisher confirmation for WardenOne's use of its lists under GPLv3.
 - Removed the website's changelog page, footer link and separately rendered changelog document.
 - The About page now uses iri's GitHub profile photo and no longer prompts visitors to read the commit history or changelog.
 - Reduced repeated consent attribute reads during DOM changes and skipped added-subtree player scans when the page is already known to contain a player. New and detached player nodes still bypass a cached negative result.
@@ -65,6 +70,11 @@
 
 ### Fixed
 
+- The bundled hash list is now labelled as EICAR-only diagnostic coverage. Download Shield skips automatic re-fetches until additional signatures are loaded, and File Shield identifies EICAR as a diagnostic result.
+- DNS filtering checks now show partial coverage in amber and no detected coverage in red.
+- Clarified the Tabs and activeTab permission explanations following a browser compatibility review.
+- IP-logger warning resources now use session-specific URLs, closing the fixed extension-ID probe that websites could use to detect WardenOne.
+- Web-accessible extension pages no longer receive private-page message or logger-port privileges; the IP-logger warning can only request its navigation status.
 - Twitch no longer pauses and spins at the start of an ad break when Low Latency is on. Most
   channels, including nearly every Tekken and Brawlhalla stream, tell the player about the next
   two video pieces before they are finished, and a Low Latency player downloads them early. Twitch

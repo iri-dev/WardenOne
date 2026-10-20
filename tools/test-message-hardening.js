@@ -24,6 +24,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const source = fs.readFileSync('background.js', 'utf8');
+const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
 
 let failed = 0;
 function check(name, ok, extra) {
@@ -37,7 +38,12 @@ const EXT_ID = 'wardenone-test-id';
 const context = {
   URL, String, Boolean, Object, Date, Math, console,
   chrome: {
-    runtime: { id: EXT_ID, getURL: (p) => 'chrome-extension://' + EXT_ID + '/' + String(p || '') },
+    runtime: {
+      id: EXT_ID, getURL: (p) => 'chrome-extension://' + EXT_ID + '/' + String(p || ''),
+      getManifest: () => ({ ...manifest, web_accessible_resources: [
+        ...manifest.web_accessible_resources, { resources: ['/public/*', 'shared+test.html'] },
+      ] }),
+    },
   },
 };
 vm.createContext(context);
@@ -53,7 +59,7 @@ if (rateFrom < 0 || rateEnd <= rateFrom) throw new Error('rate limiter source ma
 vm.runInContext(
   source.slice(rateFrom, rateEnd) + '\n'
     + source.slice(from, to)
-    + '\nthis.api = { messageSenderIsExtensionPage, messageSenderIsTab, messageSenderMatchesHost,'
+    + '\nthis.api = { messageSenderIsExtensionPage, messageSenderIsWebAccessiblePage, messageSenderIsTab, messageSenderMatchesHost,'
     + ' messageCleanHost, messageSameHost, messageIsCookiePermissionEscape, allowTabMessageRate };',
   context,
 );
@@ -125,6 +131,8 @@ const tabClaimingExtUrl = { id: EXT_ID, tab: { id: 9, url: 'https://evil.example
 
 check('extension page is recognised', api.messageSenderIsExtensionPage(extPage) === true);
 check('a different extension id is rejected', api.messageSenderIsExtensionPage(spoofedId) === false);
+check('another extension origin is rejected even with our sender id',
+  api.messageSenderIsExtensionPage({ ...spoofedId, id: EXT_ID }) === false);
 check('undefined sender is not an extension page', api.messageSenderIsExtensionPage(noSender) === false);
 check('undefined sender is not a tab', api.messageSenderIsTab(noSender) === false);
 check('real tab is recognised as a tab', api.messageSenderIsTab(realTab) === true);
@@ -133,6 +141,21 @@ check('a tab cannot promote itself by claiming an extension URL',
   api.messageSenderIsTab(tabClaimingExtUrl) === false
     && api.messageSenderIsExtensionPage(tabClaimingExtUrl) === true,
   'a tab supplying sender.url must not gain tab-context bypass silently');
+
+const publicPaths = manifest.web_accessible_resources.flatMap((entry) => entry.resources).concat([
+  'ip-logger-warning.html?view=compact#status', '%69p-logger-warning.html',
+  'public/warning.html', 'public/nested/warning.html', 'shared+test.html', '%ZZ',
+]);
+const publicSenders = publicPaths.flatMap((path) => [0, 1].map((frameId) => ({
+  id: EXT_ID, url: 'chrome-extension://' + EXT_ID + '/' + path,
+  frameId, tab: { id: 9, url: 'https://evil.example/' },
+})));
+check('public resources, encoded paths and wildcard matches never receive private-page or tab trust',
+  publicSenders.every((sender) => api.messageSenderIsWebAccessiblePage(sender)
+    && !api.messageSenderIsExtensionPage(sender) && !api.messageSenderIsTab(sender)));
+check('public path patterns preserve literal characters and directory boundaries',
+  ['publicity.html', 'sharedXtest.html'].every((path) =>
+    api.messageSenderIsExtensionPage({ ...extPage, url: 'chrome-extension://' + EXT_ID + '/' + path })));
 
 /* ---------- host confusion ---------- */
 check('tab may ask about its own host', api.messageSenderMatchesHost(realTab, 'https://example.com/other') === true);
@@ -172,6 +195,66 @@ for (const m of JUNK) {
   }
 }
 check('malformed messages never throw in the guards', threw === '', threw);
+
+/* Exercise the shipped pre-dispatch gate, including its public-page exception. */
+let messageListener;
+let loggerListener;
+context.chrome.runtime.onMessage = { addListener(fn) { messageListener = fn; } };
+context.chrome.runtime.onConnect = { addListener(fn) { loggerListener = fn; } };
+context.respond = (result, callback) => callback(result);
+context.grabberNavigationStatus = () => ({ route: 'warning-status' });
+const listenerStart = source.indexOf('chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {',
+  source.indexOf('function privacyTestSettings('));
+const gateEnd = source.indexOf("  if (msg && msg.kind === 'domain-age'", listenerStart);
+if (listenerStart < 0 || gateEnd <= listenerStart) throw new Error('message gate source markers not found');
+vm.runInContext(source.slice(source.indexOf('const TAB_CONTEXT_ALLOWED_MESSAGES ='),
+  source.indexOf('const TAB_SAFE_BROWSING_CONTEXTS ='))
+  + '\n' + source.slice(listenerStart, gateEnd) + "sendResponse({ route: 'private' }); return true; });", context);
+function route(message, sender) {
+  let result;
+  messageListener(message, sender, (value) => { result = value; });
+  return result;
+}
+const deniedMessages = kinds.filter((kind) => kind !== 'grabber-navigation-status')
+  .concat('future-privileged-kind').map((kind) => ({ kind })).concat(JUNK);
+check('every other message kind, including tab-allowed and future kinds, is denied from public pages',
+  publicSenders.every((sender) => deniedMessages.every((message) =>
+    route(message, sender)?.error === 'Not allowed from this context.')));
+check('public pages can only reach the warning-status handler', publicSenders.every((sender) =>
+  route({ kind: 'grabber-navigation-status' }, sender)?.route === 'warning-status'));
+check('private extension pages retain their normal message route',
+  route({ kind: 'get-config' }, extPage)?.route === 'private');
+
+let activityListener;
+context.chrome.runtime.onMessage.addListener = (fn) => { activityListener = fn; };
+const activityStart = source.indexOf('chrome.runtime.onMessage.addListener((msg, sender) => {');
+const activityGateEnd = source.indexOf('  const tabId = sender.tab.id;', activityStart);
+if (activityStart < 0 || activityGateEnd <= activityStart) throw new Error('activity gate source markers not found');
+vm.runInContext(source.slice(activityStart, activityGateEnd) + 'this.activityAccepted = true; });', context);
+check('public pages cannot bypass the router through the separate activity listener', publicSenders.every((sender) => {
+  context.activityAccepted = false;
+  activityListener({ kind: 'rg-block' }, sender);
+  return !context.activityAccepted;
+}));
+context.activityAccepted = false;
+activityListener({ kind: 'rg-block' }, realTab);
+check('real content scripts retain their activity route', context.activityAccepted === true);
+
+const loggerStart = source.indexOf('chrome.runtime.onConnect.addListener((port) => {');
+const loggerGateEnd = source.indexOf('    LOG_PORTS.add(port);', loggerStart);
+if (loggerStart < 0 || loggerGateEnd <= loggerStart) throw new Error('logger gate source markers not found');
+vm.runInContext(source.slice(loggerStart, loggerGateEnd) + 'this.loggerAccepted = true; });', context);
+check('public pages cannot open the privileged logger port', publicSenders.every((sender) => {
+  let disconnected = false;
+  context.loggerAccepted = false;
+  loggerListener({ name: 'wardenone-logger', sender, disconnect() { disconnected = true; } });
+  return disconnected && !context.loggerAccepted;
+}));
+context.loggerAccepted = false;
+loggerListener({ name: 'wardenone-logger', sender: {
+  ...extPage, url: 'chrome-extension://' + EXT_ID + '/network.html',
+}, disconnect() {} });
+check('the private network logger page retains its port', context.loggerAccepted === true);
 
 /* ---------- rate limiting actually limits ---------- */
 let allowedCount = 0;

@@ -138,6 +138,9 @@ check('an empty series is NaN, not zero', Number.isNaN(harness.median([])));
     /id="player" data-player/.test(player) && /position:fixed;right:0;bottom:0/.test(player)
       && (player.match(/class="row"/g) || []).length === 5000 && /__done = true/.test(player));
   check('the pages fetch nothing off the machine', harness.MEASURED_PAGES.concat(['/frame.html']).every((p) => !/src="https?:/.test(harness.PAGES[p]())));
+  check('the heavy frame fixture covers thirty child documents',
+    (harness.PAGES['/frames-heavy.html']().match(/<iframe /g) || []).length === 30
+      && /let left = 30;/.test(harness.PAGES['/frames-heavy.html']()));
   const imageFrames = harness.PAGES['/image-frames.html']();
   const imageFrame = harness.PAGES['/image-frame.html']();
   check('the focused image fixture has eight child frames and waits for their churn',
@@ -219,7 +222,29 @@ check('a regression the harness cannot see fails the run', /the harness is not s
   }
 }
 
-checkLaunchScheduling().then(() => {
+async function checkNavigationCounters() {
+  const from = SRC.indexOf('async function measureOnce(');
+  const to = SRC.indexOf('\nasync function traceOnce(', from);
+  let duration = 0.5;
+  const calls = [];
+  const box = { Date, Number, RUN_TIMEOUT_MS: 1000,
+    metricsOf: async () => ({ TaskDuration: duration, ScriptDuration: duration }),
+    sleep: async () => {}, waitDone: async () => {},
+    delta: (after, before, name) => ((after[name] || 0) - (before[name] || 0)) * 1000,
+  };
+  vm.runInNewContext(SRC.slice(from, to) + '\nthis.measure = measureOnce;', box);
+  const cdp = { send: async (method, args) => {
+    calls.push([method, args]);
+    if (method === 'Page.navigate') duration = args.url === 'about:blank' ? 0 : 0.2;
+    if (method === 'Page.reload') duration = 0.2;
+    return { result: { value: {} } };
+  } };
+  const result = await box.measure(cdp, 'page', null, 'http://fixture', '/frames-heavy.html', 'warm');
+  check('warm navigation does not subtract the previous document counters', result.scriptMs === 200 && result.taskMs === 200);
+  check('warm measurement retains the browser cache', !calls.some(([method]) => method === 'Network.clearBrowserCache'));
+}
+
+Promise.all([checkLaunchScheduling(), checkNavigationCounters()]).then(() => {
   if (failed) { console.error('\n' + failed + ' failed, ' + passed + ' passed'); process.exitCode = 1; }
   else console.log('\nperf profile harness: ' + passed + ' checks passed');
 }).catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

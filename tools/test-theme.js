@@ -176,7 +176,7 @@ const originalLightSignatures = {
   'network.html': [
     /--paper: #fff;[\s\S]*?--paper-soft: #fbf6fe;[\s\S]*?--mist: #f2def2;[\s\S]*?--mist-strong: #dec5ed;/,
     /\.btn:hover \{ transform: translateY\(-1px\); background: rgba\(242, 222, 242, \.3\); \}/,
-    /\.result\.on \{ background: #e4f5ec;[\s\S]*?\.result\.off \{ background: #f7e6d6;[\s\S]*?\.result\.err \{ background: #f6dced;/,
+    /\.result\.on \{ background: #e4f5ec;[\s\S]*?\.result\.warn \{ background: #f7e6d6;[\s\S]*?\.result\.off \{ background: #fbe8e8;[\s\S]*?\.result\.err \{ background: #f6dced;/,
   ],
   'permissions.html': [
     /--paper: #fff;[\s\S]*?--paper-soft: #fbf6fe;[\s\S]*?--mist: #f2def2;[\s\S]*?--mist-strong: #dec5ed;/,
@@ -214,6 +214,13 @@ for (const [page, signatures] of Object.entries(originalLightSignatures)) {
   for (const signature of signatures) {
     assert(signature.test(styles), page + ' must retain the established light-mode colors and surfaces');
   }
+}
+
+for (const [state, tone] of [['on', 'success'], ['warn', 'warning'], ['off', 'danger'], ['err', 'danger']]) {
+  const rule = css.match(new RegExp(':root\\[data-wardenone-page="network"\\]'
+    + '\\[data-wardenone-theme-resolved="dark"\\] \\.result\\.' + state + ' \\{([^}]+)\\}'));
+  assert(rule && ['bg', 'line'].every((part) => rule[1].includes('var(--wo-' + tone + '-' + part + ')'))
+    && rule[1].includes('color: var(--wo-' + tone + ')'), 'dark DNS ' + state + ' uses the ' + tone + ' palette');
 }
 
 /* Also derived. A page added to theme.css but not to this list would be free to

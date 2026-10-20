@@ -22,6 +22,7 @@ const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'u
 const RECOVERY_MAX_HOSTS_PER_TAB = Number(
   (BACKGROUND.match(/SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB = (\d+)/) || [])[1],
 );
+const RECOVERY_MAX_TABS = Number((BACKGROUND.match(/SMART_SCRIPT_RECOVERY_MAX_TABS = (\d+)/) || [])[1]);
 assert(Number.isInteger(RECOVERY_MAX_HOSTS_PER_TAB) && RECOVERY_MAX_HOSTS_PER_TAB > 0,
   'could not read SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB from background.js');
 
@@ -143,7 +144,7 @@ function createHarness(options = {}) {
     SMART_SCRIPT_STAGE_TWO_RULE_PRIORITY: 1900,
     SCRIPT_SHIELD_MODE_KEY: 'wardenone_script_shield_mode',
     SCRIPT_TRUSTED_KEY: 'wardenone_script_trusted_hosts',
-    SMART_SCRIPT_RECOVERY_MAX_TABS: 32,
+    SMART_SCRIPT_RECOVERY_MAX_TABS: RECOVERY_MAX_TABS,
     SMART_SCRIPT_RECOVERY_MAX_HOSTS_PER_TAB: RECOVERY_MAX_HOSTS_PER_TAB,
     SMART_SCRIPT_PLAYER_CONTEXT_MAX: 256,
     SMART_SCRIPT_PLAYER_INTENT_MAX: 256,
@@ -1182,8 +1183,22 @@ function testRegistrationAndBridgeBounds() {
     'background player signals are not rate-limited');
   assert(BACKGROUND.includes('SMART_SCRIPT_RECOVERY_MAX_TABS = 32'),
     'recovered-tab exclusions are not capped');
-  assert(BACKGROUND.includes('const SCRIPT_SHIELD_RULES_BUDGET = 161;'),
-    'rule budget does not reserve blanket, replacement, and bounded stage-two rules');
+  const { api } = createHarness();
+  const fullRecovery = Array.from({ length: RECOVERY_MAX_TABS }, (_, tabId) => ({
+    tabId, failedHosts: ['player.cdn.example'],
+    stageTwo: Array.from({ length: RECOVERY_MAX_HOSTS_PER_TAB }, (_, index) => ({
+      requestHost: 'player.cdn.example', initiatorHost: 'video.example',
+      requestPath: 'https://player.cdn.example/player-' + index + '.js', resourceType: 'script',
+    })),
+  }));
+  const plan = api.buildScriptShieldRulePlan('smart', true, [], fullRecovery);
+  const budget = Number((BACKGROUND.match(/SCRIPT_SHIELD_RULES_BUDGET = (\d+)/) || [])[1]);
+  assert.strictEqual(plan.sessionRules.length, 1 + RECOVERY_MAX_TABS * (1 + RECOVERY_MAX_HOSTS_PER_TAB),
+    'full recovery fixture must exercise every per-tab rule');
+  assert(plan.sessionRules.length <= budget, 'Script Shield exceeds its session allocation at full recovery');
+  assert.strictEqual(plan.dynamicRules.length, 0, 'Script Shield allocation assumes session-only rules');
+  assert.strictEqual(new Set(plan.sessionRules.map((rule) => rule.id)).size, plan.sessionRules.length,
+    'recovery rule IDs overlap at full capacity');
   assert(BACKGROUND.includes('const SMART_SCRIPT_STAGE_TWO_RULE_OFFSET = 100;'),
     'stage-two rule band is not separated from per-tab replacement rules');
   assert(BRIDGE.includes("return { kind: 'adshield-cosmetic', hostname, playerPage: msg.playerPage === true }"),

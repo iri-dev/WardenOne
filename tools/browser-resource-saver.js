@@ -157,8 +157,28 @@ async function run() {
       { urlPattern: '*://www.youtube.com/*', resourceType: 'Document' },
     ] }, page.sessionId);
 
-    await sleep(1500);
+    await setPreferences(false, false);
+    assert.equal(await workerValue(`(async () => {
+      for(let i=0;i<100;i++) {
+        const rules=await chrome.scripting.getRegisteredContentScripts({ids:['wo-resource-saver']});
+        if(!rules.length)return true;
+        await new Promise(resolve=>setTimeout(resolve,100));
+      }
+      return false;
+    })()`), true, 'disabled Resource Saver has no persisted injection');
     await cdp.send('Page.navigate', { url: 'https://frames.example/children' }, page.sessionId);
+    await until('window.__woFrameFixture && window.__woBlankReady', 'inherited frames before enabling Resource Saver');
+    const frameProbe = await workerValue(`(async () => {
+      const tabs=await chrome.tabs.query({});
+      const tab=tabs.find(t=>t.url==='https://frames.example/children');
+      return chrome.scripting.executeScript({target:{tabId:tab.id,allFrames:true},world:'ISOLATED',
+        func:()=>({resource:!!globalThis.__woResourceSaver,images:!!globalThis.__woAnimatedImageSaver,
+          bridge:!!globalThis.__wardenOneBridgeVersion})});
+    })()`);
+    assert(Array.isArray(frameProbe) && frameProbe.length === 3
+      && frameProbe.every((entry) => entry.result.bridge && !entry.result.resource && !entry.result.images),
+    'default-off modules stay absent while every inherited frame retains its security bridge');
+    await setPreferences(true, true);
     await until("window.__woFrameFixture && window.__woBlankReady && document.querySelector('#blank-frame').contentDocument.querySelector('#frame-preview').paused && !document.querySelector('#blank-frame').contentDocument.querySelector('#frame-preview').autoplay && !document.querySelector('#blank-frame').contentDocument.querySelector('#frame-preview').hasAttribute('autoplay') && document.querySelector('#srcdoc-frame').contentDocument.querySelector('#frame-preview').paused && !document.querySelector('#srcdoc-frame').contentDocument.querySelector('#frame-preview').autoplay && !document.querySelector('#srcdoc-frame').contentDocument.querySelector('#frame-preview').hasAttribute('autoplay')", 'about:blank and srcdoc frames to receive their initial Resource Saver state');
     await setPreferences(true, false);
     await cdp.send('Page.navigate', { url: 'https://preview.example/feed' }, page.sessionId);
@@ -235,6 +255,23 @@ async function run() {
     await until("getComputedStyle(document.querySelector('#cinematics')).display === 'none' && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter === 'none' && getComputedStyle(document.querySelector('ytd-video-preview')).display === 'none'", 'the master switch to restore both resource controls');
     assert.equal(await value("!document.querySelector('#watch-video').paused"), true,
       'the ordinary watch player remains active through resource-setting changes');
+    if (process.env.WARDENONE_LIVE_MEDIA_URL) {
+      const liveUrl = new URL(process.env.WARDENONE_LIVE_MEDIA_URL);
+      assert.equal(liveUrl.protocol, 'https:');
+      await cdp.send('Page.navigate', { url: liveUrl.href }, page.sessionId);
+      await until("!!document.querySelector('video')", 'a video on the real media page');
+      const liveModules = await workerValue(`(async () => {
+        const tabs=await chrome.tabs.query({});
+        const tab=tabs.find(t=>t.url===${JSON.stringify(liveUrl.href)});
+        return chrome.scripting.executeScript({target:{tabId:tab.id},world:'ISOLATED',
+          func:()=>!!globalThis.__woResourceSaver});
+      })()`);
+      assert(Array.isArray(liveModules) && liveModules[0]?.result === true, 'the live page must have Resource Saver loaded');
+      const started = await value("(async () => { const video = document.querySelector('video'); video.muted = true; await video.play(); return video.currentTime; })()");
+      await until('(() => { const video = document.querySelector("video"); return !!video && !video.paused && !video.error && video.currentTime > '
+        + Number(started + 0.5) + '; })()', 'real media playback to advance');
+      console.log('[ok] real media playback advanced with Resource Saver enabled: ' + liveUrl.href);
+    }
     off();
     if (process.env.WO_RS_DIAG === '1') {
       console.log(JSON.stringify({ marks, worker: await workerValue('JSON.stringify(self.__woRsDiag || null)') }));
