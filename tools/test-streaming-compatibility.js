@@ -650,8 +650,34 @@ test('content requests carry player mode through to background cosmetic computat
   assert(/if \(msg\.playerPage === true\)\s*\{[\s\S]*?cosmeticForPlayerPage\(msg\.hostname,/.test(handler)
     && /else\s*\{\s*const mem = await getCosmeticMem\(\);\s*out = computeCosmeticForHost\(msg\.hostname, mem, false\)/.test(handler),
   'background cosmetic handler must skip the full list only on detected player pages');
-  assert(handler.includes('out.userSelectors = hiddenSelectorsForHost') && handler.includes('const bundle = await userFilterBundle()'),
-    'player fast path lost the reader\'s hidden elements or custom cosmetic filters');
+  assert(!handler.includes('hiddenSelectorsForHost') && handler.includes('const bundle = await userFilterBundle()'),
+    'player fast path must keep custom filters separate from bridge-owned hand-hidden rules');
+});
+
+test('cosmetic replies contain only custom filters in ordinary, player and allowlisted modes', async () => {
+  const handler = sourceBetween(BACKGROUND,
+    "if (msg && msg.kind === 'adshield-cosmetic' && msg.hostname)",
+    '\n  // ---- Check an extension before installing it ----');
+  for (const options of [{}, { playerPage: true }, { allowlisted: true }, { disabled: true }]) {
+    let reads = 0;
+    const out = Object.assign({ ok: true, selectors: ['.shipped-ad'] }, options);
+    const answer = await new Promise((resolve) => {
+      const sandbox = {
+        msg: { kind: 'adshield-cosmetic', hostname: 'sub.example.com', playerPage: options.playerPage },
+        sendResponse: resolve,
+        getCosmeticMem: async () => ({}), computeCosmeticForHost: () => out,
+        localGet: async () => ({}), cosmeticForPlayerPage: () => out,
+        readHiddenElements: async () => { reads++; return {}; }, hiddenSelectorsForHost: () => ['#hand-hidden'],
+        normalizeAllowlistHost: (h) => h,
+        userFilterBundle: async () => ({ genericCosmetic: ['.own-filter'], cosmeticByDomain: {
+          'example.com': ['.subscribed-filter'], 'other.example': ['.unrelated'],
+        } }),
+      };
+      vm.runInNewContext('(function(){' + handler + '})()', sandbox);
+    });
+    assert.deepEqual(Array.from(answer.userSelectors), ['.own-filter', '.subscribed-filter'], JSON.stringify(options));
+    assert.equal(reads, 0, 'the engine reply must not load a second copy of hand-hidden rules');
+  }
 });
 
 test('page runtime checks scriptletEngine before executing served scriptlets', () => {

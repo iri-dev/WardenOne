@@ -71,6 +71,9 @@ vm.runInContext(DOMAIN + '\n' + grabFn(ANTI, 'regHost') + '\n' + grabFn(ANTI, 'b
   + grabFn(ANTI, 'ownSite') + '\nfunction cfg() { return {}; }\n'
   + grabFn(ANTI, 'sameParty') + '\nthis.sameParty=sameParty;', partySandbox);
 assert.strictEqual(partySandbox.sameParty('app.example.com', 'login.example.com'), true);
+for (const suffix of ['or.jp', 'web.id', 'me.uk', 'ltd.uk', 'sch.uk', 'nhs.uk', 'or.kr', 'pe.kr', 'id.au', 'k12.ca.us']) {
+  assert.strictEqual(partySandbox.sameParty('x.' + suffix, 'y.' + suffix), false, suffix);
+}
 assert.strictEqual(partySandbox.sameParty('docs.alice.github.io', 'auth.alice.github.io'), true);
 assert.strictEqual(partySandbox.sameParty('alice.github.io', 'bob.github.io'), false);
 assert.strictEqual(partySandbox.sameParty('bucket.s3.amazonaws.com', 'child.bucket.s3.amazonaws.com'), false);
@@ -123,8 +126,8 @@ assert(antiEntry, 'anti-redirect content-script entry is missing');
 assert.deepStrictEqual(antiEntry.js.slice(-2), ['domain-utils.js', 'anti-redirect.js']);
 const bridgeEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('bridge.js'));
 assert(bridgeEntry, 'bridge content-script entry is missing');
-assert.deepStrictEqual(bridgeEntry.js.slice(0, 3),
-  ['domain-utils-isolated.js', 'bridge.js', 'frame-image-logger.js']);
+assert.deepStrictEqual(bridgeEntry.js.slice(0, 4),
+  ['domain-utils-isolated.js', 'engine-compat.js', 'bridge.js', 'frame-image-logger.js']);
 assert.strictEqual(bridgeEntry.world, 'ISOLATED');
 assert.strictEqual(antiEntry.world, 'MAIN');
 

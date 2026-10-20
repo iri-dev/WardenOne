@@ -121,7 +121,7 @@
 <p>uBlock Origin / uAssets contributors. Packaged cosmetic rules are selected and converted; exact compiler inputs and scripts accompany the repository source.</p>
 <p>Terms: <a href="https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/LICENSE">GPL-3.0</a>. GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives. Private local use does not require publishing a user’s local rules or licensing the browser.</p>
 </section>
-<section><h2>Public Suffix List private section</h2><p><a href="https://publicsuffix.org/">Mozilla Foundation / Public Suffix List contributors</a> — MPL-2.0</p>
+<section><h2>Public Suffix List</h2><p><a href="https://publicsuffix.org/">Mozilla Foundation / Public Suffix List contributors</a> — MPL-2.0</p>
 <p>Public Suffix List contributors.</p>
 <p>Terms: <a href="https://www.mozilla.org/MPL/2.0/">MPL-2.0</a>. Preserve MPL notice and make covered source available under MPL.</p>
 </section>
@@ -137,8 +137,9 @@
 <p><strong>rules-adshield.json</strong>: The EasyList authors; selected network rules plus WardenOne compatibility edits. CC-BY-SA-3.0. Converted to Chrome DNR, selected and supplemented; adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.</p>
 <p><strong>rules-easyprivacy.json</strong>: The EasyList authors; EasyPrivacy plus WardenOne tracker rules. CC-BY-SA-3.0. Hosts normalized, batched and capped; curated tracker additions. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.</p>
 <p><strong>cosmetic-rules.json</strong>: EasyList, EasyPrivacy, uAssets, AdGuard and Fanboy Social. GPL-3.0; Fanboy CC-BY-3.0 attribution retained. Selected scriptlet and procedural rules compiled on 2026-08-13. Corresponding cosmetic source records/comments were extracted from ten hash-matched full inputs; unused network records omitted. No rule changes made by this review.</p>
-<p><strong>psl-private.js</strong>: Public Suffix List private section. MPL-2.0. Private entries selected and converted into JavaScript; original version/commit recorded in the file. MPL covers list material.</p>
-<p><strong>domain-utils.js</strong>: WardenOne code with Unicode UTS #39 confusable subset. GPL-3.0-or-later with Unicode-3.0 data notice. ASCII brand-relevant mappings selected and compacted; source version/date/hash retained in the file.</p>
+<p><strong>psl-private.js</strong>: Public Suffix List private and ICANN sections. MPL-2.0. Private and ICANN entries selected and converted into JavaScript; source version recorded in the file. MPL covers list material.</p>
+<p><strong>domain-utils.js</strong>: WardenOne code with compact Public Suffix List ICANN data. GPL-3.0-or-later; MPL-2.0 covers the marked PSL data. ICANN entries grouped by TLD on 2026-10-20; single-label rules use the PSL default wildcard. Source version and MPL notice retained in the generated region.</p>
+<p><strong>domain-utils-isolated.js</strong>: Byte-identical copy of domain-utils.js for the isolated execution world. GPL-3.0-or-later; MPL-2.0 covers the marked PSL data. Generated from the canonical domain helper, preserving its PSL notice and source version.</p>
 <p><strong>spotify-silent-1s.mp4</strong>: uBlock Origin noop-1s.mp4. GPL-3.0. Unmodified; SHA-256 pinned by builder. Identical bytes embedded in spotify-adblock.js.</p>
 <p><strong>rules.json</strong>: WardenOne-maintained seed/curation; source is the shipped JSON. GPL-3.0-or-later (WardenOne curation; upstream notices retained). Maintained as editable source data; no new upstream dataset introduced by this review.</p>
 <p><strong>rules-trackers.json</strong>: WardenOne-maintained seed/curation; source is the shipped JSON. GPL-3.0-or-later (WardenOne curation; upstream notices retained). Maintained as editable source data; no new upstream dataset introduced by this review.</p>

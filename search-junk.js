@@ -137,10 +137,8 @@
   if (!engine) return;
 
   function registrable(h) {
-    var parts = String(h || '').toLowerCase().replace(/^www\./, '').split('.').filter(Boolean);
-    if (parts.length <= 2) return parts.join('.');
-    var last2 = parts.slice(-2).join('.');
-    return /^(co|com|org|net|gov|ac|edu)\.[a-z]{2}$/.test(last2) ? parts.slice(-3).join('.') : last2;
+    // A dynamic registration may run before the static helper; keep that lookup host-scoped.
+    return typeof siteIdentity === 'function' ? siteIdentity(h) : String(h || '').toLowerCase().replace(/^www\./, '');
   }
 
   function isJunkHost(h) {

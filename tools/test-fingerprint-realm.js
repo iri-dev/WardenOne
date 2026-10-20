@@ -29,6 +29,8 @@ const BG = readAt('WARDENONE_BACKGROUND', 'background.js');
 const POPUP = readAt('WARDENONE_POPUP', 'popup.html');
 const README = readAt('WARDENONE_README', 'README.md');
 const DOMAIN = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
+const domainScript = new vm.Script(DOMAIN);
+const domainWorlds = new WeakSet();
 const PSL = fs.existsSync(path.join(ROOT, 'psl-private.js')) ? fs.readFileSync(path.join(ROOT, 'psl-private.js'), 'utf8') : '';
 const CONTROL = !!process.env.WARDENONE_REALM;
 
@@ -156,7 +158,15 @@ section('manifest', () => {
     realmEntry.js.length === 1);
   const engineEx = (engineEntry && engineEntry.exclude_matches) || [];
   const realmEx = realmEntry.exclude_matches || [];
-  const missing = engineEx.filter((p) => !realmEx.includes(p));
+  const matchStart = BG.indexOf('function urlMatchesManifestPattern(');
+  const matchEnd = BG.indexOf('function engineExcludedByManifest(', matchStart);
+  const match = vm.runInNewContext(BG.slice(matchStart, matchEnd) + '\nurlMatchesManifestPattern;', { URL });
+  const missing = engineEx.filter((p) => {
+    if (realmEx.includes(p)) return false;
+    const probes = ['', 'tenant.', 'deep.tenant.'].map((prefix) => p.replace(/^\*:/, 'https:')
+      .replace('://*.', '://' + prefix).replace(/\*/g, 'sample'));
+    return probes.some((url) => !realmEx.some((pattern) => match(pattern, url)));
+  });
   check('it carries every exclusion the engine has (the login and captcha hosts)', engineEx.length > 20 && missing.length === 0,
     'missing: ' + missing.join(', '));
   ['https://www.google.com/recaptcha/*', 'https://*.arkoselabs.com/*', 'https://*.funcaptcha.com/*'].forEach((p) => {
@@ -285,6 +295,7 @@ function realm(opts) {
   return ctx;
 }
 function run(ctx) {
+  if (!domainWorlds.has(ctx)) { domainScript.runInContext(ctx); domainWorlds.add(ctx); }
   try { vm.runInContext(REALM, ctx, { filename: 'fingerprint-realm.js' }); } catch (e) { ctx.__threw = e; }
   return ctx;
 }
@@ -394,10 +405,13 @@ section('one site, one graphics identity', () => {
   const noise = region('FINGERPRINT-NOISE');
   const keySrc = noise.slice(noise.indexOf('woSiteKey=()=>{'), noise.indexOf(',_st='));
   check('the site-key function was found in the region', keySrc.length > 100 && keySrc.length < 2000, keySrc.length);
-  const keyFn = vm.runInNewContext('(function(location){ const ' + keySrc + '; return woSiteKey(); })', {});
+  const keyFn = vm.runInNewContext(DOMAIN + '\n(function(location){ const ' + keySrc + '; return woSiteKey(); })', { URL });
   const keyOf = (hostname, ancestors) => keyFn({ hostname, origin: 'https://' + hostname, ancestorOrigins: ancestors || [] });
   check('the site key is the registrable domain of the top page', keyOf('www.example.com') === 'example.com' && keyOf('example.com') === 'example.com' && keyOf('a.b.c.example.org') === 'example.org');
   check('with the short public suffixes kept whole', keyOf('www.shop.co.uk') === 'shop.co.uk' && keyOf('news.bbc.co.uk') === 'bbc.co.uk' && keyOf('mail.example.com.au') === 'example.com.au' && keyOf('www.example.ac.jp') === 'example.ac.jp');
+  for (const suffix of ['or.jp', 'web.id', 'me.uk', 'ltd.uk', 'sch.uk', 'nhs.uk', 'or.kr', 'pe.kr', 'id.au', 'k12.ca.us']) {
+    check('site seeds separate registrants under ' + suffix, keyOf('x.' + suffix) === 'x.' + suffix && keyOf('x.' + suffix) !== keyOf('y.' + suffix));
+  }
   check('a frame keys on the TOP site, not its own', keyOf('cdn.widgets.net', ['https://mid.example.org', 'https://www.example.com']) === 'example.com'
     && keyOf('cdn.widgets.net', ['https://www.example.com:8443']) === 'example.com');
   check('an about:blank child with no hostname still finds the top site', keyOf('', ['https://www.example.com']) === 'example.com');
@@ -614,6 +628,7 @@ function bridgeVerdict(o) {
   vm.createContext(ctx);
   if (PSL) vm.runInContext(PSL, ctx);
   vm.runInContext(DOMAIN, ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'engine-compat.js'), 'utf8'), ctx);
   vm.runInContext(helpers + '\n' + code + '\nthis.verdict = bridgeFrameNoiseAllowed; this.topHost = bridgeTopHost; this.ownHost = bridgeOwnHost;', ctx);
   return ctx;
 }
@@ -624,6 +639,10 @@ section('bridge verdict', () => {
   check('the verdict code is in the bridge', !!v && typeof v.verdict === 'function');
   if (!v) return;
   check('the switch on, nothing paused: noise runs in the frame', v.verdict(on) === true);
+  for (const hostname of ['docs.google.com', 'drive.google.com', 'tenant.auth0.com', 'tenant.okta.com', 'tenant.shopify.com']) {
+    check(hostname + ' keeps embedded browser signals native', inFrame({ ancestors: ['https://' + hostname] }).verdict(on) === false);
+    check(hostname + ' keeps its own browser signals native', inFrame({ hostname }).verdict(on) === false);
+  }
   check('the switch off: it does not', v.verdict(Object.assign({}, on, { antiFingerprintNoise: false })) === false);
   check('the alias switch counts like the engine\'s gate', v.verdict(Object.assign({}, on, { antiFingerprintNoise: false, antiFingerprint: true })) === true);
   check('protection off entirely: no', v.verdict(Object.assign({}, on, { enabled: false })) === false);

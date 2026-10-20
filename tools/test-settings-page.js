@@ -167,4 +167,24 @@ const manifestKeys = Object.values(manifest.commands || {}).map((c) => c.suggest
 check('the page never spells out a suggested key itself', manifestKeys.length > 0 && manifestKeys.every((k) => !settingsJs.includes(k)));
 check('every command has a line saying what it does', Object.keys(manifest.commands || {}).every((name) => new RegExp("'" + name + "': '").test(settingsJs)));
 
+const review = { ROW_OF_FIELD: {}, pageOfKey: {} };
+const reviewStart = settingsJs.indexOf('function importReviewSections(');
+const reviewEnd = settingsJs.indexOf('\nfunction reviewSettingsImport(', reviewStart);
+vm.runInNewContext(settingsJs.slice(reviewStart, reviewEnd), review);
+const entries = review.importReviewSections(['enabled', 'allowlist'], { enabled: true, allowlist: [] },
+  { enabled: false, allowlist: ['paused.example'] }, {
+    trustedScriptSites: ['scripts.example'], trustedDownloadSites: ['downloads.example'],
+    firewall: [['site.example', 'cdn.example', 'all', 'allow']],
+    filterLines: Array.from({ length: 30 }, (_, i) => '@@||site' + i + '.example^'),
+    filterLists: [{ enabled: true, url: 'https://lists.example/actual', title: '<img src=x onerror=alert(1)>' }],
+    blockedSites: ['blocked.example'], hidden: [['site.example', '.popup']],
+  });
+const shown = entries.flatMap((section) => section.entries).join('\n');
+for (const entry of ['Master protection: true → false', 'paused.example', 'scripts.example', 'downloads.example',
+  'site.example → cdn.example · all: allow', '@@||site29.example^', 'https://lists.example/actual', '<img src=x onerror=alert(1)>', 'blocked.example', '.popup']) {
+  check('import preview retains the actual change: ' + entry, shown.includes(entry));
+}
+check('the import preview renders entries as text, not file-supplied markup',
+  /entries\.textContent = section\.entries\.join/.test(settingsJs) && /dialog\.showModal\(\);\s*cancel\.focus\(\)/.test(settingsJs));
+check('settings imports identify their filter source to the worker', /kind: 'user-rules-set', source: 'settings-import'/.test(settingsJs));
 console.log('settings page: ' + checks + ' checks passed');

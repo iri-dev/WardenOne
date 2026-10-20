@@ -462,6 +462,13 @@ async function run() {
     const { root: doc } = await cdp.send('DOM.getDocument', {}, page.sessionId);
     const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: doc.nodeId, selector: '#import-file' }, page.sessionId);
     await cdp.send('DOM.setFileInputFiles', { nodeId, files: [exported] }, page.sessionId);
+    await until("document.querySelector('#import-review')?.open", 'the import review');
+    const preview = await text('#import-review');
+    for (const entry of ['trusted-scripts.com', 'downloads-site.com', 'fw-site.com', 'cdn.thirdparty-cdn.com', ...ownRules.split('\n').filter(Boolean)]) {
+      ok(preview.includes(entry), 'the import review shows the actual entry: ' + entry);
+    }
+    same((await stored('wardenone_config')).capReferrer, !capBefore, 'the review makes no settings changes before approval');
+    await value("Array.from(document.querySelectorAll('#import-review button')).find(b => b.textContent === 'Apply import').click(); true");
     await until("(document.querySelector('[data-custom=result-backup] .msg') || {}).textContent.startsWith('From wardenone-settings.json')", 'the import to finish', 30000);
     const outcome = await text('[data-custom=result-backup] .msg');
     ok(/applied \d+ settings?, 1 blocked site, 1 trusted script site, 1 trusted download site, 1 firewall decision, 1 hidden element, 3 filter rules\./.test(outcome), 'the import says what it applied and added: ' + outcome);
@@ -477,6 +484,36 @@ async function run() {
     await until(`(document.querySelector('[data-custom=result-backup] .msg') || {}).textContent !== ${JSON.stringify(outcome)} && !/^Reading|^Adding/.test(document.querySelector('[data-custom=result-backup] .msg').textContent)`, 'a second import to answer');
     const again = await text('[data-custom=result-backup] .msg');
     ok(again.startsWith('Everything in wardenone-settings.json is already here'), 'importing the same file again changes nothing: ' + again);
+
+    const crafted = path.join(files, 'untrusted-settings.json');
+    const downloadHosts = Array.from({ length: 25 }, (_, i) => 'download-' + i + '.example.com');
+    fs.writeFileSync(crafted, JSON.stringify({ format: 'wardenone-settings', settings: { enabled: false }, lists: {
+      trustedScriptSites: ['script-import.example.com'], trustedDownloadSites: downloadHosts,
+      firewall: { 'site-import.example.com': { 'cdn-import.example.com': { all: 'allow' } } },
+      myFilters: '@@|http\n@@||com^\n@@||example.com^',
+      filterLists: [{ url: 'https://lists-import.example.com/filters.txt', title: '<img src=x onerror=alert(1)>', enabled: true }],
+    } }));
+    const enabledBefore = (await stored('wardenone_config')).enabled;
+    await cdp.send('DOM.setFileInputFiles', { nodeId: (await cdp.send('DOM.querySelector', { nodeId: (await cdp.send('DOM.getDocument', {}, page.sessionId)).root.nodeId, selector: '#import-file' }, page.sessionId)).nodeId, files: [crafted] }, page.sessionId);
+    await until("document.querySelector('#import-review')?.open", 'the untrusted import review');
+    const untrustedPreview = await text('#import-review');
+    for (const entry of [downloadHosts[24], 'script-import.example.com', 'cdn-import.example.com · all: allow', '@@|http',
+      'https://lists-import.example.com/filters.txt', '<img src=x onerror=alert(1)>', 'true → false']) {
+      ok(untrustedPreview.includes(entry), 'untrusted import exposes the actual change: ' + entry);
+    }
+    ok(await value("!document.querySelector('#import-review img') && document.activeElement.textContent === 'Cancel'"), 'file-supplied markup stays text and Cancel receives focus');
+    same((await stored('wardenone_config')).enabled, enabledBefore, 'master protection stays unchanged while reviewing');
+    if (process.env.WARDENONE_IMPORT_REVIEW_SCREENSHOT) {
+      const shot = await cdp.send('Page.captureScreenshot', { format: 'png' }, page.sessionId);
+      fs.writeFileSync(process.env.WARDENONE_IMPORT_REVIEW_SCREENSHOT, Buffer.from(shot.data, 'base64'));
+    }
+    await value("document.querySelector('#import-review button').click(); true");
+    await until("!document.querySelector('#import-review')", 'the import cancellation');
+    same((await stored('wardenone_config')).enabled, enabledBefore, 'Cancel keeps protection enabled');
+    const afterCancel = await value('collectLists()');
+    ok(!afterCancel.trustedDownloadSites.includes(downloadHosts[0]) && !afterCancel.trustedScriptSites.includes('script-import.example.com')
+      && !afterCancel.filterLists.some((list) => list.url.includes('lists-import.example.com')) && !afterCancel.myFilters.includes('@@|http')
+      && !afterCancel.firewall['site-import.example.com'], 'Cancel makes no trust, filter, firewall or subscription changes');
 
     /* Sites & exceptions: every list can be added to from the page, each where the popup writes it. */
     await go('sites');

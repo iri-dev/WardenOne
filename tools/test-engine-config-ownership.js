@@ -153,8 +153,7 @@ function seed(t, config) {
   // Amazon and Shopify used to take a whole-engine exit: the runtime returned
   // before installing anything and this derivation turned every boolean off,
   // while both still stamped __wardenOneInstalled so the tab reported itself
-  // protected. Removed -- YouTube and university and school sites are the only hosts that pause
-  // anything, each only the names in its own list (YT_COMPAT_PAUSED, EDU_COMPAT_PAUSED).
+  // protected. Compatibility now pauses named features, never the whole engine.
   const az = boot('www.amazon.co.uk');
   seed(az, full);
   check('Amazon gets the ordinary config like any other site',

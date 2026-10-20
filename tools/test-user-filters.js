@@ -70,12 +70,23 @@ const box = {
 };
 
 vm.createContext(box);
-vm.runInContext(consts + NL + hostFn + NL + lineFn
+vm.runInContext(fs.readFileSync('domain-utils.js', 'utf8') + NL + fs.readFileSync('psl-private.js', 'utf8') + NL + consts + NL + hostFn + NL + lineFn
   + ';globalThis.line=parseUserFilterLine;globalThis.parse=parseUserFilterText;'
+  + 'globalThis.allocate=userFilterAllocation;'
   + 'globalThis.BASE=USER_RULE_BASE;globalThis.MAX=USER_RULE_MAX;', box,
   { filename: 'background.js:user-filters' });
 const line = box.line;
 const parse = box.parse;
+
+for (const pattern of ['|http', '.com', '||com^', 'https', '://', '||co.uk^', '||k12.ca.us^',
+  '||github.io^', '||foo.ck^', '||*.example.com^', '||example.com*', '|https://example.com@evil.test/']) {
+  check('broad exception is refused: @@' + pattern, line('@@' + pattern).kind === 'error');
+}
+for (const pattern of ['||example.com^', '||sub.example.co.uk/path*', '|https://example.com/path',
+  '||alice.github.io^', '||www.ck^', '||bar.foo.ck^', '||xn--bcher-kva.de^']) {
+  const out = parse('@@' + pattern, box.BASE);
+  check('domain-bound exception is accepted: ' + pattern, out.network.length === 1 && out.network[0].condition.requestDomains.length === 1);
+}
 
 /* ---- the four forms a person actually writes ---------------------------- */
 {
@@ -122,7 +133,20 @@ const parse = box.parse;
     ['example.com##', 'no selector'],
     ['##+js(aopr, x)', 'procedural and scriptlet'],
     ['example.com##.a:has-text(promo)', 'procedural and scriptlet'],
+    ['example.com##a:-abp-contains(x)', 'procedural and scriptlet'],
+    ['example.com##div:-abp-has(.promo)', 'procedural and scriptlet'],
+    ['example.com##div:contains(promo)', 'procedural and scriptlet'],
+    ['example.com##div:matches-css-before(content:promo)', 'procedural and scriptlet'],
+    ['example.com##div:matches-attr(title)', 'procedural and scriptlet'],
+    ['example.com##div:min-text-length(5)', 'procedural and scriptlet'],
+    ['example.com##div:remove()', 'procedural and scriptlet'],
     ['example.com#@#.a', 'not supported'],
+    ['example.com#?#div:has-text(Ad)', 'not supported'],
+    ['#?#div:has-text(Ad)', 'not supported'],
+    ['example.com,other.example#?#div:has(.ad)', 'not supported'],
+    ['example.com#@?#div:has-text(Ad)', 'not supported'],
+    ['example.com#?#div[data-label="##"]', 'not supported'],
+    ['example.com#@?#div[data-label="##"]', 'not supported'],
     ['not a domain!!##.x', 'not a domain'],
     /* Chrome's own constraints, checked here so they are named by line rather than
        failing the whole atomic update and, with it, every other rule (H19). */
@@ -136,6 +160,33 @@ const parse = box.parse;
       r.kind === 'error' && String(r.why).includes(expect),
       'got ' + r.kind + (r.why ? ' / ' + r.why : ''));
   }
+}
+
+for (const selector of ['article:has(.promo)', '[data-label=":-abp-contains(x)"]', '[data-label="#?#"]', '[data-label="#@?#"]',
+  '[data-label="#@#"]', '[data-label="#$#"]', '[data-label="#%#"]',
+  "[data-label=':contains(promo)']", '.escaped\\:contains\\(x\\)', 'div/* :contains(x) */']) {
+  check('native CSS is not mistaken for procedural syntax: ' + selector, line('##' + selector).kind === 'cosmetic');
+}
+
+{
+  const procedural = 'example.com#?#div:has-text(Ad)';
+  const exception = 'example.com#@?#div:has-text(Ad)';
+  const mixed = parse(['||first.example^', procedural, '##.valid', exception, '||last.example^'].join(NL), box.BASE);
+  check('unsupported cosmetic forms do not inflate counts or allocate rule IDs', mixed.count === 3
+    && mixed.cosmetic === 1 && mixed.network.length === 2 && mixed.nextId === box.BASE + 2
+    && mixed.network[1].id === box.BASE + 1 && mixed.errors.map((e) => e.line).join(',') === '2,4');
+  const own = Array.from({ length: box.MAX - 1 }, (_, i) => '||host' + i + '.example^').concat(procedural).join(NL);
+  const allocation = box.allocate(own, [{ id: 'procedural-fixture', enabled: true, url: 'https://lists.example/filters',
+    text: exception + NL + '||last.example^' }]);
+  check('skipped procedural rules leave budget for a subscribed network rule', allocation.own.applied === box.MAX - 1
+    && allocation.own.skipped === 1 && allocation.lists['procedural-fixture'].applied === 1
+    && allocation.lists['procedural-fixture'].skipped === 1 && allocation.lists['procedural-fixture'].overflow === 0
+    && allocation.used === box.MAX);
+}
+{
+  const mixed = parse('##.first\n##a:-abp-contains(x)\n##.last', box.BASE);
+  check('an unsupported cosmetic line is named without discarding its neighbours', mixed.errors.length === 1
+    && mixed.errors[0].line === 2 && mixed.genericCosmetic.join(',') === '.first,.last');
 }
 
 /* ---- a whole list, the way the engine consumes it ----------------------- */
@@ -207,7 +258,7 @@ check('editing rules invalidates the cosmetic host cache',
   /function invalidateUserFilters\(\)[\s\S]{0,200}__cosmeticHostCache\.clear\(\)/.test(BG),
   'a hide rule would not take effect until the cache aged out');
 check('user cosmetics ride the channel that survives allowlisting',
-  /out\.userSelectors = \(out\.userSelectors \|\| \[\]\)\.concat\(own\)/.test(BG),
+  /out\.userSelectors = own\.slice\(0, 5000\)/.test(BG),
   'allowlisting a site\'s ads must not silently un-hide what the reader hid');
 check('and they match host-or-parent like the shipped rules',
   /host === d \|\| host\.endsWith\('\.' \+ d\)/.test(BG));

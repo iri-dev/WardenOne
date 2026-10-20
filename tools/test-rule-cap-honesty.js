@@ -139,7 +139,7 @@ const hosts = (n, prefix) => Array.from({ length: n }, (_, i) => '||' + (prefix 
 
 /* The bundle the applier gets is the same admitted set: the combined text, own first. */
 check('the bundle is built own-text-first, then each enabled list in stored order',
-  /let text = String\(own \|\| ''\);\s*for \(const l of \(lists \|\| \[\]\)\) \{[\s\S]{0,300}text \+= '\\n' \+ l\.text;/.test(BG));
+  /let text = String\(own \|\| ''\);[\s\S]{0,200}for \(const l of \(lists \|\| \[\]\)\) \{[\s\S]{0,300}text \+= '\\n' \+ l\.text;/.test(BG));
 
 /* ---- the firewall compile ------------------------------------------------------------ */
 /* "All" is derived from the canonical request-type inventory (M45). */

@@ -385,6 +385,8 @@ function checkContentBuild() {
   'tools/test-frame-scope-disclosure.js',
   'tools/test-frame-credential-guard.js',
   'tools/test-site-identity.js',
+  'tools/test-icann-boundaries.js',
+  'tools/test-engine-coverage.js',
   'tools/test-tenant-isolation.js',
   'tools/test-tracker-learner-minimisation.js',
   'tools/test-store-profile.js',
@@ -469,6 +471,7 @@ function checkContentBuild() {
   'consent-wall.js',
   'domain-utils.js',
   'domain-utils-isolated.js',
+  'engine-compat.js',
   'idn-utils.js',
   'psl-private.js',
   'build-profile.js',
@@ -683,6 +686,8 @@ checkCommand('tracker learner trust tests', ['tools/test-tracker-learner-trust.j
 checkCommand('frame scope disclosure tests', ['tools/test-frame-scope-disclosure.js']);
 checkCommand('frame credential guard tests', ['tools/test-frame-credential-guard.js']);
 checkCommand('shared-host site identity tests', ['tools/test-site-identity.js']);
+checkCommand('ICANN site boundaries', ['tools/test-icann-boundaries.js']);
+checkCommand('hosted page engine coverage', ['tools/test-engine-coverage.js']);
 checkCommand('psl-private.js is well-formed and current', ['tools/build-psl.js', '--check']);
 checkCommand('UTS #39 IDN confusable data is well-formed and current', ['tools/build-idn-confusables.js', '--check']);
 checkCommand('tenant isolation tests', ['tools/test-tenant-isolation.js']);

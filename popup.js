@@ -1550,18 +1550,20 @@ function loadUserRules() {
   });
 }
 
+let userRulesImportedLines = new Set();
 function saveUserRules() {
   const area = $('user-rules-text');
   const st = $('user-rules-status');
   if (!area) return;
   if (st) st.textContent = 'Saving...';
-  chrome.runtime.sendMessage({ kind: 'user-rules-set', text: area.value }, (res) => {
+  chrome.runtime.sendMessage({ kind: 'user-rules-set', text: area.value, untrustedRules: [...userRulesImportedLines] }, (res) => {
     const err = chrome.runtime.lastError;
     if (err || !res || !res.ok) {
       if (st) st.textContent = 'Could not save: ' + ((res && res.error) || (err && err.message) || 'unknown error');
       return;
     }
     const skipped = (res.errors || []).length;
+    userRulesImportedLines.clear();
     /* "Saved" is never said on its own over rules that are not in use. */
     let msg = (Number(res.overflow || 0) ? 'Saved, but not all of it is in use. ' : 'Saved. ') + describeRuleCounts(res);
     if (skipped) msg += ' ' + skipped + (skipped === 1 ? ' line was' : ' lines were') + ' skipped.';
@@ -1723,6 +1725,7 @@ function wireMyFilters() {
         /* Append rather than replace: an import that silently wiped rules
            someone had written by hand would be unrecoverable. */
         const incoming = String(reader.result || '');
+        for (const line of incoming.split(/\r?\n/)) if (line.trim()) userRulesImportedLines.add(line.trim());
         area.value = area.value.trim() ? area.value.replace(/\s*$/, '') + '\n' + incoming : incoming;
         const st = $('user-rules-status');
         if (st) st.textContent = 'Added from ' + f.name + '. Review it, then Save rules.';
@@ -5855,6 +5858,7 @@ const SITE_DASH_EDU_PAUSED = new Set([
   'fullscreenGuard', 'gateAdultSites', 'adultHeuristics', 'antiClickjacking',
 ]);
 const SITE_DASH_EDU_PARTLY = new Set(['blockTokenExfil']);
+const SITE_DASH_HOSTED_APP_PAUSED = new Set(['removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint']);
 const SITE_DASH_PROTECTIONS = [
   { key: 'adShield', label: 'AdShield' },
   { key: 'blockTrackers', label: 'Tracker blocking' },
@@ -5942,6 +5946,10 @@ function siteDashIsEducation(host) {
   return /(^|\.)(edu|edu\.au|edu\.sg|edu\.hk|ac\.uk|ac\.nz|ac\.za|ac\.in|ucas\.com)$/i.test(String(host || '').replace(/^www\./, ''));
 }
 
+function siteDashIsHostedApp(host) {
+  return typeof wardenOneHostedAppHost === 'function' && wardenOneHostedAppHost(host);
+}
+
 function siteDashSummarize(res) {
   const counted = wardenSiteDashSummarize(res);
   const net = (res && res.network) || {};
@@ -5985,6 +5993,9 @@ function siteDashProtectionState(key, host, state) {
   if (SITE_DASH_YT_PAUSED.has(key) && siteDashIsYouTube(host)) return { cls: 'is-paused', text: 'Paused here so videos play' };
   if (SITE_DASH_EDU_PAUSED.has(key) && siteDashIsEducation(host)) {
     return { cls: 'is-paused', text: (SITE_DASH_EDU_PARTLY.has(key) ? 'Partly paused' : 'Paused') + ' here so sign-in and classes work' };
+  }
+  if (SITE_DASH_HOSTED_APP_PAUSED.has(key) && siteDashIsHostedApp(host)) {
+    return { cls: 'is-paused', text: 'Paused here for editor and sign-in compatibility' };
   }
   return { cls: '', text: 'On' };
 }

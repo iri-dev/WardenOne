@@ -56,13 +56,13 @@ try {
   check('there is one derived config, not one per site',
     (MIN.match(/const safe=Object\.assign\(\{\},cfg\);/g) || []).length === 1,
     'a second derived copy means another site is being quietly stripped');
-  /* It pauses names from a list, and the only lists are YouTube's and the education one, each
-     chosen by its own host test. A third list, or a loop over anything else, fails here. */
+  /* Each compatibility profile pauses only its named features. */
   check('and it pauses only the names in a named list',
     /const YT_COMPAT_PAUSED=\[/.test(MIN) && /EDU_COMPAT_PAUSED=\[/.test(MIN)
-      && /paused=youtube\?YT_COMPAT_PAUSED:EDU_COMPAT_HOST\.test\(host\)\?EDU_COMPAT_PAUSED:null;/.test(MIN)
+      && /HOSTED_APP_COMPAT_PAUSED=\[/.test(MIN)
+      && /paused=youtube\?YT_COMPAT_PAUSED:EDU_COMPAT_HOST\.test\(host\)\?EDU_COMPAT_PAUSED:hostedApp\?HOSTED_APP_COMPAT_PAUSED:null;/.test(MIN)
       && /i<paused\.length/.test(MIN)
-      && (MIN.match(/_COMPAT_PAUSED=\[/g) || []).length === 2);
+      && (MIN.match(/_COMPAT_PAUSED=\[/g) || []).length === 3);
 }
 
 // ---------------------------------------------------------------------------

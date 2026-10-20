@@ -30,6 +30,7 @@ const root = path.resolve(__dirname, '..');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const PAGE_HOST = 'shop.wardenone-smoke.example';
 const CONTROL_HOST = 'cdn.wardenone-smoke.example';
+const DEVICE_FIXTURE = '0123456789abcdef0123456789abcdef';
 
 /* Domains the shipped tracker list blocks outright for a script's fetch, wherever it is loaded:
    a block rule naming the domain, for every resource type or for xmlhttprequest, and with no
@@ -58,9 +59,20 @@ async function run() {
   const server = http.createServer((req, res) => {
     const host = String(req.headers.host || '').replace(/:\d+$/, '');
     hits.push(host + req.url);
+    if (req.url.startsWith('/issued-media')) {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ file: `http://${CONTROL_HOST}:${serverPort}/segment.m4s?buvid=${DEVICE_FIXTURE}` }));
+      return;
+    }
+    if (req.url === '/icann-frame') {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end('<!doctype html><title>ICANN frame</title><p>Frame.</p>');
+      return;
+    }
     if (req.url.startsWith('/page')) {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-      res.end('<!doctype html><title>Smoke</title><a id="tracked" href="/next" ping="/ping-beacon">Next</a><p>A page.</p>');
+      res.end('<!doctype html><title>Smoke</title><a id="tracked" href="/next" ping="/ping-beacon">Next</a><p>A page.</p>'
+        + '<iframe src="http://frame.x.or.jp:' + serverPort + '/icann-frame" title="ICANN boundary fixture"></iframe>');
       return;
     }
     res.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
@@ -70,7 +82,7 @@ async function run() {
   await new Promise((resolve) => server.listen(serverPort, '127.0.0.1', resolve));
   const port = await profile.freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-engine-smoke-'));
-  const mapped = [PAGE_HOST, CONTROL_HOST].concat(trackers).map((h) => 'MAP ' + h + ' 127.0.0.1').join(', ');
+  const mapped = [PAGE_HOST, CONTROL_HOST, 'frame.x.or.jp'].concat(trackers).map((h) => 'MAP ' + h + ' 127.0.0.1').join(', ');
   let cdp;
   try {
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir,
@@ -118,6 +130,18 @@ async function run() {
     /* 3. Its signed report crosses the bridge to the worker. */
     const tabId = await evaluate(worker, `chrome.tabs.query({}).then((tabs) => (tabs.find((t) => String(t.url || '').startsWith(${JSON.stringify(pageUrl)})) || {}).id)`);
     assert(Number.isInteger(tabId), 'the page has a tab');
+    const boundaryProbe = `(() => {
+      const suffixes = ['or.jp','web.id','me.uk','ltd.uk','sch.uk','nhs.uk','or.kr','pe.kr','id.au','k12.ca.us'];
+      return suffixes.every((s) => registrableDomain('x.' + s) === 'x.' + s
+        && !sameSiteDomain('x.' + s, 'y.' + s) && !hostMatchesSite('x.' + s, s));
+    })`;
+    assert.equal(await evaluate(worker, boundaryProbe + '()'), true, 'worker uses ICANN boundaries');
+    for (const world of ['MAIN', 'ISOLATED']) {
+      const results = await evaluate(worker, `chrome.scripting.executeScript({
+        target: {tabId: ${tabId}, allFrames: true}, world: ${JSON.stringify(world)}, func: ${boundaryProbe}
+      }).then((rows) => rows.map((row) => row.result))`);
+      assert(results.length >= 2 && results.every((result) => result === true), world + ' has ICANN data in the page and its cross-site frame');
+    }
     const tallied = `chrome.runtime.sendMessage({ kind: 'site-dashboard', tabId: ${tabId} }).then((d) => JSON.stringify(d || {}).includes('stripped_link_ping'))`;
     await until(settings, tallied, 'the worker to count the stripped ping for the Site Dashboard');
     /* 4. An unlisted host loads, while a listed one is blocked. Edge can stop known trackers
@@ -137,6 +161,35 @@ async function run() {
     }
     assert(blocked, 'a listed tracker was blocked by the browser and matched by the shipped ruleset: tried ' + trackers.join(', '));
     assert(!hits.some((h) => h.startsWith(blocked + '/')), 'the blocked request never reached the server');
+
+    const issuedProbe = await evaluate(page, `(async () => {
+      const token=${JSON.stringify(DEVICE_FIXTURE)};
+      localStorage.setItem('wo-device-fixture',token);
+      const url='http://${CONTROL_HOST}:${serverPort}/segment.m4s?buvid='+token;
+      const fetchResult=async (url,init)=>fetch(url,init).then(r=>'loaded '+r.status,e=>e.name);
+      const before=await fetchResult(url);
+      const issued=await fetch('/issued-media').then(r=>r.json());
+      const after=await fetchResult(issued.file);
+      const foreign=await fetchResult(issued.file.replace('/segment.m4s','/collect'));
+      const header=await fetchResult(issued.file,{headers:{Authorization:'Bearer '+token}});
+      const body=await fetchResult(issued.file,{method:'POST',body:'session='+token});
+      const beacon=navigator.sendBeacon(issued.file,'session='+token);
+      const xhr=await new Promise(resolve=>{
+        const x=new XMLHttpRequest();x.open('GET','/issued-media?reader=xhr');x.responseType='json';
+        x.onload=()=>{const media=new XMLHttpRequest();media.open('GET',x.response.file);
+          media.onload=()=>resolve(media.status);media.onerror=()=>resolve(0);media.send();};
+        x.onerror=()=>resolve(0);x.send();
+      });
+      localStorage.removeItem('wo-device-fixture');
+      return {before,after,foreign,header,body,beacon,xhr};
+    })()`);
+    assert.deepEqual(issuedProbe, {
+      before: 'SecurityError', after: 'loaded 200', foreign: 'SecurityError',
+      header: 'SecurityError', body: 'SecurityError', beacon: false, xhr: 200,
+    }, 'native fetch/XHR recognise issued device identifiers while credentials and changed paths stay blocked');
+    assert.equal(hits.filter((h) => h.startsWith(CONTROL_HOST + '/segment.m4s')).length, 2,
+      'only the two issued GET requests reached the media fixture');
+    assert(!hits.some((h) => h.startsWith(CONTROL_HOST + '/collect')), 'the altered destination never left the browser');
 
     /* Check Chrome's packaged DNR matcher, including priority against the media allow. */
     await until(worker, "chrome.declarativeNetRequest.getEnabledRulesets().then((ids) => ids.includes('spotify_media'))",
@@ -176,6 +229,124 @@ async function run() {
     await until(page, 'window.__WO_CONFIG__ && window.__WO_CONFIG__.unshimLinks === true', 'the on switch to reach the page');
     await addLink('added-on');
     await until(page, "!document.getElementById('added-on').hasAttribute('ping')", 'the switch turned back on to reach the page');
+
+    const contentSource = fs.readFileSync(path.join(root, 'src/content.js'), 'utf8');
+    const compilerStart = contentSource.indexOf('function userCosmeticCss(');
+    const compilerEnd = contentSource.indexOf('      const host=location.hostname,', compilerStart);
+    assert(compilerStart > 0 && compilerEnd > compilerStart, 'the shipped user cosmetic compiler is available');
+    const compiler = contentSource.slice(compilerStart, compilerEnd);
+    const cssProbe = await evaluate(page, `(() => {
+      ${compiler}
+      const first=document.createElement('div'),last=document.createElement('div'),sheet=document.createElement('style');
+      first.id='wo-cosmetic-first';last.id='wo-cosmetic-last';
+      first.textContent='First';last.textContent='Last';document.body.append(first,last,sheet);
+      const valid=['#wo-cosmetic-first','#wo-cosmetic-last'];
+      sheet.textContent=valid.concat('a:-abp-contains(x)').join(',')+'{display:none!important;}';
+      const controlVisible=valid.every((s)=>getComputedStyle(document.querySelector(s)).display!=='none');
+      const failures=[];
+      for(const invalid of ['a[href=','a:-abp-contains(x)',':unknown-pseudo','[data-x="unterminated',':is(','div/*']){
+        const compiled=userCosmeticCss([valid[0],invalid,valid[1]]);
+        sheet.textContent=compiled;
+        if(compiled!==userCosmeticCss(valid))failures.push('accepted malformed selector: '+invalid);
+        if(!valid.every((s)=>getComputedStyle(document.querySelector(s)).display==='none'))failures.push(invalid);
+      }
+      const normalized=userCosmeticCss(['#wo-cosmetic-first, #wo-cosmetic-last','article:has(.promo)','div::before','[data-x=","]']);
+      const rejected=userCosmeticCss(['div{color:red}', '@import url(x)', '<style>', 'div;body']);
+      const capped=userCosmeticCss(Array.from({length:5001},(_,i)=>'#cosmetic-cap-'+i));
+      sheet.textContent=capped;
+      const empty=userCosmeticCss([])===''&&userCosmeticCss(null)==='';
+      const result={controlVisible,failures,normalized,rejected,empty,cap:!capped.includes('#cosmetic-cap-5000')
+        &&sheet.sheet.cssRules.length===1&&sheet.sheet.cssRules[0].selectorText.split(',').length===5000};
+      first.remove();last.remove();sheet.remove();return result;
+    })()`);
+    assert(cssProbe.controlVisible, 'the native CSS control reproduces a poisoned selector list');
+    assert.deepEqual(cssProbe.failures, [], 'each malformed selector is isolated by the browser parser');
+    assert(cssProbe.normalized.includes('article:has(.promo)') && cssProbe.normalized.includes('div::before')
+      && cssProbe.normalized.includes('#wo-cosmetic-first, #wo-cosmetic-last'), 'native selector lists, :has and pseudo-elements survive');
+    assert(cssProbe.rejected === '' && cssProbe.empty && cssProbe.cap, 'CSS injection characters and the selector cap stay enforced');
+    const savedRules = await evaluate(settings, `chrome.runtime.sendMessage({kind:'user-rules-set',source:'settings-import',text:
+      '##.wo-user-first\\n##a[href=\\n##.wo-user-last\\n##a:-abp-contains(x)'} )`);
+    assert(savedRules.ok && savedRules.errors.some((error)=>/procedural/.test(error.why)), 'unsupported list operators are reported');
+    await evaluate(worker, `chrome.storage.local.set({wardenone_custom_lists:[{
+      id:'cl_cosmetic_fixture',url:'https://lists.wardenone.example/cosmetic.txt',title:'Cosmetic fixture',enabled:true,
+      text:'##.wo-list-first\\n##a:-abp-contains(x)\\n##a[href=\\n##.wo-list-last',updatedAt:Date.now()
+    }]}).then(()=>{invalidateUserFilters();return true})`);
+    await cdp.send('Page.navigate', { url: pageUrl + '?cosmetic-fixture' }, page);
+    await until(page, `window.__wardenOneReadyVersion===${JSON.stringify(version)}`, 'engine after cosmetic save');
+    await evaluate(page, `['wo-user-first','wo-user-last','wo-list-first','wo-list-last'].forEach((name)=>{
+      const node=document.createElement('div');node.className=name;node.textContent=name;document.body.appendChild(node)
+    })`);
+    await until(page, `['wo-user-first','wo-user-last','wo-list-first','wo-list-last'].every((name)=>
+      getComputedStyle(document.querySelector('.'+name)).display==='none')`, 'valid imported and subscribed cosmetics');
+    await evaluate(settings, "chrome.runtime.sendMessage({kind:'user-rules-set',text:''})");
+    await evaluate(worker, 'chrome.storage.local.remove("wardenone_custom_lists").then(()=>{invalidateUserFilters();return true})');
+    console.log('[ok] native CSS isolation and imported/subscribed user cosmetics');
+
+    /* Fulfilled HTTPS documents exercise Chrome's real manifest matcher without visiting accounts. */
+    await evaluate(settings, 'writeConfig({antiFingerprintNoise:true,antiFingerprint:true,commandPasteGuard:true}).then(()=>true)');
+    const fixture = '<!doctype html><title>Hosted content fixture</title><div id="editor" contenteditable="true">Draft</div>'
+      + '<form id="normal-form"><input name="answer" value="Example"><button id="send" type="submit">Send</button></form>'
+      + '<a id="hosted-tracked" href="/next" ping="/beacon">Next</a><script>window.fixtureSubmitted=0;'
+      + 'document.getElementById("normal-form").addEventListener("submit",e=>{e.preventDefault();window.fixtureSubmitted++;'
+      + 'window.fixtureSubmitter=e.submitter&&e.submitter.id});window.hostedFixture=true;</script>';
+    const { targetId: hostedId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+    const hosted = await attach(hostedId);
+    await cdp.send('Page.enable', {}, hosted);
+    await cdp.send('Page.bringToFront', {}, hosted);
+    const stopFixtures = cdp.on((message) => {
+      if (message.sessionId !== hosted || message.method !== 'Fetch.requestPaused') return;
+      void cdp.send('Fetch.fulfillRequest', {
+        requestId: message.params.requestId, responseCode: 200,
+        responseHeaders: [{ name: 'Content-Type', value: 'text/html; charset=utf-8' }],
+        body: Buffer.from(fixture).toString('base64'),
+      }, hosted).catch(() => {});
+    });
+    try {
+      await cdp.send('Fetch.enable', { patterns: [{ urlPattern: 'https://*/*', resourceType: 'Document', requestStage: 'Request' }] }, hosted);
+      const protectedPages = [
+        'https://docs.google.com/forms/d/e/fixture/viewform',
+        'https://docs.google.com/document/d/fixture/edit',
+        'https://drive.google.com/file/d/fixture/view',
+        ...['okta.com','auth0.com','onelogin.com','duosecurity.com','pingone.com','b2clogin.com','ciamlogin.com','amazoncognito.com','shopify.com']
+          .map((domain) => 'https://tenant.' + domain + '/content/shared-page'),
+        'https://tenant.b2clogin.com/content/page?next=/login/oauth2/authorize',
+      ];
+      const loginPages = [
+        'https://tenant.okta.com/login/login.htm', 'https://tenant.auth0.com/u/login/identifier',
+        'https://tenant.onelogin.com/oidc/2/auth', 'https://api-fixture.duosecurity.com/frame/v4/auth',
+        'https://auth.pingone.com/environment/as/authorize',
+        'https://tenant.b2clogin.com/tenant.onmicrosoft.com/policy/oauth2/v2.0/authorize',
+        'https://tenant.ciamlogin.com/tenant/oauth2/v2.0/authorize',
+        'https://pool.auth.eu-west-2.amazoncognito.com/login',
+        'https://admin.shopify.com/authentication/login',
+      ];
+      for (const [protectedPage, urls] of [[true, protectedPages], [false, loginPages]]) {
+        for (const url of urls) {
+          await cdp.send('Page.navigate', { url }, hosted);
+          await until(hosted, 'window.hostedFixture===true && location.href===' + JSON.stringify(url), 'hosted fixture ' + url);
+          if (!protectedPage) {
+            await sleep(400);
+            assert.equal(await evaluate(hosted, '!!window.__wardenOneReadyVersion || !!window.__wardenOnePermissionChainInstalled'), false, 'login hooks stay absent: ' + url);
+            continue;
+          }
+          await until(hosted, 'window.__wardenOneReadyVersion===' + JSON.stringify(version), 'hosted engine ' + url);
+          await until(hosted, '!document.getElementById("hosted-tracked").hasAttribute("ping")', 'page guard on ' + url);
+          assert.equal(await evaluate(hosted, 'window.__wardenOneRealm && window.__wardenOneRealm.noise'), false, 'hosted browser signals stay native: ' + url);
+          const formWorks = await evaluate(hosted, '(() => {document.getElementById("editor").textContent="Edited";'
+            + 'document.getElementById("normal-form").requestSubmit(document.getElementById("send"));'
+            + 'return fixtureSubmitted===1&&fixtureSubmitter==="send"&&document.getElementById("editor").textContent==="Edited"})()');
+          assert.equal(formWorks, true, 'editing and form submitters survive: ' + url);
+          if (url.includes('/forms/')) {
+            await evaluate(hosted, '(() => {const p=document.createElement("div");p.textContent="Verify you are human. Press Win+R, then press Ctrl+V and press Enter to complete verification.";document.body.appendChild(p)})()');
+            await until(hosted, '!!document.getElementById("wo-cmd-warn")', 'ClickFix warning on a hosted form');
+          }
+        }
+      }
+      console.log('[ok] HTTPS engine coverage: ' + protectedPages.length + ' protected content pages and ' + loginPages.length + ' untouched login routes');
+    } finally {
+      stopFixtures();
+      await cdp.send('Target.closeTarget', { targetId: hostedId }).catch(() => {});
+    }
 
     console.log('[ok] the page engine, the bridge, Spotify media rules and a shipped network rule work in ' + browser.Browser
       + ' (blocked ' + blocked + ', ruleset ' + matchedRule.rulesetId + ')');

@@ -26,6 +26,13 @@
 
 ### Changed
 
+- Unsupported `#?#` and `#@?#` cosmetic rules now appear as skipped lines instead of consuming network rule slots or inflating rule counts.
+- Zapper edits now preserve cosmetic rules from user filters and subscribed lists. Hand-hidden elements and list rules have separate stylesheet owners, preventing duplicate IDs and stale hiding after undo.
+- Fixed Bilibili playback failing when server-issued video URLs contain a stored device identifier. SessionShield now recognises those URLs through its existing response checks while retaining credential-body, header and unrelated-destination blocking.
+- Invalid user cosmetic selectors no longer disable valid hiding rules on the page. Selectors are parsed individually by the browser before batching; unsupported adblock operators such as `:-abp-contains` now appear as skipped lines. Native CSS `:has()` remains supported.
+- The page engine now protects Google Docs and Drive content and ordinary pages on nine identity/hosted-app domain families. Login exclusions target authentication routes; variable tenant routes use pathname checks so query parameters cannot disable guards. Hosted pages retain native fingerprint signals, overlays and consent controls while security checks run.
+- Site comparisons now use the bundled ICANN Public Suffix List, including wildcard and exception rules. Redirect checks, Script Drift, search markers and page protections keep unrelated sites under suffixes such as `or.jp`, `web.id` and `k12.ca.us` separate.
+- Settings imports now show every changed value and list entry in a scrollable review before applying. Filter exceptions require a domain anchor; imported and subscribed filter rules retain lower authority than security blocking across restarts and editor saves.
 - Corrected the minimum-Chrome browser check to verify legacy warning URLs before Chrome 130 while retaining fixed-ID probe rejection checks on newer browsers.
 - The frame redirect guard now honours existing login compatibility checks, preventing a recent player classification from interrupting Copilot's Microsoft and Google sign-in redirects.
 - Navigation resets now persist through the badge queue, failed badge writes retry without being marked saved, and new activity entries preserve the history batch still being written. Settings reconciliation records pending intent before applying rules so an interrupted worker can resume it on the next wake.

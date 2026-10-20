@@ -403,6 +403,14 @@
   .radio small { display: block; color: var(--ink-soft); font-size: 12px; margin-top: 1px; }
   .confirm-box { margin-top: 10px; padding: 12px 14px; border-radius: 10px; background: var(--bad-bg); color: var(--ink); font-size: 12.5px; line-height: 1.55; }
   .confirm-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .import-review { width: min(780px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); }
+  .import-review::backdrop { background: #160e2470; }
+  .import-review h2 { margin: 0; padding: 18px 20px; font-size: 19px; border-bottom: 1px solid var(--line); }
+  .import-review-body { max-height: 65vh; overflow: auto; padding: 4px 20px 16px; font-size: 13px; line-height: 1.6; }
+  .import-review-summary, .import-review pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .import-review h3 { margin: 18px 0 6px; font-size: 14px; }
+  .import-review pre { margin: 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--raised); font: 12px/1.7 ui-monospace, Consolas, monospace; }
+  .import-review-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--line); }
   .r-act .num { width: 74px; height: 28px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--raised); padding: 0 8px; font-weight: 700; font-size: 12.5px; text-align: right; }
   .r-act .unit { color: var(--ink-faint); font-size: 12px; font-weight: 700; min-width: 52px; }
   .r-act .range { width: 180px; accent-color: var(--grad-a); }

@@ -26,6 +26,7 @@ const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.resolve(__dirname, '..');
 const SOURCE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
+const DOMAIN = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
 
 function assignedIife(startMarker) {
   const start = SOURCE.indexOf(startMarker);
@@ -37,8 +38,8 @@ function assignedIife(startMarker) {
 }
 
 const SITE_BOUNDARY = vm.runInNewContext(
-  assignedIife('SITE_BOUNDARY='),
-  { String, Object, Array },
+  DOMAIN + '\n' + assignedIife('SITE_BOUNDARY='),
+  { String, Object, Array, URL },
   { filename: 'src/content.js:SITE_BOUNDARY' },
 );
 

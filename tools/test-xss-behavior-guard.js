@@ -24,6 +24,7 @@ const vm = require('vm');
 const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.resolve(__dirname, '..');
+const domainScript = new vm.Script(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'));
 const CONTENT = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
 const SOURCE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
@@ -362,6 +363,7 @@ function run(options) {
   };
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
+  domainScript.runInContext(sandbox);
   vm.runInContext(HELPERS + ';' + SCANNER, sandbox, {
     filename: 'content.min.js:xss-behavior-guard',
   });

@@ -20,7 +20,7 @@ async function run() {
   try {
     server = http.createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html');
-      response.end('<!doctype html><title>Zapper regression</title><style>body{margin:20px}section{width:200px;height:80px;margin-bottom:20px;background:#ddd}</style><section id="first">First</section><section id="second">Second</section>');
+      response.end('<!doctype html><title>Zapper regression</title><style>body{margin:20px}section{width:200px;height:80px;margin-bottom:20px;background:#ddd}</style><section id="first">First</section><section id="second">Second</section><div class="own-filter">User filter</div><div class="subscribed-filter">Subscribed filter</div>');
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir,
@@ -42,6 +42,11 @@ async function run() {
       throw new Error('Timed out: ' + expression);
     };
     await evaluate(worker, 'updateStoredConfig(cfg=>Object.assign(cfg,{enabled:true,elementZapper:true})).then(()=>true)');
+    const filters = await evaluate(worker, `commitUserFilters({own:'##.own-filter',storeOwn:true,storeLists:true,lists:[{
+      id:'cl_zapper_fixture',url:'https://lists.wardenone.example/zapper.txt',enabled:true,
+      text:'##.subscribed-filter',updatedAt:Date.now()
+    }]}).then(r=>({ok:r.ok}))`);
+    assert(filters.ok, 'the user and subscribed cosmetic fixtures are saved');
     const url = 'http://' + host + ':' + server.address().port + '/';
     const { targetId } = await cdp.send('Target.createTarget', { url });
     const { sessionId: page } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
@@ -50,6 +55,32 @@ async function run() {
     await cdp.send('DOM.enable', {}, page);
     await until(page, "document.readyState==='complete'&&!!document.getElementById('second')");
     const tabId = await evaluate(worker, `chrome.tabs.query({}).then(ts=>ts.find(t=>t.url===${JSON.stringify(url)}).id)`);
+    const filterState = `({hidden:['.own-filter','.subscribed-filter'].map(s=>getComputedStyle(document.querySelector(s)).display==='none'),
+      handSheets:document.querySelectorAll('style#wo-user-hidden').length,
+      filterSheets:document.querySelectorAll('style#wo-user-filter-hidden').length,
+      firstVisible:getComputedStyle(document.getElementById('first')).display!=='none',
+      secondVisible:getComputedStyle(document.getElementById('second')).display!=='none'})`;
+    const ownership = [];
+    for (const initial of [[], ['#first']]) {
+      await evaluate(worker, `chrome.storage.local.set({wardenone_hidden_elements:{[${JSON.stringify(host)}]:${JSON.stringify(initial)}}}).then(()=>true)`);
+      await cdp.send('Page.reload', {}, page);
+      await until(page, "document.readyState==='complete'&&['.own-filter','.subscribed-filter'].every(s=>getComputedStyle(document.querySelector(s)).display==='none')");
+      await evaluate(worker, `addHiddenElement(${JSON.stringify(host)},'#second').then(r=>r.ok)`);
+      await until(page, `document.querySelector('style[data-wardenone-user-hidden="true"]')?.textContent.includes('#second')`);
+      ownership.push({initial,stage:'add',state:await evaluate(page, filterState)});
+      await evaluate(worker, `removeHiddenElement(${JSON.stringify(host)},'#second').then(r=>r.ok)`);
+      await until(page, `!document.querySelector('style[data-wardenone-user-hidden="true"]')?.textContent.includes('#second')`);
+      ownership.push({initial,stage:'remove',state:await evaluate(page, filterState)});
+      if (initial.length) {
+        await evaluate(worker, `removeHiddenElement(${JSON.stringify(host)},'#first').then(r=>r.ok)`);
+        await until(page, `!document.querySelector('style[data-wardenone-user-hidden="true"]')?.textContent.includes('#first')`);
+        ownership.push({initial,stage:'clear',state:await evaluate(page, filterState)});
+      }
+    }
+    assert(ownership.every(row=>row.state.hidden.every(Boolean) && row.state.handSheets===1
+      && row.state.filterSheets===1 && row.state.firstVisible===(row.initial.length===0 || row.stage==='clear')
+      && row.state.secondVisible===(row.stage!=='add')), 'independent sheet ownership: ' + JSON.stringify(ownership));
+    console.log('[ok] list hiding survives hand-rule add/remove with empty and preloaded Zapper rules');
     const saved = (count) => `chrome.storage.local.get('wardenone_hidden_elements').then(x=>(x.wardenone_hidden_elements?.[${JSON.stringify(host)}]||[]).length===${count})`;
     const click = async (point) => {
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, page);
@@ -97,7 +128,8 @@ async function run() {
         await key('Escape', 'Escape', 27);
       }
       await until(page, "!document.getElementById('wo-picker-root')");
-      assert.equal(await evaluate(page, "document.querySelectorAll('[data-wardenone-zapped]').length"), 2, finish + ' keeps both selections');
+      /* Refresh can replace temporary picker marks with saved stylesheet rules. */
+      await until(page, "['first','second'].every(id=>getComputedStyle(document.getElementById(id)).display==='none')");
       await key('z', 'KeyZ', 90, 2);
       await until(worker, saved(1));
       await until(page, "getComputedStyle(document.getElementById('second')).display!=='none'");
@@ -106,6 +138,12 @@ async function run() {
       assert(await evaluate(page, "getComputedStyle(document.getElementById('second')).display!=='none'"), 'undone element remains visible after reload');
       console.log('[ok] two Zapper selections, ' + finish + ', post-finish Ctrl+Z and reload persistence in ' + browser.Browser);
     }
+    await evaluate(worker, 'updateStoredConfig(cfg=>Object.assign(cfg,{adShield:false})).then(()=>true)');
+    await cdp.send('Page.reload', {}, page);
+    await until(page, "document.readyState==='complete'&&getComputedStyle(document.getElementById('first')).display==='none'");
+    await evaluate(worker, `removeHiddenElement(${JSON.stringify(host)},'#first').then(r=>r.ok)`);
+    await until(page, "getComputedStyle(document.getElementById('first')).display!=='none'");
+    console.log('[ok] saved Zapper rules and undo still work with AdShield disabled');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     if (server) await new Promise((resolve) => server.close(resolve));

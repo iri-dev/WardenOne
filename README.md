@@ -41,6 +41,19 @@ redirects. It keeps an eye on your other extensions too. And it all runs on your
 WardenOne works across the network, pages, downloads, storage and your other extensions. Not just
 the page you're looking at. And when it blocks something it shows you why.
 
+Site comparisons use a bundled Public Suffix List so separately registered sites under
+suffixes such as `or.jp` and `k12.ca.us` stay separate. Known shared-hosting tenants also
+keep separate identities; the background worker uses the complete private suffix list.
+
+Page guards run on Google Docs and Drive content and non-login pages on the supported
+identity-provider domains. Authentication routes keep their compatibility exemptions.
+On these hosted apps, fingerprint noise, overlay removal and automatic consent handling
+stay paused while phishing, ClickFix, skimmer, form-trap and fake-update checks remain available.
+
+Custom cosmetic rules are checked individually in the browser, so one invalid selector
+does not disable the other rules. Unsupported procedural list operators are reported as
+skipped; native CSS selectors such as `:has()` remain available.
+
 **Inspect it for yourself:** [Privacy policy](PRIVACY.md) · [Permissions explained](permissions.html) · [Security policy](SECURITY.md) · [Source](https://github.com/iri-dev/WardenOne) · [Licence](LICENSE)
 
 <p align="center">
@@ -386,6 +399,11 @@ SessionShield looks for token-like values sitting in URLs, cookies and any stora
 read. It keeps watching after you log in, not just on page load. Token Guard then checks the
 page's request APIs (and its frames) for those exact values and blocks a call it sees sending one
 to an unrelated domain.
+
+Player URLs supplied in API or playlist responses can carry service-issued identifiers,
+including Bilibili's video URLs. Token Guard recognises that response evidence while still
+checking request bodies and headers. Watching a video still tells its provider your IP address
+and which video you request.
 
 Hostile page code can get around those page-level hooks. The browser's network rules are separate
 though and still block the destinations they cover.
@@ -1443,12 +1461,20 @@ Import and export are plain text. If WardenOne can't apply a rule it tells you t
 why, instead of quietly saving it. A saved rule that does nothing is worse than one that gets
 refused. It lets you think you're covered when you're not.
 
+Exceptions must name a domain with a host or URL anchor, such as `@@||example.com^`.
+Settings-file imports show every changed value, trusted site, firewall decision, filter and
+subscription address before applying. Imported filter rules keep a lower priority than security
+blocking, including after a restart or an unchanged save in My Rules. A newly written rule in the
+editor remains a direct manual decision.
+
 ## Custom Lists
 
 Subscribe to a country-specific annoyance list, a niche tracker list or one you maintain yourself.
 Each one gets its own switch, last-updated status, rule count and refresh button.
 
 Lists have to come over HTTPS. Private addresses, weird ports and redirects to them get refused.
+Their exceptions are domain-scoped and cannot override the malware, IP-logger or Script Shield
+blocking bands. A subscription's exception can override a block from another subscription.
 If a refresh fails the last working copy stays. The list's host only finds out its public list was
 downloaded. It doesn't get your browsing history or which rules matched.
 
@@ -1562,6 +1588,9 @@ asks first (mouse or keyboard).
 
 The Hidden elements page lists saved removals so you can bring back one item without clearing the
 others.
+
+Zapper edits preserve hiding from your own filters and subscribed lists. If another filter also
+matches an element, undoing its Zapper removal leaves that filter in effect.
 
 Start **Element Zapper** from the popup or WardenOne's right-click menu. Point at the unwanted
 element and check the outline before clicking. Use `↑` to select a larger containing element or

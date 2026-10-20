@@ -9,8 +9,8 @@
     "writtenPermissionFeeds": 7,
     "resolvedFeeds": 34,
     "unresolvedFeeds": 4,
-    "buildOnlyInputs": 6,
-    "redistributedArtifacts": 19
+    "buildOnlyInputs": 7,
+    "redistributedArtifacts": 20
   },
   "sources": [
     {
@@ -2368,11 +2368,11 @@
     },
     {
       "url": "https://publicsuffix.org/list/public_suffix_list.dat",
-      "purpose": "Site identity boundaries",
+      "purpose": "Site identity and filter exception boundaries",
       "artifact": "psl-private.js",
       "kind": "build-input",
       "policyId": "psl",
-      "name": "Public Suffix List private section",
+      "name": "Public Suffix List",
       "publisher": "Mozilla Foundation / Public Suffix List contributors",
       "home": "https://publicsuffix.org/",
       "license": {
@@ -2392,7 +2392,49 @@
         ],
         "implementation": [
           "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
-          "Build-time selection of the PSL private section into MPL-covered psl-private.js; its source-form data, version/commit, builder and MPL text remain available."
+          "Build-time selection of the PSL private and ICANN sections into psl-private.js and compact ICANN data in domain-utils.js and its isolated copy. MPL covers list material; source-form data, version, builder and MPL text remain available."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://www.mozilla.org/MPL/2.0/",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "checkedAt": "2026-10-19"
+    },
+    {
+      "url": "https://publicsuffix.org/list/public_suffix_list.dat",
+      "purpose": "Compact ICANN suffix data for every execution world",
+      "artifact": "domain-utils.js",
+      "kind": "build-input",
+      "policyId": "psl",
+      "name": "Public Suffix List",
+      "publisher": "Mozilla Foundation / Public Suffix List contributors",
+      "home": "https://publicsuffix.org/",
+      "license": {
+        "type": "published-license",
+        "id": "MPL-2.0",
+        "url": "https://www.mozilla.org/MPL/2.0/"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Public Suffix List contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Preserve MPL notice and make covered source available under MPL."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Build-time selection of the PSL private and ICANN sections into psl-private.js and compact ICANN data in domain-utils.js and its isolated copy. MPL covers list material; source-form data, version, builder and MPL text remain available."
         ],
         "noticeFiles": [
           "CREDITS.md",
@@ -2411,7 +2453,7 @@
     {
       "url": "https://www.unicode.org/Public/security/latest/confusables.txt",
       "purpose": "Unicode confusable subset",
-      "artifact": "domain-utils.js",
+      "artifact": "idn-utils.js",
       "kind": "build-input",
       "policyId": "unicode",
       "name": "Unicode confusables",
@@ -2434,7 +2476,7 @@
         ],
         "implementation": [
           "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
-          "Build-time selection/compaction of Unicode confusables into domain-utils.js; the full Unicode copyright/permission notice is retained."
+          "Build-time selection/compaction of Unicode confusables into idn-utils.js; the full Unicode copyright/permission notice is retained."
         ],
         "noticeFiles": [
           "CREDITS.md",
@@ -2559,9 +2601,9 @@
     {
       "file": "psl-private.js",
       "license": "MPL-2.0",
-      "provenance": "Public Suffix List private section",
+      "provenance": "Public Suffix List private and ICANN sections",
       "builtBy": "tools/build-psl.js",
-      "modifications": "Private entries selected and converted into JavaScript; original version/commit recorded in the file. MPL covers list material.",
+      "modifications": "Private and ICANN entries selected and converted into JavaScript; source version recorded in the file. MPL covers list material.",
       "sourceFiles": [
         "psl-private.js",
         "tools/build-psl.js"
@@ -2576,17 +2618,18 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "c29116820416273db6f0d36dabe2ebca7130bc8d4b1bf4cc07ebc47f22eeb674"
+      "sha256": "dd19f018ec9b595d09372a681c7bdfde63e4661abaf064c27a382bf80b5c178f"
     },
     {
       "file": "domain-utils.js",
-      "license": "GPL-3.0-or-later with Unicode-3.0 data notice",
-      "provenance": "WardenOne code with Unicode UTS #39 confusable subset",
-      "builtBy": "tools/build-idn-confusables.js",
-      "modifications": "ASCII brand-relevant mappings selected and compacted; source version/date/hash retained in the file.",
+      "license": "GPL-3.0-or-later; MPL-2.0 covers the marked PSL data",
+      "provenance": "WardenOne code with compact Public Suffix List ICANN data",
+      "builtBy": "tools/build-psl.js",
+      "modifications": "ICANN entries grouped by TLD on 2026-10-20; single-label rules use the PSL default wildcard. Source version and MPL notice retained in the generated region.",
       "sourceFiles": [
         "domain-utils.js",
-        "tools/build-idn-confusables.js"
+        "psl-private.js",
+        "tools/build-psl.js"
       ],
       "compliance": {
         "status": "implemented",
@@ -2598,7 +2641,30 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "9005e74fd8e1b6c232f7fac21e4b872025b37f05a77a2c006a3ebb0bb13e11a1"
+      "sha256": "793000c5412dcf121c2fce138eeabaa93248ccc3a87f10fe2a69c2947684c5b9"
+    },
+    {
+      "file": "domain-utils-isolated.js",
+      "license": "GPL-3.0-or-later; MPL-2.0 covers the marked PSL data",
+      "provenance": "Byte-identical copy of domain-utils.js for the isolated execution world",
+      "builtBy": "tools/build-content.js",
+      "modifications": "Generated from the canonical domain helper, preserving its PSL notice and source version.",
+      "sourceFiles": [
+        "domain-utils.js",
+        "tools/build-content.js",
+        "tools/build-psl.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      },
+      "kind": "redistributed",
+      "sha256": "793000c5412dcf121c2fce138eeabaa93248ccc3a87f10fe2a69c2947684c5b9"
     },
     {
       "file": "spotify-silent-1s.mp4",
