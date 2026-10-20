@@ -67,6 +67,19 @@ function frameFixture(port, phase) {
       "url('${suspicious(FRAME_CSS_HOST, 'frame-css-unlisted')}')"; }, 100);</script>`;
 }
 
+function assertWarningResourceAccess(browserVersion, resource, stableUrl, resourceUrl, probes) {
+  const major = Number(/\/(\d+)\./.exec(browserVersion)?.[1]);
+  assert(Number.isInteger(major) && major > 0, 'unrecognised Chromium version: ' + browserVersion);
+  // Chrome first enforced use_dynamic_url in 130; older versions retain fixed URLs.
+  if (major >= 130) {
+    assert.notEqual(resourceUrl, stableUrl, resource + ' has a session URL');
+    assert.deepEqual(probes, [false, true], resource + ' rejects fixed-ID probes and permits its session URL');
+  } else {
+    assert.equal(resourceUrl, stableUrl, resource + ' uses the legacy fixed URL');
+    assert.deepEqual(probes, [true, true], resource + ' remains accessible for warning redirects');
+  }
+}
+
 async function run() {
   const hits = [];
   const serverPort = await profile.freePort();
@@ -156,11 +169,10 @@ async function run() {
           const dynamicUrl = await evaluate(extension.attachedSession,
             `chrome.runtime.getURL(${JSON.stringify(resource)})`);
           const stableUrl = `chrome-extension://${extension.id}/${resource}`;
-          assert.notEqual(dynamicUrl, stableUrl, resource + ' has a session URL');
           const probes = await evaluate(nav, `Promise.all(${JSON.stringify([stableUrl, dynamicUrl])}.map(async (url) => {
             try { return (await fetch(url)).ok; } catch (_) { return false; }
           }))`);
-          assert.deepEqual(probes, [false, true], resource + ' rejects fixed-ID probes and permits its session URL');
+          assertWarningResourceAccess(browser.Browser, resource, stableUrl, dynamicUrl, probes);
         }
         await cdp.send('Page.navigate', { url: navUrl }, nav);
         const warningReady = `location.href === ${JSON.stringify(warningUrl)} &&

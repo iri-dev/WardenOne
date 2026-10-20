@@ -26,6 +26,7 @@
 
 ### Changed
 
+- Corrected the minimum-Chrome browser check to verify legacy warning URLs before Chrome 130 while retaining fixed-ID probe rejection checks on newer browsers.
 - The frame redirect guard now honours existing login compatibility checks, preventing a recent player classification from interrupting Copilot's Microsoft and Google sign-in redirects.
 - Navigation resets now persist through the badge queue, failed badge writes retry without being marked saved, and new activity entries preserve the history batch still being written. Settings reconciliation records pending intent before applying rules so an interrupted worker can resume it on the next wake.
 - Optional Resource Saver scripts now load only when their controls are enabled. With all three controls off, each frame skips both modules and their startup state requests; live controls and early security hooks keep their existing behavior.
@@ -73,7 +74,7 @@
 - The bundled hash list is now labelled as EICAR-only diagnostic coverage. Download Shield skips automatic re-fetches until additional signatures are loaded, and File Shield identifies EICAR as a diagnostic result.
 - DNS filtering checks now show partial coverage in amber and no detected coverage in red.
 - Clarified the Tabs and activeTab permission explanations following a browser compatibility review.
-- IP-logger warning resources now use session-specific URLs, closing the fixed extension-ID probe that websites could use to detect WardenOne.
+- IP-logger warning resources now use session-specific URLs on Chrome 130 and later, closing the fixed extension-ID probe on those browsers. Chrome 121–129 ignores this option.
 - Web-accessible extension pages no longer receive private-page message or logger-port privileges; the IP-logger warning can only request its navigation status.
 - Twitch no longer pauses and spins at the start of an ad break when Low Latency is on. Most
   channels, including nearly every Tekken and Brawlhalla stream, tell the player about the next
