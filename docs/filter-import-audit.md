@@ -61,3 +61,22 @@ byte-for-byte with the previous generated data and is unchanged. The updated
 builder validates both sections and prints additions/removals for review. The
 full suffix data is worker-only. The later site-boundary correction also embeds
 compact ICANN data in both content-script worlds; see `icann-boundary-audit.md`.
+
+## Review completion in CI
+
+Commit `9e7830c` passed the unit gate, but both CI browser jobs timed out after
+applying the import review. Completion depended solely on the dialog's native
+`close` event. Chrome 121's
+[dialog implementation](https://chromium.googlesource.com/chromium/src/+/refs/tags/121.0.6167.184/third_party/blink/renderer/core/html/html_dialog_element.cc)
+queues that notification with `EnqueueAnimationFrameEvent`, so an explicit choice
+could remain pending while frame delivery was paused. A regression harness that
+withholds the close event reproduces the unresolved review.
+
+Apply and Cancel now settle directly, once, before removing the dialog. Escape
+cancels directly too. A late native close cannot settle it again, and a native
+close alone cannot grant approval, even with an `apply` return value. The browser
+suite retains the full file round trip and no-write checks, adds native Escape
+coverage, and reports the current result, dialog state and page errors on timeout.
+
+The correction passed all 172 native Settings checks in Edge 150.0.4078.48 and
+Chrome 121.0.6167.184, plus all 292 suites in the staged maintainability gate.

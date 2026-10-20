@@ -77,7 +77,13 @@ async function run() {
         try { if (await value(expression)) return; } catch (_) {}
         await sleep(80);
       }
-      throw new Error('Timed out waiting for ' + label);
+      let state;
+      try {
+        state = await value(`(() => { const dialog=document.querySelector('#import-review');
+          return {visibility:document.visibilityState,backup:(document.querySelector('[data-custom=result-backup] .msg')||{}).textContent,
+            review:dialog?{open:dialog.open,value:dialog.returnValue}:null,errors:window.__errors}; })()`);
+      } catch (_) {}
+      throw new Error('Timed out waiting for ' + label + (state ? ': ' + JSON.stringify(state) : ''));
     }
     const stored = (key) => value(`new Promise(r => chrome.storage.local.get(${JSON.stringify(key)}, d => r(d[${JSON.stringify(key)}])))`);
     const store = (obj) => value(`new Promise(r => chrome.storage.local.set(${JSON.stringify(obj)}, () => r(true)))`);
@@ -514,6 +520,17 @@ async function run() {
     ok(!afterCancel.trustedDownloadSites.includes(downloadHosts[0]) && !afterCancel.trustedScriptSites.includes('script-import.example.com')
       && !afterCancel.filterLists.some((list) => list.url.includes('lists-import.example.com')) && !afterCancel.myFilters.includes('@@|http')
       && !afterCancel.firewall['site-import.example.com'], 'Cancel makes no trust, filter, firewall or subscription changes');
+    await cdp.send('DOM.setFileInputFiles', { nodeId: (await cdp.send('DOM.querySelector', {
+      nodeId: (await cdp.send('DOM.getDocument', {}, page.sessionId)).root.nodeId, selector: '#import-file',
+    }, page.sessionId)).nodeId, files: [crafted] }, page.sessionId);
+    await until("document.querySelector('#import-review')?.open", 'the import review for Escape');
+    await cdp.send('Page.bringToFront', {}, page.sessionId);
+    for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', {
+      type, key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27,
+    }, page.sessionId);
+    await until("!document.querySelector('#import-review')", 'Escape to cancel the import review');
+    same((await stored('wardenone_config')).enabled, enabledBefore, 'Escape keeps protection enabled');
+    same(await value('collectLists()'), afterCancel, 'Escape makes no list or trust changes');
 
     /* Sites & exceptions: every list can be added to from the page, each where the popup writes it. */
     await go('sites');

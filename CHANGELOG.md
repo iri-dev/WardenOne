@@ -26,6 +26,7 @@
 
 ### Changed
 
+- Settings import approval and cancellation now complete without waiting for a rendered frame, preventing the review from stalling after a button click in headless or occluded windows.
 - Unsupported `#?#` and `#@?#` cosmetic rules now appear as skipped lines instead of consuming network rule slots or inflating rule counts.
 - Zapper edits now preserve cosmetic rules from user filters and subscribed lists. Hand-hidden elements and list rules have separate stylesheet owners, preventing duplicate IDs and stale hiding after undo.
 - Fixed Bilibili playback failing when server-issued video URLs contain a stored device identifier. SessionShield now recognises those URLs through its existing response checks while retaining credential-body, header and unrelated-destination blocking.
