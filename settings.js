@@ -2017,6 +2017,74 @@ const stable = (v) => (Array.isArray(v) ? '[' + v.map(stable).join(',') + ']'
   : isObj(v) ? '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + stable(v[k])).join(',') + '}' : JSON.stringify(v === undefined ? null : v));
 const sameValue = (a, b) => stable(a) === stable(b);
 const bullets = (items) => items.slice(0, 10).map((item) => '• ' + item).join('\n') + (items.length > 10 ? '\n…and ' + (items.length - 10) + ' more' : '');
+function importReviewSections(changing, current, incoming, plan) {
+  const sections = [];
+  const add = (title, entries) => { if (entries.length) sections.push({ title, entries }); };
+  add('Settings that change', changing.map((key) => {
+    const row = ROW_OF_FIELD[key];
+    const name = key === 'enabled' ? 'Master protection' : row && pageOfKey[row] ? info(row).name : key;
+    return name + ': ' + JSON.stringify(current[key]) + ' → ' + JSON.stringify(incoming[key]);
+  }));
+  if (plan) {
+    add('Trusted script sites', plan.trustedScriptSites);
+    add('Trusted download sites', plan.trustedDownloadSites);
+    add('Firewall decisions', plan.firewall.map(([site, domain, column, verdict]) => site + ' → ' + domain + ' · ' + column + ': ' + verdict));
+    add('Filter rules', plan.filterLines);
+    add('Subscribed lists', plan.filterLists.map((list) => (list.enabled ? 'Enabled: ' : 'Disabled: ') + list.url
+      + (list.title ? '\nTitle: ' + list.title : '')));
+    add('Blocked sites', plan.blockedSites);
+    add('Hidden elements', plan.hidden.map(([host, selector]) => host + ' · ' + selector));
+  }
+  return sections;
+}
+function reviewSettingsImport(message, sections) {
+  if (document.getElementById('import-review')) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const dialog = document.createElement('dialog');
+    dialog.id = 'import-review';
+    dialog.className = 'import-review';
+    dialog.setAttribute('aria-labelledby', 'import-review-title');
+    const title = document.createElement('h2');
+    title.id = 'import-review-title';
+    title.textContent = 'Review settings import';
+    const body = document.createElement('div');
+    body.className = 'import-review-body';
+    const summary = document.createElement('p');
+    summary.className = 'import-review-summary';
+    summary.textContent = message;
+    body.append(summary);
+    const warning = document.createElement('p');
+    warning.textContent = 'Trusted sites and Allow decisions can reduce protection. Subscriptions can change when refreshed. Review every entry before applying.';
+    body.append(warning);
+    for (const section of sections) {
+      const heading = document.createElement('h3');
+      heading.textContent = section.title + ' (' + section.entries.length + ')';
+      const entries = document.createElement('pre');
+      entries.textContent = section.entries.join('\n');
+      body.append(heading, entries);
+    }
+    const actions = document.createElement('div');
+    actions.className = 'import-review-actions';
+    const cancel = document.createElement('button');
+    cancel.className = 'btn';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => dialog.close('cancel'));
+    const apply = document.createElement('button');
+    apply.className = 'btn primary';
+    apply.textContent = 'Apply import';
+    apply.addEventListener('click', () => dialog.close('apply'));
+    actions.append(cancel, apply);
+    dialog.append(title, body, actions);
+    dialog.addEventListener('close', () => {
+      const approved = dialog.returnValue === 'apply';
+      dialog.remove();
+      resolve(approved);
+    }, { once: true });
+    document.body.append(dialog);
+    dialog.showModal();
+    cancel.focus();
+  });
+}
 async function importSettings(file) {
   if (!file) return;
   if (!loaded) { setResult('backup', 'Still reading your settings. Try again in a moment.', 'err'); return; }
@@ -2051,14 +2119,14 @@ async function importSettings(file) {
     setResult('backup', 'Everything in ' + file.name + ' is already here. Nothing was changed.', 'ok');
     return;
   }
-  const named = changing.map((key) => ROW_OF_FIELD[key] || key).filter((key) => pageOfKey[key]).map((key) => info(key).name);
   const ignored = result.ignored ? ' ' + plural(result.ignored, 'unrecognised entry', 'unrecognised entries') + ' will be ignored.' : '';
   const message = 'Apply ' + file.name + '?\n\n'
     + (changing.length ? plural(changing.length, 'setting') + ' will change.' + ignored + ' Your API keys stay as they are.' : 'Your settings already match.' + ignored)
-    + (named.length ? '\n\nSwitches that change:\n' + bullets(named) : '')
     + (adding.length || levelChange ? '\n\nAdded to your lists:\n' + bullets(adding.concat(levelChange ? [levelChange] : [])) + '\nNothing you already have is removed.' : '')
     + (plan && plan.filterLists.length ? '\n\nSubscribed lists are fetched again from their addresses.' : '');
-  if (!confirm(message)) { setResult('backup', 'Import cancelled. Nothing was changed.', ''); return; }
+  if (!await reviewSettingsImport(message, importReviewSections(changing, current, result.settings, plan))) {
+    setResult('backup', 'Import cancelled. Nothing was changed.', ''); return;
+  }
   const done = [];
   try {
     if (changing.length) {
@@ -3179,8 +3247,10 @@ async function applyListsPlan(plan, have) {
   }
   if (plan.filterLines.length) {
     const text = String(have.myFilters || '').replace(/\s*$/, '');
-    const res = await ask({ kind: 'user-rules-set', text: (text ? text + '\n' : '') + plan.filterLines.join('\n') });
+    const res = await ask({ kind: 'user-rules-set', source: 'settings-import', text: (text ? text + '\n' : '') + plan.filterLines.join('\n') });
     if (res.ok) added.filterLines = plan.filterLines.length; else failed.push('Your rules: ' + why(res));
+    if (res.ok && res.errors && res.errors.length) notes.push('Invalid filter lines were skipped. Review the errors in My Rules.');
+    if (res.ok && res.overflow) notes.push('Some filter rules exceeded the active rule limit. Review My Rules before relying on them.');
   }
   for (const list of plan.filterLists) {
     const res = await ask({ kind: 'custom-list-add', url: list.url });

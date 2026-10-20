@@ -300,8 +300,9 @@ Build-only inputs (not daily runtime downloads):
 - [AdGuard Base, Tracking Protection and Mobile Ads filters](https://filters.adtidy.org/extension/ublock/filters/2.txt) → `cosmetic-rules.json` (GPL-3.0).
 - [AdGuard Base, Tracking Protection and Mobile Ads filters](https://filters.adtidy.org/extension/ublock/filters/3.txt) → `cosmetic-rules.json` (GPL-3.0).
 - [AdGuard Base, Tracking Protection and Mobile Ads filters](https://filters.adtidy.org/extension/ublock/filters/11.txt) → `cosmetic-rules.json` (GPL-3.0).
-- [Public Suffix List private section](https://publicsuffix.org/list/public_suffix_list.dat) → `psl-private.js` (MPL-2.0).
-- [Unicode confusables](https://www.unicode.org/Public/security/latest/confusables.txt) → `domain-utils.js` (Unicode-3.0).
+- [Public Suffix List](https://publicsuffix.org/list/public_suffix_list.dat) → `psl-private.js` (MPL-2.0).
+- [Public Suffix List](https://publicsuffix.org/list/public_suffix_list.dat) → `domain-utils.js` (MPL-2.0).
+- [Unicode confusables](https://www.unicode.org/Public/security/latest/confusables.txt) → `idn-utils.js` (Unicode-3.0).
 - [uBlock Origin silent media](https://raw.githubusercontent.com/gorhill/uBlock/master/src/web_accessible_resources/noop-1s.mp4) → `spotify-silent-1s.mp4` (GPL-3.0).
 
 Bundled and derived material:
@@ -311,8 +312,9 @@ Bundled and derived material:
 | `rules-adshield.json` | The EasyList authors; selected network rules plus WardenOne compatibility edits | CC-BY-SA-3.0 |
 | `rules-easyprivacy.json` | The EasyList authors; EasyPrivacy plus WardenOne tracker rules | CC-BY-SA-3.0 |
 | `cosmetic-rules.json` | EasyList, EasyPrivacy, uAssets, AdGuard and Fanboy Social | GPL-3.0; Fanboy CC-BY-3.0 attribution retained |
-| `psl-private.js` | Public Suffix List private section | MPL-2.0 |
-| `domain-utils.js` | WardenOne code with Unicode UTS #39 confusable subset | GPL-3.0-or-later with Unicode-3.0 data notice |
+| `psl-private.js` | Public Suffix List private and ICANN sections | MPL-2.0 |
+| `domain-utils.js` | WardenOne code with compact Public Suffix List ICANN data | GPL-3.0-or-later; MPL-2.0 covers the marked PSL data |
+| `domain-utils-isolated.js` | Byte-identical copy of domain-utils.js for the isolated execution world | GPL-3.0-or-later; MPL-2.0 covers the marked PSL data |
 | `spotify-silent-1s.mp4` | uBlock Origin noop-1s.mp4 | GPL-3.0 |
 | `rules.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
 | `rules-trackers.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |

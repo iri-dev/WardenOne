@@ -34,6 +34,7 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
+const domainScript = new vm.Script(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'));
 const SRC = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
@@ -77,6 +78,7 @@ function loadDetector() {
       __result: null,
     };
     vm.createContext(sandbox);
+    domainScript.runInContext(sandbox);
     idnScript.runInContext(sandbox);
     vm.runInContext('(function(){' + body + '__result=phishHit;})();', sandbox, { timeout: 5000 });
     return sandbox.__result;

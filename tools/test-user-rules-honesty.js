@@ -345,16 +345,68 @@ function firewallWorld({ store, failStorage, transaction } = {}) {
     };
     ctx.globalThis = ctx;
     vm.createContext(ctx);
-    vm.runInContext(HOST_FN + '\n' + BAND_READ + '\n' + UF
+    vm.runInContext(fs.readFileSync('domain-utils.js', 'utf8') + '\n' + fs.readFileSync('psl-private.js', 'utf8') + '\n' + HOST_FN + '\n' + BAND_READ + '\n' + UF
       + '\nasync function handleSet(msg, sendResponse) {\n' + unwrap(UF_SET) + '\n}'
       + '\nasync function handleToggle(msg, sendResponse) {\n' + unwrap(UF_TOGGLE) + '\n}'
       + '\nglobalThis.api = { parseUserFilterLine, parseUserFilterText, userFilterBundleFor, applyUserFilterRulesFrom, commitUserFilters,'
-      + ' fetchCustomListText, readCustomLists, refreshCustomList, handleSet, handleToggle, USER_RULE_BASE };', ctx);
+      + ' fetchCustomListText, readCustomLists, refreshCustomList, userFilterBundle, handleSet, handleToggle, USER_RULE_BASE };', ctx);
     const call = (fn, msg) => new Promise((resolve) => { fn(msg, resolve); });
     return { api: ctx.api, dnr, storage, fetched, call };
   }
 
+  {
+    const { api, call, dnr, storage } = filterWorld();
+    await call(api.handleSet, { text: '@@||owner.example^' });
+    const text = '@@||owner.example^\n||malware.example^\n@@||malware.example^';
+    const imported = await call(api.handleSet, { text, source: 'settings-import' });
+    check('an import records the source of its new rules', imported.ok && storage.wardenone_user_rules.untrustedRules.length === 2);
+    const ruleFor = (rules, filter) => rules.find((rule) => rule.condition.urlFilter === filter);
+    check('an imported exception is below Script Shield and logger rules', ruleFor([...dnr.dynamic.values()], '||malware.example^').priority < 1000);
+    check('an existing manual exception keeps its authority', ruleFor([...dnr.dynamic.values()], '||owner.example^').priority === 98000);
+    await call(api.handleSet, { text });
+    check('saving the editor does not promote imported rules', [...dnr.dynamic.values()].filter((rule) => rule.condition.urlFilter === '||malware.example^').every((rule) => rule.priority < 1000));
+    const fresh = filterWorld({ store: storage });
+    const restored = await fresh.api.userFilterBundle();
+    check('a fresh worker retains the imported priority ceiling', restored.network.filter((rule) => rule.condition.urlFilter === '||malware.example^').every((rule) => rule.priority < 1000));
+    for (const priority of [1000, 1900, 2000, 2001, 3000]) {
+      const w = filterWorld();
+      await w.call(w.api.handleSet, { text: '@@||malware.example^', source: 'settings-import' });
+      await w.dnr.api.updateDynamicRules({ addRules: [{ id: 123, priority, action: { type: 'block' }, condition: { requestDomains: ['malware.example'] } }] });
+      check('security priority ' + priority + ' beats the imported exception', w.dnr.decide({ url: 'https://malware.example/file.js', type: 'script' }).outcome === 'block');
+    }
+    const subscription = api.userFilterBundleFor('', [{ id: 'list', url: 'https://lists.example/filters', enabled: true,
+      text: '||malware.example^\n@@||malware.example^' }]);
+    check('subscriptions use the same ceiling and keep their own block/exception order', subscription.network[0].priority < subscription.network[1].priority && subscription.network[1].priority < 1000);
+    const popup = filterWorld();
+    await popup.call(popup.api.handleSet, { text: '@@||popup.example^', untrustedRules: ['@@||popup.example^'] });
+    check('a filter text file imported through the popup has the same ceiling', [...popup.dnr.dynamic.values()][0].priority === 900);
+    await popup.api.commitUserFilters({ own: '@@||popup.example^', lists: [], storeLists: true });
+    check('a subscription update does not promote existing file rules', [...popup.dnr.dynamic.values()][0].priority === 900);
+    const broad = await call(api.handleSet, { text: '@@|http\n@@.com\n@@||com^\n@@https\n@@://' });
+    check('all reported broad exceptions are skipped with individual errors', broad.ok && broad.network === 0 && broad.errors.length === 5);
+    check('the popup retains file provenance until it saves', /untrustedRules: \[\.\.\.userRulesImportedLines\]/.test(POPUP_JS)
+      && /userRulesImportedLines\.add\(line\.trim\(\)\)/.test(POPUP_JS));
+  }
+
   /* ---- H19: a deleted exception stays deleted ---------------------------------------- */
+  for (const source of [undefined, 'settings-import']) {
+    const text = 'example.com#?#div:has-text(Ad)';
+    const { api, dnr, call } = filterWorld({ store: { wardenone_user_rules: { text } } });
+    await dnr.api.updateDynamicRules({ addRules: [{ id: api.USER_RULE_BASE, priority: 97000,
+      action: { type: 'block' }, condition: { urlFilter: text } }] });
+    const response = await call(api.handleSet, { text, source });
+    check('unsupported #?# is reported without retaining a legacy network rule: ' + (source || 'editor'),
+      response.ok && response.count === 0 && response.network === 0 && response.errors.length === 1
+      && /cosmetic form/.test(response.errors[0].why) && dnr.dynamic.size === 0);
+  }
+  {
+    const { api } = filterWorld();
+    const bundle = api.userFilterBundleFor('', [{ id: 'procedural-fixture', enabled: true,
+      url: 'https://lists.example/filters', text: 'example.com#?#div:has-text(Ad)\n||ads.example^' }]);
+    check('subscriptions skip #?# while preserving real network rules', bundle.count === 1
+      && bundle.network.length === 1 && bundle.network[0].condition.urlFilter === '||ads.example^'
+      && bundle.errors.length === 1 && bundle.errors[0].line === 2);
+  }
   {
     const { api } = filterWorld();
     check('||*abc is refused by the parser, by line', api.parseUserFilterLine('||*abc').kind === 'error' && /cannot start with \|\|\*/.test(api.parseUserFilterLine('||*abc').why));

@@ -113,6 +113,53 @@ const sources = 'https://player.stream.example/stream/getSources?id=31629';
   e.xhrDone.call({ readyState: 4, status: 200, responseType: '', responseText: '{"file":"' + viaXhr + '"}', responseURL: 'https://player.stream.example/api/x', __wo_url: 'https://player.stream.example/api/x' });
   check('and one out of an XHR response', !leaves(viaXhr));
 
+  console.log('stored identifiers without sensitive query keys');
+  const deviceId = '0123456789abcdef0123456789abcdef';
+  const api = 'https://api.bilibili.com/x/player/wbi/playurl';
+  const mediaUrl = 'https://upos-sz-mirrorcosov.bilivideo.com/upgcxcode/60/11/27455981160/27455981160-1-100022.m4s?upsig=fixture&buvid=' + deviceId;
+  const readers = [
+    ['fetch JSON', async (guard, body) => {
+      const response = new FakeResponse(api, body, 'application/json');
+      guard.watchResponse(response, api);
+      await response.json();
+    }],
+    ['fetch text', async (guard, body) => {
+      const response = new FakeResponse(api, body, 'application/json');
+      guard.watchResponse(response, api);
+      await response.text();
+    }],
+    ['XHR text', async (guard, body) => guard.xhrDone.call({
+      readyState: 4, status: 200, responseType: '', responseText: body,
+      responseURL: api, __wo_url: api,
+    })],
+    ['XHR JSON', async (guard, body) => guard.xhrDone.call({
+      readyState: 4, status: 200, responseType: 'json', response: JSON.parse(body),
+      responseURL: api, __wo_url: api,
+    })],
+  ];
+  for (const [name, read] of readers) {
+    const guard = engine([['device', deviceId], ['credential', storedToken]]);
+    const blocked = (url, body, headers) => guard.bodyHasToken(body, url, headers || '', 'GET');
+    check(name + ': an unissued device identifier still counts', blocked(mediaUrl));
+    await read(guard, JSON.stringify({ data: { dash: { video: [{ baseUrl: mediaUrl }] } } }).replace(/\//g, '\\/'));
+    check(name + ': the API-issued media URL passes', !blocked(mediaUrl));
+    for (const [label, url, body, headers] of [
+      ['another host', mediaUrl.replace('upos-sz-mirrorcosov.bilivideo.com', 'collector.evil.test')],
+      ['another path', mediaUrl.replace('/upgcxcode/', '/collect/')],
+      ['an appended JWT', mediaUrl + '&x=' + jwt],
+      ['an extra stored credential', mediaUrl + '&id=' + storedToken],
+      ['a substituted stored credential', mediaUrl.replace(deviceId, storedToken)],
+      ['a body token', mediaUrl, 'access_token=' + storedToken],
+      ['an authorization header', mediaUrl, undefined, 'Authorization: Bearer ' + storedToken],
+      ['a copied identifier in the body', mediaUrl, 'id=' + deviceId],
+    ]) check(name + ': still checks ' + label, blocked(url, body, headers));
+  }
+  const echoed = engine([['device', deviceId]]);
+  echoed.noteIssued(JSON.stringify({ url: mediaUrl }), api, { sameParty: true, url: api + '?device=' + deviceId });
+  check('a response echoing the sent device identifier grants no exemption', echoed.bodyHasToken(undefined, mediaUrl, '', 'GET'));
+  const unissued = engine([['device', deviceId]], true);
+  check('a video element alone does not exempt a device-bearing segment', unissued.bodyHasToken(undefined, mediaUrl, '', 'GET'));
+
   console.log('what still counts');
   check('the handed-out path with a token it was not handed', leaves(master.replace(signed, 'Z' + signed.slice(1))));
   check('a JWT bolted onto a handed-out link', leaves(master + '&x=' + jwt));

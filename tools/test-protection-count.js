@@ -115,7 +115,9 @@ check('no duplicates in the shield list', new Set(SHIELDS).size === SHIELDS.leng
 check('antiFingerprint is still only an alias of antiFingerprintNoise',
   /antiFingerprintNoise:gate\(cfg\.antiFingerprintNoise\|\|cfg\.antiFingerprint\)/.test(CONTENT));
 check('so it is not counted as a shield of its own', !SHIELDS.includes('antiFingerprint'));
-check('and not offered as a separate per-site override', !/'antiFingerprint'/.test(POPUP_JS));
+const overrideScope = POPUP_JS.match(/const SITE_OVERRIDE_SCOPE = (\{[\s\S]*?\n\});/);
+check('and not offered as a separate per-site override', !!overrideScope
+  && !Object.values(vm.runInNewContext('(' + overrideScope[1] + ')')).flat().includes('antiFingerprint'));
 
 /* ---- two-way coverage: every switch is classified, every classification is a switch ----
    The old test proved that each counted shield has a toggle and stopped there, so a real

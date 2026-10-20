@@ -14,6 +14,21 @@ is measured separately, under [Cold worker wakes](#cold-worker-wakes).
 machine metadata, video investigations and DevTools traces stay local; this page records
 the conclusions needed to understand release performance decisions.
 
+## ICANN data footprint review (2026-10-20)
+
+Against `769dd30`, the staged security and compatibility fixes add 71,468 ZIP
+bytes, 229,408 unpacked bytes and 108,457 unique manifest-script bytes. The two
+shared domain helpers account for 107,376 of those script bytes: each now carries
+the complete compact ICANN suffix data. The worker's full suffix representation
+also grows by 112,353 bytes. Static DNR rule count remains 28,367.
+
+Measured totals before this budget metadata update were 2,448,588 ZIP bytes and
+1,760,267 manifest-script bytes. Their limits increase from 2,430,000 to 2,460,000
+and from 1,750,000 to 1,780,000 respectively; the September baseline and every
+other limit remain unchanged. The compatibility helper adds one unique manifest
+file and two script entries, within the existing limits. This records a source
+size tradeoff for correct site boundaries, not a browser timing or heap result.
+
 ## Page-cost reprofile (2026-10-19)
 
 A five-run Edge 150 profile of the edited build, against untouched `498883e`

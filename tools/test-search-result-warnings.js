@@ -418,6 +418,7 @@ function runPage(url, bodyChildren, options) {
   sandbox.window = sandbox; sandbox.top = sandbox; sandbox.self = sandbox;
   if (!o.warnOff) sandbox.WO_SEARCH_LOGGERS = o.loggers || ['grabify.link', 'iplogger.example'];
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils-isolated.js'), 'utf8'), sandbox);
   vm.runInContext(SCRIPT, sandbox, { filename: 'search-junk.js' });
   const flush = (n) => { for (let i = 0; i < (n || 20) && timers.length; i++) { const t = timers.shift(); t.fn(); } };
   if (o.autoFlush !== false) flush();

@@ -407,10 +407,8 @@
     return true;
   }
 
-  /* User-picked hidden elements are not AdShield rules. Load them directly from
-     this isolated bridge so they still apply when AdShield is off or the site is
-     allowlisted. Keeping this request here also avoids exposing hidden-add/remove
-     through the forgeable MAIN-world relay below. */
+  /* This isolated bridge owns hand-hidden rules, including when AdShield is off
+     or the site is allowlisted. Hidden edits never use the forgeable MAIN relay. */
   function bridgeSafeUserSelector(value) {
     const selector = String(value || '').trim();
     if (!selector || selector.length > 400 || /[{}<;@\\]/.test(selector)) return '';
@@ -1977,8 +1975,10 @@
       let alias = clean.antiFingerprint === true;
       if (!noise && !alias) return false;
       const own = bridgeOwnHost();
+      if (typeof wardenOneHostedAppHost === 'function' && wardenOneHostedAppHost(own)) return false;
       if (own && bridgeHostMatchesList(own, clean.allowlist)) return false;
       const top = bridgeTopHost();
+      if (typeof wardenOneHostedAppHost === 'function' && wardenOneHostedAppHost(top)) return false;
       if (top && top !== own) {
         if (bridgeHostMatchesList(top, clean.allowlist)) return false;
         const topOff = bridgeSiteOverridesFor(clean, top);
@@ -3176,13 +3176,7 @@
       let scriptDriftTimer = 0;
       let scriptDriftLastRun = 0;
       let scriptDriftWarnedKey = '';
-      const cleanHost = (h) => String(h || '').replace(/^www\./, '').toLowerCase();
-      const regSite = (h) => {
-        const parts = cleanHost(h).split('.').filter(Boolean);
-        if (parts.length <= 2) return parts.join('.');
-        const last2 = parts.slice(-2).join('.');
-        return /^(co|com|org|net|gov|ac|edu|gob|gouv)\.[a-z]{2}$/i.test(last2) ? parts.slice(-3).join('.') : last2;
-      };
+      const regSite = (h) => siteIdentity(h);
       const collectScriptUrls = () => {
         const pageSite = regSite(location.hostname);
         const seen = new Set();

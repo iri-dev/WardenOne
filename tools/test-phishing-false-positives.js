@@ -21,6 +21,7 @@ const assert = require('assert');
 const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const source = fs.readFileSync('src/content.js', 'utf8');
+const domainScript = new vm.Script(fs.readFileSync('domain-utils.js', 'utf8'));
 const min = fs.readFileSync('content.min.js', 'utf8');
 const startup = fs.readFileSync('background-startup.js', 'utf8');
 const idnSource = fs.readFileSync('idn-utils.js', 'utf8');
@@ -229,6 +230,7 @@ console.log('[ok] phishing false-positive checks passed');
       Object, Array, Set, Math, String, RegExp,
     };
     installEngineAmbient(sandbox);
+    domainScript.runInContext(sandbox);
     vm.runInContext(idnSource, sandbox);
     vm.runInContext(detectSrc + '\nthis.__hit = phishHit;', sandbox, { filename: 'src/content.js' });
     return sandbox.__hit;

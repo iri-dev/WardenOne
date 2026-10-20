@@ -68,11 +68,9 @@ function check(label, condition, extra) {
 check('the source agrees with the built engine',
   /onAllowlist=\(cfg\.allowlist\|\|\[\]\)\.some/.test(SRC));
 
-/* The comment that was true of one branch and false of this line. Keep them honest
-   together: if a site-wide switch ever comes back, this claim has to go with it. */
-check('the file still claims there is no site-wide off switch',
-  /there is no site-wide off switch left/.test(SRC),
-  'either the claim or the switch has to change, never one without the other');
+const compatibilityLists = Array.from(SRC.matchAll(/\b[A-Z_]+_COMPAT_PAUSED=\[([\s\S]*?)\]/g));
+check('no compatibility list can switch off the whole engine',
+  compatibilityLists.length >= 3 && compatibilityLists.every((match) => !/["']enabled["']/.test(match[1])));
 
 /* ---- 2. the two halves resolve the same hosts ----------------------------------- */
 

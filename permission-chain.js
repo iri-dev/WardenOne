@@ -11,6 +11,7 @@
  */
 (function () {
   'use strict';
+  if (typeof wardenOneEngineLoginUrl === 'function' && wardenOneEngineLoginUrl(location.href)) return;
 
   const WO_GUARD_VERSION = '1.0.2';
   /* Chrome does not re-inject into tabs that are already open when the extension updates, so a

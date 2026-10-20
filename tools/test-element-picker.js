@@ -494,17 +494,19 @@ const looksGenerated = loadLooksGenerated();
   /* "Do not block ads here" and "do not show me that box" are different
      sentences. The engine empties the AdShield stylesheet when a site is
      allowlisted; these must not be in it. */
-  check('the worker sends them in a field of their own', /userSelectors/.test(BG));
+  check('hand-hidden rules arrive with the isolated bridge snapshot', /hidden,/.test(BG)
+    && /bridgeApplyUserHidden\(res\.hidden\)/.test(BRIDGE));
   check('the isolated bridge loads them directly',
     /kind: 'hidden-list', hostname: location\.hostname/.test(BRIDGE)
       && /data-wardenone-user-hidden/.test(BRIDGE),
     'loading only inside WO.adShield makes saved rules disappear when it is off');
-  const at = CONTENT.indexOf('wo-user-hidden');
-  check('the engine gives them their own style element', at > 0);
+  check('the engine never writes the bridge-owned hidden stylesheet',
+    CONTENT.indexOf('"wo-user-hidden"') < 0 && /style\.id = 'wo-user-hidden'/.test(BRIDGE));
+  const at = CONTENT.indexOf('wo-user-filter-hidden');
+  check('user filters have a separate engine-owned stylesheet', at > 0);
   const applyAt = CONTENT.indexOf('userSelectors');
   const clearAt = CONTENT.indexOf('res.allowlisted||res.disabled');
-  check('they are applied before the allowlist exit', applyAt > 0 && clearAt > 0 && applyAt < clearAt,
-    'allowlisting a site for ads would silently bring back things hidden by hand');
+  check('user filters are applied before the allowlist exit', applyAt > 0 && clearAt > 0 && applyAt < clearAt);
   check('the engine re-checks the selectors it is handed',
     CONTENT.indexOf('"{}<;@".split("")') > 0,
     'a stylesheet is built from these; the worker checking on write is one half');

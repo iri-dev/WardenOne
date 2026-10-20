@@ -96,7 +96,7 @@ const DOM_IDS = {
   'rg-adshield-style': 'ad cosmetic styles', 'rg-google-search-cleanup-css': 'search cleanup styles', 'rg-bg-throttle': 'the background-tab throttle marker',
   'wo-clip-swap': 'the clipboard swap warning', 'wo-cmd-warn': 'the command-paste warning', 'wo-fake-window': 'the fake-window warning',
   'wo-formtrap-warn': 'the form trap warning', 'wo-fullscreen-spoof': 'the fullscreen spoof warning', 'wo-insecure-login': 'the insecure login warning',
-  'wo-paste-warn': 'the paste warning', 'wo-sb-block': 'the reputation block', 'wo-scam-lock': 'the scam lock warning', 'wo-user-hidden': 'the reader\'s own hidden-element styles',
+  'wo-paste-warn': 'the paste warning', 'wo-sb-block': 'the reputation block', 'wo-scam-lock': 'the scam lock warning', 'wo-user-filter-hidden': 'user filter text and subscribed cosmetic styles, separate from hand-hidden rules',
 };
 
 /* ---- the inventory, from the source ---------------------------------------------------- */

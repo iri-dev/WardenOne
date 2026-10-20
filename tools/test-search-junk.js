@@ -55,7 +55,7 @@ check('no upstream source is in the seed list', collisions.length === 0, collisi
 
 /* ---- host matching, executed ---- */
 const sandbox = new Function(
-  'var hosts = Object.create(null);\n'
+  fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8') + '\nvar hosts = Object.create(null);\n'
   + SCRIPT.slice(SCRIPT.indexOf('function registrable'), SCRIPT.indexOf('function ensureStyle'))
   + '\nreturn { hosts, registrable, isJunkHost, addHosts };'
 )();

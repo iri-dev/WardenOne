@@ -156,8 +156,8 @@ check('the refresh path and the config path share one applier',
 /* run the applier */
 {
   const APPLY = between(BRIDGE, '  function bridgeSafeUserSelector(value) {', '\n  /* The initial rules arrive with the config', 'the hidden applier');
-  const doc = { styles: [], head: { appendChild(el) { doc.styles.push(el); } }, documentElement: {},
-    querySelector() { return doc.styles[0] || null; }, querySelectorAll() { return []; },
+  const doc = { styles: [], marked: [], head: { appendChild(el) { doc.styles.push(el); } }, documentElement: {},
+    querySelector() { return doc.styles[0] || null; }, querySelectorAll() { return doc.marked.filter((n) => n.marked); },
     createElement() { const el = { attrs: {}, textContent: '', setAttribute(k, v) { el.attrs[k] = v; } }; return el; } };
   const ctx = { console: { warn() {} }, Array, String, RegExp, document: doc };
   ctx.globalThis = ctx; vm.createContext(ctx);
@@ -166,6 +166,16 @@ check('the refresh path and the config path share one applier',
   check('the applier writes one style element with the safe selectors',
     doc.styles.length === 1 && doc.styles[0].textContent === '#ad-banner{display:none!important;}.promo{display:none!important;}', doc.styles[0] && doc.styles[0].textContent);
   check('and refuses the unsafe ones', !/bad|html\{|xxxx/.test(doc.styles[0].textContent));
+  const mark = (selector) => ({
+    marked: true, matches: (s) => s === selector,
+    removeAttribute(name) { if (name === 'data-wardenone-zapped') this.marked = false; },
+  });
+  const confirmed = mark('#ad-banner'), removed = mark('#next-pick');
+  doc.marked = [confirmed, removed];
+  ctx.apply(['#ad-banner', '#next-pick']);
+  ctx.apply(['#ad-banner']);
+  check('removing a rule clears its mark without clearing retained rules', !removed.marked && confirmed.marked);
+  check('refreshes reuse the bridge-owned sheet', doc.styles.length === 1 && doc.styles[0].id === 'wo-user-hidden');
 }
 
 /* ---- 4. the engine's host lists stay with the engine ------------------------------ *

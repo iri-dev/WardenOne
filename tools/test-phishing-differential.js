@@ -18,6 +18,7 @@ const { domainToASCII, domainToUnicode } = require('url');
 const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.resolve(__dirname, '..');
+const domainScript = new vm.Script(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'));
 const CURRENT = fs.readFileSync(path.join(ROOT, 'background-startup.js'), 'utf8');
 const PAGE_SOURCE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const IDN_SOURCE = fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8');
@@ -175,6 +176,7 @@ function loadPageDetector(source) {
   const evaluate = (host) => {
     const sandbox = { location: { hostname: host }, WO: {}, Object, Set, Math, String, Array, Number, JSON, __result: null };
     vm.createContext(sandbox);
+    domainScript.runInContext(sandbox);
     IDN_SCRIPT.runInContext(sandbox);
     vm.runInContext('(function(){' + body + '__result=phishHit;})();', sandbox, { timeout: 5000 });
     const hit = sandbox.__result;

@@ -1499,7 +1499,7 @@
       "checkedAt": "2026-10-19"
     },
     "psl": {
-      "name": "Public Suffix List private section",
+      "name": "Public Suffix List",
       "publisher": "Mozilla Foundation / Public Suffix List contributors",
       "home": "https://publicsuffix.org/",
       "urls": [
@@ -1522,7 +1522,7 @@
         ],
         "implementation": [
           "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
-          "Build-time selection of the PSL private section into MPL-covered psl-private.js; its source-form data, version/commit, builder and MPL text remain available."
+          "Build-time selection of the PSL private and ICANN sections into psl-private.js and compact ICANN data in domain-utils.js and its isolated copy. MPL covers list material; source-form data, version, builder and MPL text remain available."
         ],
         "noticeFiles": [
           "CREDITS.md",
@@ -1562,7 +1562,7 @@
         ],
         "implementation": [
           "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
-          "Build-time selection/compaction of Unicode confusables into domain-utils.js; the full Unicode copyright/permission notice is retained."
+          "Build-time selection/compaction of Unicode confusables into idn-utils.js; the full Unicode copyright/permission notice is retained."
         ],
         "noticeFiles": [
           "CREDITS.md",
@@ -1627,12 +1627,18 @@
       "builtBy": "tools/build-psl.js",
       "constant": "SOURCE_URL",
       "artifact": "psl-private.js",
-      "purpose": "Site identity boundaries"
+      "purpose": "Site identity and filter exception boundaries"
+    },
+    {
+      "builtBy": "tools/build-psl.js",
+      "constant": "SOURCE_URL",
+      "artifact": "domain-utils.js",
+      "purpose": "Compact ICANN suffix data for every execution world"
     },
     {
       "builtBy": "tools/build-idn-confusables.js",
       "constant": "SOURCE_URL",
-      "artifact": "domain-utils.js",
+      "artifact": "idn-utils.js",
       "purpose": "Unicode confusable subset"
     },
     {
@@ -1699,9 +1705,9 @@
     {
       "file": "psl-private.js",
       "license": "MPL-2.0",
-      "provenance": "Public Suffix List private section",
+      "provenance": "Public Suffix List private and ICANN sections",
       "builtBy": "tools/build-psl.js",
-      "modifications": "Private entries selected and converted into JavaScript; original version/commit recorded in the file. MPL covers list material.",
+      "modifications": "Private and ICANN entries selected and converted into JavaScript; source version recorded in the file. MPL covers list material.",
       "sourceFiles": [
         "psl-private.js",
         "tools/build-psl.js"
@@ -1718,13 +1724,14 @@
     },
     {
       "file": "domain-utils.js",
-      "license": "GPL-3.0-or-later with Unicode-3.0 data notice",
-      "provenance": "WardenOne code with Unicode UTS #39 confusable subset",
-      "builtBy": "tools/build-idn-confusables.js",
-      "modifications": "ASCII brand-relevant mappings selected and compacted; source version/date/hash retained in the file.",
+      "license": "GPL-3.0-or-later; MPL-2.0 covers the marked PSL data",
+      "provenance": "WardenOne code with compact Public Suffix List ICANN data",
+      "builtBy": "tools/build-psl.js",
+      "modifications": "ICANN entries grouped by TLD on 2026-10-20; single-label rules use the PSL default wildcard. Source version and MPL notice retained in the generated region.",
       "sourceFiles": [
         "domain-utils.js",
-        "tools/build-idn-confusables.js"
+        "psl-private.js",
+        "tools/build-psl.js"
       ],
       "compliance": {
         "status": "implemented",
@@ -1733,6 +1740,19 @@
           "THIRD_PARTY_NOTICES.html",
           "LICENSE"
         ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "domain-utils-isolated.js",
+      "license": "GPL-3.0-or-later; MPL-2.0 covers the marked PSL data",
+      "provenance": "Byte-identical copy of domain-utils.js for the isolated execution world",
+      "builtBy": "tools/build-content.js",
+      "modifications": "Generated from the canonical domain helper, preserving its PSL notice and source version.",
+      "sourceFiles": ["domain-utils.js", "tools/build-content.js", "tools/build-psl.js"],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": ["CREDITS.md", "THIRD_PARTY_NOTICES.html", "LICENSE"],
         "issueIds": []
       }
     },

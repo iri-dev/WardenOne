@@ -32,6 +32,7 @@ const vm = require('vm');
 const { installEngineAmbient } = require('./lib/engine-ambient.js');
 
 const ROOT = path.resolve(__dirname, '..');
+const domainScript = new vm.Script(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'));
 const CONTENT = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
 
 const tests = [];
@@ -125,6 +126,7 @@ function runScan(options) {
   sandbox.window.addEventListener = () => {};
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
+  domainScript.runInContext(sandbox);
   vm.runInContext(HELPERS + ';' + SCANNER, sandbox, {
     filename: 'content.min.js:behavioral-scanner',
   });

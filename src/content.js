@@ -1,6 +1,7 @@
 /* WardenOne — Copyright (C) 2026 iri · GNU GPL v3 or later, see LICENSE · Official source: https://github.com/iri-dev/WardenOne · Upstream filter-list attribution: CREDITS.md · A modified copy must say so, with a date (GPLv3 5a), and keep this notice. */
 !function(){
   "use strict";
+  if("function"==typeof wardenOneEngineLoginUrl&&wardenOneEngineLoginUrl(location.href))return;
   const __WO_RUNTIME_VERSION="1.0.2";
   if("string"==typeof window.__wardenOneReadyVersion&&window.__wardenOneReadyVersion)return;
   /* Amazon's real storefronts, enumerated. This used to be /(^|\.)amazon\.[a-z.]+$/i, which anchors the
@@ -1623,6 +1624,10 @@
       /* The embedded player is a legitimate frame. */
       "antiClickjacking"
     ],
+    /* Hosted editors and identity portals keep their controls and browser signals native.
+       Page-level security checks remain active outside the manifest's login routes. */
+    HOSTED_APP_COMPAT_HOST=/^(?:(?:docs|drive)\.google\.com|(?:[a-z0-9-]+\.)*(?:okta|auth0|onelogin|duosecurity|pingone|b2clogin|ciamlogin|amazoncognito|shopify)\.com)$/i,
+    HOSTED_APP_COMPAT_PAUSED=["removeOverlays","autoRejectConsent","antiFingerprintNoise","antiFingerprint"],
     /* University and school sites, by suffix. The manifest used to keep the whole engine off every
     page under these, which left them without phishing, skimmer, scam-lock and form-trap checks. It
     now runs there with these named protections paused. Each can break signing in, a class or an
@@ -1673,14 +1678,10 @@
       host=String(location.hostname||"").replace(/^www\./,
       "").toLowerCase();
       let next=cfg;
-      /* Two kinds of host pause anything, each only the names in its own list: YouTube, so videos
-      play, and university and school sites, so sign-in and classes work. Amazon and Shopify used
-      to take a far larger exit: __woStartRuntime returned before installing anything, and this
-      function turned every boolean off -- while both still stamped __wardenOneInstalled, so the
-      tab went on reporting itself protected to the popup and to Repair. Removed;
-      there is no site-wide off switch left. */
+      /* Compatibility pauses name individual features; they never switch off the engine. */
       const youtube=/(^|\.)youtube(-nocookie)?\.com$|(^|\.)youtu\.be$/i.test(location.hostname),
-      paused=youtube?YT_COMPAT_PAUSED:EDU_COMPAT_HOST.test(host)?EDU_COMPAT_PAUSED:null;
+      hostedApp=HOSTED_APP_COMPAT_HOST.test(host),
+      paused=youtube?YT_COMPAT_PAUSED:EDU_COMPAT_HOST.test(host)?EDU_COMPAT_PAUSED:hostedApp?HOSTED_APP_COMPAT_PAUSED:null;
       if(paused){
         const safe=Object.assign({
 
@@ -1692,7 +1693,7 @@
           const k=paused[i];
           "boolean"==typeof safe[k]&&(safe[k]=!1)
         }
-        youtube?safe.__youtubeCompatibilityMode=!0:safe.__educationCompatibilityMode=!0;
+        youtube?safe.__youtubeCompatibilityMode=!0:hostedApp?safe.__hostedAppCompatibilityMode=!0:safe.__educationCompatibilityMode=!0;
         next=safe
       }
       /* Keys the new config no longer carries are dropped, or a setting turned off upstream would
@@ -1968,11 +1969,7 @@
       "").replace(/^\.+|\.+$/g,
       "").toLowerCase(),
       site=host=>{
-        const h=normalize(host),
-        parts=h.split(".").filter(Boolean);
-        if(parts.length<=2||h.includes(":"))return h;
-        const tail=parts.slice(-2).join(".");
-        return/^(co|com|org|net|gov|ac|edu|gob|gouv)\.[a-z]{2}$/i.test(tail)?parts.slice(-3).join("."):tail
+        return"function"==typeof siteIdentity?siteIdentity(host):normalize(host)
       };
       return{
         site:site,
@@ -2429,10 +2426,7 @@
 
     },
     siteKey=h=>{
-      const parts=regDomain(h).split(".").filter(Boolean);
-      if(parts.length<=2)return parts.join(".");
-      const last2=parts.slice(-2).join(".");
-      return/^(ac|co|com|edu|gov|net|org|gob|gouv)\.[a-z]{2}$/.test(last2)?parts.slice(-3).join("."):last2
+      return"function"==typeof siteIdentity?siteIdentity(h):regDomain(h)
     },
     sameSite=(a,
     b)=>{
@@ -5961,6 +5955,9 @@
       ISSUED_LIMIT=3000,
       ISSUED_SCAN_MAX=2097152,
       ISSUED_HINT=/(?:[?&#;]|\\u0026|&amp;)[A-Za-z0-9_.-]{0,40}(?:token|auth|sess|jwt|bearer|secret|credential|passw|key)[A-Za-z0-9_.-]{0,40}=|ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\./i,
+      /* Stored identifiers can trigger the request guard without a sensitive key name.
+         The response prefilter must recognise them too, including Bilibili's buvid. */
+      issuedHint=text=>ISSUED_HINT.test(text)||hasKnownTokenPrefix(text),
       issuedLinks=new Map,
       issuedPatterns=[],
       linkTokenParts=u=>{
@@ -6023,7 +6020,7 @@
       noteIssued=(text,responseUrl,request)=>{
         try{
           if("string"!=typeof text||!text||text.length>ISSUED_SCAN_MAX)return;
-          if(!ISSUED_HINT.test(text))return;
+          if(!issuedHint(text))return;
           const base=new URL(String(responseUrl||""));
           if(!/^https?:$/.test(base.protocol))return;
           const echo=request&&request.sameParty?String(request.url||"")+"\n"+String(request.body||""):"";
@@ -6033,7 +6030,7 @@
             const lines=text.split(/\r?\n/);
             for(let i=0;i<lines.length&&found<6000;i++){
               const line=lines[i].trim();
-              if(!line||!ISSUED_HINT.test(line))continue;
+              if(!line||!issuedHint(line))continue;
               if("#"!==line.charAt(0)){
                 found++;
                 rememberIssued(line,base,echo);
@@ -6062,7 +6059,7 @@
             const attrRe=/\b(?:media|initialization|sourceURL)="([^"]+)"/g;
             for(;(m=attrRe.exec(text))&&found<2000;){
               const value=unxml(m[1]);
-              if(!ISSUED_HINT.test(value))continue;
+              if(!issuedHint(value))continue;
               found++;
               for(const b of bases)-1!==value.indexOf("$")?rememberTemplate(value,b):rememberIssued(value,b,echo);
             }
@@ -6075,7 +6072,7 @@
           const linkRe=/https?:\/\/[^\s"'<>\x60\\()[\]{}|^]+/g;
           let link;
           for(;(link=linkRe.exec(flat))&&found<2000;){
-            if(!ISSUED_HINT.test(link[0]))continue;
+            if(!issuedHint(link[0]))continue;
             found++;
             rememberIssued(link[0],base,echo);
           }
@@ -6087,7 +6084,7 @@
         const walk=(v,depth)=>{
           if(++seen>20000||depth>12||out.length>2000)return;
           if("string"==typeof v){
-            if((-1!==v.indexOf("://")||-1!==v.indexOf("#EXTM3U"))&&ISSUED_HINT.test(v))out.push(v);
+            if((-1!==v.indexOf("://")||-1!==v.indexOf("#EXTM3U"))&&issuedHint(v))out.push(v);
             return;
           }
           if(!v||"object"!=typeof v)return;
@@ -7663,12 +7660,7 @@
       "microsoft",
       "amazon"]),
       kpRegDomain=host=>{
-        const h=String(host||"").replace(/^www\./,
-        "").toLowerCase(),
-        p=h.split(".").filter(Boolean);
-        if(p.length<=2)return h;
-        const last2=p.slice(-2).join(".");
-        return/^(co|com|org|net|gov|ac|edu|gob|gouv)\.[a-z]{2}$/.test(last2)?p.slice(-3).join("."):last2
+        return"function"==typeof registrableDomain?registrableDomain(host):String(host||"").toLowerCase()
       };
       if(!KP_SKIP.has(kpRegDomain(location.hostname).split(".")[0])){
         const KP_GLOBAL_WARN=40,
@@ -10031,6 +10023,28 @@
       })
     }
     if(WO.adShield)try{
+      function userCosmeticCss(selectors){
+        if(!Array.isArray(selectors)||!selectors.length)return"";
+        const bad="{}<;@".split(""),
+        sheet=new CSSStyleSheet(),
+        accepted=new Set;
+        for(const sel of selectors.slice(0,5000)){
+          if("string"!=typeof sel||!sel.length||sel.length>=400||bad.some(c=>sel.indexOf(c)>=0))continue;
+          try{
+            /* A malformed selector must not invalidate neighbours. Require the hide
+               declaration to survive CSS recovery before serializing the selector. */
+            sheet.insertRule(sel+"{display:none!important;}",0);
+            const rule=sheet.cssRules[0],
+            canonical=rule.style&&rule.style.length===1
+            &&rule.style.getPropertyValue("display")==="none"
+            &&rule.style.getPropertyPriority("display")==="important"?rule.selectorText:"";
+            sheet.deleteRule(0);
+            canonical&&accepted.add(canonical)
+          }
+          catch(_){}
+        }
+        return accepted.size?Array.from(accepted).join(",")+"{display:none!important;}":""
+      }
       const host=location.hostname,
       googleSearchResults=isGoogleSearchResults(),
       allowGoogleSearchCosmetics=()=>!googleSearchResults,
@@ -11109,24 +11123,17 @@
           res=>{
             try{
               if(!res||!res.ok)return;
-              /* The reader's own hidden elements, in a stylesheet of their own.
-                 They are applied BEFORE the allowlist/disabled exit below,
-                 because that exit empties the AdShield sheet -- and a thing
-                 somebody hid by hand should not come back because they later
-                 allowlisted the site for ads. Separate element, so neither one
-                 can clear the other.
-                 Re-validated here even though the worker validates on write:
-                 these are pasted into a stylesheet, and a value carrying a
-                 brace ends the rule and starts writing CSS of its own. */
+              /* User filter text and subscriptions survive the AdShield allowlist exit.
+                 Hand-hidden rules belong exclusively to the isolated bridge's sheet.
+                 Browser parsing here also rejects invalid or injected CSS from lists. */
               try{
-                const bad="{}<;@".split(""),
-                us=(Array.isArray(res.userSelectors)?res.userSelectors:[]).filter(sel=>"string"==typeof sel&&sel.length>0&&sel.length<400&&!bad.some(c=>sel.indexOf(c)>=0));
-                let ue=document.getElementById("wo-user-hidden");
-                if(us.length){
+                const css=userCosmeticCss(res.userSelectors);
+                let ue=document.getElementById("wo-user-filter-hidden");
+                if(css){
                   ue||(ue=document.createElement("style"),
-                  ue.id="wo-user-hidden",
+                  ue.id="wo-user-filter-hidden",
                   (document.head||document.documentElement).appendChild(ue));
-                  ue.textContent=us.join(",")+"{display:none!important;}"
+                  ue.textContent=css
                 }
                 else ue&&(ue.textContent="")
               }
@@ -17092,8 +17099,7 @@
           if(/^\[|^\d+(?:\.\d+){3}$/.test(host))return host;
           const p=host.split(".");
           if(p.length<=2)return host;
-          /* Two labels, or three under a short second-level public suffix (co.uk, com.au, ac.jp). */
-          return 2===p[p.length-1].length&&/^(?:co|com|org|net|gov|edu|ac|ne|or|go|mil|nom|ltd|plc|me|id|sch|nhs|police|gob)$/.test(p[p.length-2])?p.slice(-3).join("."):p.slice(-2).join(".")
+          return"function"==typeof siteIdentity?siteIdentity(host):host
         }
         catch(_){
           return""
