@@ -95,17 +95,11 @@ function run() {
   console.log('[ok] DNR static rule budget within Chrome limits');
 }
 
-// The DYNAMIC budget had no build-time check at all. background.js compares its own
-// total against 30,000 and calls console.error on the way past -- in a service worker,
-// which nobody has open. Exceeding it is not silent like the static case: the
-// updateDynamicRules call rejects and the whole remote blocklist fails to apply. So
-// it is worth catching here instead.
-//
-// 30,000 is also the reason minimum_chrome_version exists. Before Chrome 121 the limit
-// was MAX_NUMBER_OF_DYNAMIC_AND_SESSION_RULES = 5,000 combined, which this budget
-// exceeds nearly six times over. Lowering the floor without lowering the budget would
-// ship an extension whose main blocklist never loads, so the two are asserted together.
+// Chrome 121+ separates dynamic and session quotas. Unsafe dynamic actions have
+// a smaller sublimit; every quota also needs capacity beyond today's allocations.
 const MAX_DYNAMIC_RULES = 30000;
+const MAX_SESSION_RULES = 5000;
+const MAX_UNSAFE_DYNAMIC_RULES = 5000;
 const DYNAMIC_LIMIT_SINCE_CHROME = 121;
 
 function numberConstant(source, name) {
@@ -114,62 +108,82 @@ function numberConstant(source, name) {
   return Number(m[1]);
 }
 
+function allocation(bg, name) {
+  const expr = bg.match(new RegExp('^const\\s+' + name + '\\s*=\\s*([\\s\\S]*?);', 'm'));
+  assert(expr, 'background.js no longer declares ' + name);
+  assert(/^[\sA-Z0-9_+]+$/.test(expr[1]), name + ' must be a sum of numeric constants');
+  const terms = expr[1].split('+').map((part) => part.trim());
+  assert(new Set(terms).size === terms.length, name + ' counts a band twice');
+  return { bands: terms.filter((term) => !/^\d+$/.test(term)),
+    total: terms.reduce((sum, term) => sum + (/^\d+$/.test(term) ? Number(term) : numberConstant(bg, term)), 0) };
+}
+
+function assertQuotas(bg, verbose = false) {
+  const spare = numberConstant(bg, 'DNR_MIN_RULE_HEADROOM');
+  assert(spare >= 1000, 'keep at least 1000 rules of headroom per quota');
+  const budgets = {};
+  for (const [name, limit] of [
+    ['TOTAL_DYNAMIC_BUDGET', MAX_DYNAMIC_RULES],
+    ['TOTAL_SESSION_BUDGET', MAX_SESSION_RULES],
+    ['TOTAL_UNSAFE_DYNAMIC_BUDGET', MAX_UNSAFE_DYNAMIC_RULES],
+  ]) {
+    const value = allocation(bg, name);
+    assert(value.total <= limit, name + ' exceeds Chrome quota ' + limit);
+    assert(limit - value.total >= spare, name + ' leaves less than ' + spare + ' headroom');
+    budgets[name] = value;
+    if (verbose) console.log('  ' + name + ': ' + value.total + ' / ' + limit + ' (headroom ' + (limit - value.total) + ')');
+  }
+  return budgets;
+}
+
 function runDynamic() {
   const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+  const budgets = assertQuotas(bg, true);
+  const dynamicBands = budgets.TOTAL_DYNAMIC_BUDGET.bands;
+  const sessionBands = budgets.TOTAL_SESSION_BUDGET.bands;
+  const bands = dynamicBands.concat(sessionBands);
+  assert(dynamicBands.length >= 10 && sessionBands.length >= 5, 'quota allocation lost its band inventory');
+  assert(new Set(bands).size === bands.length, 'dynamic and session allocations must be separate');
+  const declaredBands = [...bg.matchAll(/^const ([A-Z][A-Z0-9_]*_RULES_BUDGET) = \d+;/gm)].map((m) => m[1]);
+  assert(declaredBands.every((name) => name === 'INTRANET_NET_RULES_BUDGET' || bands.includes(name)),
+    'a declared rule budget is missing from both quotas');
+  assert.strictEqual(numberConstant(bg, 'INTRANET_NET_RULES_BUDGET'), numberConstant(bg, 'INTRANET_NETWORK_RULES_BUDGET'),
+    'intranet builder cap differs from its allocation');
+  for (const [builder, budget, extra] of [
+    ['LEARNED_MAX', 'LEARNED_RULES_BUDGET', 0],
+    ['GRABBER_FEED_MAX', 'GRABBER_FEED_RULES_BUDGET', 2],
+    ['MINER_FEED_MAX', 'MINER_FEED_RULES_BUDGET', 0],
+    ['FINGERPRINT_SCRIPT_RULE_MAX', 'FINGERPRINT_SCRIPT_RULES_BUDGET', 0],
+    ['GOOGLE_SEARCH_ALLOW_RULE_MAX', 'GOOGLE_SEARCH_ALLOW_RULES_BUDGET', 0],
+    ['SAFE_SEARCH_RULE_MAX', 'SAFE_SEARCH_RULES_BUDGET', 0],
+  ]) {
+    assert(numberConstant(bg, builder) + extra <= numberConstant(bg, budget), builder + ' exceeds its allocation');
+  }
 
-  // Read the band names out of the TOTAL_DYNAMIC_BUDGET expression itself rather than
-  // listing them here, so a band added to that sum is covered automatically. A
-  // hand-maintained list is exactly what goes stale and then reads as headroom that
-  // is not there.
-  const expr = bg.match(/^const\s+TOTAL_DYNAMIC_BUDGET\s*=\s*([\s\S]*?);/m);
-  assert(expr, 'background.js no longer declares TOTAL_DYNAMIC_BUDGET');
-  const bands = expr[1].match(/[A-Z][A-Z0-9_]*/g) || [];
-  assert(bands.length >= 10,
-    'TOTAL_DYNAMIC_BUDGET now sums only ' + bands.length + ' bands; the parser may be reading it wrong');
-
-  /* Every rule range must be represented in that sum. Reading the bands out of
-     the expression makes an ADDED band automatic, but it does nothing about a
-     range that was never put in the expression at all -- and such a range is
-     invisible here while still consuming Chrome's ceiling at runtime. My Rules
-     (2000) and the site firewall (2000 + 2000) were all three unbudgeted, so the
-     declared total read 29,109 while the real worst case was 35,109 against a
-     30,000 limit. The failure mode is not subtle: updateDynamicRules rejects and
-     the entire remote blocklist stops applying. */
+  // Every range belongs to an allocation. Missing a band defeats the quota check.
   const ranges = [...bg.matchAll(/const ([A-Z][A-Z0-9_]*)_RULE_BASE = \d+/g)].map((m) => m[1]);
-  /* Ranges that legitimately have no band of their own, with the band that already
-     covers them. Anything else must be declared. */
-  const COVERED_ELSEWHERE = { IP_LOOKUP_BLOCK: 'INTRANET_NETWORK_RULES_BUDGET', DYNAMIC: 'MAX_DYNAMIC' };
+  const COVERED_ELSEWHERE = { IP_LOOKUP_BLOCK: 'SMALL_SESSION_RULES_BUDGET', DYNAMIC: 'MAX_DYNAMIC' };
   const unbudgeted = ranges.filter((prefix) => {
-    if (COVERED_ELSEWHERE[prefix]) return false;
+    if (COVERED_ELSEWHERE[prefix]) return !bands.includes(COVERED_ELSEWHERE[prefix]);
     return !bands.some((band) => band.startsWith(prefix));
   });
   assert(unbudgeted.length === 0,
-    'these rule ranges consume Chrome\'s dynamic-rule ceiling but are not in '
-    + 'TOTAL_DYNAMIC_BUDGET, so the headroom printed here is fiction: '
-    + unbudgeted.map((p) => p + '_RULE_BASE').join(', ')
-    + '. Add a band for each, sized to what is actually left.');
+    'rule ranges missing a quota allocation: ' + unbudgeted.map((p) => p + '_RULE_BASE').join(', '));
 
-  let total = 0;
-  for (const band of bands) {
-    const value = numberConstant(bg, band);
-    total += value;
-    console.log('  ' + band + ': ' + value);
+  // A new feature must fail the gate before it can spend the last spare rules.
+  for (const name of ['MAX_DYNAMIC', 'ALLOWLIST_RULES_BUDGET', 'FIREWALL_RULES_BUDGET']) {
+    const oversized = bg.replace(new RegExp('const ' + name + ' = \\d+;'), 'const ' + name + ' = 30000;');
+    assert.throws(() => assertQuotas(oversized), /quota|headroom/, name + ' growth escaped the gate');
   }
-
-  const headroom = MAX_DYNAMIC_RULES - total;
-  console.log('  dynamic + session budget: ' + total + ' / ' + MAX_DYNAMIC_RULES
-    + '  (headroom ' + headroom + ', across ' + bands.length + ' bands)');
-
-  assert(total <= MAX_DYNAMIC_RULES,
-    'dynamic rule budget ' + total + ' exceeds Chrome\'s ceiling of ' + MAX_DYNAMIC_RULES
-    + '. updateDynamicRules would reject and the whole remote blocklist would fail to '
-    + 'apply. Trim a band.');
-
-  if (headroom < 1000) {
-    console.log('  [warn] under 1000 rules of dynamic headroom');
-  }
+  const nearlyFull = bg.replace(/const MAX_DYNAMIC = \d+;/, 'const MAX_DYNAMIC = '
+    + (numberConstant(bg, 'MAX_DYNAMIC') + MAX_DYNAMIC_RULES - budgets.TOTAL_DYNAMIC_BUDGET.total - 25) + ';');
+  assert.throws(() => assertQuotas(nearlyFull), /headroom/, 'a legal quota with only 25 spare rules must fail');
+  const unsafeNearlyFull = bg.replace(/const TOTAL_UNSAFE_DYNAMIC_BUDGET = [^;]+;/,
+    'const TOTAL_UNSAFE_DYNAMIC_BUDGET = 4975;');
+  assert.throws(() => assertQuotas(unsafeNearlyFull), /headroom/, 'unsafe actions must retain their own headroom');
 
   // The floor that makes the 30,000 ceiling true in the first place.
+  const total = budgets.TOTAL_DYNAMIC_BUDGET.total;
   const declared = MANIFEST.minimum_chrome_version;
   assert(declared, 'manifest.json declares no minimum_chrome_version, but the dynamic rule '
     + 'budget (' + total + ') relies on the 30,000 ceiling added in Chrome '
@@ -181,7 +195,7 @@ function runDynamic() {
     + ') needs the 30,000 ceiling from Chrome ' + DYNAMIC_LIMIT_SINCE_CHROME + '.');
   console.log('  minimum_chrome_version: ' + declared + ' (>= ' + DYNAMIC_LIMIT_SINCE_CHROME + ')');
 
-  console.log('[ok] DNR dynamic rule budget within Chrome limits');
+  console.log('[ok] DNR dynamic, session and unsafe budgets retain spare capacity');
 }
 
 

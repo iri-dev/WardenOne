@@ -3,18 +3,21 @@
 Checked 19 October 2026 against the exact configured files and primary publisher
 documents. This records the evidence and implementation for WardenOne’s current
 use; it is not a blanket legal approval of every upstream service or future use.
+HaGeZi's publisher-confirmation record was updated on 20 October 2026 from the
+owner-supplied email screenshot; the original correspondence remains private.
 
 ## Scope and counts
 
 There are **38 unique configured runtime feed URLs**, including optional
 OpenPhish. Repeated use of one URL by multiple protection groups counts once;
 the inventory retains every purpose and setting. There are **32 feeds covered
-by published licenses**, **four with written publisher permission**, and
-**four with specific unresolved upstream/use-scope questions**. Two written
+by published licenses**. Written publisher permission covers **seven feed URLs
+from five publishers**, including HaGeZi's three already licensed lists.
+**Four feeds have specific unresolved upstream/use-scope questions**. Two written
 permissions resolve direct runtime feeds; Phishing Army and flinteger retain
 their grants while the identified upstream questions remain. Thus **34 feeds
-are resolved** for the documented use. Permission counts are not additive to
-the resolved total.
+are resolved** for the documented use. Permission counts overlap with published
+license coverage and are not additive to the resolved total.
 
 The old runtime inventory also contained 38 distinct URLs; the estimate of 39
 was not an additional source. Its host-based groupings merged unrelated

@@ -751,34 +751,47 @@ function downloadHashSourceMeta(fetched, kind, extra) {
   };
 }
 
-// ---- Local keyless known-malware hash set --------------------------------------
-// Default-ON URL-content fingerprint check that needs NO API key: for reviewed web
-// downloads, WardenOne re-fetches the download URL, hashes that response, and matches
-// it against a bundled/feed-extensible known-malware set. This is useful when the URL
-// serves stable public bytes, but it is not a saved-file hash. Signed, authenticated,
-// one-time, blob, or personalized downloads can differ from the re-fetched response.
+/* The bundled EICAR entry is diagnostic. Only additional signatures justify an
+   automatic URL re-fetch; that response still cannot verify the saved file. */
+const EICAR_SHA256 = '275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f';
 const MALWARE_HASHES = new Set();
-function addMalwareHashes(arr) {
+const MALWARE_HASH_SOURCES = { bundled: new Set(), stored: new Set() };
+let malwareHashesReady = Promise.resolve();
+function addMalwareHashes(arr, target = MALWARE_HASHES) {
   for (const h of (Array.isArray(arr) ? arr : [])) {
     const v = String(h || '').trim().toLowerCase();
-    if (/^[a-f0-9]{64}$/.test(v)) MALWARE_HASHES.add(v);
+    if (/^[a-f0-9]{64}$/.test(v)) target.add(v);
   }
 }
-async function loadMalwareHashes() {
-  // bundled seed (includes the EICAR test hash so the guard is end-to-end verifiable)
-  try {
-    const res = await fetch(chrome.runtime.getURL('malware-hashes.json'), { cache: 'no-store' });
-    if (res && res.ok) {
-      const data = await res.json();
-      addMalwareHashes(Array.isArray(data) ? data : (data && data.sha256));
+function localMalwareHashCoverage() {
+  const signatureCount = MALWARE_HASHES.size - (MALWARE_HASHES.has(EICAR_SHA256) ? 1 : 0);
+  return { listSize: MALWARE_HASHES.size, signatureCount,
+    diagnosticOnly: MALWARE_HASHES.size > 0 && signatureCount === 0 };
+}
+function loadMalwareHashes() {
+  malwareHashesReady = malwareHashesReady.then(async () => {
+    try {
+      const res = await fetch(chrome.runtime.getURL('malware-hashes.json'), { cache: 'no-store' });
+      if (res && res.ok) {
+        const data = await res.json();
+        const next = new Set();
+        addMalwareHashes(Array.isArray(data) ? data : (data && data.sha256), next);
+        MALWARE_HASH_SOURCES.bundled = next;
+      }
+    } catch (_) {}
+    try {
+      const x = await localGet('wardenone_malware_hashes');
+      const stored = x && x.wardenone_malware_hashes;
+      const next = new Set();
+      addMalwareHashes(Array.isArray(stored) ? stored : (stored && stored.sha256), next);
+      MALWARE_HASH_SOURCES.stored = next;
+    } catch (_) {}
+    MALWARE_HASHES.clear();
+    for (const hashes of Object.values(MALWARE_HASH_SOURCES)) {
+      for (const hash of hashes) MALWARE_HASHES.add(hash);
     }
-  } catch (_) {}
-  // runtime/feed-supplied set: a future hash-feed integration just writes this storage key
-  try {
-    const x = await localGet('wardenone_malware_hashes');
-    const stored = x && x.wardenone_malware_hashes;
-    addMalwareHashes(Array.isArray(stored) ? stored : (stored && stored.sha256));
-  } catch (_) {}
+  });
+  return malwareHashesReady;
 }
 loadMalwareHashes();
 
@@ -847,13 +860,21 @@ async function ensureDownloadHash(rep, url) {
   }
 }
 
-// Keyless local known-malware URL-content check. Runs only on already-REVIEWED downloads
-// (grade C+), which are already paused, so it adds no bandwidth surprise to normal/clean
-// downloads. A hit forces grade F (critical) -> the hard-block path cancels + deletes the file.
+/* Additional local signatures are checked only for downloads already under review. */
 async function enrichDownloadWithLocalHash(rep, url, filename, cfg) {
   if (!cfg || cfg.downloadHashCheck === false) return rep;
   if (!shouldReviewDownload(rep)) return rep;
-  if (!MALWARE_HASHES.size) return rep;
+  await malwareHashesReady;
+  const coverage = localMalwareHashCoverage();
+  if (!coverage.signatureCount) {
+    if (!rep.hashReputation) rep.hashReputation = {
+      provider: 'Local SHA-256 list', local: true, checked: false, skipped: true, ...coverage,
+      reason: coverage.diagnosticOnly
+        ? 'Local hash check skipped: the bundled list contains only the EICAR test signature. No re-fetch was made for this local check.'
+        : 'Local hash check skipped: no malware signatures are loaded.',
+    };
+    return rep;
+  }
   if (!shouldCheckVirusTotalHash(rep, url, filename)) return rep;
   const h = await ensureDownloadHash(rep, url);
   if (!h.ok) {
@@ -869,6 +890,12 @@ async function enrichDownloadWithLocalHash(rep, url, filename, cfg) {
         maxBytes: DOWNLOAD_HASH_MAX_BYTES,
       };
     }
+    return rep;
+  }
+  if (MALWARE_HASHES.has(h.sha256) && h.sha256 === EICAR_SHA256) {
+    rep.hashReputation = { provider: 'Local SHA-256 list', checked: true, ok: true,
+      hit: true, local: true, diagnostic: true, sha256: h.sha256,
+      source: h.source || null, exactFile: h.exactFile === true, ...coverage };
     return rep;
   }
   if (MALWARE_HASHES.has(h.sha256)) {
@@ -2280,9 +2307,7 @@ async function runDownloadGuardScan(id, hint, reason) {
 
     if (cfg.downloadDomainAge === true) rep = await enrichDownloadWithDomainAge(rep, cfg);
     rep = await enrichDownloadWithExternalReputation(rep, downloadUrl, cfg);
-    // Keyless local known-malware URL-content hash check (default ON). Runs only on
-    // already-reviewed (hence already-paused) downloads, so it adds no cost to normal
-    // downloads. A hit forces grade F -> hard-block path deletes the file.
+    /* The local check skips URL re-fetching while only diagnostic signatures are loaded. */
     rep = await enrichDownloadWithLocalHash(rep, downloadUrl, filename, cfg);
     if (!pauseResult && shouldReviewDownload(rep) && item.state !== 'complete' && item.state !== 'interrupted'
       && shouldCheckVirusTotalHash(rep, downloadUrl, filename)

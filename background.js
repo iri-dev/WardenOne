@@ -195,13 +195,12 @@ function badgeCountsSnapshot() {
   return out;
 }
 
-/* One write per burst, and none when nothing changed. Every counted block used to serialise the
-   snapshot of every counted tab and write it to storage.session at once, so a page firing
-   hundreds of blocks cost hundreds of writes for a number only the toolbar shows (PERF-08). A
-   count lost in the last fifth of a second before the worker sleeps is display tolerance. */
+// Coalesce display counts. Normal idle shutdown leaves time for this timer;
+// an abrupt termination can still lose changes that storage has not acknowledged.
 const BADGE_COUNTS_WRITE_DELAY_MS = 200;
 let badgeCountsWriteTimer = null;
 let badgeCountsLastWritten = '';
+let badgeCountsWriteRetries = 0;
 
 function persistBadgeCounts() {
   if (!badgeCountsReady || badgeCountsWriteTimer) return;
@@ -222,23 +221,28 @@ function writeBadgeCountsNow() {
   const snapshot = badgeCountsSnapshot();
   const serialized = JSON.stringify(snapshot);
   if (serialized === badgeCountsLastWritten) return;
-  badgeCountsLastWritten = serialized;
   badgeCountsWriteActive = true;
   const payload = { [BADGE_COUNTS_SESSION_KEY]: snapshot };
   let finished = false;
-  const done = () => {
+  const done = (error) => {
     if (finished) return;
     finished = true;
     badgeCountsWriteActive = false;
-    if (badgeCountsWriteAgain) {
+    if (!error) {
+      badgeCountsLastWritten = serialized;
+      badgeCountsWriteRetries = 0;
+    }
+    const retry = !!error && badgeCountsWriteRetries < 3;
+    if (retry) badgeCountsWriteRetries++;
+    if (badgeCountsWriteAgain || retry) {
       badgeCountsWriteAgain = false;
       persistBadgeCounts();
     }
   };
   try {
-    const pending = area.set(payload, done);
-    if (pending && typeof pending.then === 'function') pending.then(done, done);
-  } catch (_) { done(); }
+    const pending = area.set(payload, () => done(chrome.runtime.lastError));
+    if (pending && typeof pending.then === 'function') pending.then(() => done(null), done);
+  } catch (error) { done(error); }
 }
 
 function applyBadgeCountOperation(operation) {
@@ -619,7 +623,7 @@ function normalizeTabBlockMessage(msg, sender) {
 beginBadgeCountRecovery();
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
-  if (!sender || !sender.tab || sender.tab.id == null) return;
+  if (!messageSenderIsTab(sender)) return;
   const tabId = sender.tab.id;
   /* The Site Dashboard's count of routine page actions (see "Site tally"). Top frame only: that
      is the page the dashboard describes, and frames report through it. */
@@ -734,19 +738,14 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 });
 
 // ---- buffered, race-free history writer ----
-// The in-memory buffer (__histBuffer) is backed by chrome.storage.session so
-// entries are NOT lost when the MV3 service worker is terminated and restarted.
-// chrome.storage.session survives SW restarts within the same browser session
-// but is NOT persisted to disk -- ideal for a write-ahead buffer. The main
-// storage write (chrome.storage.local.set) still caps history at 200 items.
+// Session storage backs queued and in-flight history until local storage acknowledges it.
+// An abrupt termination before the session write completes can still lose new entries.
 let __histBuffer = [];
+let __histInFlight = [];
 let __histTimer = null;
 let __histWriting = false;
 let __histPersistTimer = null;
-// Persist the in-memory buffer to chrome.storage.session (fire-and-forget) so a SW
-// restart can recover it. Session storage is limited to ~1MB total, so we keep at
-// most the last 100 entries. Debouncing collapses noisy block bursts into one
-// small write instead of doing storage I/O for every event.
+// Keep at most 100 pending entries and coalesce noisy bursts into one session write.
 function persistHistBufferNow() {
   __histPersistTimer = null;
   if (INCOGNITO_CONTEXT) {
@@ -755,11 +754,12 @@ function persistHistBufferNow() {
     return;
   }
   try {
-    if (!__histBuffer.length) {
+    const pending = __histInFlight.concat(__histBuffer);
+    if (!pending.length) {
       try { chrome.storage.session.remove('__wardenone_hist_buffer').catch(() => {}); } catch (_) {}
       return;
     }
-    const slice = __histBuffer.length > 100 ? __histBuffer.slice(-100) : __histBuffer;
+    const slice = pending.length > 100 ? pending.slice(-100) : pending;
     chrome.storage.session.set({ __wardenone_hist_buffer: slice }).catch(() => {});
   } catch (_) {}
 }
@@ -952,6 +952,7 @@ function flushHistory() {
   __histTimer = null;
   if (INCOGNITO_CONTEXT) {
     __histBuffer = [];
+    __histInFlight = [];
     __histWriting = false;
     return;
   }
@@ -970,6 +971,7 @@ function flushHistory() {
   // take everything currently buffered; new events that arrive during the async
   // round-trip accumulate in a fresh buffer and get flushed on the next tick.
   const pending = __histBuffer;
+  __histInFlight = pending;
   __histBuffer = [];
   // The session write-ahead copy is deliberately NOT cleared here. Clearing it at this point left
   // a window in which these entries existed nowhere durable at all: lifted out of the buffer,
@@ -981,6 +983,7 @@ function flushHistory() {
   // the rest of the worker's life, with this batch already gone from memory and from session.
   const giveBack = () => {
     __histBuffer = pending.concat(__histBuffer);
+    __histInFlight = [];
     __histWriting = false;
     persistHistBuffer();
   };
@@ -1017,6 +1020,7 @@ function flushHistory() {
               return;
             }
             __histWriting = false;
+            __histInFlight = [];
             if (__histBuffer.length) {
               // Entries arrived during the round-trip. They are the current contents of the session
               // copy, so it must be rewritten rather than removed, or clearing would erase them.
@@ -1044,8 +1048,7 @@ function flushHistory() {
 chrome.webNavigation?.onBeforeNavigate?.addListener((details) => {
   if (details.frameId === 0) {
     handleSmartScriptTopNavigation(details.tabId, details.url);
-    counts[details.tabId] = 0;
-    setBadge(details.tabId);
+    resetBadge(details.tabId);
     noteHttpNavigationAttempt(details);
     handleSafeBrowsingNavigation(details);
     resetRedirectChain(details.tabId, details.url);
@@ -2310,6 +2313,8 @@ function frameDrivenRedirectContext(details) {
   try { fromHost = siteIdentityBg(new URL(fromUrl).hostname); } catch (_) { return null; }
   try { toHost = siteIdentityBg(new URL(String(details.url || '')).hostname); } catch (_) { return null; }
   if (!fromHost || !toHost || fromHost === toHost) return null;
+  // Federated sign-in can navigate from a frame without a top-frame announcement.
+  if (isLoginCompatibilityUrl(details.url) || isLoginCompatibilityUrl(fromUrl)) return null;
   // Our own top-frame hooks announce everything they let through, so if one just
   // did -- to this host -- the page navigated itself and the click layer has already
   // judged it.
@@ -3942,18 +3947,8 @@ function cosmeticForPlayerPage(rawHost, cfg) {
 // Dynamic rule IDs live in a high range so they never collide with the static
 // rules.json (which uses 1..162).
 const DYNAMIC_RULE_BASE = 10000;
-// Chrome allows up to 30,000 dynamic+session rules. The budget is shared across:
-//   - MAX_DYNAMIC blocklist domain rules (dynamic)
-//   - OPTION_RULES_MAX uBlock option rules (dynamic)
-//   - LEARNED_MAX adaptive learned rules (dynamic)
-//   - TRACKER_RULES_BUDGET local tracker learner rules (dynamic)
-//   - MINER_FEED_RULES_BUDGET cryptominer host/pool rules (dynamic)
-//   - Allowlist rules (session, up to 1000)
-//   - Privacy header rule (session, 1)
-//   - HTTPS upgrade rule (session, 1)
-// TOTAL_DYNAMIC_BUDGET below is the authority -- it sums every band and asserts at
-// module load. Do not hand-maintain a total in this comment; it goes stale the
-// first time a band is added and then quietly reads as headroom that isn't there.
+// Chrome 121+ has separate dynamic (30,000) and session (5,000) quotas.
+// tools/test-dnr-budget.js checks both allocations, unsafe actions and spare capacity.
 const MAX_DYNAMIC = 18000;
 const ACTIVE_DOMAIN_RULE_BUDGETS = {
   security: 9000,
@@ -3984,10 +3979,7 @@ const ACTIVE_OPTION_RULE_BUDGETS = {
   tracker: 500,
   security: 300,
 };
-// Rule budget for the adaptive pools. Applied AFTER blocklist + option
-// rules, so total dynamic rules (blocklist + option + learned + tracker) never exceeds
-// the Chrome ceiling. Capped explicitly to leave room for allowlist + header
-// session rules (which share the 30k budget).
+// Adaptive pools share the dynamic quota with the downloaded lists.
 const LEARNED_RULES_BUDGET = 2000;
 const TRACKER_RULES_BUDGET = 1000;
 const ALLOWLIST_RULES_BUDGET = 1000;
@@ -3998,16 +3990,17 @@ const MINER_FEED_RULES_BUDGET = 1000;
 const SAFE_SEARCH_RULES_BUDGET = 40;
 const NEVER_BLOCK_ALLOW_RULES_BUDGET = 200;
 // One blanket session block, one least-privilege replacement block per recovered
-// player tab, and at most four exact, second-stage script rules per tab.
-const SCRIPT_SHIELD_RULES_BUDGET = 161;
+// player tab, and at most eight exact, second-stage script rules per tab.
+const SCRIPT_SHIELD_RULES_BUDGET = 289;
 const FINGERPRINT_SCRIPT_RULES_BUDGET = 80;
 const GOOGLE_SEARCH_ALLOW_RULES_BUDGET = 20;
 const SMALL_SESSION_RULES_BUDGET = 64;
+const HTTPS_DYNAMIC_RULES_BUDGET = 1;
 // One block rule per hostname caught resolving to a private address this session.
 const REBIND_QUARANTINE_RULES_BUDGET = 128;
 // One block rule per private-address pattern, at the network layer, so the
 // guarantee holds in every JavaScript realm including workers.
-const INTRANET_NETWORK_RULES_BUDGET = 16; // headers, cookie stripping, HTTPS, IP lookup, etc.
+const INTRANET_NETWORK_RULES_BUDGET = 16;
 /* Declared here with the other bands, not beside the features that use them:
    TOTAL_DYNAMIC_BUDGET is evaluated at this point in the file, so a band defined
    further down is in the temporal dead zone and throws. */
@@ -4020,22 +4013,18 @@ const FIREWALL_SESSION_RULES_BUDGET = 50;
 // how many things the list can hold -- it is a hand-written list, not a feed.
 const USER_BLOCKLIST_RULES_BUDGET = 64;
 const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDGET + TRACKER_RULES_BUDGET
-  + ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
-  + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + SAFE_SEARCH_RULES_BUDGET
-  + NEVER_BLOCK_ALLOW_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET
-  + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET
-  + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET
-  + USER_RULES_BUDGET + FIREWALL_RULES_BUDGET + FIREWALL_SESSION_RULES_BUDGET
-  + USER_BLOCKLIST_RULES_BUDGET;
-// The ceiling is checked at BUILD time by tools/test-dnr-budget.js, which reads the
-// band names straight out of the expression above so a new band is covered without
-// anyone remembering to add it. A runtime console.error here could only ever repeat
-// what that assertion already proved -- in a service worker console nobody has open.
-//
-// 30,000 is why manifest.json pins minimum_chrome_version to 121: before that the
-// limit was 5,000 for dynamic and session rules combined, which this budget exceeds
-// nearly six times over. The test asserts the two together so the floor cannot be
-// lowered without the budget coming down with it.
+  + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + NEVER_BLOCK_ALLOW_RULES_BUDGET
+  + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET
+  + USER_RULES_BUDGET + FIREWALL_RULES_BUDGET + USER_BLOCKLIST_RULES_BUDGET + HTTPS_DYNAMIC_RULES_BUDGET;
+const TOTAL_SESSION_BUDGET = ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
+  + SAFE_SEARCH_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET
+  + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET + FIREWALL_SESSION_RULES_BUDGET;
+// All other dynamic builders emit only safe actions. The grabber band has one redirect;
+// every firewall slot is conservatively reserved for a cookie-header modification.
+const TOTAL_UNSAFE_DYNAMIC_BUDGET = FIREWALL_RULES_BUDGET + 1;
+// Keep room for migration cleanup and new protections without shrinking existing lists.
+const DNR_MIN_RULE_HEADROOM = 1000;
+// Chrome 121 introduced the larger safe-dynamic quota; the build also checks the manifest floor.
 // Every resource type Chromium's declarativeNetRequest recognises, in the order
 // the API documents them. This is the inventory the rest of the file measures
 // itself against; tools/test-transport-shield.js fails if it drifts from the set
@@ -5350,7 +5339,9 @@ chrome.webRequest.onBeforeRequest.addListener((details) => {
 
 async function grabberNavigationStatus(sender) {
   const tabId = sender && sender.tab && sender.tab.id;
-  if (tabId == null || sender.url !== chrome.runtime.getURL('ip-logger-warning.html') || sender.frameId !== 0) {
+  /* DNR warning pages report the stable origin even when getURL returns a session URL. */
+  const warningUrl = 'chrome-extension://' + chrome.runtime.id + '/ip-logger-warning.html';
+  if (tabId == null || sender.url !== warningUrl || sender.frameId !== 0) {
     return { status: 'observed_unconfirmed' };
   }
   const attempt = GRABBER_NAV_ATTEMPTS.get(tabId);
@@ -5445,10 +5436,7 @@ async function masterSwitchOn() {
   } catch (_) { return true; }
 }
 const USER_RULE_BASE = 750000;
-/* Sized to the budget rather than to a round number. WardenOne sits at ~97% of
-   Chrome's 30,000 dynamic+session rule ceiling, and this band was never added to
-   TOTAL_DYNAMIC_BUDGET -- so 2000 was a number nobody had room for, and a large
-   custom list could have made updateDynamicRules fail for every other feature. */
+// Custom lists share this cap, so their growth cannot consume another feature's allocation.
 const USER_RULE_MAX = USER_RULES_BUDGET;  // one source of truth: the band declared with the budget
 const USER_RULES_KEY = 'wardenone_user_rules';
 const CUSTOM_LISTS_KEY = 'wardenone_custom_lists';
@@ -11833,6 +11821,7 @@ function userBlocklistBandStep() {
 // Keep the desired-state key unchanged, persist a degraded marker, and retry
 // once on a cold wake so Protection Health reports unapplied settings.
 const RECONCILE_DEGRADED_KEY = 'wardenone_reconcile_degraded';
+const RECONCILE_PENDING_KEY = 'wardenone_reconcile_pending';
 const RECONCILE_RETRY_MAX = 6;
 const RECONCILE_RETRY_MIN_MS = 60 * 1000;
 const RECONCILE_COMPONENT_LABELS = {
@@ -11849,6 +11838,7 @@ const RECONCILE_COMPONENT_LABELS = {
   blocklistRulesets: 'blocking rulesets',
   grabberFeed: 'IP-logger feed rules',
   eyeShield: 'EyeShield injection',
+  resourceSaver: 'Resource Saver injection',
   consentReject: 'consent auto-reject injection',
   consentWall: 'consent wall removal injection',
   mailShield: 'Mail Shield injection',
@@ -11898,9 +11888,25 @@ async function clearReconcileDegraded() {
   if (!area) return;
   try { await area.remove(RECONCILE_DEGRADED_KEY); } catch (_) {}
 }
+async function markReconcilePending() {
+  const area = sessionArea();
+  if (area) await area.set({ [RECONCILE_PENDING_KEY]: { at: Date.now() } });
+}
+async function clearReconcilePending() {
+  const area = sessionArea();
+  if (area) await area.remove(RECONCILE_PENDING_KEY);
+}
 // On a cold worker: if the last run left something unapplied, try again -- once per wake, not
 // more often than a minute apart, and not forever. Returns whether a retry was scheduled.
 async function retryDegradedReconcileOnWake() {
+  const area = sessionArea();
+  if (area) {
+    const stored = await area.get(RECONCILE_PENDING_KEY);
+    if (stored && stored[RECONCILE_PENDING_KEY]) {
+      scheduleExtensionStateRefresh();
+      return true;
+    }
+  }
   const marker = await readReconcileDegraded();
   if (!marker || !Array.isArray(marker.failed) || !marker.failed.length) return false;
   if (Number(marker.attempts || 0) >= RECONCILE_RETRY_MAX) return false;
@@ -11993,7 +11999,7 @@ function createReconcileDnrBatch(kind) {
 function refreshExtensionState() {
   if (__privacyEraseInProgress) return;
   try {
-    localGet('wardenone_config').then((res) => {
+    localGet('wardenone_config').then(async (res) => {
       if (res && res.unreadable) {
         // A read that failed is not a config. Building the key from {} would turn every
         // default-off protection off and every default-on one on, apply that, and certify it.
@@ -12023,6 +12029,9 @@ function refreshExtensionState() {
         cfg.warnGrabberDomains !== false ? 1 : 0,
         cfg.blockMalwareSites !== false ? 1 : 0,
         cfg.blockAllCookies === true ? 1 : 0,
+        cfg.disableYouTubeAmbientMode === true ? 1 : 0,
+        cfg.stopAnimatedVideoPreviews === true ? 1 : 0,
+        cfg.pauseAnimatedImages === true ? 1 : 0,
         eyeShieldThemingActive(cfg) ? 1 : 0,
         eyeShieldUsesBootstrap(cfg) ? 1 : 0,
         eyeShieldActiveProfileHosts(cfg).join(','),
@@ -12071,6 +12080,8 @@ function refreshExtensionState() {
       // refresh is still the newest. A superseded refresh drops its claim; a failed one leaves the
       // key alone so the next refresh does the work again.
       const generation = ++__refreshExtensionStateGeneration;
+      // Record intent before any owner reads or writes Chrome's rule state.
+      await markReconcilePending();
       const applied = [];
       const names = [];
       // Dynamic bands are read through getDynamicRulesInBand, which every applier on this wake
@@ -12122,6 +12133,7 @@ function refreshExtensionState() {
         [on, cfg.blockGrabberResources !== false, cfg.warnGrabberDomains !== false,
           cfg.blockMalwareSites !== false].map(Number).join(','));
       run('eyeShield', () => reconcileEyeShieldInjection(cfg));
+      run('resourceSaver', () => reconcileResourceSaverInjection(cfg), resourceSaverScriptFiles(cfg).join(','));
       run('consentReject', () => reconcileConsentRejectInjection(cfg));
       run('consentWall', () => reconcileConsentWallInjection(cfg));
       run('mailShield', () => reconcileMailShieldInjection(cfg));
@@ -12148,7 +12160,7 @@ function refreshExtensionState() {
       }
       dynamicBatch.seal().catch(() => {});
       sessionBatch.seal().catch(() => {});
-      Promise.allSettled(applied).then((results) => {
+      Promise.allSettled(applied).then(async (results) => {
         if (generation !== __refreshExtensionStateGeneration) return;   // a newer desired state took over
         const failed = [];
         results.forEach((r, i) => {
@@ -12156,11 +12168,15 @@ function refreshExtensionState() {
         });
         if (failed.length) {
           // Leave the key alone so this desired state is applied again, and say what failed.
-          noteReconcileDegraded(failed, stateKey);
+          await noteReconcileDegraded(failed, stateKey);
+          await clearReconcilePending();
           return;
         }
+        await clearReconcileDegraded();
+        await clearReconcilePending();
         __refreshExtensionStateLastKey = stateKey;
-        clearReconcileDegraded();
+      }).catch(() => {
+        noteReconcileDegraded(['reconcile'], '');
       }).finally(() => {
         __refreshExtensionStateInFlightKey = '';
         if (__refreshExtensionStateQueued) {
@@ -13583,6 +13599,46 @@ function resourceSaverState(config) {
     previews: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.stopAnimatedVideoPreviews === true,
     images: !woFeatureOmitted('memoryShield') && cfg.enabled !== false && cfg.pauseAnimatedImages === true,
   };
+}
+const RESOURCE_SAVER_SCRIPT_ID = 'wo-resource-saver';
+function resourceSaverScriptFiles(cfg) {
+  const state = resourceSaverState(cfg);
+  const files = [];
+  if (state.ambient || state.previews) files.push('resource-saver.js');
+  if (state.images) files.push('animated-image-saver.js');
+  return files;
+}
+async function reconcileResourceSaverInjection(cfg) {
+  try {
+    const files = resourceSaverScriptFiles(cfg);
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [RESOURCE_SAVER_SCRIPT_ID] });
+    const current = registered.find((entry) => entry.id === RESOURCE_SAVER_SCRIPT_ID);
+    if (!files.length) {
+      if (current) await chrome.scripting.unregisterContentScripts({ ids: [RESOURCE_SAVER_SCRIPT_ID] });
+      return;
+    }
+    const previous = (current && current.js || []).map((file) => file.replace(/^\/+/, ''));
+    if (current && previous.join(',') === files.join(',')) return;
+    const script = {
+      id: RESOURCE_SAVER_SCRIPT_ID, matches: ['<all_urls>'], js: files,
+      runAt: 'document_start', allFrames: true, matchOriginAsFallback: true,
+      persistAcrossSessions: true, world: 'ISOLATED',
+    };
+    if (current) await chrome.scripting.updateContentScripts([script]);
+    else await chrome.scripting.registerContentScripts([script]);
+    // Registration covers future documents; an existing tab needs the newly enabled module now.
+    const added = files.filter((file) => !previous.includes(file));
+    if (added.length) {
+      const tabs = await chrome.tabs.query({});
+      await Promise.allSettled(tabs.filter((tab) => tab && Number.isInteger(tab.id)
+        && /^(https?|file):/i.test(String(tab.url || ''))).map((tab) => chrome.scripting.executeScript({
+          target: { tabId: tab.id, allFrames: true }, world: 'ISOLATED', files: added,
+        })));
+    }
+  } catch (e) {
+    console.warn('[WardenOne] Resource Saver injection failed', e);
+    return false;
+  }
 }
 function broadcastResourceSaverState(state) {
   const number = ++resourceSaverBroadcastNumber;
@@ -15757,6 +15813,7 @@ const SERIALIZED_STATE_APPLIERS = [
   'reconcileSearchJunkInjection',
   'reconcileMinerDetectInjection',
   'reconcileEyeShieldInjection',
+  'reconcileResourceSaverInjection',
   'reconcileConsentRejectInjection',
   'reconcileConsentWallInjection',
   'reconcileMailShieldInjection',
@@ -17460,12 +17517,31 @@ const TAB_CONTEXT_RATE_LIMITS = {
 };
 const TAB_SAFE_BROWSING_CONTEXTS = new Set(['link', 'paste', 'form']);
 function messageSenderIsExtensionPage(sender) {
+  return messageSenderIsExtensionOrigin(sender) && !messageSenderIsWebAccessiblePage(sender);
+}
+/* Public documents share our origin but do not inherit private extension-page privileges. */
+const MESSAGE_WEB_ACCESSIBLE_PATHS = (chrome.runtime.getManifest().web_accessible_resources || [])
+  .flatMap((entry) => entry.resources)
+  .map((resource) => new RegExp('^/' + resource.replace(/^\/+/, '').split('*')
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$'));
+function messageSenderIsExtensionOrigin(sender) {
   try {
     const url = String((sender && sender.url) || '');
     if (!url || (sender && sender.id && sender.id !== chrome.runtime.id)) return false;
-    return new URL(url).origin === new URL(chrome.runtime.getURL('')).origin;
+    const page = new URL(url);
+    const root = new URL(chrome.runtime.getURL(''));
+    return page.protocol === root.protocol && page.host === root.host;
   } catch (_) {
     return false;
+  }
+}
+function messageSenderIsWebAccessiblePage(sender) {
+  if (!messageSenderIsExtensionOrigin(sender)) return false;
+  try {
+    const path = decodeURIComponent(new URL(sender.url).pathname);
+    return MESSAGE_WEB_ACCESSIBLE_PATHS.some((pattern) => pattern.test(path));
+  } catch (_) {
+    return true;
   }
 }
 function messageSenderIsExtensionPath(sender, path) {
@@ -17479,7 +17555,7 @@ function messageSenderIsExtensionPath(sender, path) {
   }
 }
 function messageSenderIsTab(sender) {
-  return !!(sender && sender.tab && sender.tab.id != null && !messageSenderIsExtensionPage(sender));
+  return !!(sender && sender.tab && sender.tab.id != null && !messageSenderIsExtensionOrigin(sender));
 }
 function messageCleanHost(value) {
   try {
@@ -20364,8 +20440,10 @@ async function runWardenManualCheck(rawText, tab) {
     const known = typeof MALWARE_HASHES !== 'undefined' && MALWARE_HASHES.has(found.value);
     await notice('SHA-256',
       known
-        ? 'This hash is on WardenOne\'s known-malware list. Do not run that file.'
-        : 'Not on WardenOne\'s known-malware list. That is not proof it is safe.');
+        ? found.value === EICAR_SHA256
+          ? 'This hash matches the EICAR diagnostic signature. It confirms the local lookup works, not real-world malware coverage.'
+          : 'This hash matches a configured local malware signature. Do not run that file.'
+        : 'No local SHA-256 match. The bundle contains only an EICAR test signature; a miss does not establish safety.');
   } catch (e) {
     await notice('The check did not finish', 'The provider or local check failed. Please try again.');
   } finally {
@@ -21576,7 +21654,7 @@ const PRIVACY_STORE_POLICY = Object.freeze([
     'wardenone_ext_reputation_state', 'wardenone_ext_watch_status', 'wardenone_startup_report',
     'wardenone_pending_downloads', 'wardenone_recent_redirect_chains', 'wardenone_forget_tab_hosts',
     'wardenone_permission_chain_state', 'wardenone_blocked_security_count',
-    'wardenone_reconcile_degraded',
+    'wardenone_reconcile_degraded', 'wardenone_reconcile_pending',
   ] },
   { owner: 'Protection verification', sensitivity: 'aggregate status', area: 'local', maxAgeDays: null, maxItems: 1, retention: 'Last check until replaced or all data is erased', siteErase: 'keep', keys: [
     'wardenone_last_verification',
@@ -21868,11 +21946,15 @@ function privacyTestSettings(config, host) {
 }
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // Defense-in-depth: device-wide DESTRUCTIVE actions (clear ALL site data, wipe a
-  // site) must originate from a WardenOne extension page (popup/options), never from
-  // a content script running on a web page. Extension-page senders have no
-  // sender.tab; content scripts always do. Web pages can't message us at all today
-  // (no externally_connectable), but this blocks any future/compromised relay path.
+  /* The warning handler still requires the exact page and a top-level frame. */
+  if (messageSenderIsWebAccessiblePage(sender)) {
+    if (msg && msg.kind === 'grabber-navigation-status') {
+      respond(grabberNavigationStatus(sender), sendResponse);
+      return true;
+    }
+    try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
+    return true;
+  }
   if (msg && msg.kind && !messageSenderIsTab(sender) && !messageSenderIsExtensionPage(sender)) {
     try { sendResponse({ ok: false, error: 'Unknown message context.' }); } catch (_) {}
     return true;
@@ -22155,10 +22237,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'redirect-warning' && messageSenderIsTab(sender)) {
     respond(showRedirectWarning(sender, msg.detail || {}), sendResponse);
-    return true;
-  }
-  if (msg && msg.kind === 'grabber-navigation-status') {
-    respond(grabberNavigationStatus(sender), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'warning-ui-compromised' && messageSenderIsTab(sender)) {
@@ -23609,15 +23687,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // ---- File Shield ----
-  /* The known-malware hash set, answered for a REAL file. Download Shield can
-     only match this list against a URL re-fetch, which differs for anything
-     signed, authenticated or personalised; the scanner hands over the actual
-     bytes, so a match here means this exact file. No key, no network. */
+  /* File Shield supplies an actual file hash; the bundled entry is diagnostic. */
   if (msg && msg.kind === 'file-scan-known') {
     (async () => {
       const sha256 = String(msg.sha256 || '').trim().toLowerCase();
       if (!/^[a-f0-9]{64}$/.test(sha256)) { sendResponse({ ok: false, error: 'That is not a SHA-256 hash.' }); return; }
-      sendResponse({ ok: true, hit: MALWARE_HASHES.has(sha256), listSize: MALWARE_HASHES.size });
+      await malwareHashesReady;
+      sendResponse({ ok: true, hit: MALWARE_HASHES.has(sha256), diagnostic: sha256 === EICAR_SHA256,
+        ...localMalwareHashCoverage() });
     })();
     return true;
   }

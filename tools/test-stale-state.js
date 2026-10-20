@@ -72,6 +72,8 @@ function loadBadge(options) {
   const session = Object.assign({}, opts.session || {});
   const reads = [];
   const sets = [];
+  let failuresLeft = 0;
+  let failureMode = 'callback';
   const sandbox = {
     Number, Object, String, Math, JSON, console,
     // Held rather than run: the 3s belt-and-braces finish must not pre-empt the
@@ -88,7 +90,19 @@ function loadBadge(options) {
         session: {
           // Deferred, like the real async call, so operations land in the gap.
           get: (key, cb) => { reads.push(() => cb({ [key]: session[key] })); },
-          set: (items, cb) => { sets.push(JSON.stringify(items)); Object.assign(session, items); if (cb) cb(); },
+          set: (items, cb) => {
+            sets.push(JSON.stringify(items));
+            if (failuresLeft > 0) {
+              failuresLeft--;
+              if (failureMode === 'throw') throw Error('storage unavailable');
+              sandbox.chrome.runtime.lastError = { message: 'storage unavailable' };
+              if (cb) cb();
+              sandbox.chrome.runtime.lastError = null;
+              return;
+            }
+            Object.assign(session, items);
+            if (cb) cb();
+          },
         },
       },
       tabs: {
@@ -108,6 +122,8 @@ function loadBadge(options) {
     begin: () => vm.runInContext('beginBadgeCountRecovery()', sandbox),
     bump: (tabId) => vm.runInContext('bumpBadge(' + tabId + ')', sandbox),
     remove: (tabId) => vm.runInContext('removeBadge(' + tabId + ')', sandbox),
+    reset: (tabId) => vm.runInContext('resetBadge(' + tabId + ')', sandbox),
+    failWrites: (number, mode = 'callback') => { failuresLeft = number; failureMode = mode; },
     // Let the held storage read answer, which is what finishes recovery.
     settle: () => { const q = reads.splice(0); q.forEach((f) => f()); },
     count: (tabId) => vm.runInContext('counts[' + tabId + ']', sandbox),
@@ -190,6 +206,35 @@ function loadBadge(options) {
   check('an emptied badge is cleared with null, not a blank string',
     last && last.text === null, JSON.stringify(last));
 }
+
+for (const duringRecovery of [false, true]) {
+  const b = loadBadge({ session: { __wardenone_badge_counts: { 7: 9 } }, openTabs: [7] });
+  b.begin();
+  if (!duringRecovery) b.settle();
+  b.reset(7);
+  if (duringRecovery) b.settle();
+  b.flushTimers();
+  const cold = loadBadge({ session: b.session, openTabs: [7] });
+  cold.begin(); cold.settle(); cold.bump(7);
+  check('navigation reset survives a restart ' + (duringRecovery ? 'during hydration' : 'after hydration'), cold.count(7) === 1);
+}
+for (const mode of ['callback', 'throw']) {
+  const b = loadBadge({ openTabs: [7] });
+  b.begin(); b.settle(); b.flushTimers();
+  b.failWrites(1, mode);
+  b.bump(7); b.flushTimers();
+  check(mode + ' storage failure is not marked as committed', !b.session.__wardenone_badge_counts[7]);
+  b.flushTimers();
+  check(mode + ' storage failure retries the same snapshot', b.session.__wardenone_badge_counts[7] === 1);
+  b.failWrites(20, mode);
+  const before = b.sets.length;
+  b.bump(7);
+  for (let i = 0; i < 8; i++) b.flushTimers();
+  check(mode + ' storage retries are bounded', b.sets.length - before === 4);
+}
+const navigationBadge = sourceBetween(BG, '// Reset the count when a tab starts loading', '// pushState/replaceState');
+check('navigation uses the ordered reset path', /resetBadge\(details.tabId\)/.test(navigationBadge)
+  && !/counts\[details.tabId\]\s*=/.test(navigationBadge));
 
 // ===========================================================================
 // M5: the veto flags are computed, not latched.

@@ -376,7 +376,8 @@
   border-color: var(--wo-line);
 }
 :root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .result.on { background: var(--wo-success-bg); border-color: var(--wo-success-line); color: var(--wo-success); }
-:root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .result.off { background: var(--wo-warning-bg); border-color: var(--wo-warning-line); color: var(--wo-warning); }
+:root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .result.warn { background: var(--wo-warning-bg); border-color: var(--wo-warning-line); color: var(--wo-warning); }
+:root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .result.off { background: var(--wo-danger-bg); border-color: var(--wo-danger-line); color: var(--wo-danger); }
 :root[data-wardenone-page="network"][data-wardenone-theme-resolved="dark"] .result.err { background: var(--wo-danger-bg); border-color: var(--wo-danger-line); color: var(--wo-danger); }
 
 :is(:root[data-wardenone-page="permissions"][data-wardenone-theme-resolved="dark"], :root[data-wardenone-page="api-keys"][data-wardenone-theme-resolved="dark"]) :is(.section-stat, .ledger-group, .external-ledger, .control-flow) {

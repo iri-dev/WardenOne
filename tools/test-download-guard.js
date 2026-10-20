@@ -500,6 +500,88 @@ async function main() {
     console.log('  [ok] sha256Hex refuses non-BufferSource input and still hashes empty files');
   }
 
+  {
+    const { sandbox: box } = loadDownloadGuard();
+    const seed = JSON.parse(fs.readFileSync('malware-hashes.json', 'utf8'));
+    const crypto = require('crypto').webcrypto;
+    box.crypto = crypto;
+    box.fetch = async () => ({ ok: true, json: async () => seed });
+    box.hashFetches = 0;
+    vm.runInContext(`fetchBytesForHash = async () => {
+      hashFetches++;
+      return { ok: true, bytes: new Uint8Array([1, 2, 3]), byteLength: 3, source: DOWNLOAD_HASH_SOURCE_KIND };
+    }; this.hashApi = { loadMalwareHashes, localMalwareHashCoverage, enrichDownloadWithLocalHash,
+      enrichDownloadWithVirusTotalHash, scoreDownload };`, box);
+    const api = box.hashApi;
+    const url = 'https://files.example/tool.exe';
+    const report = () => api.scoreDownload(url, '', 'tool.exe', 'application/octet-stream', [], '');
+    const cfg = { downloadHashCheck: true };
+    await api.loadMalwareHashes();
+    assert.strictEqual(api.localMalwareHashCoverage().signatureCount, 0);
+    const diagnostic = await api.enrichDownloadWithLocalHash(report(), url, 'tool.exe', cfg);
+    assert.strictEqual(box.hashFetches, 0, 'the EICAR-only seed must not re-fetch downloads');
+    assert.strictEqual(diagnostic.hashReputation.diagnosticOnly, true);
+    assert.strictEqual(diagnostic.hashReputation.skipped, true);
+    assert.strictEqual(diagnostic.hashReputation.checked, false);
+    assert.match(diagnostic.hashReputation.reason, /only the EICAR test signature/);
+    assert(!diagnostic.fileHash, 'a skipped lookup must not claim a computed hash');
+
+    box.store.wardenone_malware_hashes = [seed.sha256[0].toUpperCase(), 'invalid', 'x'.repeat(64), null];
+    await api.loadMalwareHashes();
+    await api.enrichDownloadWithLocalHash(report(), url, 'tool.exe', cfg);
+    assert.strictEqual(box.hashFetches, 0, 'duplicate test hashes and invalid entries do not enable re-fetching');
+    const hash = Buffer.from(await crypto.subtle.digest('SHA-256', new Uint8Array([1, 2, 3]))).toString('hex');
+    box.store.wardenone_malware_hashes = { sha256: [hash, hash.toUpperCase()] };
+    await api.loadMalwareHashes();
+    assert.strictEqual(api.localMalwareHashCoverage().signatureCount, 1, 'configured signatures are validated and deduplicated');
+    const hit = await api.enrichDownloadWithLocalHash(report(), url, 'tool.exe', cfg);
+    assert.strictEqual(box.hashFetches, 1, 'additional signatures retain the local hash check');
+    assert.strictEqual(hit.grade, 'F');
+    assert.strictEqual(hit.critical, true);
+    assert.strictEqual(hit.trustAllowed, false);
+    assert.strictEqual(hit.fileHash.exactFile, false, 'a URL re-fetch must not be called a saved-file hash');
+    assert.strictEqual(hit.fileHash.hashSource.maxBytes, 50 * 1024 * 1024);
+
+    const eicar = report();
+    eicar.fileHash = { sha256: seed.sha256[0], source: 'url-refetch' };
+    await api.enrichDownloadWithLocalHash(eicar, url, 'tool.exe', cfg);
+    assert.strictEqual(eicar.hashReputation.diagnostic, true);
+    assert.strictEqual(eicar.grade, 'C', 'EICAR is not graded as a real malware-signature hit');
+    assert(!eicar.critical);
+    assert.strictEqual(box.hashFetches, 1, 'a cached diagnostic hash needs no additional fetch');
+
+    box.vtHashes = [];
+    vm.runInContext(`checkVirusTotalFileHash = async (sha256) => {
+      vtHashes.push(sha256); return { ok: true, hit: false, notFound: true };
+    };`, box);
+    const vtCfg = { downloadVirusTotalHash: true, downloadVirusTotalKey: 'fixture-key' };
+    await api.enrichDownloadWithVirusTotalHash(hit, url, 'tool.exe', vtCfg);
+    assert.strictEqual(box.hashFetches, 1, 'local and VirusTotal checks share the computed hash');
+    assert.strictEqual(hit.critical, true, 'a missing VirusTotal report cannot undo a local signature hit');
+
+    delete box.store.wardenone_malware_hashes;
+    await api.loadMalwareHashes();
+    const afterRemoval = await api.enrichDownloadWithLocalHash(report(), url, 'tool.exe', cfg);
+    assert.strictEqual(api.localMalwareHashCoverage().signatureCount, 0, 'removing custom signatures removes stale coverage');
+    assert.strictEqual(box.hashFetches, 1, 're-fetches stop again after removing additional signatures');
+    await api.enrichDownloadWithVirusTotalHash(afterRemoval, url, 'tool.exe', vtCfg);
+    assert.strictEqual(box.hashFetches, 2, 'the separate opt-in VirusTotal check still runs with a diagnostic-only seed');
+    assert.strictEqual(afterRemoval.hashReputation.provider, 'VirusTotal file hash');
+
+    let release;
+    box.localGet = () => new Promise((resolve) => { release = resolve; });
+    const loading = api.loadMalwareHashes();
+    let finished = false;
+    const pending = api.enrichDownloadWithLocalHash(report(), url, 'tool.exe', cfg).then(() => { finished = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(finished, false, 'a download waits for the current signature load');
+    release({ wardenone_malware_hashes: [hash] });
+    await loading;
+    await pending;
+    assert.strictEqual(box.hashFetches, 3, 'newly loaded signatures apply to a waiting download');
+    console.log('  [ok] diagnostic-only hashing skips re-fetches, custom signatures reload and VirusTotal remains separate');
+  }
+
   console.log('[ok] download guard tests passed');
 }
 

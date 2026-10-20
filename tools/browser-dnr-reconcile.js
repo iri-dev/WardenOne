@@ -4,8 +4,8 @@
    Upstream filter-list attribution: CREDITS.md */
 'use strict';
 
-/* PERF-09/AUD26-006 check in a disposable browser profile. It fills the extension's dynamic/session
-   quota close to the browser limit, toggles SafeSearch, and compares the final SafeSearch band
+/* PERF-09/AUD26-006 check in a disposable browser profile. It fills the dynamic quota
+   close to the browser limit, toggles SafeSearch, and compares the final SafeSearch band
    after restoring the original config. Nothing is written to the user's browser profile. */
 const fs = require('fs');
 const os = require('os');
@@ -81,7 +81,7 @@ async function run() {
     const seeded = await evaluate(`(async () => {
       const dnr=chrome.declarativeNetRequest;
       const [dynamic,session]=await Promise.all([dnr.getDynamicRules(),dnr.getSessionRules()]);
-      const count=Math.max(0,29800-dynamic.length-session.length);
+      const count=Math.max(0,29950-dynamic.length);
       const rules=Array.from({length:count},(_,i)=>({id:5000000+i,priority:1,
         action:{type:'block'},condition:{requestDomains:['profile-'+i+'.example'],resourceTypes:['script']}}));
       await dnr.updateDynamicRules({removeRuleIds:[],addRules:rules});
@@ -252,8 +252,40 @@ async function run() {
     if (!rapid || !rapid.exact || rapid.active < 1 || rapid.applied.sessionWrites !== 1) {
       throw new Error('Rapid settings did not settle to the newest generation: ' + JSON.stringify(rapid));
     }
-    console.log(JSON.stringify({ browser:browser.Browser,warmup,seeded,baseline,unrelated,toggled,restored,combined,dynamicCombined,rapid }));
+    const quotas = await evaluate(`(async () => {
+      const dnr=chrome.declarativeNetRequest;
+      const dynamic=await dnr.getDynamicRules(),session=await dnr.getSessionRules();
+      const block=(id)=>({id,priority:1,action:{type:'block'},
+        condition:{requestDomains:['quota-probe.example'],resourceTypes:['script']}});
+      const extraDynamic=Array.from({length:30000-dynamic.length},(_,i)=>block(6000000+i));
+      const extraSession=Array.from({length:5000-session.length},(_,i)=>block(7000000+i));
+      await dnr.updateDynamicRules({removeRuleIds:[],addRules:extraDynamic});
+      await dnr.updateSessionRules({removeRuleIds:[],addRules:extraSession});
+      const rejected=async(write)=>{try{await write();return false;}catch(_){return true;}};
+      const dynamicOverflow=await rejected(()=>dnr.updateDynamicRules({removeRuleIds:[5000000],
+        addRules:[block(8000000),block(8000001)]}));
+      const sessionOverflow=await rejected(()=>dnr.updateSessionRules({removeRuleIds:[7000000],
+        addRules:[block(8000000),block(8000001)]}));
+      const unsafe=Array.from({length:5001},(_,i)=>({...block(5000000+i),action:{type:'modifyHeaders',
+        requestHeaders:[{header:'x-wardenone-quota-probe',operation:'remove'}]}}));
+      const unsafeOverflow=await rejected(()=>dnr.updateDynamicRules({
+        removeRuleIds:unsafe.map(r=>r.id),addRules:unsafe}));
+      const finalDynamic=await dnr.getDynamicRules(),finalSession=await dnr.getSessionRules();
+      const result={dynamic:finalDynamic.length,session:finalSession.length,dynamicOverflow,sessionOverflow,
+        unsafeOverflow,atomic:finalDynamic.find(r=>r.id===5000000)?.action.type==='block'
+          &&finalSession.some(r=>r.id===7000000)&&!finalDynamic.some(r=>r.id===8000000)
+          &&!finalSession.some(r=>r.id===8000000)};
+      await dnr.updateDynamicRules({removeRuleIds:extraDynamic.map(r=>r.id),addRules:[]});
+      await dnr.updateSessionRules({removeRuleIds:extraSession.map(r=>r.id),addRules:[]});
+      return result;
+    })()`);
+    if (!quotas || quotas.dynamic !== 30000 || quotas.session !== 5000 || !quotas.dynamicOverflow
+      || !quotas.sessionOverflow || !quotas.unsafeOverflow || !quotas.atomic) {
+      throw new Error('Separate DNR quotas or atomic rejection failed: ' + JSON.stringify(quotas));
+    }
+    console.log(JSON.stringify({ browser:browser.Browser,warmup,seeded,baseline,unrelated,toggled,restored,combined,dynamicCombined,rapid,quotas }));
     console.log('[ok] near-limit browser toggle restored the exact SafeSearch rule band');
+    console.log('[ok] separate dynamic/session quotas and unsafe limit reject atomically');
     await evaluate(`chrome.declarativeNetRequest.updateDynamicRules({
       removeRuleIds:Array.from({length:${seeded.seeded}},(_,i)=>5000000+i),addRules:[]})`);
   } finally {

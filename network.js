@@ -95,7 +95,7 @@ async function runTest() {
     : 'No filtering detected on this device/browser. Follow Steps 1-2 to set a family/security DNS.')
     + ' This is a heuristic, not proof: filters that return a block page (rather than refusing to resolve) can read as "reachable", and a VPN or browser Secure DNS changes results.';
   res.appendChild(note);
-  res.className = 'result ' + (allOn ? 'on' : anyOn ? 'off' : 'off') + ' show';
+  res.className = 'result ' + (allOn ? 'on' : anyOn ? 'warn' : 'off') + ' show';
 }
 
 document.getElementById('run').addEventListener('click', runTest);

@@ -6,6 +6,8 @@
    with the date, and to keep these notices intact. */
 (function () {
   'use strict';
+  if (globalThis.__woResourceSaver) return;
+  globalThis.__woResourceSaver = true;
 
   let ambientStyle = null;
   let previewStyle = null;

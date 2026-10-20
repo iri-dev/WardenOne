@@ -60,32 +60,30 @@ const initiators = initiatorMatch ? initiatorMatch[1] : '';
   check('sponsored search allow initiators include ' + domain, initiators.includes("'" + domain + "'"));
 });
 
-const budgetMatch = background.match(/const TOTAL_DYNAMIC_BUDGET = ([\s\S]*?);/);
+const budgetMatch = background.match(/const TOTAL_SESSION_BUDGET = ([\s\S]*?);/);
 const budgetExpr = budgetMatch ? budgetMatch[1] : '';
 [
   'ALLOWLIST_RULES_BUDGET',
   'MEDIA_COMPAT_RULES_BUDGET',
   'LOGIN_COMPAT_RULES_BUDGET',
-  'GRABBER_FEED_RULES_BUDGET',
-  'NEVER_BLOCK_ALLOW_RULES_BUDGET',
   'SCRIPT_SHIELD_RULES_BUDGET',
-  'FINGERPRINT_SCRIPT_RULES_BUDGET',
-  'GOOGLE_SEARCH_ALLOW_RULES_BUDGET',
   'SMALL_SESSION_RULES_BUDGET',
 ].forEach((name) => {
-  check('dynamic rule budget counts ' + name, budgetExpr.includes(name));
+  check('session rule budget counts ' + name, budgetExpr.includes(name));
 });
-// The ceiling check used to be a runtime `if (TOTAL_DYNAMIC_BUDGET > 30000)
-// console.error(...)` in background.js, which could only ever print into a
-// service-worker console nobody has open. It now lives in tools/test-dnr-budget.js,
-// where a breach fails the build, and where the band names are read out of the
-// TOTAL_DYNAMIC_BUDGET expression itself so a new band is covered without anyone
-// remembering to add it. The guarantee asserted here is unchanged: the REAL summed
-// total is checked against the ceiling, not a hand-copied number.
+const dynamicBudgetExpr = (background.match(/const TOTAL_DYNAMIC_BUDGET = ([\s\S]*?);/) || [])[1] || '';
+[
+  'GRABBER_FEED_RULES_BUDGET', 'NEVER_BLOCK_ALLOW_RULES_BUDGET',
+  'FINGERPRINT_SCRIPT_RULES_BUDGET', 'GOOGLE_SEARCH_ALLOW_RULES_BUDGET',
+].forEach((name) => {
+  check('dynamic rule budget counts ' + name, dynamicBudgetExpr.includes(name) && !budgetExpr.includes(name));
+});
+// Quotas and spare capacity are enforced in the build gate.
 const dnrBudgetTest = fs.readFileSync('tools/test-dnr-budget.js', 'utf8');
 check('dynamic rule budget total is asserted at build time',
   /MAX_DYNAMIC_RULES = 30000/.test(dnrBudgetTest)
-  && /total <= MAX_DYNAMIC_RULES/.test(dnrBudgetTest));
+  && /value.total <= limit/.test(dnrBudgetTest)
+  && /limit - value.total >= spare/.test(dnrBudgetTest));
 check('dynamic rule budget bands are read from the expression, not hand-listed',
   /const expr = bg\.match\(/.test(dnrBudgetTest)
   && /TOTAL_DYNAMIC_BUDGET/.test(dnrBudgetTest));

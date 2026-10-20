@@ -298,6 +298,7 @@ function checkContentBuild() {
   'tools/test-runtime-config-lifecycle.js',
   'tools/test-network-compatibility.js',
   'tools/test-smart-script-recovery.js',
+  'tools/test-resource-saver-injection.js',
   'tools/test-script-popup-shield.js',
   'tools/test-frame-popup-backstop.js',
   'tools/test-page-notice-carry.js',
@@ -546,7 +547,7 @@ if (exists('tools/build-toast-harness.js') && exists('tools/toast-harness.html')
 checkCommand('static DNR compatibility tests', ['tools/test-static-dnr-compatibility.js']);
 checkCommand('grabber switch matrix', ['tools/test-grabber-switch-matrix.js']);
 checkCommand('image-logger protection tests', ['tools/test-image-logger-protection.js']);
-checkCommand('DNR static rule budget', ['tools/test-dnr-budget.js']);
+checkCommand('DNR quota budgets', ['tools/test-dnr-budget.js']);
 checkCommand('DNR atomic rule replacement tests', ['tools/test-dnr-atomic-replace.js']);
 checkCommand('tabs.onUpdated listener census', ['tools/test-listener-census.js']);
 checkCommand('Silent mode round-trip tests', ['tools/test-silent-mode-roundtrip.js']);
@@ -646,6 +647,7 @@ checkCommand('Media Shield presence tests', ['tools/test-media-shield-presence.j
 checkCommand('tracker frame guard tests', ['tools/test-tracker-frame-guard.js']);
 checkCommand('transport shield tests', ['tools/test-transport-shield.js']);
 checkCommand('DNS rebind guard tests', ['tools/test-dns-rebind-guard.js']);
+checkCommand('DNS filtering result tests', ['tools/test-dns-filtering.js']);
 checkCommand('IP classifier agreement tests', ['tools/test-ip-classifier-agreement.js']);
 checkCommand('WebGPU shield tests', ['tools/test-webgpu-shield.js']);
 checkCommand('WebGL Resource Saver tests', ['tools/test-webgl-saver.js']);
@@ -835,6 +837,7 @@ checkCommand('script/ad popup shield tests', ['tools/test-script-popup-shield.js
 checkCommand('X compatibility tests', ['tools/test-x-compatibility.js']);
 checkCommand('YouTube adblock tests', ['tools/test-yt-adblock.js']);
 checkCommand('Resource Saver media tests', ['tools/test-resource-saver.js']);
+checkCommand('Resource Saver injection tests', ['tools/test-resource-saver-injection.js']);
 checkCommand('Animated image saver tests', ['tools/test-animated-image-saver.js']);
 checkCommand('YouTube prune tests', ['tools/test-yt-prune.js']);
 

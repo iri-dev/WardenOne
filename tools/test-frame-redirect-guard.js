@@ -116,6 +116,38 @@ function world(options) {
 /* The shape yomi.to used: a click that landed on the player and targeted nothing,
    then the tab leaves for another site with no top-frame hook claiming it. */
 async function main() {
+  for (const [label, source, target] of [
+    ['Copilot Microsoft sign-in', 'https://copilot.com/', 'https://login.live.com/oauth20_authorize.srf?client_id=test&response_type=code'],
+    ['Copilot Microsoft organisation sign-in', 'https://copilot.com/', 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=test'],
+    ['Microsoft to Google sign-in', 'https://login.live.com/', 'https://accounts.google.com/o/oauth2/v2/auth?client_id=test'],
+    ['Google back to Microsoft', 'https://accounts.google.com/', 'https://login.live.com/HandleGoogle.srf?code=test'],
+    ['Microsoft back to Copilot', 'https://login.live.com/', 'https://copilot.com/?code=test&state=test'],
+  ]) {
+    const w = world();
+    w.committed(1, source);
+    w.signal(1, 'player-gesture');
+    await w.navigate(1, target, ['client_redirect']);
+    await w.forced(1, target);
+    check(label + ' survives a recent player classification in both redirect guards',
+      w.updates.length === 0 && w.history.length === 0, w.updates);
+  }
+
+  for (const [label, target] of [
+    ['a Microsoft suffix lookalike', 'https://login.live.com.attacker.example/oauth20_authorize.srf'],
+    ['a Google suffix lookalike', 'https://accounts.google.com.attacker.example/o/oauth2/v2/auth'],
+    ['a login provider in URL credentials', 'https://login.live.com@attacker.example/oauth20_authorize.srf'],
+    ['an unrelated OAuth path', 'https://attacker.example/oauth2/authorize?client_id=test'],
+    ['an unrelated Live subdomain', 'https://news.live.com/landing'],
+    ['an ordinary external destination', 'https://elsewhere.example/'],
+  ]) {
+    const w = world();
+    w.committed(1, 'https://copilot.com/');
+    w.signal(1, 'player-gesture');
+    await w.navigate(1, target);
+    check('Copilot does not exempt ' + label,
+      w.updates.length === 1 && w.history.length === 1, w.updates);
+  }
+
   {
     const w = world();
     w.committed(1, 'https://yomi.to/watch/something');

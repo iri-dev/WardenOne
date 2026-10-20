@@ -241,6 +241,7 @@ function worker(b) {
     removeWardenOneDynamicRules: async () => {},
     locationExemptHosts: () => [], scheduleSitePauseExpiry: () => {},
     eyeShieldThemingActive: () => false, eyeShieldPreloadFile: () => '', eyeShieldUsesBootstrap: () => false,
+    resourceSaverScriptFiles: () => [],
     eyeShieldActiveProfileHosts: () => [], eyeShieldRegistrationScope: () => ({ matches: [], excludeMatches: [] }),
     consentRejectActive: () => false, searchSponsoredCleanupActive: () => false,
   };

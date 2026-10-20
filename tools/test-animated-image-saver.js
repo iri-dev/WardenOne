@@ -15,8 +15,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const source = read('animated-image-saver.js');
 const manifest = JSON.parse(read('manifest.json'));
 const entry = manifest.content_scripts.find((script) => (script.js || []).includes('animated-image-saver.js'));
-assert(entry && entry.run_at === 'document_start' && entry.all_frames === true && entry.world !== 'MAIN');
-assert(entry.match_about_blank && entry.match_origin_as_fallback);
+assert.equal(entry, undefined, 'optional image saving must not load statically while disabled');
 
 const images = [];
 const listeners = new Map();

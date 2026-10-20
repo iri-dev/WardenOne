@@ -999,13 +999,11 @@ async function analyse(file, onStage, shouldContinue = () => true) {
   if (!shouldContinue()) throw new Error('Scan cancelled');
   const hash = await hashFile(file);
 
-  /* The one check that can say a file IS bad rather than merely odd, and it
-     needs no key and no network: WardenOne ships a known-malware hash set.
-     Download Shield can only match it against a URL re-fetch; this is the real
-     file, so a match here means this exact file. */
+  /* This is the real file you picked, not a URL re-fetch. The bundled signature
+     is EICAR-only; additional local signatures may be configured separately. */
   let known = null;
   if (!hash.skipped) {
-    onStage('Checking the known-malware list…');
+    onStage('Checking the local SHA-256 list…');
     known = await new Promise((resolve) => {
       let settled = false;
       const done = (v) => { if (!settled) { settled = true; resolve(v); } };
@@ -1019,10 +1017,12 @@ async function analyse(file, onStage, shouldContinue = () => true) {
     });
     if (known && known.hit) {
       findings.unshift({
-        level: 'danger',
-        title: 'This exact file is on WardenOne\'s known-malware list',
-        detail: 'Its SHA-256 matches an entry in the list bundled with WardenOne. This is the real file you picked,'
-          + ' not a guess from its name. Delete it rather than opening it.',
+        level: known.diagnostic ? 'info' : 'danger',
+        title: known.diagnostic ? 'EICAR diagnostic signature detected' : 'This file matches a local malware signature',
+        detail: known.diagnostic
+          ? 'Its SHA-256 matches the EICAR antivirus test signature. This confirms the hash lookup works; it does not demonstrate real-world malware coverage.'
+          : 'Its SHA-256 matches a configured local malware signature. This is the real file you picked,'
+            + ' not a guess from its name. Delete it rather than opening it.',
       });
     }
   }
@@ -1139,16 +1139,16 @@ function render(report) {
     item.appendChild(el('div', 'fs-finding-detail', report.hash.reason));
     list.appendChild(item);
   }
-  /* Say the list was checked even when it matches nothing. A check that only
-     speaks up when it fires leaves the reader unable to tell "checked and clear"
-     from "never ran". */
+  /* A non-match must identify the coverage actually available. */
   if (report.known && !report.known.hit) {
     const item = el('div', 'fs-finding is-info');
-    item.appendChild(el('div', 'fs-finding-title', 'Not on the known-malware list'));
+    const diagnosticOnly = report.known.signatureCount === 0;
+    item.appendChild(el('div', 'fs-finding-title', diagnosticOnly ? 'No malware-signature coverage loaded' : 'No local SHA-256 match'));
     item.appendChild(el('div', 'fs-finding-detail',
-      'Checked against the ' + (report.known.listSize || 0).toLocaleString()
-      + ' hashes bundled with WardenOne, offline. That list is small and specific — missing from it means very'
-      + ' little on its own.'));
+      diagnosticOnly
+        ? 'The bundled list contains only the EICAR test signature. This diagnostic check does not establish whether a file is safe.'
+        : 'Checked offline against ' + (report.known.signatureCount || 0).toLocaleString()
+          + ' local malware signatures. A non-match does not establish safety.'));
     list.appendChild(item);
   }
 

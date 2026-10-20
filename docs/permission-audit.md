@@ -11,7 +11,7 @@ Chrome distinguishes required from optional permissions. An optional permission 
 | `declarativeNetRequest` | `background.js` updates static, dynamic and session blocking rules for network shields. | **Required.** Automatic filtering depends on it; Chrome does not allow this permission to be optional. |
 | `declarativeNetRequestFeedback` | `background.js` reads matched rules for `logger.js`; no blocking decision depends on the feedback. | **Currently required; optional candidate.** The Logger needs a grant-aware handshake and honest fallback before this can move. Chrome documents exact rule debug events for unpacked extensions, so packaged behavior also needs a real-browser check. |
 | `storage` | `background.js`, `popup.js` and other pages hold configuration, list state, local history, and extension review state. | **Required.** Shields and their settings need it on startup. |
-| `activeTab` | User-invoked popup and command actions can receive temporary current-tab access, including when Chrome has withheld ordinary site access. | **Keep declared.** It grants access only after a user invocation; it is not a substitute for automatic whole-web coverage. |
+| `activeTab` | Popup tools such as Element Zapper call `chrome.scripting.executeScript`; popup and command actions also read current-tab metadata. Broad host access already covers these operations on matching pages. | **Retained pending compatibility review.** The October browser matrix found no separate dependency in the cases tested, including toolbar invocation with site access withheld. |
 | `scripting` | `background.js` registers and repairs page shields; `popup.js` injects user-invoked tools. | **Required.** Automatic page protection and repair use it. |
 | `webRequest` | `background.js` observes request, redirect and failure signals and captures Logger rows while its page is open. | **Required.** Automatic network detection uses it. |
 | `webNavigation` | `background.js` follows navigation and redirect chains, tab changes and on-leave cleanup. | **Required.** Automatic navigation protection uses it. |
@@ -25,11 +25,26 @@ Chrome distinguishes required from optional permissions. An optional permission 
 | `downloads` | `background-downloads.js` watches new downloads and drives Download Guard review. | **Required.** A runtime prompt would miss downloads started before it was granted. |
 | `notifications` | `notification-manager.js` and extension-change code show local threat and security notices. | **Required.** Automatic alerts cannot wait for a popup grant. |
 | `offscreen` | `notification-manager.js` briefly opens `offscreen.html` to play enabled alert sounds. | **Required today; optional candidate.** Sounds are optional, but the permission should move only with a prompt when sound is enabled and a silent fallback for denied or revoked access. |
-| `tabs` | `background.js`, Memory Shield and popup pages follow tabs, inspect the active page, manage tab limits and open reviews. | **Required.** Automatic page and resource protection uses tab state. |
+| `tabs` | `chrome.tabs.query/get` supply URLs and titles to Memory Shield and `findDuplicateTabs()` even when the tab is outside a current host grant. | **Keep.** Removing it loses duplicate-tab detection when site access is withheld, plus metadata for browser pages. Opening, closing or sleeping a tab does not itself justify this permission. |
 
 ## Host scope
 
 `<all_urls>` remains a required `host_permissions` entry. `background.js` uses host access for cross-origin feeds, reputation and security requests, network observations and programmatic injection; manifest content scripts also match `<all_urls>` for automatic page protection. Making that scope optional would turn whole-web shielding into a per-site grant workflow. Chrome can still withhold site access at the browser level, so the UI must keep reporting coverage limits accurately. No optional host scope was added by this audit.
+
+## Focused tab-permission review — 19 October 2026
+
+`tools/browser-tab-permissions.js` tested the shipped extension in four disposable copies and fresh Chrome 155.0.8059.82 profiles on Windows. Only the copies' named permissions changed. It exercised real tab metadata, `findDuplicateTabs()`, and `chrome.scripting.executeScript` before and after a toolbar action with Chrome site access set to **On click**.
+
+| Removed from the test copy | Injection with broad site access | Browser-page URL visible | Duplicate scan with site access withheld | Injection after toolbar action |
+| --- | --- | --- | --- | --- |
+| Neither | Works | Yes | Finds duplicate | Works |
+| `activeTab` | Works | Yes | Finds duplicate | Works |
+| `tabs` | Works | No | Misses duplicate | Works |
+| Both | Works | No | Misses duplicate | Works |
+
+The [Tabs API reference](https://developer.chrome.com/docs/extensions/reference/api/tabs#permissions) distinguishes the named permission's metadata access from permission-free tab operations and matching host grants. These results establish a dependency for the shipped duplicate scanner when host access is withheld. They also correct the earlier assumption that a toolbar invocation in that state proves `activeTab` is necessary: it worked without the named permission in this browser.
+
+Both declarations remain in the working manifest. `activeTab` remains a removal candidate pending wider compatibility validation; this matrix does not exercise every popup, shortcut and context-menu workflow or the supported browser range starting at Chrome 121. Its unique necessity has not been established.
 
 ## Migration order and release checks
 

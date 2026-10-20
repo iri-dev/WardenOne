@@ -443,7 +443,9 @@ function runtime() {
     URL, Set, Object, Array, Number, String, Math, Date, JSON, console, Boolean,
     crypto: webcrypto,
     reputationCacheKey: async (url) => String(url),
-    MALWARE_HASHES: new Set(['e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855']),
+    MALWARE_HASHES: new Set(['e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      '275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f']),
+    EICAR_SHA256: '275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f',
     DEFAULT_CONFIG: {},
     localGet: async () => ({}),
     /* The toast is raised by injecting into the tab. The test records what would
@@ -532,12 +534,17 @@ function runtime() {
     /low-risk IP/.test((last() || {}).message || ''), JSON.stringify(last()));
 
   await r.ask('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
-  check('a known-bad hash is named as such',
-    /known-malware list\. Do not run/.test((last() || {}).message || ''), JSON.stringify(last()));
+  check('a configured malware hash match still warns against running it',
+    /configured local malware signature\. Do not run/.test((last() || {}).message || ''), JSON.stringify(last()));
+
+  await r.ask('275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f');
+  check('EICAR is identified as a diagnostic rather than a real malware signature',
+    /EICAR diagnostic signature/.test((last() || {}).message || '')
+      && !/Do not run|known-malware/.test((last() || {}).message || ''), JSON.stringify(last()));
 
   await r.ask('a'.repeat(64));
   check('an unknown hash is not called safe',
-    /not proof it is safe/.test((last() || {}).message || ''), JSON.stringify(last()));
+    /a miss does not establish safety/.test((last() || {}).message || ''), JSON.stringify(last()));
 
   /* The bundled set is SHA-256 only, so anything else must say it cannot answer
      rather than return a clean-looking "not found" it did not earn. */
@@ -560,8 +567,8 @@ function runtime() {
 
   /* Every branch answers. A check that goes quiet when it finds nothing is
      indistinguishable from one that never ran. */
-  check('every question got exactly one answer', r.notices.length === 12,
-    r.notices.length + ' answers for 12 questions');
+  check('every question got exactly one answer', r.notices.length === 13,
+    r.notices.length + ' answers for 13 questions');
   check('every answer is filed under the category that governs it',
     r.notices.every((n) => n.type === 'manual_check'));
   /* The toast is the answer, not the tray. If these start coming back as "tray"

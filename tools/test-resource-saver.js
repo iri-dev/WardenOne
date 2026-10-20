@@ -16,11 +16,7 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const source = read('resource-saver.js');
 const manifest = JSON.parse(read('manifest.json'));
 const entry = manifest.content_scripts.find((script) => (script.js || []).includes('resource-saver.js'));
-assert(entry && entry.run_at === 'document_start' && entry.all_frames === true && entry.world !== 'MAIN',
-  'preview saving must run early in the isolated world of every page frame');
-assert.deepEqual(entry.matches, ['<all_urls>']);
-assert.equal(entry.match_origin_as_fallback, true);
-assert.equal(entry.match_about_blank, true);
+assert.equal(entry, undefined, 'optional preview saving must not load statically while disabled');
 
 let reply;
 let update;

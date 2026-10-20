@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "checkedAt": "2026-10-19",
+  "checkedAt": "2026-10-20",
   "profiles": {
     "adaway": {
       "name": "AdAway hosts",
@@ -456,8 +456,11 @@
         "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/LICENSE"
       },
       "permission": {
-        "status": "not-required",
-        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+        "status": "granted",
+        "date": "2026-10-20",
+        "scope": "The publisher confirms WardenOne may download, process and use the published lists under GPLv3, including in a free, open-source extension.",
+        "evidenceRef": "permission-hagezi-2026-10-20",
+        "evidence": "Owner-supplied screenshot of the publisher's reply reviewed on 20 October 2026. Iris retains the original email privately; correspondence and key material are not reproduced."
       },
       "attribution": "HaGeZi and dns-blocklists contributors.",
       "compliance": {
@@ -486,9 +489,13 @@
           "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/README.md",
           "documentSha256": "9f8ed1a58b950c5a36298f74008314bfcd72cba7031b8a90e0957cc6a7a0f019",
           "finding": "The publisher expressly licenses the Lists as published under GPLv3. Its warning about using upstream data directly does not turn WardenOne’s downloads of the published Lists into direct upstream API use."
+        },
+        {
+          "reference": "permission-hagezi-2026-10-20",
+          "finding": "Direct publisher confirmation of WardenOne's download, processing and use of the published lists under GPLv3; owner-supplied reply dated 20 October 2026. GPL obligations remain in place."
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-10-20"
     },
     "urlhaus": {
       "name": "malware-filter URLhaus hosts",

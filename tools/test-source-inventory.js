@@ -48,11 +48,16 @@ for (const source of [...inventory.sources, ...inventory.buildSources]) {
   assert(read('THIRD_PARTY_NOTICES.html').includes(source.name.replace(/&/g,'&amp;').replace(/’/g,'’')));
 }
 const grants = inventory.sources.filter((s) => s.permission.status === 'granted');
-assert.strictEqual(grants.length, 4);
-for (const [id, date, scope] of [['discord','2026-10-15','Direct runtime'],['peter','2026-10','direct pgl'],['army','2026-10','Chrome Web Store'],['flinteger','2026-10-16','upstream']]) {
+assert.strictEqual(grants.length, 7);
+for (const [id, date, scope] of [['discord','2026-10-15','Direct runtime'],['peter','2026-10','direct pgl'],['army','2026-10','Chrome Web Store'],['flinteger','2026-10-16','upstream'],['hagezi','2026-10-20','GPLv3']]) {
   const source = grants.find((s) => s.policyId === id);
   assert(source && source.permission.date === date && source.permission.scope.includes(scope), id);
 }
+const hagezi = inventory.sources.filter((s) => s.policyId === 'hagezi');
+assert.strictEqual(hagezi.length, metadata.profiles.hagezi.urls.length);
+assert(hagezi.every((s) => s.license.type === 'published-license' && s.license.id === 'GPL-3.0'
+  && s.permission.status === 'granted' && s.permission.evidenceRef === 'permission-hagezi-2026-10-20'
+  && s.compliance.status === 'implemented' && s.compliance.issueIds.length === 0));
 assert.deepStrictEqual(inventory.sources.find((s) => s.policyId === 'peter').toggles.sort(), ['adShield','blockTrackers']);
 const snapshot = JSON.parse(read('cosmetic-rules.json'));
 const all = new Set([...inventory.sources, ...inventory.buildSources].map((s) => s.url));
