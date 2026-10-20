@@ -677,6 +677,10 @@ embedded resource requests. Warn on IP-logger pages controls the warning shown b
 visits. The malicious-site switch can still block a known logger visit when page warnings are off;
 other enabled blocklists may independently cover the same destination.
 
+On Chrome 130 and later, the warning page uses a session-specific resource URL to prevent
+fixed extension-ID probes. Chrome 121–129 still supports the warning but ignores that URL
+privacy option. [Chrome's feature announcement](https://developer.chrome.com/blog/extension-news-january-2025?hl=en).
+
 The packaged rules also stop images from reviewed logger services before they load, including
 third-party images from IPLocation's tracker host. Its tracking-link routes show a warning on
 direct visits; the rest of the IPLocation site stays available. An ordinary small image is not

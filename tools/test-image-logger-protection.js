@@ -24,7 +24,31 @@ assert.deepEqual(new Set(redirect.condition.requestDomains),
 for (const resource of ['ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js']) {
   const entries = manifest.web_accessible_resources.filter((entry) => entry.resources.includes(resource));
   assert(entries.some((entry) => entry.matches.includes('<all_urls>')), resource + ' supports warning redirects');
-  assert(entries.every((entry) => entry.use_dynamic_url === true), resource + ' must not expose a stable URL to websites');
+  assert(entries.every((entry) => entry.use_dynamic_url === true), resource + ' requests dynamic URLs on supported browsers');
+}
+const browserSource = read('tools/browser-image-logger-loads.js');
+const probeStart = browserSource.indexOf('function assertWarningResourceAccess(');
+const probeEnd = browserSource.indexOf('\nasync function run()', probeStart);
+assert(probeStart >= 0 && probeEnd > probeStart, 'browser resource probe assertion moved');
+const probeRig = vm.createContext({ assert });
+vm.runInContext(browserSource.slice(probeStart, probeEnd), probeRig);
+const stableResource = 'chrome-extension://fixed/ip-logger-warning.html';
+const dynamicResource = 'chrome-extension://session/ip-logger-warning.html';
+for (const [version, resourceUrl, probes, accepted] of [
+  ['Chrome/121.0.6167.184', stableResource, [true, true], true],
+  ['Chrome/129.0.0.0', stableResource, [true, true], true],
+  ['Chrome/130.0.0.0', dynamicResource, [false, true], true],
+  ['Chrome/155.0.0.0', dynamicResource, [false, true], true],
+  ['Chrome/130.0.0.0', stableResource, [true, true], false],
+  ['Chrome/155.0.0.0', dynamicResource, [true, true], false],
+  ['Chrome/121.0.6167.184', stableResource, [false, false], false],
+  ['unknown', dynamicResource, [false, true], false],
+]) {
+  const verify = () => vm.runInContext('assertWarningResourceAccess(...' + JSON.stringify([
+    version, 'ip-logger-warning.html', stableResource, resourceUrl, probes,
+  ]) + ')', probeRig);
+  if (accepted) assert.doesNotThrow(verify, version);
+  else assert.throws(verify, assert.AssertionError, version);
 }
 assert(manifest.content_scripts.some((entry) => entry.js.includes('frame-image-logger.js')
   && entry.js.indexOf('bridge.js') < entry.js.indexOf('frame-image-logger.js')
