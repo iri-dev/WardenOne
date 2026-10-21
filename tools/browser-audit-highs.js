@@ -135,13 +135,17 @@ async function run() {
         erased:!c.allowlist.includes('erase-audit.net')&&!c.siteOverrides['erase-audit.net'],
         kept:c.allowlist.includes('keep-audit.net')&&c.siteOverrides['keep-audit.net'].adShield,
         deAmp:c.deAmp}))`;
-      assert.deepEqual(await evaluate(page, configState), { erased: true, kept: true, deAmp: true });
+      const expected = { erased: true, kept: true, deAmp: true };
+      const settled = `(${configState}).then(s=>s.erased&&s.kept&&s.deAmp)`;
+      await until(page, settled);
+      assert.deepEqual(await evaluate(page, configState), expected, 'erase after ' + (privateSave ? 'private' : 'regular') + ' save');
       if (privateSave) {
         const { browserContextId: lateContext } = await cdp.send('Target.createBrowserContext', {});
         const latePage = await settings(lateContext);
         await evaluate(latePage, `chrome.storage.local.set(${JSON.stringify(stale)})`);
-        await sleep(1500);
-        assert.deepEqual(await evaluate(page, configState), { erased: true, kept: true, deAmp: true }, 'late private replay after reload');
+        await until(page, settled);
+        await sleep(1300);
+        assert.deepEqual(await evaluate(page, configState), expected, 'late private replay after reload');
       }
     }
     console.log('[ok] site erase survives regular/private pending saves and stale replay after reload');

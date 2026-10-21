@@ -177,6 +177,11 @@ function oddReleaseLinks(text) {
   check('every extension suite requires the pinned Chrome and a working graphics runtime',
     suites.length === 16 && suites.every(step => step.includes("steps.chrome.outcome == 'success'")
       && step.includes("steps.runtime.outcome == 'success'")) && /id: chrome/.test(minimum));
+  check('legacy Chrome reload scenarios use normal browser windows',
+    ['browser-config-race.js', 'browser-audit-highs.js'].every(file => {
+      const step = suites.find(item => item.includes('run: node tools/' + file));
+      return step && step.includes("WARDENONE_HEADLESS: '0'");
+    }));
   const needs = ((/needs: \[([^\]]*)\]/.exec(rolling) || [])[1] || '').split(',').map((s) => s.trim());
   check('the rolling build waits for the gate, the real popup, the real Settings page and the minimum Chrome',
     ['gate', 'browser-popup', 'browser-settings', 'browser-minimum'].every((n) => needs.includes(n)), needs.join(', '));

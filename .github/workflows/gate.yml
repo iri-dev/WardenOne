@@ -236,10 +236,14 @@ jobs:
 
       - name: Test simultaneous config writes in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
+        env:
+          WARDENONE_HEADLESS: '0'
         run: node tools/browser-config-race.js
 
       - name: Test audit High regressions in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
+        env:
+          WARDENONE_HEADLESS: '0'
         run: node tools/browser-audit-highs.js
 
       - name: Test cookie and WebRTC diagnostic audit regressions in Chrome at the minimum version
