@@ -47,6 +47,7 @@ const context = {
   },
 };
 vm.createContext(context);
+vm.runInContext(fs.readFileSync('domain-utils.js', 'utf8'), context);
 
 const from = source.indexOf('function messageSenderIsExtensionPage(sender)');
 const to = source.indexOf('// Always-catch wrapper for promise-returning message handlers');
@@ -166,6 +167,8 @@ check('empty host is rejected', api.messageSenderMatchesHost(realTab, '') === fa
 check('non-host junk is rejected',
   api.messageCleanHost('javascript:alert(1)') === '' && api.messageCleanHost('a b c') === '');
 check('www. is normalised, not a bypass', api.messageSameHost('https://www.example.com', 'https://example.com') === true);
+check('a www tenant cannot claim its private hosting platform', !api.messageSameHost('www.webflow.io', 'webflow.io'));
+check('unrelated private tenants cannot claim one another', !api.messageSameHost('alice.webflow.io', 'bob.webflow.io'));
 
 /* ---------- the cookie-permission escape hatch ---------- */
 const escape = { kind: 'set-site-permission', key: 'cookies', setting: 'allow', url: 'https://example.com/x' };

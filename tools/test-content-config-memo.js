@@ -155,6 +155,8 @@ function realm(local) {
     INCOGNITO_CONTEXT: false,
   };
   const ctx = vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.join(ROOT, 'psl-private.js'), 'utf8'), ctx);
   vm.runInContext(LIFTED + '\nthis.api = { buildContentConfigSnapshot, invalidateContentConfigMemo, contentConfigNeeds, sharedContentConfigSnapshot };', ctx, { filename: 'content-config.js' });
   const snapshotReads = () => state.reads.filter((k) => k.indexOf('wardenone_config') >= 0 && k.indexOf('wardenone_learned') >= 0).length;
   const request = (frameHost, need) => sandbox.api.buildContentConfigSnapshot(frameHost, sandbox.api.contentConfigNeeds(need));

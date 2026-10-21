@@ -57,3 +57,21 @@ replay that batch. Recovery is not an exactly-once transaction.
 The pending marker does not keep a worker alive or wake it by itself. A subsequent
 extension event resumes unfinished work. Existing browser-owned DNR rules continue
 to enforce their last committed state throughout that interval.
+
+## Targeted ad Activity listener startup
+
+The targeted `webRequest.onErrorOccurred` listener was attached from the
+packaged tracker-file fetch callback. That violated MV3's synchronous listener
+registration requirement. It now attaches during script evaluation with the
+same eleven destination patterns and the same script/frame request types.
+The gate compares that synchronous filter with the scoped tracker-rule data,
+so a ruleset edit cannot silently leave the filter stale or broaden it.
+
+`tools/test-targeted-ad-notices.js` failed before the fix because no error
+listener existed before startup yielded. It now also creates two fresh worker
+realms, withholds the rules fetch, delivers the first blocked-request event,
+and verifies that evidence processing resumes once the file arrives. Existing
+matched-rule attribution and unrelated-request checks remain in place. These
+are simulated restarts, not native browser worker termination tests.
+
+Source: [Chrome's synchronous listener registration requirement](https://developer.chrome.com/docs/extensions/develop/migrate/to-service-workers#register_listeners_synchronously).

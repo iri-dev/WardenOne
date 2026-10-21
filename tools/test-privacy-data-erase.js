@@ -69,6 +69,8 @@ function harness(initialLocal, initialSession, options = {}) {
   };
   let lock = Promise.resolve();
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(root, 'domain-utils.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.join(root, 'psl-private.js'), 'utf8'), sandbox);
   /* The reset clears and rewrites the config under the config lock (config-lock.js). */
   vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ + '\n'
     + 'const DEFAULT_CONFIG = { enabled: true, downloadSafeBrowsingKey: "", siteOverrides: {}, allowlist: [] };'

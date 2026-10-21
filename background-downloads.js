@@ -181,7 +181,7 @@ function normalizeDownloadTrustHost(host) {
   try {
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(h)) h = new URL(h).hostname;
   } catch (_) {}
-  h = h.replace(/^www\./, '').replace(/^\.+|\.+$/g, '');
+  h = regDomain(h.replace(/^\.+|\.+$/g, ''));
   if (!/^[a-z0-9.-]+$/i.test(h)) return '';
   return h;
 }
@@ -446,7 +446,7 @@ function downloadTrustTarget(host) {
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return h;
   const rd = regDomainBg(h);
   if (!rd) return '';
-  return SHARED_HOSTING_SUFFIXES.has(rd) ? h : rd;
+  return SHARED_HOSTING_SUFFIXES.has(rd) ? h : siteIdentity(h);
 }
 
 const MULTITENANT_PUBLISHER_HOSTS = new Set([
@@ -468,7 +468,7 @@ function trustedDownloadMatch(host, trustedSites) {
   const list = Array.isArray(trustedSites) ? trustedSites : [];
   return list.find((site) => {
     const t = normalizeAllowlistHost(site);
-    return t && (h === t || h.endsWith('.' + t));
+    return t && hostMatchesSite(h, t);
   }) || '';
 }
 

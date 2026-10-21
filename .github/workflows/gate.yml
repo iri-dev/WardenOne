@@ -135,6 +135,12 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-image-logger-loads.js
 
+      - name: Test media compatibility security boundaries and playback in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-media-security.js
+
       - name: Test IP-logger switches against live requests in Edge
         if: success() || failure()
         env:
@@ -236,6 +242,10 @@ jobs:
       - name: Test image logger navigation, image blocks and Activity in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'
         run: node tools/browser-image-logger-loads.js
+
+      - name: Test media compatibility security boundaries and playback in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-media-security.js
 
       - name: Test IP-logger switches against live requests in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'

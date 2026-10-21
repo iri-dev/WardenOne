@@ -26,9 +26,10 @@ async function run() {
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const origin = 'http://' + HOST + ':' + server.address().port;
+    const tenantOrigins = ['alice.webflow.io', 'bob.webflow.io'].map((host) => 'http://' + host + ':' + server.address().port);
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir, [
-      '--host-resolver-rules=MAP ' + HOST + ' 127.0.0.1',
-      '--unsafely-treat-insecure-origin-as-secure=' + origin,
+      '--host-resolver-rules=' + [HOST, 'alice.webflow.io', 'bob.webflow.io'].map((host) => 'MAP ' + host + ' 127.0.0.1').join(', '),
+      '--unsafely-treat-insecure-origin-as-secure=' + [origin, ...tenantOrigins].join(','),
       '--disable-features=msEdgeShoppingUI,msImplicitSignin,msEdgeStartupBoost,WebRtcHideLocalIpsWithMdns',
       '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     ]);
@@ -86,8 +87,11 @@ async function run() {
       ['native site exception', true, true, { siteOverrides: { [HOST]: { blockSuspiciousWebRTC: false } } }, 'design'],
       ['dependency site exception', true, true, { siteOverrides: { [HOST]: { blockWebRTCLeak: false } } }, 'design'],
       ['site master exception', true, true, { siteOverrides: { [HOST]: { enabled: false } } }, 'design'],
+      ['platform exception keeps tenant protected', true, true, { siteOverrides: { 'webflow.io': { blockSuspiciousWebRTC: false } } }, 'protected', tenantOrigins[0]],
+      ['tenant exception applies to its own site', true, true, { siteOverrides: { 'alice.webflow.io': { blockSuspiciousWebRTC: false } } }, 'design', tenantOrigins[0]],
+      ['tenant exception keeps sibling protected', true, true, { siteOverrides: { 'alice.webflow.io': { blockSuspiciousWebRTC: false } } }, 'protected', tenantOrigins[1]],
     ];
-    for (const [label, blockWebRTCLeak, blockSuspiciousWebRTC, choices, expected] of cases) {
+    for (const [label, blockWebRTCLeak, blockSuspiciousWebRTC, choices, expected, testOrigin = origin] of cases) {
       const config = { enabled: true, blockWebRTCLeak, blockSuspiciousWebRTC, allowlist: [], allowlistUntil: {},
         siteOverrides: {}, antiFingerprint: false, antiFingerprintNoise: false, mediaShield: false, blockCameraMic: false,
         capabilityGuard: false, deviceAccessGuard: false, ...choices };
@@ -95,11 +99,19 @@ async function run() {
       await until(worker, `sharedContentConfigSnapshot().then(s=>
         ['enabled','blockWebRTCLeak','blockSuspiciousWebRTC','siteOverrides','allowlistUntil'].every(k=>
           JSON.stringify(s.overrides[k])===JSON.stringify((${JSON.stringify(config)})[k])))`);
-      const url = origin + '/' + label.replace(/ /g, '-');
+      const url = testOrigin + '/' + label.replace(/ /g, '-');
       await cdp.send('Page.navigate', { url }, web);
       await until(web, `location.href===${JSON.stringify(url)}&&document.readyState==='complete'`);
       const tabId = await evaluate(worker, `chrome.tabs.query({}).then(ts=>ts.find(t=>t.url===${JSON.stringify(url)})?.id)`);
       assert(Number.isInteger(tabId));
+      if (tenantOrigins.includes(testOrigin)) {
+        for (const world of ['MAIN', 'ISOLATED']) {
+          const match = await evaluate(worker, `chrome.scripting.executeScript({target:{tabId:${tabId}},world:${JSON.stringify(world)},
+            func:()=>({apex:hostMatchesSite(location.hostname,'webflow.io'),own:hostMatchesSite(location.hostname,'alice.webflow.io')})}).then(r=>r[0].result)`);
+          assert.equal(match.apex, false, world + ': platform apex does not exempt tenants');
+          assert.equal(match.own, testOrigin === tenantOrigins[0], world + ': only the named tenant matches');
+        }
+      }
       await until(worker, `tabEngineStatus(${tabId}).then(s=>s&&s.configured)`);
       const hardeningOn = expected === 'protected';
       await until(web, `!!window.__WO_CONFIG__ && window.__WO_CONFIG__.blockSuspiciousWebRTC===${hardeningOn}`);

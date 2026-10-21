@@ -1372,14 +1372,17 @@ function relayFrameBlockNotice(tabId, frameId, finding) {
   notifyBlockedAction(tabId, finding.type, finding.detail);
 }
 
-/* These site-scoped domains host observed popup loaders. A confirmed client
-   block is recorded even when another browser shield wins before our rule.
-   The rules are the trackers ruleset's block rules scoped to these sites (initiatorDomains), read
-   from the ruleset itself rather than named by rule number here, so the data can be renumbered or
-   extended without this code. And the listener for blocked requests is registered once those
-   rules are known, for their ad domains only: registered for <all_urls>, every script or frame
-   blocked anywhere in the browser woke the worker to be turned away here. */
+/* Record confirmed client blocks for observed site-scoped popup loaders.
+   A narrow filter avoids waking the worker for unrelated blocked requests. */
 const TARGETED_AD_SITES = ['playmogo.com', 'pawchive.pw'];
+/* MV3 wake listeners must register synchronously. The gate checks this filter
+   against the bundled tracker rules; rule evidence still loads asynchronously. */
+const TARGETED_AD_REQUEST_PATTERNS = [
+  '*://*.dnhfi5nn2dt67.cloudfront.net/*', '*://*.blockadsnot.com/*', '*://*.xlxchtas.com/*',
+  '*://*.ejfiynnbu.com/*', '*://*.gillyspencie.com/*', '*://*.briggie.org/*',
+  '*://*.npilkasacdu.in/*', '*://*.excavatenearbywand.com/*', '*://*.phonydepth.com/*',
+  '*://*.armvupzc.in/*', '*://*.onxgaladrj.in/*',
+];
 const TARGETED_AD_NOTICE_PENDING = new Set();
 const TARGETED_AD_NOTICE_RECENT = new Map();
 const TARGETED_AD_EVIDENCE_PENDING = new Set();
@@ -1408,15 +1411,6 @@ function targetedAdRules() {
     })
     .catch(() => { targetedAdRuleMap = new Map(); return targetedAdRuleMap; });
   return targetedAdRulesPromise;
-}
-function targetedAdRequestPatterns(map) {
-  const patterns = new Set();
-  for (const { condition } of map.values()) {
-    for (const domain of (condition && condition.requestDomains) || []) {
-      if (/^[a-z0-9.-]{1,253}$/i.test(String(domain))) patterns.add('*://*.' + String(domain).toLowerCase() + '/*');
-    }
-  }
-  return [...patterns];
 }
 function noteTargetedAdResource(tabId, site, requestUrl, wardenOneMatched) {
   if (!site || !Number.isInteger(tabId) || tabId < 0 || TARGETED_AD_NOTICE_PENDING.has(tabId)) return;
@@ -1457,13 +1451,11 @@ function attachTargetedAdNoticeListeners() {
       if (TARGETED_AD_DEBUG_MATCHES.size > 200) TARGETED_AD_DEBUG_MATCHES.delete(TARGETED_AD_DEBUG_MATCHES.keys().next().value);
     });
   } catch (_) { /* Packaged builds use matched-rule evidence after a blocked request. */ }
-  /* After the rules load, which is a packaged-file read: the worker is awake for these pages
-     anyway, since their bridges ask it for settings as they start. */
-  return targetedAdRules().then((map) => {
-    const urls = targetedAdRequestPatterns(map);
-    if (!urls.length) return;
-    chrome.webRequest.onErrorOccurred.addListener(onTargetedAdRequestBlocked, { urls, types: ['script', 'sub_frame'] });
-  }).catch(() => {});
+  try {
+    chrome.webRequest.onErrorOccurred.addListener(onTargetedAdRequestBlocked,
+      { urls: TARGETED_AD_REQUEST_PATTERNS, types: ['script', 'sub_frame'] });
+  } catch (_) {}
+  return targetedAdRules();
 }
 function onTargetedAdRequestBlocked(details) {
   if (!details || !/BLOCKED_BY_CLIENT/i.test(String(details.error || ''))
@@ -2803,6 +2795,22 @@ function sanitizeContentConfig(raw) {
   const out = {};
   for (const field of Object.keys(source)) {
     if (!contentConfigFieldAllowed(field)) continue;
+    if (field === 'allowlist') {
+      out[field] = Array.isArray(source[field]) ? source[field].slice(0, 1000).map(normalizeAllowlistHost).filter(Boolean) : [];
+      continue;
+    }
+    if (field === 'allowlistUntil') {
+      out[field] = {};
+      const timed = source[field];
+      if (timed && typeof timed === 'object' && !Array.isArray(timed)) {
+        for (const entry of Object.keys(timed).slice(0, 200)) {
+          const host = normalizeAllowlistHost(entry);
+          const until = Number(timed[entry]);
+          if (host && Number.isFinite(until) && until > Date.now()) out[field][host] = until;
+        }
+      }
+      continue;
+    }
     if (field === 'notificationSettings') {
       out[field] = sanitizeWardenNotificationSettings(source[field]);
       continue;
@@ -2994,9 +3002,7 @@ async function buildContentConfigSnapshot(frameHost, needs, topHost) {
     ok: true,
     rev: shared.rev,
     hidden,
-    // This frame's own site under the complete suffix list, for the guard's same-party test; the
-    // frame's copy of the list knows 26 platforms, this one knows 3,400 (SEC-07). Per frame, so
-    // it rides beside the shared overrides object rather than inside it.
+    // Keep the worker's site beside the shared overrides, scoped to the asking frame.
     site: frameHost ? (siteIdentityBg(frameHost) || '') : '',
     overrides: want('overrides') ? Object.assign({}, shared.overrides, {
       eyeShieldSites: WOEyeShieldProfiles.forHost(shared.overrides.eyeShieldSites, topHost || frameHost),
@@ -4913,17 +4919,8 @@ async function applyLearnedRules() {
       if (!resourceTypes.length) return null;
       return {
         id: LEARNED_RULE_BASE + i,
-      /* A site YOU blocked outranks the compatibility allowances; one WardenOne
-         worked out for itself does not.
-
-         YouTube, youtu.be and the login flows each carry an allowAllRequests on
-         main_frame at 95000-96000 so that WardenOne's own blocking cannot break
-         playback or a sign-in. Those exist to stop US breaking a site -- they
-         were never meant to overrule the reader. At 2000 they did exactly that:
-         "Block this site" on YouTube saved the rule, said it had blocked it,
-         and the page then loaded normally, because a 95000 allow beat it.
-         An automatic block stays below compatibility; a logger block also stays
-         below the page-warning redirect when that switch is on. */
+        /* Explicit user blocks outrank automatic compatibility. Learned security
+           blocks also outrank media allows; logger blocks preserve warning redirects. */
         priority: entry.userBlocked ? 99000 : (grabber && cfg.warnGrabberDomains !== false ? 1000 : 2000),
         action: { type: 'block' },
         condition: { requestDomains: [d], resourceTypes },
@@ -6554,7 +6551,7 @@ function userBlockRulesFrom(entries) {
   }
   const mk = (condition) => ({
     id: id++,
-    /* Above the compatibility allowances (95000-96000) that exist to stop WardenOne
+    /* Above the built-in compatibility allowances that exist to stop WardenOne
        breaking a site -- they were never meant to overrule the reader -- and below
        the user allowlist at 100000, which is the reader too. */
     priority: 99000,
@@ -7854,7 +7851,9 @@ function normalizeAllowlistHost(value) {
   } catch (_) {
     if (/[/?#]/.test(raw)) return '';
   }
-  let h = String(raw || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/^www\./, '').replace(/^\.+|\.+$/g, '');
+  let h = String(raw || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/^\.+|\.+$/g, '');
+  if (wardenOneIsPublicSuffix(h)) return '';
+  h = regDomain(h);
   if (!h || h.length > 253 || h.includes('*') || h.includes('%') || h.includes('/') || h.includes('\\')) return '';
   if (h.includes(':')) {
     const ip = normalizeIpLiteral(h);
@@ -7865,6 +7864,7 @@ function normalizeAllowlistHost(value) {
   if (labels.length < 2) return '';
   if (labels.some((label) => !label || label.length > 63 || /^-|-$/.test(label))) return '';
   if (isLocalOrPrivateHost(h)) return '';
+  if (wardenOneIsPublicSuffix(h)) return '';
   return h;
 }
 
@@ -8139,6 +8139,7 @@ function updateStoredConfig(mutate, triesLeft, operationOrder) {
     if (out === false) return null;
     const next = out && typeof out === 'object' ? out : cfg;
     changedKeys = storedConfigChangedKeys(stored, next);
+    validateAllowlistConfigUpdate(Object.fromEntries(changedKeys.map((key) => [key, next[key]])));
     const stamp = stampConfigWrite(res[WO_CONFIG_WRITES_KEY], changedKeys, order);
     id = stamp.id;
     order = stamp.order;
@@ -11261,6 +11262,8 @@ async function applyAllowlistRules(list, readRules, submitRules) {
 }
 
 let __mediaCompatibilityRulesEnabled = null;
+// Above ad/tracker rules, below learned and downloaded security blocks.
+const MEDIA_COMPAT_RULE_PRIORITY = 1900;
 async function applyMediaCompatibilityRules(enabled, readRules, submitRules) {
   try {
     enabled = !!enabled;
@@ -11280,14 +11283,15 @@ async function applyMediaCompatibilityRules(enabled, readRules, submitRules) {
     // cannot outrun the allow rule that exists to keep embeds working.
     const allTypes = ALL_DNR_RESOURCE_TYPES.filter((type) => type !== 'main_frame');
     const xAppTypes = allTypes.filter((type) => type !== 'ping');
+    // These allow the navigation itself, never the document's other requests.
     const frameAllowRules = [
       { domain: 'youtube.com' },
       { domain: 'youtube-nocookie.com' },
       { domain: 'youtu.be' },
     ].map((p, i) => ({
       id: MEDIA_COMPAT_RULE_BASE + i,
-      priority: 95000,
-      action: { type: 'allowAllRequests' },
+      priority: MEDIA_COMPAT_RULE_PRIORITY,
+      action: { type: 'allow' },
       condition: {
         requestDomains: [p.domain],
         resourceTypes: ['main_frame', 'sub_frame'],
@@ -11318,7 +11322,7 @@ async function applyMediaCompatibilityRules(enabled, readRules, submitRules) {
     ];
     const addRules = pairs.map((p, i) => ({
       id: MEDIA_COMPAT_RULE_BASE + 10 + i,
-      priority: 90000,
+      priority: MEDIA_COMPAT_RULE_PRIORITY,
       action: { type: 'allow' },
       condition: Object.assign({
         initiatorDomains: p.initiators,
@@ -17579,7 +17583,7 @@ function messageCleanHost(value) {
     let host = String(value || '').trim();
     if (!host) return '';
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(host)) host = new URL(host).hostname;
-    host = host.replace(/^www\./, '').replace(/^\.+|\.+$/g, '').toLowerCase();
+    host = regDomain(host.replace(/^\.+|\.+$/g, ''));
     if (!/^[a-z0-9.-]+$/i.test(host)) return '';
     return host;
   } catch (_) {

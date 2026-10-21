@@ -48,3 +48,25 @@ Validation passed in Edge 150.0.4078.48 and Chrome 121.0.6167.184, alongside all
 
 The parsing/serialization boundary follows the [CSSOM insertRule algorithm](https://drafts.csswg.org/cssom/#dom-cssstylesheet-insertrule)
 and [selector-list validity rules](https://drafts.csswg.org/selectors/#grouping).
+
+## Hand-hidden selectors in the bridge
+
+The bridge had a separate weakness: incomplete attribute selectors could absorb
+subsequent individual CSS rules. Before the fix, the native Edge Zapper fixture
+stored `#first`, `a[href=`, a valid quoted-attribute selector and `#second`.
+Only the first element was hidden, and the sheet contained one parsed rule.
+
+The bridge now validates each selector in an unattached native stylesheet and
+requires the hide declaration to survive parsing before using its serialized
+selector. Individual rules also have newline separators. The existing length,
+injection-character, whole-document and rule-count boundaries remain in place.
+
+The browser fixture covers an incomplete bracket, unfinished single/double
+quotes, an unclosed function and an unsupported pseudo-class between valid
+selectors. It checks actual visibility and CSS rule counts, then exercises
+Zapper finishing, undo, reload and hiding with AdShield disabled. Unit coverage
+also rejects a recovered CSS rule that lost its declaration.
+
+The updated native fixture passed in Edge 150.0.4078.48 and Brave's Chromium
+155.0.8059.85. Brave's first run passed selector isolation but timed out during
+the later automated Undo click; a repeat passed the complete workflow.

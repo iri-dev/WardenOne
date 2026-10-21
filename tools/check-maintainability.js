@@ -386,6 +386,8 @@ function checkContentBuild() {
   'tools/test-frame-credential-guard.js',
   'tools/test-site-identity.js',
   'tools/test-icann-boundaries.js',
+  'tools/test-allowlist-public-suffixes.js',
+  'tools/test-shared-host-exemptions.js',
   'tools/test-engine-coverage.js',
   'tools/test-tenant-isolation.js',
   'tools/test-tracker-learner-minimisation.js',
@@ -433,6 +435,7 @@ function checkContentBuild() {
   'tools/browser-audit-highs.js',
   'tools/browser-audit-mediums.js',
   'tools/browser-element-zapper.js',
+  'tools/browser-media-security.js',
   'tools/browser-resource-saver.js',
   'tools/test-animated-image-saver.js',
   'tools/browser-engine-smoke.js',
@@ -687,6 +690,8 @@ checkCommand('frame scope disclosure tests', ['tools/test-frame-scope-disclosure
 checkCommand('frame credential guard tests', ['tools/test-frame-credential-guard.js']);
 checkCommand('shared-host site identity tests', ['tools/test-site-identity.js']);
 checkCommand('ICANN site boundaries', ['tools/test-icann-boundaries.js']);
+checkCommand('public-suffix allowlist boundaries', ['tools/test-allowlist-public-suffixes.js']);
+checkCommand('shared-host exemption boundaries', ['tools/test-shared-host-exemptions.js']);
 checkCommand('hosted page engine coverage', ['tools/test-engine-coverage.js']);
 checkCommand('psl-private.js is well-formed and current', ['tools/build-psl.js', '--check']);
 checkCommand('UTS #39 IDN confusable data is well-formed and current', ['tools/build-idn-confusables.js', '--check']);

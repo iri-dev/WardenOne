@@ -115,7 +115,7 @@ function CustomEventShim(type, init) { this.type = type; this.detail = init && i
 /* ---- the real bridge, its authority-bearing parts ------------------------------------ */
 
 const BRIDGE_AUTH = between(BRIDGE, '  const TOKEN = (function () {', '  const BRIDGE_RATE = Object.create(null);', 'the token, the key and the signer');
-const BRIDGE_RATE = between(BRIDGE, '  const BRIDGE_RATE = Object.create(null);', '\n  function bridgeSafeUserSelector(value) {', 'the rate limiter');
+const BRIDGE_RATE = between(BRIDGE, '  const BRIDGE_RATE = Object.create(null);', '\n  function bridgeSafeUserSelector(', 'the rate limiter');
 const BRIDGE_POST = between(BRIDGE, '  function postToPage(message) {', '\n  const WO_MODAL = {', 'postToPage and publicSafeBrowsingResult');
 const BRIDGE_REPLAY = between(BRIDGE, '  const bridgeReplay = () => {', '\n  // 1. Listen for the custom events the main-world trap dispatches on document,', 'the replay');
 const BRIDGE_WATCHDOG = between(BRIDGE, '  /* The engine has to PROVE it is there.', '\n  // Navigation attribution signals.', 'the watchdog and the wo-event listener');
@@ -135,7 +135,7 @@ function loadBridge(worlds, options) {
     document: worlds.document,
     location: { protocol: 'https:', hostname: 'victim.example', href: 'https://victim.example/' },
     CustomEvent: CustomEventShim,
-    Uint8Array, Uint32Array, Array, Object, String, Number, JSON, Math, Date, Set, Map, RegExp, parseInt, Promise,
+    Uint8Array, Uint32Array, Array, Object, String, Number, JSON, Math, Date, Set, Map, RegExp, parseInt, Promise, URL,
     crypto: { getRandomValues: (a) => require('crypto').randomFillSync(a) },
     console: { warn() {}, log() {} },
     setTimeout, clearTimeout,
@@ -163,6 +163,7 @@ function loadBridge(worlds, options) {
     },
   };
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), sandbox);
   vm.runInContext([
     BRIDGE_AUTH, BRIDGE_RATE, BRIDGE_POST,
     'const sendConfig = (clean, hostLists = null) => {\n' + SEND_TAIL + '\n};',

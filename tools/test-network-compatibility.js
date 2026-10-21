@@ -91,6 +91,9 @@ function loadRedirectPolicy() {
 function loadMediaCompatibilityRules() {
   const state = {
     rules: [{
+      id: 806000, priority: 95000, action: { type: 'allowAllRequests' },
+      condition: { requestDomains: ['youtube.com'], resourceTypes: ['main_frame', 'sub_frame'] },
+    }, {
       id: 806090,
       priority: 99000,
       action: { type: 'block' },
@@ -119,10 +122,11 @@ function loadMediaCompatibilityRules() {
   installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('let __mediaCompatibilityRulesEnabled', '\nlet __loginCompatibilityRulesEnabled')
+      + sourceBetween('function domainToRule(', '\nfunction isWardenOneDynamicRuleId(')
       + '\nthis.__applyMediaCompatibilityRules = applyMediaCompatibilityRules;',
     sandbox,
   );
-  return { apply: sandbox.__applyMediaCompatibilityRules, state };
+  return { apply: sandbox.__applyMediaCompatibilityRules, securityRule: sandbox.domainToRule, state };
 }
 
 function loadRemoteListCommitGuard(options = {}) {
@@ -614,7 +618,8 @@ test('media compatibility removes stale edge-ad blocks while retaining Twitch me
     rule.condition && Array.from(rule.condition.requestDomains || []).includes('twitch.tv'));
   assert(broadTwitchAllow, 'missing broad Twitch compatibility allow');
   assert.strictEqual(broadTwitchAllow.action.type, 'allow');
-  assert.strictEqual(broadTwitchAllow.priority, 90000);
+  assert(broadTwitchAllow.priority > 1100 && broadTwitchAllow.priority < 2000,
+    'Twitch compatibility must stay above ordinary ad rules and below security blocks');
   assert(!Object.prototype.hasOwnProperty.call(broadTwitchAllow.condition, 'urlFilter'),
     'Twitch compatibility allow must use a bounded requestDomains condition');
   assert(!requestDomainsMatchHost(broadTwitchAllow.condition, 'twitch.tv.evil'),
@@ -628,6 +633,30 @@ test('media compatibility removes stale edge-ad blocks while retaining Twitch me
     'unchanged media compatibility state performed a redundant DNR update');
 });
 
+test('media compatibility replaces legacy frame exemptions without overriding security rules', async () => {
+  const { apply, securityRule, state } = loadMediaCompatibilityRules();
+  await apply(true);
+  assert(state.updates[0].removeRuleIds.includes(806000), 'the legacy frame exemption must be removed');
+  assert(state.rules.every((rule) => rule.action.type === 'allow'), 'media compatibility must never exempt descendants');
+  for (const domain of ['youtube.com', 'youtube-nocookie.com', 'youtu.be']) {
+    const frame = state.rules.find((rule) => rule.condition.requestDomains.includes(domain)
+      && rule.condition.resourceTypes.includes('main_frame'));
+    assert(frame, domain + ' retains its frame-navigation compatibility rule');
+    assert.deepStrictEqual(Array.from(frame.condition.resourceTypes), ['main_frame', 'sub_frame']);
+  }
+  for (const rule of state.rules) {
+    const domains = Array.from(rule.condition.requestDomains || []);
+    assert(domains.length > 0, 'every media exception must name a destination');
+    if (!rule.condition.resourceTypes.includes('main_frame')) {
+      assert(rule.condition.initiatorDomains.length > 0, 'subresource exceptions must name initiators');
+    }
+    const security = securityRule(domains[0], 6000001, 'security');
+    assert(security.priority > rule.priority, 'security blocks must outrank media exceptions for ' + domains[0]);
+  }
+  await apply(false);
+  assert.equal(state.rules.length, 0, 'disabling compatibility clears the entire old and new band');
+});
+
 test('X application-family DNR allows are first-party scoped and keep ping blocking intact', async () => {
   const { apply, state } = loadMediaCompatibilityRules();
   await apply(true);
@@ -637,7 +666,7 @@ test('X application-family DNR allows are first-party scoped and keep ping block
       candidate.condition && Array.from(candidate.condition.requestDomains || []).includes(domain));
     assert(rule, 'missing X application-family allow for ' + domain);
     assert.strictEqual(rule.action.type, 'allow', domain + ' must use a scoped allow, not allowAllRequests');
-    assert.strictEqual(rule.priority, 90000, domain + ' compatibility priority changed');
+    assert(rule.priority > 1100 && rule.priority < 2000, domain + ' must retain the security priority boundary');
     assert.deepStrictEqual(
       Array.from(rule.condition.initiatorDomains || []).sort(),
       expectedInitiators,

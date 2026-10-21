@@ -118,6 +118,7 @@ check('URL reputation bypasses Twitch official legal host',
   'legal.twitch.tv should not be treated as a phishing reputation hit');
 
 const mediaBody = bodyOf('applyMediaCompatibilityRules');
+const mediaPriority = Number((background.match(/const MEDIA_COMPAT_RULE_PRIORITY = (\d+);/) || [])[1]);
 check('media compatibility never installs an edge.ads Twitch block',
   !/edge\.ads\.twitch\.tv/.test(mediaBody),
   'edge ads must stay network-allowed so Twitch can advance its ad lifecycle');
@@ -130,7 +131,8 @@ const mediaAllowTypes = /allTypes = ALL_DNR_RESOURCE_TYPES/.test(mediaBody)
   : (mediaBody.match(/'[a-z_]+'/g) || []).map((token) => token.slice(1, -1));
 check('Twitch media compatibility allow remains installed',
   /\{ domain:\s*'twitch\.tv', initiators:\s*\['twitch\.tv'\] \}/.test(mediaBody)
-    && /priority:\s*90000/.test(mediaBody)
+    && /priority:\s*MEDIA_COMPAT_RULE_PRIORITY/.test(mediaBody)
+    && mediaPriority > 1100 && mediaPriority < 2000
     && /action:\s*\{ type:\s*'allow' \}/.test(mediaBody)
     && mediaAllowTypes.includes('media'),
   'targeted page guarding must retain the broad Twitch media allow');

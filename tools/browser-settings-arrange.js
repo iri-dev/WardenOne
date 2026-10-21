@@ -186,6 +186,40 @@ async function run() {
     await until(settings, "document.querySelector('#pane [data-site-source=paused]')?.dataset.siteId === 'example.com'", 'paused site row');
     await value(settings, "document.querySelector('#pane [data-site-source=paused][data-site-action=remove]').click()");
     await until(settings, "document.querySelector('#pane').textContent.includes('No sites paused.')", 'paused site removal');
+    for (const [host, duration] of [['co.uk', '0'], ['com.au', '15'], ['github.io', '0'], ['foo.ck', '15'], ['kawasaki.jp', '0'], ['compute.amazonaws.com', '0'], ['eu-west-1.compute.amazonaws.com', '0']]) {
+      await value(settings, `(() => {
+        document.querySelector('[data-add-input=paused]').value = ${JSON.stringify(host)};
+        document.querySelector('[data-add-choice=paused]').value = ${JSON.stringify(duration)};
+        document.querySelector('[data-add=paused]').click();
+      })()`);
+      await until(settings, "!document.querySelector('[data-add=paused]').disabled && results['add-paused']?.text.includes('public suffix')", 'public-suffix rejection: ' + host);
+      assert(await value(settings, `localRead('wardenone_config').then(s => !(s.wardenone_config.allowlist || []).includes(${JSON.stringify(host)}) && !s.wardenone_config.allowlistUntil?.[${JSON.stringify(host)}])`));
+    }
+    for (const host of ['alice.github.io', 'www.ck']) {
+      await value(settings, `(() => {
+        document.querySelector('[data-add-input=paused]').value = ${JSON.stringify(host)};
+        document.querySelector('[data-add-choice=paused]').value = '0';
+        document.querySelector('[data-add=paused]').click();
+      })()`);
+      await until(settings, `localRead('wardenone_config').then(s => (s.wardenone_config.allowlist || []).includes(${JSON.stringify(host)}))`, 'valid tenant pause: ' + host);
+      await until(settings, `!!document.querySelector('[data-site-source=paused][data-site-id="${host}"][data-site-action=remove]')`, 'valid tenant row');
+      await value(settings, `document.querySelector('[data-site-source=paused][data-site-id="${host}"][data-site-action=remove]').click()`);
+      await until(settings, `localRead('wardenone_config').then(s => !(s.wardenone_config.allowlist || []).includes(${JSON.stringify(host)}))`, 'valid tenant removal');
+    }
+    const pauseBase = Number(fs.readFileSync(path.join(root, 'background.js'), 'utf8').match(/const ALLOWLIST_RULE_BASE = (\d+);/)[1]);
+    const beforeLegacy = await value(settings, `(async () => {
+      const stored = await localRead('wardenone_config');
+      await localWrite({wardenone_config: {...stored.wardenone_config, allowlist: ['co.uk', 'github.io', 'example.com'], allowlistUntil: {'com.au': Date.now() + 60000}}});
+      return stored.wardenone_config;
+    })()`);
+    await until(settings, `chrome.declarativeNetRequest.getSessionRules().then(rules => {
+      const pauses = rules.filter(r => r.id >= ${pauseBase} && r.id < ${pauseBase + 1000});
+      return pauses.length === 1 && pauses[0].condition.requestDomains.join(',') === 'example.com';
+    })`, 'native DNR filters legacy public-suffix pauses');
+    const relayed = await value(popup, "publicConfig({allowlist:['co.uk','webflow.io','alice.webflow.io'],allowlistUntil:{'github.io':Date.now()+60000}},'https://example.com')");
+    assert.deepEqual(relayed.allowlist, ['alice.webflow.io']);
+    assert.deepEqual(Object.keys(relayed.allowlistUntil), []);
+    await value(settings, `localWrite({wardenone_config:${JSON.stringify(beforeLegacy)}})`);
     const website = await cdp.send('Target.createTarget', { url: 'https://www.twitch.tv/' });
     await until(settings, "chrome.tabs.query({}).then(tabs => tabs.some(tab => String(tab.url).includes('twitch.tv')))", 'Twitch tab URL');
     await cdp.send('Page.bringToFront', {}, settings.sessionId);

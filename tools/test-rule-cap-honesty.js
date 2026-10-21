@@ -78,6 +78,8 @@ const box = {
   USER_RULES_BUDGET: MAX,
 };
 vm.createContext(box);
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8') + '\n'
+  + fs.readFileSync(path.join(ROOT, 'psl-private.js'), 'utf8'), box);
 vm.runInContext(
   region('const USER_RULE_BASE = 750000;', 'const USER_RULES_KEY =')
   + NL + region('function normalizeAllowlistHost(value) {', 'function normalizeAllowlistHosts(')

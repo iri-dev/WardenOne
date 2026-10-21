@@ -14,6 +14,17 @@ is measured separately, under [Cold worker wakes](#cold-worker-wakes).
 machine metadata, video investigations and DevTools traces stay local; this page records
 the conclusions needed to understand release performance decisions.
 
+## Private PSL footprint review (2026-10-21)
+
+Complete private boundaries now accompany the ICANN data in both shared helpers.
+Each helper is 121,708 bytes, including a 58,542-byte generated private section.
+Only queried TLD groups become Sets; frames do not load the raw PSL file.
+Popup and Settings also use the compact helper instead of loading that raw file.
+
+The local package measured 2,481,350 ZIP bytes and 1,878,739 manifest-script bytes.
+The reviewed ceilings become 2,500,000 and 1,900,000 respectively to accommodate
+the complete data. This is a package-size review, not an execution-time claim.
+
 ## ICANN data footprint review (2026-10-20)
 
 Against `769dd30`, the staged security and compatibility fixes add 71,468 ZIP
@@ -28,6 +39,11 @@ and from 1,750,000 to 1,780,000 respectively; the September baseline and every
 other limit remain unchanged. The compatibility helper adds one unique manifest
 file and two script entries, within the existing limits. This records a source
 size tradeoff for correct site boundaries, not a browser timing or heap result.
+
+The later static-rule review lowers the DNR maximum from 30,000 to 29,000 and
+counts every declared pack, including disabled ones. The current 28,367 rules
+leave 1,633 slots below Chrome's guarantee; the gate requires at least 1,000.
+See [the quota audit](../dnr-budget-audit.md#static-package-reserve) for evidence.
 
 ## Page-cost reprofile (2026-10-19)
 

@@ -20,7 +20,7 @@ async function run() {
   try {
     server = http.createServer((_request, response) => {
       response.setHeader('Content-Type', 'text/html');
-      response.end('<!doctype html><title>Zapper regression</title><style>body{margin:20px}section{width:200px;height:80px;margin-bottom:20px;background:#ddd}</style><section id="first">First</section><section id="second">Second</section><div class="own-filter">User filter</div><div class="subscribed-filter">Subscribed filter</div>');
+      response.end('<!doctype html><title>Zapper regression</title><style>body{margin:20px}section{width:200px;height:80px;margin-bottom:20px;background:#ddd}</style><section id="first">First</section><section id="second">Second</section><div class="own-filter">User filter</div><div class="subscribed-filter">Subscribed filter</div><div data-zap="quoted">Quoted attribute</div>');
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir,
@@ -81,6 +81,21 @@ async function run() {
       && row.state.filterSheets===1 && row.state.firstVisible===(row.initial.length===0 || row.stage==='clear')
       && row.state.secondVisible===(row.stage!=='add')), 'independent sheet ownership: ' + JSON.stringify(ownership));
     console.log('[ok] list hiding survives hand-rule add/remove with empty and preloaded Zapper rules');
+    for (const malformed of ['a[href=', 'a[title="unfinished', "a[title='unfinished", 'a:not(', 'a:-abp-contains(x)']) {
+      const selectors = ['#first', malformed, '[data-zap="quoted"]', '#second'];
+      await evaluate(worker, `chrome.storage.local.set({wardenone_hidden_elements:{[${JSON.stringify(host)}]:${JSON.stringify(selectors)}}}).then(()=>true)`);
+      await cdp.send('Page.reload', {}, page);
+      await until(page, `document.readyState==='complete'&&document.querySelector('style[data-wardenone-user-hidden="true"]')?.textContent.includes('#second')`);
+      const state = await evaluate(page, `({
+        first:getComputedStyle(document.getElementById('first')).display,
+        second:getComputedStyle(document.getElementById('second')).display,
+        quoted:getComputedStyle(document.querySelector('[data-zap="quoted"]')).display,
+        rules:document.querySelector('style[data-wardenone-user-hidden="true"]').sheet.cssRules.length
+      })`);
+      assert.deepEqual(state, { first:'none', second:'none', quoted:'none', rules:3 },
+        'a malformed hand-hidden selector is isolated: ' + malformed);
+    }
+    console.log('[ok] malformed selectors cannot swallow adjacent hidden rules; quoted attributes remain supported');
     const saved = (count) => `chrome.storage.local.get('wardenone_hidden_elements').then(x=>(x.wardenone_hidden_elements?.[${JSON.stringify(host)}]||[]).length===${count})`;
     const click = async (point) => {
       await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, page);

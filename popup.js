@@ -751,6 +751,11 @@ function syncProviderStatus() {
 
 function publicConfig(cfg, tabUrl) {
   const out = Object.assign({}, cfg || {});
+  const safePause = (entry) => {
+    try { validateAllowlistConfigUpdate({ allowlist: [entry] }); return true; } catch (_) { return false; }
+  };
+  out.allowlist = (Array.isArray(out.allowlist) ? out.allowlist : []).slice(0, 1000).filter(safePause);
+  out.allowlistUntil = Object.fromEntries(Object.entries(out.allowlistUntil || {}).slice(0, 200).filter(([host]) => safePause(host)));
   delete out.downloadSafeBrowsingKey;
   delete out.downloadVirusTotalKey;
   delete out.forgetMeAllConfirmedAt;
@@ -1035,6 +1040,7 @@ function persistConfig(onSaved, onError, retry) {
           const raw = store && store.wardenone_config;
           const stored = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : {};
           const next = Object.assign({}, DEFAULTS, stored);
+          validateAllowlistConfigUpdate(changes);
           changedKeys.forEach((k) => { next[k] = changes[k]; });
           // Applied to the merged result, not just to `config`: this decides what is
           // actually written, and a provider switched off in either copy must not leave
@@ -1328,7 +1334,7 @@ function allowlistCurrent() {
       return;
     }
     let host;
-    try { host = new URL(tab.url).hostname.replace(/^www\./, '').toLowerCase(); } catch { return; }
+    try { host = regDomain(new URL(tab.url).hostname); } catch { return; }
     if (!host) return;
     config.allowlist = config.allowlist || [];
     const idx = config.allowlist.indexOf(host);
@@ -1389,7 +1395,7 @@ function updateAllowlistBtn() {
     const btn = $('allowlist');
     if (!tab || !tab.url) { btn.textContent = 'Allowlist this site'; return; }
     let host;
-    try { host = new URL(tab.url).hostname.replace(/^www\./, '').toLowerCase(); } catch { btn.textContent = 'Allowlist this site'; return; }
+    try { host = regDomain(new URL(tab.url).hostname); } catch { btn.textContent = 'Allowlist this site'; return; }
     const on = (config.allowlist || []).includes(host);
     btn.textContent = on ? 'Trusted — click to protect' : 'Allowlist this site';
     btn.style.borderColor = on ? 'var(--green)' : 'var(--line-2)';

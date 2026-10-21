@@ -117,7 +117,7 @@ for (const [name, input] of [
     .map((p) => Object.assign({}, p)));
   check('one rule per entry', rules.length === 3);
   check('every rule blocks', rules.every((r) => r.action.type === 'block'));
-  /* The reader outranks the compatibility allowances at 95000-96000, and stays below
+  /* The reader outranks the built-in compatibility allowances, and stays below
      their own allowlist at 100000. */
   check('and outranks the compatibility allowances', rules.every((r) => r.priority === 99000),
     'at 2000 a block on YouTube saved, reported success, and then loaded anyway');

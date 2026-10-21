@@ -231,6 +231,7 @@ function makeSandbox() {
     hostMatchesSite: (host, site) => host === site || host.endsWith('.' + site),
   };
   vm.createContext(configSandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'domain-utils.js'), 'utf8'), configSandbox);
   vm.runInContext(MIN.slice(from, to), configSandbox);
   for (const lookup of [false, true]) {
     for (const harden of [false, true]) {

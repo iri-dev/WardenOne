@@ -21,7 +21,8 @@
 
 const fs = require('fs');
 
-const MAX_RULES = 29500; // rules.json ships 162 static rules; 162 + 29500 = 29662 stays under Chrome's 30k GUARANTEED static budget (~338 rule margin). The old 28000 left ~1800 rules of headroom unused -- those are EasyList blocks that were being dropped for no reason.
+// Conversion cap; the complete package must also pass test-dnr-budget.js.
+const MAX_RULES = 29500;
 
 const PINNED_ALLOW_RULES = [
   { action: { type: 'allow' }, condition: { urlFilter: '||github-cloud.s3.amazonaws.com^' }, priority: 4, kind: 'allow' },

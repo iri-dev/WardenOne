@@ -33,6 +33,37 @@ function withConfigLock(task) {
   return Promise.resolve().then(task);
 }
 
+/* Check only the changed trust lists; unrelated saves must still work with legacy entries.
+   Rule generation separately ignores unsafe stored entries, including external storage writes. */
+function validateAllowlistConfigUpdate(patch) {
+  const entries = [];
+  if (Object.prototype.hasOwnProperty.call(patch, 'allowlist')) {
+    if (!Array.isArray(patch.allowlist)) throw new Error('Paused sites must be a list of website domains.');
+    entries.push(...patch.allowlist);
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'allowlistUntil')) {
+    const timed = patch.allowlistUntil;
+    if (!timed || typeof timed !== 'object' || Array.isArray(timed)) throw new Error('Timed pauses must name website domains.');
+    entries.push(...Object.keys(timed));
+  }
+  if (!entries.length) return;
+  if (typeof WARDENONE_PRIVATE_GROUPS !== 'object' || typeof WARDENONE_ICANN_GROUPS !== 'object') {
+    throw new Error('The website boundary list could not load. Reopen WardenOne and try again.');
+  }
+  for (const entry of entries) {
+    let host = '';
+    try {
+      const value = String(entry || '').trim();
+      const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : 'https://' + value);
+      if (!/^https?:$/.test(url.protocol)) throw new Error();
+      host = url.hostname.toLowerCase().replace(/\.+$/, '');
+    } catch (_) { throw new Error('Enter a website domain for each paused site.'); }
+    if (wardenOneIsPublicSuffix(host) || wardenOneIsPublicSuffix(regDomain(host))) {
+      throw new Error('Cannot pause "' + host + '": it is a public suffix shared by unrelated websites. Enter a specific website domain.');
+    }
+  }
+}
+
 /* Beside the config, not in it: the config reaches page worlds through the bridge, and a list of
    write ids there would only be something for a page to read. */
 const WO_CONFIG_WRITES_KEY = 'wardenone_config_writes';

@@ -23,8 +23,8 @@ function summarizeMetrics(zipBytes, files, manifest, ruleCount) {
     if (!file) throw new Error('Package is missing ' + name);
     return file.size;
   };
-  const rules = (manifest.declarative_net_request && manifest.declarative_net_request.rule_resources || [])
-    .filter((resource) => resource.enabled !== false);
+  // Reserve capacity for every packaged ruleset, including packs enabled later.
+  const rules = manifest.declarative_net_request && manifest.declarative_net_request.rule_resources || [];
   return {
     stagedZipBytes: zipBytes,
     unpackedBytes: [...files.values()].reduce((total, file) => total + file.size, 0),
