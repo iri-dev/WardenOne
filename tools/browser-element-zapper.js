@@ -113,9 +113,12 @@ async function run() {
       let node;
       for (const deadline = Date.now() + 5000; !node && Date.now() < deadline; await sleep(50)) {
         const { nodes } = await cdp.send('DOM.getFlattenedDocument', { depth: -1, pierce: true }, page);
-        node = nodes.find((n) => n.nodeName === 'BUTTON' && nodes.some((child) => child.parentId === n.nodeId && child.nodeValue === text));
+        /* The save reply replaces the buttons; wait before measuring or pressing one. */
+        if (nodes.some((n) => n.nodeValue === 'Saved for this site. It will stay gone after a reload.')) {
+          node = nodes.find((n) => n.nodeName === 'BUTTON' && nodes.some((child) => child.parentId === n.nodeId && child.nodeValue === text));
+        }
       }
-      assert(node, text + ' button exists');
+      assert(node, text + ' button exists after the save reply');
       const { model } = await cdp.send('DOM.getBoxModel', { nodeId: node.nodeId }, page);
       await click({ x: (model.content[0] + model.content[2]) / 2, y: (model.content[1] + model.content[5]) / 2 });
     };

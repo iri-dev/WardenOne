@@ -222,6 +222,12 @@ async function run() {
       return true;
     })()`);
     await until(privateSettings, "typeof __resumePrivateWrite === 'function'", 'private Settings save paused after its read');
+    const { targetInfo: regularTarget } = await cdp.send('Target.getTargetInfo', {}, regularSettings);
+    const retiringWorkers = new Set((await cdp.send('Target.getTargets')).targetInfos
+      .filter((target) => target.type === 'service_worker' && target.browserContextId === regularTarget.browserContextId
+        && target.url === `chrome-extension://${extension.id}/background.js`)
+      .map((target) => target.targetId));
+    assert(retiringWorkers.size > 0, 'the pre-erase regular worker is running');
     assert.equal((await evaluate(regularSettings, "new Promise((r) => chrome.runtime.sendMessage({kind:'privacy-data-erase',mode:'all'},r))")).ok, true);
     console.log('[erase race] Erase all acknowledged; releasing the paused private save');
     /* Released, not awaited: Erase all reloads WardenOne 400 ms after it answers, taking this page
@@ -230,8 +236,13 @@ async function run() {
        it is released; what follows checks it did not undo the erase. */
     assert.equal(await evaluate(privateSettings, "(__resumePrivateWrite(), true)"), true,
       'the paused private Settings save was released after Erase all');
-    await sleep(2100);
-    /* The ID survives reload; attaching to the outgoing worker can strand a DevTools command. */
+    /* A split-incognito worker can outlive the regular worker's reload. */
+    const reloadDeadline = Date.now() + 20000;
+    while ((await cdp.send('Target.getTargets')).targetInfos.some((target) => retiringWorkers.has(target.targetId))) {
+      if (Date.now() >= reloadDeadline) throw new Error('Timed out waiting for the pre-erase workers to stop');
+      await sleep(100);
+    }
+    extension = await profile.extensionReady(cdp, port, version, regularTarget.browserContextId);
     console.log('[erase race] opening fresh private Settings after reload');
     const { browserContextId: afterResetContext } = await cdp.send('Target.createBrowserContext', {});
     const { targetId: afterResetId } = await cdp.send('Target.createTarget', { url: `chrome-extension://${extension.id}/settings.html`, browserContextId: afterResetContext });
