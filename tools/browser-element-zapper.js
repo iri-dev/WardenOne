@@ -55,6 +55,14 @@ async function run() {
     await cdp.send('DOM.enable', {}, page);
     await until(page, "document.readyState==='complete'&&!!document.getElementById('second')");
     const tabId = await evaluate(worker, `chrome.tabs.query({}).then(ts=>ts.find(t=>t.url===${JSON.stringify(url)}).id)`);
+    let fixtureSequence = 0;
+    const loadFixture = async () => {
+      const previousOrigin = await evaluate(page, 'performance.timeOrigin');
+      /* Fixture setup must not manufacture a reload loop before the real input checks. */
+      await cdp.send('Page.navigate', { url: url + '?fixture=' + (++fixtureSequence) }, page);
+      await until(page, `performance.timeOrigin!==${previousOrigin}&&document.readyState==='complete'&&!!document.getElementById('second')`);
+      assert(await evaluate(page, "!document.getElementById('rg-reload-loop')"), 'fixture setup does not trigger the reload-loop warning');
+    };
     const filterState = `({hidden:['.own-filter','.subscribed-filter'].map(s=>getComputedStyle(document.querySelector(s)).display==='none'),
       handSheets:document.querySelectorAll('style#wo-user-hidden').length,
       filterSheets:document.querySelectorAll('style#wo-user-filter-hidden').length,
@@ -63,7 +71,7 @@ async function run() {
     const ownership = [];
     for (const initial of [[], ['#first']]) {
       await evaluate(worker, `chrome.storage.local.set({wardenone_hidden_elements:{[${JSON.stringify(host)}]:${JSON.stringify(initial)}}}).then(()=>true)`);
-      await cdp.send('Page.reload', {}, page);
+      await loadFixture();
       await until(page, "document.readyState==='complete'&&['.own-filter','.subscribed-filter'].every(s=>getComputedStyle(document.querySelector(s)).display==='none')");
       await evaluate(worker, `addHiddenElement(${JSON.stringify(host)},'#second').then(r=>r.ok)`);
       await until(page, `document.querySelector('style[data-wardenone-user-hidden="true"]')?.textContent.includes('#second')`);
@@ -84,7 +92,7 @@ async function run() {
     for (const malformed of ['a[href=', 'a[title="unfinished', "a[title='unfinished", 'a:not(', 'a:-abp-contains(x)']) {
       const selectors = ['#first', malformed, '[data-zap="quoted"]', '#second'];
       await evaluate(worker, `chrome.storage.local.set({wardenone_hidden_elements:{[${JSON.stringify(host)}]:${JSON.stringify(selectors)}}}).then(()=>true)`);
-      await cdp.send('Page.reload', {}, page);
+      await loadFixture();
       await until(page, `document.readyState==='complete'&&document.querySelector('style[data-wardenone-user-hidden="true"]')?.textContent.includes('#second')`);
       const state = await evaluate(page, `({
         first:getComputedStyle(document.getElementById('first')).display,
@@ -137,7 +145,7 @@ async function run() {
     };
     for (const finish of ['Done', 'Escape']) {
       await evaluate(worker, "chrome.storage.local.remove('wardenone_hidden_elements').then(()=>true)");
-      await cdp.send('Page.reload', {}, page);
+      await loadFixture();
       await until(page, "document.readyState==='complete'&&!!document.getElementById('second')&&getComputedStyle(document.getElementById('first')).display!=='none'");
       await evaluate(worker, `chrome.scripting.executeScript({target:{tabId:${tabId}},files:['element-picker.js']}).then(()=>true)`);
       await select('first');
