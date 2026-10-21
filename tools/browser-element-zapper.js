@@ -98,10 +98,11 @@ async function run() {
     console.log('[ok] malformed selectors cannot swallow adjacent hidden rules; quoted attributes remain supported');
     const saved = (count) => `chrome.storage.local.get('wardenone_hidden_elements').then(x=>(x.wardenone_hidden_elements?.[${JSON.stringify(host)}]||[]).length===${count})`;
     const click = async (point) => {
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, page);
+      await cdp.send('Page.bringToFront', {}, page);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', button: 'none', buttons: 0, ...point }, page);
       await sleep(30);
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point }, page);
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point }, page);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', buttons: 1, clickCount: 1, ...point }, page);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', buttons: 0, clickCount: 1, ...point }, page);
     };
     const select = async (id) => {
       const point = await evaluate(page, `(()=>{const b=document.getElementById(${JSON.stringify(id)}).getBoundingClientRect();return {x:b.x+20,y:b.y+20}})()`);
@@ -119,8 +120,17 @@ async function run() {
         }
       }
       assert(node, text + ' button exists after the save reply');
+      const { object } = await cdp.send('DOM.resolveNode', { nodeId: node.nodeId }, page);
+      await cdp.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: `function () {
+        globalThis.__woZapperClick = null;
+        this.addEventListener('click', (event) => {
+          globalThis.__woZapperClick = { text: this.textContent, trusted: event.isTrusted };
+        }, { once: true });
+      }` }, page);
+      await cdp.send('Runtime.releaseObject', { objectId: object.objectId }, page);
       const { model } = await cdp.send('DOM.getBoxModel', { nodeId: node.nodeId }, page);
       await click({ x: (model.content[0] + model.content[2]) / 2, y: (model.content[1] + model.content[5]) / 2 });
+      await until(page, `globalThis.__woZapperClick?.text===${JSON.stringify(text)}&&globalThis.__woZapperClick.trusted`);
     };
     const key = async (key, code, windowsVirtualKeyCode, modifiers = 0) => {
       for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key, code, windowsVirtualKeyCode, modifiers }, page);
