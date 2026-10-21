@@ -100,7 +100,7 @@ function makeHarness(storedConfig) {
     },
   };
   const sandbox = {
-    chrome, console, JSON, Object, Array, Set, String, Number, Boolean,
+    chrome, console, JSON, Object, Array, Set, String, Number, Boolean, URL,
     // popup.js's real helper; disabled providers retain keys for explicit manual checks.
     normalizeStoredProviderKeys(cfg) {
       if (!cfg || typeof cfg !== 'object') return;
@@ -128,6 +128,8 @@ function makeHarness(storedConfig) {
     $: () => null,
   };
   const ctx = vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.join(ROOT, 'psl-private.js'), 'utf8'), ctx);
   /* A synchronous stand-in for withConfigLock (config-lock.js): this suite runs storage callbacks
      by hand, and what it tests is the merge. It counts every take and release, so a save that
      keeps the lock shows up below. The real lock, across pages and the worker, is exercised in

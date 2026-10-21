@@ -78,6 +78,7 @@ function world(options) {
     URL, Object, Date, String, Number, Promise,
   };
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), sandbox);
   /* const/let at the top level of a vm script are lexical bindings, not
      properties of the contextified object, so the per-tab maps have to be handed
      out deliberately. Function declarations do land on it, which is why the two

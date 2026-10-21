@@ -153,7 +153,7 @@ function oddReleaseLinks(text) {
   const settings = job('browser-settings');
   check('the Settings page runs in Edge on a Windows runner, every suite',
     /runs-on: windows-2025/.test(settings)
-      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 13
+      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 14
       && /run: node tools\/browser-settings-data\.js/.test(settings)
       && /run: node tools\/browser-settings-arrange\.js/.test(settings)
       && /run: node tools\/browser-config-race\.js/.test(settings)
@@ -163,6 +163,7 @@ function oddReleaseLinks(text) {
       && /run: node tools\/browser-element-zapper\.js/.test(settings)
       && /run: node tools\/browser-engine-smoke\.js/.test(settings)
       && /run: node tools\/browser-image-logger-loads\.js/.test(settings)
+      && /run: node tools\/browser-media-security\.js/.test(settings)
       && /run: node tools\/browser-grabber-switches\.js/.test(settings)
       && /run: node tools\/browser-eyeshield-frames\.js/.test(settings)
       && /run: node tools\/browser-resource-saver\.js/.test(settings)
@@ -185,11 +186,11 @@ function oddReleaseLinks(text) {
       && /Get-FileHash -Algorithm SHA256/.test(minimum) && /-ne \$env:CHROME_MINIMUM_SHA256\) \{ throw/.test(minimum)
       && /-ne \$env:CHROME_MINIMUM_VERSION\) \{ throw/.test(minimum));
   check('it runs the popup, both Settings suites and the config race in that Chrome',
-    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-audit-highs', 'browser-audit-mediums', 'browser-dnr-reconcile', 'browser-element-zapper', 'browser-engine-smoke', 'browser-image-logger-loads', 'browser-grabber-switches', 'browser-eyeshield-frames', 'browser-resource-saver']
+    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-audit-highs', 'browser-audit-mediums', 'browser-dnr-reconcile', 'browser-element-zapper', 'browser-engine-smoke', 'browser-image-logger-loads', 'browser-media-security', 'browser-grabber-switches', 'browser-eyeshield-frames', 'browser-resource-saver']
       .every((t) => new RegExp('run: node tools/' + t + '\\.js').test(minimum))
       && /WARDENONE_BROWSER_NAME: 'Google Chrome'/.test(minimum) && /WARDENONE_HEADLESS: '1'/.test(minimum));
   check('no test there can run without that Chrome in place and pass on Edge instead',
-    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 12
+    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 13
       && /id: chrome/.test(minimum));
   const needs = ((/needs: \[([^\]]*)\]/.exec(rolling) || [])[1] || '').split(',').map((s) => s.trim());
   check('the rolling build waits for the gate, the real popup, the real Settings page and the minimum Chrome',

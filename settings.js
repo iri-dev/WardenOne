@@ -110,6 +110,7 @@ function writeConfig(patch, triesLeft, operationOrder) {
     /* A function patch is worked out from what is stored now, for maps another page may be editing. */
     const delta = typeof patch === 'function' ? patch(before) : patch;
     changedKeys = Object.keys(delta);
+    validateAllowlistConfigUpdate(delta);
     const next = Object.assign({}, before, delta);
     tidyConfig(next, before, delta);
     const stamp = stampConfigWrite(stored[WO_CONFIG_WRITES_KEY], changedKeys, order);
@@ -772,7 +773,7 @@ function hostFrom(raw) {
   if (!text) return '';
   if (!/^[a-z][a-z0-9+.-]*:\/\//.test(text)) text = 'https://' + text;
   try {
-    const host = new URL(text).hostname.replace(/^www\./, '').replace(/\.$/, '');
+    const host = regDomain(new URL(text).hostname);
     return savedHost(host) && !host.startsWith('.') && !host.startsWith('-') ? host : '';
   } catch (_) { return ''; }
 }

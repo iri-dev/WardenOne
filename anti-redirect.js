@@ -992,7 +992,7 @@
   }
 
   function regHost(host) {
-    return String(host || '').replace(/^www\./, '').toLowerCase();
+    return regDomain(host);
   }
 
   function isTrustedHost(host) {
@@ -1145,9 +1145,7 @@
     try { return registrableDomain(host); } catch (_) { return regHost(host); }
   }
 
-  /* This frame's own site as the worker computed it from the complete Public Suffix List, ''
-     until the signed config arrives. The copy of domain-utils.js in this frame knows the 26
-     platforms somebody wrote down; the worker knows the 3,400 on the list. */
+  /* The worker's signed site can tighten the local PSL boundary. */
   function ownSite() {
     const site = cfg().frameSite;
     return typeof site === 'string' ? site : '';
@@ -1161,12 +1159,8 @@
     if (own) {
       const aOwn = a === own || a.endsWith('.' + own);
       const bOwn = b === own || b.endsWith('.' + own);
-      /* One side inside this frame's site: same party means the other side is too. A sibling
-         tenant on a platform the local table never heard of is exactly the host that fails here
-         (victim.webflow.io -> attacker.webflow.io, SEC-07); the platform apex fails the same way
-         github.io already did. A pair that does not touch this site keeps the local verdict, so
-         a site the worker names can withdraw same-party status and never grant it. */
-      if (aOwn || bOwn) return aOwn && bOwn;
+      // A hint may withdraw trust, but the authoritative matcher must still agree.
+      if (aOwn !== bOwn) return false;
     }
     return hostMatchesSite(a, b)
       || hostMatchesSite(b, a)

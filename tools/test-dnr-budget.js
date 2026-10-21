@@ -6,14 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// Static declarativeNetRequest rules fail SILENTLY. Chrome guarantees 30,000
-// rules across enabled static rulesets; anything past that is dropped without an
-// error, so the extension keeps running while part of the blocklist quietly stops
-// blocking. The downloaded ad/tracker lists grow on their own, so the only way to
-// notice is to check on every build.
-//
-// Duplicate rule ids are the other silent failure: Chrome rejects the ruleset that
-// contains them, losing every rule in that file rather than just the duplicate.
+// Reserve capacity inside Chrome's guaranteed allocation rather than depending
+// on the shared pool. Duplicate rule IDs can invalidate an entire ruleset.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -26,11 +20,23 @@ const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'u
 // from a global pool shared with every other installed extension, but that is not
 // guaranteed to us, so it must not be relied on.
 const GUARANTEED_STATIC_RULES = 30000;
+const MIN_STATIC_RULE_HEADROOM = 1000;
 const MAX_ENABLED_RULESETS = 50;
 const MAX_RULESETS = 100;
 
 function rulesetPath(entry) {
   return path.join(ROOT, String(entry.path || '').replace(/^\/+/, ''));
+}
+
+function assertStaticHeadroom(resources, ruleCount) {
+  // Disabled packs can be enabled later, so reserve their capacity too.
+  const total = resources.reduce((sum, entry) => sum + ruleCount(entry), 0);
+  const headroom = GUARANTEED_STATIC_RULES - total;
+  assert(headroom >= MIN_STATIC_RULE_HEADROOM,
+    'packaged static rules ' + total + ' leave ' + headroom + ' spare; require at least '
+    + MIN_STATIC_RULE_HEADROOM + ' below Chrome\'s guaranteed ' + GUARANTEED_STATIC_RULES
+    + '. Review rule growth before shipping; do not depend on the shared global pool.');
+  return { total, headroom };
 }
 
 function run() {
@@ -43,6 +49,7 @@ function run() {
   let enabledRules = 0;
   let enabledSets = 0;
   const seenIds = new Set();
+  const counts = new Map();
 
   for (const entry of resources) {
     const file = rulesetPath(entry);
@@ -68,6 +75,7 @@ function run() {
 
     assert(!seenIds.has(entry.id), 'duplicate ruleset id ' + entry.id);
     seenIds.add(entry.id);
+    counts.set(entry.id, rules.length);
 
     if (entry.enabled) {
       enabledSets += 1;
@@ -79,20 +87,24 @@ function run() {
   assert(enabledSets <= MAX_ENABLED_RULESETS,
     'enabled rulesets ' + enabledSets + ' exceed Chrome\'s ceiling of ' + MAX_ENABLED_RULESETS);
 
-  const headroom = GUARANTEED_STATIC_RULES - enabledRules;
-  console.log('  enabled static rules: ' + enabledRules + ' / ' + GUARANTEED_STATIC_RULES
-    + '  (headroom ' + headroom + ')');
+  const { total, headroom } = assertStaticHeadroom(resources, (entry) => counts.get(entry.id));
+  console.log('  enabled static rules: ' + enabledRules + '; packaged: ' + total + ' / '
+    + GUARANTEED_STATIC_RULES + ' (headroom ' + headroom + ', required ' + MIN_STATIC_RULE_HEADROOM + ')');
 
-  assert(enabledRules <= GUARANTEED_STATIC_RULES,
-    'enabled static rules ' + enabledRules + ' exceed Chrome\'s guaranteed ' + GUARANTEED_STATIC_RULES
-    + '. Rules past the limit are dropped silently, so part of the blocklist would stop blocking. '
-    + 'Trim a ruleset or move entries to the dynamic blocklist.');
-
-  if (headroom < 2000) {
-    console.log('  [warn] under 2000 rules of headroom; a list refresh could cross the limit');
+  for (const [count, passes] of [[28999, true], [29000, true], [29001, false],
+    [29975, false], [30000, false], [30001, false]]) {
+    const check = () => assertStaticHeadroom([{ count }], (entry) => entry.count);
+    if (passes) assert.equal(check().headroom, GUARANTEED_STATIC_RULES - count);
+    else assert.throws(check, /spare; require at least/, 'static total ' + count + ' escaped the gate');
   }
+  assert.throws(() => assertStaticHeadroom([
+    { enabled: true, count: 28900 }, { enabled: false, count: 101 },
+  ], (entry) => entry.count), /spare; require at least/, 'disabled packs must reserve capacity');
 
-  console.log('[ok] DNR static rule budget within Chrome limits');
+  const budget = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/perf/static-budget.json'), 'utf8'));
+  assert.equal(budget.maximum.staticDnrRules, GUARANTEED_STATIC_RULES - MIN_STATIC_RULE_HEADROOM,
+    'the staged package budget must retain the same static-rule reserve');
+  console.log('[ok] DNR static rule budget retains spare capacity');
 }
 
 // Chrome 121+ separates dynamic and session quotas. Unsafe dynamic actions have

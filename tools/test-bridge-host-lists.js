@@ -51,6 +51,7 @@ const SRC = [
 ].filter(Boolean).join('\n');
 
 const ctx = vm.createContext({ URL, Map, Set, Number, Math, String, Array, Object, JSON });
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), ctx);
 vm.runInContext(SRC, ctx);
 const run = (expr) => vm.runInContext(expr, ctx);
 
@@ -62,7 +63,7 @@ function check(name, cond, detail) {
 }
 
 // Hostile and awkward shapes, including every form the two filters disagree about.
-const PROBES = ['example.com', 'WWW.Example.COM', 'https://sub.example.co.uk/p', 'http://x.example.com:8080/',
+const PROBES = ['example.com', 'WWW.Example.COM', 'www.ck', 'www.co.uk', 'https://sub.example.co.uk/p', 'http://x.example.com:8080/',
   '.lead.com.', 'EXAMPLE.COM.', 'sub.sub.example.org', 'a-b.example.com', 'très.example.com',
   'xn--bcher-kva.example', '10.0.0.1', '127.1', '192.168.1.1', '169.254.1.1', '100.64.0.1', '203.0.113.5',
   'localhost', '[::1]', 'foo.local', 'y.test', 'z.invalid', 'w.internal', 'a'.repeat(64) + '.com',

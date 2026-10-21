@@ -26,6 +26,12 @@
 
 ### Changed
 
+- Site exemptions now use the complete private Public Suffix List in both page worlds as well as the worker. Shared-hosting platform exceptions cannot disable protections on unrelated tenants, including before the worker configuration arrives.
+- Trusting a download now records its hosting tenant rather than the whole platform, and user download exceptions use the shared site matcher.
+- Pausing sites now rejects public suffixes, including private hosting platforms and PSL wildcard rules. Unsafe entries already in storage no longer create broad network exceptions; valid tenant sites and PSL exceptions remain supported.
+- Media compatibility now allows only matching frame requests and scoped resources at a priority below downloaded security blocks. YouTube pages and descendant frames retain blocking of unrelated malicious hosts; native browser checks also verify normal media playback.
+- Targeted ad-resource Activity listeners now register synchronously on worker startup while retaining their narrow host filter. Malformed hand-hidden selectors are parsed separately so they cannot swallow neighbouring rules.
+- The build gate now reserves at least 1,000 of Chrome's guaranteed static-rule slots across all packaged rulesets, including disabled packs, and rejects growth beyond 29,000 rules.
 - Settings import approval and cancellation now complete without waiting for a rendered frame, preventing the review from stalling after a button click in headless or occluded windows.
 - Unsupported `#?#` and `#@?#` cosmetic rules now appear as skipped lines instead of consuming network rule slots or inflating rule counts.
 - Zapper edits now preserve cosmetic rules from user filters and subscribed lists. Hand-hidden elements and list rules have separate stylesheet owners, preventing duplicate IDs and stale hiding after undo.

@@ -155,17 +155,33 @@ check('the refresh path and the config path share one applier',
 
 /* run the applier */
 {
-  const APPLY = between(BRIDGE, '  function bridgeSafeUserSelector(value) {', '\n  /* The initial rules arrive with the config', 'the hidden applier');
+  const APPLY = between(BRIDGE, '  function bridgeSafeUserSelector(', '\n  /* The initial rules arrive with the config', 'the hidden applier');
   const doc = { styles: [], marked: [], head: { appendChild(el) { doc.styles.push(el); } }, documentElement: {},
     querySelector() { return doc.styles[0] || null; }, querySelectorAll() { return doc.marked.filter((n) => n.marked); },
     createElement() { const el = { attrs: {}, textContent: '', setAttribute(k, v) { el.attrs[k] = v; } }; return el; } };
-  const ctx = { console: { warn() {} }, Array, String, RegExp, document: doc };
+  class TestStyleSheet {
+    constructor() { this.cssRules = []; }
+    insertRule(css) {
+      const selector = css.slice(0, css.indexOf('{'));
+      if (!['#ad-banner', '.promo', '#next-pick', '[title="valid"]', 'a[title="unfinished'].includes(selector)) {
+        throw new SyntaxError('invalid selector fixture');
+      }
+      this.cssRules.unshift({ selectorText: selector,
+        style: { length: selector === 'a[title="unfinished' ? 0 : 1,
+          getPropertyValue: () => 'none', getPropertyPriority: () => 'important' } });
+    }
+    deleteRule(index) { this.cssRules.splice(index, 1); }
+  }
+  const ctx = { console: { warn() {} }, Array, String, RegExp, document: doc, CSSStyleSheet: TestStyleSheet };
   ctx.globalThis = ctx; vm.createContext(ctx);
   vm.runInContext(APPLY + '\nglobalThis.apply = bridgeApplyUserHidden;', ctx);
   ctx.apply(['#ad-banner', '.promo', 'div{}bad', 'html', 'x'.repeat(500)]);
   check('the applier writes one style element with the safe selectors',
-    doc.styles.length === 1 && doc.styles[0].textContent === '#ad-banner{display:none!important;}.promo{display:none!important;}', doc.styles[0] && doc.styles[0].textContent);
+    doc.styles.length === 1 && doc.styles[0].textContent === '#ad-banner{display:none!important;}\n.promo{display:none!important;}', doc.styles[0] && doc.styles[0].textContent);
   check('and refuses the unsafe ones', !/bad|html\{|xxxx/.test(doc.styles[0].textContent));
+  ctx.apply(['#ad-banner', 'a[href=', 'a[title="unfinished', '[title="valid"]', '.promo']);
+  check('parse failures and CSS recovery cannot consume neighbouring rules',
+    doc.styles[0].textContent === '#ad-banner{display:none!important;}\n[title="valid"]{display:none!important;}\n.promo{display:none!important;}');
   const mark = (selector) => ({
     marked: true, matches: (s) => s === selector,
     removeAttribute(name) { if (name === 'data-wardenone-zapped') this.marked = false; },

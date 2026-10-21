@@ -159,6 +159,7 @@ function loadDownloadGuard() {
   };
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync('domain-utils.js', 'utf8'), sandbox);
   vm.runInContext(fs.readFileSync('background-downloads.js', 'utf8'), sandbox, { filename: 'background-downloads.js' });
   return { guard: sandbox.__woDownloadTest, sandbox };
 }

@@ -49,8 +49,16 @@ check('local and session storage are restricted to trusted extension contexts', 
 const configStart = BG.indexOf('const DEFAULT_CONFIG =');
 const configEnd = BG.indexOf('// ---- Onboarding protection bundles', configStart);
 assert(configStart >= 0 && configEnd > configStart, 'content config sanitizer moved in background.js');
-const sandbox = { Set, Object, String, Number, Array, JSON, Promise, setTimeout, clearTimeout, WOEyeShieldProfiles: require('../eyeshield-profiles.js') };
+const sandbox = { URL, Set, Object, String, Number, Array, JSON, Promise, setTimeout, clearTimeout, WOEyeShieldProfiles: require('../eyeshield-profiles.js') };
 vm.createContext(sandbox);
+const hostStart = BG.indexOf('function normalizeAllowlistHost(');
+const hostEnd = BG.indexOf('function normalizeAllowlistHosts(', hostStart);
+const ipStart = BG.indexOf('function ipv4FromMappedIpv6(');
+const ipEnd = BG.indexOf('function ipFromUrl(', ipStart);
+assert(hostStart >= 0 && hostEnd > hostStart && ipStart >= 0 && ipEnd > ipStart);
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8') + '\n'
+  + fs.readFileSync(path.join(ROOT, 'psl-private.js'), 'utf8') + '\n'
+  + BG.slice(hostStart, hostEnd) + '\n' + BG.slice(ipStart, ipEnd), sandbox);
 vm.runInContext(BG.slice(configStart, configEnd) + '\nglobalThis.__configBoundary = { DEFAULT_CONFIG, sanitizeContentConfig };', sandbox,
   { filename: 'background.js:content-config' });
 
@@ -64,7 +72,8 @@ check('the worker sanitizer preserves protection settings but rejects secrets an
   const raw = {
     enabled: false,
     blockTokenExfil: true,
-    allowlist: ['example.com'],
+    allowlist: ['example.com', 'co.uk', 'webflow.io'],
+    allowlistUntil: { 'github.io': Date.now() + 60000, 'www.ck': Date.now() + 60000 },
     rebindQuarantine: ['rebound.invalid'],
     forgetMeAllConfirmedAt: 123,
     internalBrowsingRecord: { url: 'https://private.invalid/' },
@@ -74,6 +83,7 @@ check('the worker sanitizer preserves protection settings but rejects secrets an
   assert.strictEqual(clean.enabled, false);
   assert.strictEqual(clean.blockTokenExfil, true);
   assert.deepStrictEqual(Array.from(clean.allowlist), ['example.com']);
+  assert.deepStrictEqual(Object.keys(clean.allowlistUntil), ['www.ck']);
   assert.deepStrictEqual(Array.from(clean.rebindQuarantine), ['rebound.invalid']);
   assert(!Object.prototype.hasOwnProperty.call(clean, 'forgetMeAllConfirmedAt'));
   assert(!Object.prototype.hasOwnProperty.call(clean, 'internalBrowsingRecord'));

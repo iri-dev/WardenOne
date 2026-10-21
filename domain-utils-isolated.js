@@ -5,8 +5,8 @@
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
 /* Shared site boundaries in the worker, extension pages and both content-script worlds.
- * ICANN rules apply everywhere; the worker adds the full private list to the curated
- * tenant floor. Opaque cloud infrastructure keeps an exact-host identity. */
+ * Complete ICANN and private PSL boundaries apply in every world.
+ * Opaque cloud infrastructure keeps an exact-host identity. */
 
 /* BEGIN GENERATED ICANN PSL — tools/build-psl.js
    Public Suffix List contributors, MPL-2.0: https://publicsuffix.org/list/public_suffix_list.dat
@@ -224,25 +224,240 @@ const WARDENONE_ICANN_GROUPS = Object.freeze({
 });
 /* END GENERATED ICANN PSL */
 
+/* BEGIN GENERATED PRIVATE PSL — tools/build-psl.js
+   Public Suffix List contributors, MPL-2.0: https://publicsuffix.org/list/public_suffix_list.dat
+   Source version: 2026-09-17_19-09-53_UTC. Grouped by TLD; single-label rules use the default wildcard. */
+const WARDENONE_PRIVATE_GROUPS = Object.freeze({
+  "ac": "drr|feedback|forms|sch",
+  "academy": "official",
+  "ag": "obj",
+  "ai": "framer|kiloapps|uwu",
+  "am": "radio",
+  "app": "*.beget|*.developer|*.hosted|*.mtls.run|*.northflank|*.privatelink.snowflake|*.run|*.s.brave|*.snowflake|*.upsun|*.zerops|aiven|base44|botdash|brave|claude|clerk|clerkstage|cloudflare|codepen|convex|corespeed|csb|e2b|easypanel|edgecompute|encr|expo|flutterflow|framer|frontend.encr|gadget|github|hackclub|hasura|id.replit|leapcell|loginline|lovable|luyani|magicpatterns|medusajs|messerli|miren|mocha|netlify|ngrok-free|ngrok|noop|nyat|on-fleek|on.expo|on.staging.expo|ondigitalocean|onhercules|pplx|preview.csb|puter|relay.evervault|replit|rocketpreview|shiptoday|spawnbase|sprites|staging.expo|streamlit|telebit|typedream|up.railway|vercel|wal|wasmer|web|windsurf|wnext|zeabur",
+  "apple": "*.ap-north-1.r.cloud.int|*.ap-south-1.r.cloud.int|*.ap-south-2.r.cloud.int|*.cloud.int|*.eu-central-1.r.cloud.int|*.eu-north-1.r.cloud.int|*.r.cloud.int|*.us-central-1.r.cloud.int|*.us-central-2.r.cloud.int|*.us-east-1.r.cloud.int|*.us-east-2.r.cloud.int|*.us-west-1.r.cloud.int|*.us-west-2.r.cloud.int|*.us-west-3.r.cloud.int|int",
+  "asia": "cloudns|daemon|dix",
+  "at": "*.ex.futurecms|*.ex.ortsinfo|*.futurecms|*.in.futurecms|*.kunden.ortsinfo|123webseite|12hp|2ix|4|4lima|dnshome|futurehosting|futuremailing|lima-city|my|myspreadshop|priv|wien.funkfeuer",
+  "au": "mel.cloudlets.com|myspreadshop.com",
+  "aws": "*.airflow.af-south-1.on|*.airflow.ap-east-1.on|*.airflow.ap-northeast-1.on|*.airflow.ap-northeast-2.on|*.airflow.ap-northeast-3.on|*.airflow.ap-south-1.on|*.airflow.ap-south-2.on|*.airflow.ap-southeast-1.on|*.airflow.ap-southeast-2.on|*.airflow.ap-southeast-3.on|*.airflow.ap-southeast-4.on|*.airflow.ap-southeast-5.on|*.airflow.ca-central-1.on|*.airflow.ca-west-1.on|*.airflow.eu-central-1.on|*.airflow.eu-central-2.on|*.airflow.eu-north-1.on|*.airflow.eu-south-1.on|*.airflow.eu-south-2.on|*.airflow.eu-west-1.on|*.airflow.eu-west-2.on|*.airflow.eu-west-3.on|*.airflow.il-central-1.on|*.airflow.me-central-1.on|*.airflow.me-south-1.on|*.airflow.sa-east-1.on|*.airflow.us-east-1.on|*.airflow.us-east-2.on|*.airflow.us-west-1.on|*.airflow.us-west-2.on|*.experiments.sagemaker|*.private.repost|labeling.ap-northeast-1.sagemaker|labeling.ap-northeast-2.sagemaker|labeling.ap-south-1.sagemaker|labeling.ap-southeast-1.sagemaker|labeling.ap-southeast-2.sagemaker|labeling.ca-central-1.sagemaker|labeling.eu-central-1.sagemaker|labeling.eu-west-1.sagemaker|labeling.eu-west-2.sagemaker|labeling.us-east-1.sagemaker|labeling.us-east-2.sagemaker|labeling.us-west-2.sagemaker|lambda-url.af-south-1.on|lambda-url.ap-east-1.on|lambda-url.ap-northeast-1.on|lambda-url.ap-northeast-2.on|lambda-url.ap-northeast-3.on|lambda-url.ap-south-1.on|lambda-url.ap-southeast-1.on|lambda-url.ap-southeast-2.on|lambda-url.ap-southeast-3.on|lambda-url.ca-central-1.on|lambda-url.eu-central-1.on|lambda-url.eu-north-1.on|lambda-url.eu-south-1.on|lambda-url.eu-west-1.on|lambda-url.eu-west-2.on|lambda-url.eu-west-3.on|lambda-url.me-south-1.on|lambda-url.sa-east-1.on|lambda-url.us-east-1.on|lambda-url.us-east-2.on|lambda-url.us-west-1.on|lambda-url.us-west-2.on|notebook-fips.ca-central-1.sagemaker|notebook-fips.ca-west-1.sagemaker|notebook-fips.us-east-1.sagemaker|notebook-fips.us-east-2.sagemaker|notebook-fips.us-gov-east-1.sagemaker|notebook-fips.us-gov-west-1.sagemaker|notebook-fips.us-west-1.sagemaker|notebook-fips.us-west-2.sagemaker|notebook.af-south-1.sagemaker|notebook.ap-east-1.sagemaker|notebook.ap-northeast-1.sagemaker|notebook.ap-northeast-2.sagemaker|notebook.ap-northeast-3.sagemaker|notebook.ap-south-1.sagemaker|notebook.ap-south-2.sagemaker|notebook.ap-southeast-1.sagemaker|notebook.ap-southeast-2.sagemaker|notebook.ap-southeast-3.sagemaker|notebook.ap-southeast-4.sagemaker|notebook.ca-central-1.sagemaker|notebook.ca-west-1.sagemaker|notebook.eu-central-1.sagemaker|notebook.eu-central-2.sagemaker|notebook.eu-north-1.sagemaker|notebook.eu-south-1.sagemaker|notebook.eu-south-2.sagemaker|notebook.eu-west-1.sagemaker|notebook.eu-west-2.sagemaker|notebook.eu-west-3.sagemaker|notebook.il-central-1.sagemaker|notebook.me-central-1.sagemaker|notebook.me-south-1.sagemaker|notebook.sa-east-1.sagemaker|notebook.us-east-1.sagemaker|notebook.us-east-2.sagemaker|notebook.us-gov-east-1.sagemaker|notebook.us-gov-west-1.sagemaker|notebook.us-west-1.sagemaker|notebook.us-west-2.sagemaker|studio-fips.us-gov-east-1.sagemaker|studio-fips.us-gov-west-1.sagemaker|studio.af-south-1.sagemaker|studio.ap-east-1.sagemaker|studio.ap-northeast-1.sagemaker|studio.ap-northeast-2.sagemaker|studio.ap-northeast-3.sagemaker|studio.ap-south-1.sagemaker|studio.ap-southeast-1.sagemaker|studio.ap-southeast-2.sagemaker|studio.ap-southeast-3.sagemaker|studio.ca-central-1.sagemaker|studio.eu-central-1.sagemaker|studio.eu-central-2.sagemaker|studio.eu-north-1.sagemaker|studio.eu-south-1.sagemaker|studio.eu-south-2.sagemaker|studio.eu-west-1.sagemaker|studio.eu-west-2.sagemaker|studio.eu-west-3.sagemaker|studio.il-central-1.sagemaker|studio.me-central-1.sagemaker|studio.me-south-1.sagemaker|studio.sa-east-1.sagemaker|studio.us-east-1.sagemaker|studio.us-east-2.sagemaker|studio.us-gov-east-1.sagemaker|studio.us-gov-west-1.sagemaker|studio.us-west-1.sagemaker|studio.us-west-2.sagemaker|transfer-webapp-fips.us-gov-east-1.on|transfer-webapp-fips.us-gov-west-1.on|transfer-webapp.af-south-1.on|transfer-webapp.ap-east-1.on|transfer-webapp.ap-northeast-1.on|transfer-webapp.ap-northeast-2.on|transfer-webapp.ap-northeast-3.on|transfer-webapp.ap-south-1.on|transfer-webapp.ap-south-2.on|transfer-webapp.ap-southeast-1.on|transfer-webapp.ap-southeast-2.on|transfer-webapp.ap-southeast-3.on|transfer-webapp.ap-southeast-4.on|transfer-webapp.ap-southeast-5.on|transfer-webapp.ap-southeast-7.on|transfer-webapp.ca-central-1.on|transfer-webapp.ca-west-1.on|transfer-webapp.eu-central-1.on|transfer-webapp.eu-central-2.on|transfer-webapp.eu-north-1.on|transfer-webapp.eu-south-1.on|transfer-webapp.eu-south-2.on|transfer-webapp.eu-west-1.on|transfer-webapp.eu-west-2.on|transfer-webapp.eu-west-3.on|transfer-webapp.il-central-1.on|transfer-webapp.me-central-1.on|transfer-webapp.me-south-1.on|transfer-webapp.mx-central-1.on|transfer-webapp.sa-east-1.on|transfer-webapp.us-east-1.on|transfer-webapp.us-east-2.on|transfer-webapp.us-gov-east-1.on|transfer-webapp.us-gov-west-1.on|transfer-webapp.us-west-1.on|transfer-webapp.us-west-2.on",
+  "ba": "rs|shop.brendly",
+  "bar": "resolve",
+  "basketball": "aus|nz",
+  "be": "*.transurl|123website|cloud.interhostsolutions|cloudns|ezproxy.kuleuven|my|myspreadshop|webhosting",
+  "berlin": "ddns",
+  "bg": "barsy",
+  "biz": "activetrail|cloud-ip|cloudns|dscloud|dyndns|for-better|for-more|for-some|for-the|jozi|mmafan|myftp|no-ip|orx|selfip|webhop",
+  "bn": "co",
+  "br": "ac.leg|al.leg|am.leg|ap.leg|ba.leg|ce.leg|df.leg|es.leg|go.leg|ma.leg|mg.leg|ms.leg|mt.leg|pa.leg|pb.leg|pe.leg|pi.leg|pr.leg|rj.leg|rn.leg|ro.leg|rr.leg|rs.leg|sc.leg|se.leg|simplesite.com|sp.leg|tche|to.leg",
+  "bs": "we",
+  "build": "shiptoday|v0|windsurf",
+  "builders": "cloudsite",
+  "business": "co",
+  "by": "mediatech",
+  "bz": "gsj|mydns|za",
+  "ca": "*.awdev|barsy|box|co|myspreadshop|no-ip|onid",
+  "camp": "at.emf",
+  "casa": "ui.nabu",
+  "case": "sav",
+  "cc": "ccwu|cleverapps|cloud-ip|cloudns|csx|ec|eu|fantasyleague|ftpaccess|game-server|gu|instances.spawn|myphotos|scrapping|sryze|twmail|uk|us",
+  "cd": "cc",
+  "ch": "*.firenet|*.svc.firenet|123website|12hp|2ix|4lima|alp1.ae.flow|appengine.flow|cloudns|cust.cloudscale|dnsking|gotdns|lima-city|linkyard-cloud|lpg.objectstorage|myspreadshop|objects.lpg.cloudscale|objects.rma.cloudscale|rma.objectstorage|square7",
+  "ci": "us",
+  "cl": "cloudns",
+  "cloud": "*.begetcdn|*.magentosite|*.on-rancher|*.statics|antagonist|ca.reclaim|ch.trendhosting|cockpit.fr-par.scw|cockpit.nl-ams.scw|cockpit.pl-waw.scw|convex|cs.keliweb|ddl.fr-par.scw|ddl.nl-ams.scw|ddl.pl-waw.scw|de.trendhosting|diadem|dnshome|dtwh.fr-par.scw|dtwh.nl-ams.scw|dtwh.pl-waw.scw|elastic.k2|elementor|emergent|es-1.axarnet|eu-west-1.convex|eu.encoway|fnc.fr-par.scw|fr-par-1.baremetal.scw|fr-par-2.baremetal.scw|functions.fnc.fr-par.scw|hstgr|ifr.fr-par.scw|ifr.nl-ams.scw|ifr.pl-waw.scw|it1.eur.aruba.jenv-aruba|it1.jenv-aruba|jele|jote|jotelulu|k8s.fr-par.scw|k8s.nl-ams.scw|k8s.pl-waw.scw|k8s.scw|kafk.fr-par.scw|kafk.nl-ams.scw|kafk.pl-waw.scw|keliweb|kuleuven|laravel|lb.ru-msk.k2|lb.ru-spb.k2|linkyard|matlab|mgdb.fr-par.scw|mgdb.nl-ams.scw|mgdb.pl-waw.scw|nl-ams-1.baremetal.scw|nodes.k8s.fr-par.scw|nodes.k8s.nl-ams.scw|nodes.k8s.pl-waw.scw|observablehq|online-server|oxa|perspecta|primetel|priv.instances.scw|pub.instances.scw|ravendb|rdb.fr-par.scw|rdb.nl-ams.scw|rdb.pl-waw.scw|runs.onstackit|s3-website.fr-par.scw|s3-website.nl-ams.scw|s3-website.pl-waw.scw|s3.fr-par.scw|s3.k2|s3.nl-ams.scw|s3.pl-waw.scw|s3.ru-msk.k2|s3.ru-spb.k2|scalebook.scw|scbl.fr-par.scw|scbl.nl-ams.scw|scbl.pl-waw.scw|servebolt|smartlabeling.scw|tn.oxa|trafficplex|uk.oxa|uk.primetel|uk.reclaim|unison-services|urown|us-east-1.convex|us.reclaim|vapor|vip.jelastic|voorloper|website.k2|website.ru-msk.k2|website.ru-spb.k2|whm.fr-par.scw|whm.nl-ams.scw|zap",
+  "club": "barsy|cloudns|jele",
+  "cn": "*.airflow.cn-north-1.on.amazonwebservices.com|*.airflow.cn-northwest-1.on.amazonwebservices.com|*.cn-north-1.airflow.amazonaws.com|*.cn-northwest-1.airflow.amazonaws.com|*.compute.amazonaws.com|*.elb.amazonaws.com|*.rds.cn-north-1.amazonaws.com|*.rds.cn-northwest-1.amazonaws.com|as.sh|canva-apps|canva-code|cn-north-1.eb.amazonaws.com|cn-northwest-1.eb.amazonaws.com|direct.quickconnect|emrappui-prod.cn-north-1.amazonaws.com|emrappui-prod.cn-northwest-1.amazonaws.com|emrnotebooks-prod.cn-north-1.amazonaws.com|emrnotebooks-prod.cn-northwest-1.amazonaws.com|emrstudio-prod.cn-north-1.amazonaws.com|emrstudio-prod.cn-northwest-1.amazonaws.com|execute-api.cn-north-1.amazonaws.com|execute-api.cn-northwest-1.amazonaws.com|khsj|my.canvasite|myqnapcloud|notebook.cn-north-1.sagemaker.com|notebook.cn-northwest-1.sagemaker.com|s3-accesspoint.cn-north-1.amazonaws.com|s3-accesspoint.cn-northwest-1.amazonaws.com|s3-accesspoint.dualstack.cn-north-1.amazonaws.com|s3-accesspoint.dualstack.cn-northwest-1.amazonaws.com|s3-deprecated.cn-north-1.amazonaws.com|s3-object-lambda.cn-north-1.amazonaws.com|s3-object-lambda.cn-northwest-1.amazonaws.com|s3-website.cn-north-1.amazonaws.com|s3-website.cn-northwest-1.amazonaws.com|s3-website.dualstack.cn-north-1.amazonaws.com|s3.cn-north-1.amazonaws.com|s3.cn-northwest-1.amazonaws.com|s3.dualstack.cn-north-1.amazonaws.com|s3.dualstack.cn-northwest-1.amazonaws.com|studio.cn-north-1.sagemaker.com|studio.cn-northwest-1.sagemaker.com|transfer-webapp.cn-north-1.on.amazonwebservices.com|transfer-webapp.cn-northwest-1.on.amazonwebservices.com",
+  "co": "*.clusters.rdpa|*.otap|*.srvrless.rdpa|*.xmit|carrd|crd|firewalledreplit|hidns|id.firewalledreplit|id.repl|leadpages|lpages|mypi|realtime.supabase|repl|storage.supabase|supabase|umso",
+  "codes": "*.owo",
+  "com": "*.001.test.code-builder-stg.platform.salesforce|*.0emm|*.af-south-1.airflow.amazonaws|*.af-south-1.rds.amazonaws|*.aivencloud|*.ap-east-1.airflow.amazonaws|*.ap-east-1.rds.amazonaws|*.ap-east-2.rds.amazonaws|*.ap-northeast-1.airflow.amazonaws|*.ap-northeast-1.rds.amazonaws|*.ap-northeast-2.airflow.amazonaws|*.ap-northeast-2.rds.amazonaws|*.ap-northeast-3.airflow.amazonaws|*.ap-northeast-3.rds.amazonaws|*.ap-south-1.airflow.amazonaws|*.ap-south-1.rds.amazonaws|*.ap-south-2.airflow.amazonaws|*.ap-south-2.rds.amazonaws|*.ap-southeast-1.airflow.amazonaws|*.ap-southeast-1.rds.amazonaws|*.ap-southeast-2.airflow.amazonaws|*.ap-southeast-2.rds.amazonaws|*.ap-southeast-3.airflow.amazonaws|*.ap-southeast-3.rds.amazonaws|*.ap-southeast-4.airflow.amazonaws|*.ap-southeast-4.rds.amazonaws|*.ap-southeast-5.airflow.amazonaws|*.ap-southeast-5.rds.amazonaws|*.ap-southeast-6.rds.amazonaws|*.ap-southeast-7.airflow.amazonaws|*.ap-southeast-7.rds.amazonaws|*.atlassian-3p-us-gov-mod|*.atlassian-3p|*.atlassian-isolated-3p|*.auiusercontent|*.awsapprunner|*.builder.code|*.ca-central-1.airflow.amazonaws|*.ca-central-1.rds.amazonaws|*.ca-west-1.airflow.amazonaws|*.ca-west-1.rds.amazonaws|*.compute-1.amazonaws|*.compute.amazonaws|*.compute.herokuapp|*.cursorusercontent|*.customer-oci|*.dev-builder.code|*.dev.adobeaemcloud|*.devinapps|*.digitaloceanspaces|*.elb.amazonaws|*.eu-central-1.airflow.amazonaws|*.eu-central-1.rds.amazonaws|*.eu-central-2.airflow.amazonaws|*.eu-central-2.rds.amazonaws|*.eu-north-1.airflow.amazonaws|*.eu-south-1.airflow.amazonaws|*.eu-south-2.airflow.amazonaws|*.eu-west-1.airflow.amazonaws|*.eu-west-1.rds.amazonaws|*.eu-west-2.airflow.amazonaws|*.eu-west-2.rds.amazonaws|*.eu-west-3.airflow.amazonaws|*.eu-west-3.rds.amazonaws|*.il-central-1.airflow.amazonaws|*.il-central-1.rds.amazonaws|*.linodeobjects|*.lutrausercontent|*.me-central-1.airflow.amazonaws|*.me-central-1.rds.amazonaws|*.me-south-1.airflow.amazonaws|*.me-south-1.rds.amazonaws|*.metaaiusercontent|*.mx-central-1.rds.amazonaws|*.nodebalancer.linode|*.oaiusercontent|*.oci.customer-oci|*.ocp.customer-oci|*.ocs.customer-oci|*.oraclecloudapps|*.oraclegovcloudapps|*.paywhirl|*.qualyhqpartner|*.qualyhqportal|*.quipelements|*.r.appspot|*.sa-east-1.airflow.amazonaws|*.sa-east-1.rds.amazonaws|*.services.clever-cloud|*.stg-builder.code|*.us-east-1.airflow.amazonaws|*.us-east-1.rds.amazonaws|*.us-east-2.airflow.amazonaws|*.us-east-2.rds.amazonaws|*.us-gov-east-1.rds.amazonaws|*.us-gov-west-1.rds.amazonaws|*.us-northeast-1.rds.amazonaws|*.us-west-1.airflow.amazonaws|*.us-west-1.rds.amazonaws|*.us-west-2.airflow.amazonaws|*.us-west-2.rds.amazonaws|*.vultrobjects|180r|1cooldns|1kapp|3utilities|4u|a2hosted|abrdns|adobeaemcloud|af-south-1.elasticbeanstalk|africa|aliases121|alibabacloudcs|amplifyapp|analytics-gateway.ap-northeast-1.amazonaws|analytics-gateway.ap-northeast-2.amazonaws|analytics-gateway.ap-south-1.amazonaws|analytics-gateway.ap-southeast-1.amazonaws|analytics-gateway.ap-southeast-2.amazonaws|analytics-gateway.eu-central-1.amazonaws|analytics-gateway.eu-west-1.amazonaws|analytics-gateway.us-east-1.amazonaws|analytics-gateway.us-east-2.amazonaws|analytics-gateway.us-west-2.amazonaws|ap-east-1.elasticbeanstalk|ap-northeast-1.elasticbeanstalk|ap-northeast-2.elasticbeanstalk|ap-northeast-3.elasticbeanstalk|ap-south-1.elasticbeanstalk|ap-southeast-1.elasticbeanstalk|ap-southeast-2.elasticbeanstalk|ap-southeast-3.elasticbeanstalk|ap-southeast-5.elasticbeanstalk|ap-southeast-7.elasticbeanstalk|app.render|appchizi|applinzi|apps-1and1|apps.fbsbx|appspacehosted|appspaceusercontent|appspot|atmeta|auth-fips.us-east-1.amazoncognito|auth-fips.us-east-2.amazoncognito|auth-fips.us-gov-east-1.amazoncognito|auth-fips.us-gov-west-1.amazoncognito|auth-fips.us-west-1.amazoncognito|auth-fips.us-west-2.amazoncognito|auth.af-south-1.amazoncognito|auth.ap-east-1.amazoncognito|auth.ap-northeast-1.amazoncognito|auth.ap-northeast-2.amazoncognito|auth.ap-northeast-3.amazoncognito|auth.ap-south-1.amazoncognito|auth.ap-south-2.amazoncognito|auth.ap-southeast-1.amazoncognito|auth.ap-southeast-2.amazoncognito|auth.ap-southeast-3.amazoncognito|auth.ap-southeast-4.amazoncognito|auth.ap-southeast-5.amazoncognito|auth.ap-southeast-7.amazoncognito|auth.ca-central-1.amazoncognito|auth.ca-west-1.amazoncognito|auth.eu-central-1.amazoncognito|auth.eu-central-2.amazoncognito|auth.eu-north-1.amazoncognito|auth.eu-south-1.amazoncognito|auth.eu-south-2.amazoncognito|auth.eu-west-1.amazoncognito|auth.eu-west-2.amazoncognito|auth.eu-west-3.amazoncognito|auth.il-central-1.amazoncognito|auth.me-central-1.amazoncognito|auth.me-south-1.amazoncognito|auth.mx-central-1.amazoncognito|auth.sa-east-1.amazoncognito|auth.us-east-1.amazoncognito|auth.us-east-2.amazoncognito|auth.us-west-1.amazoncognito|auth.us-west-2.amazoncognito|authgear-staging|authgearapps|awsapps|awsglobalaccelerator|balena-devices|barsycenter|barsyonline|base44-sandbox|blogdns|blogspot|blogsyte|boutir|bplaced|br|builtwithdark|bumbleshrimp|ca-central-1.elasticbeanstalk|cafjs|canva-apps|canva-hosted-embed|canvacode|caracal.mythic-beasts|cdn77-storage|cechire|cf-ipfs|ciscofreak|claudeusercontent|cloud.nospamproxy|cloudflare-ipfs|cn|co|codespot|cprapid|cpserver|customer.mythic-beasts|damnserver|dattolocal|dattorelay|dattoweb|ddnsfree|ddnsgeek|ddnsguru|ddnsking|de|demo.datadetect|demo.jelastic|deployagent|deus-canvas|dev.project-study|discordsays|discordsez|ditchyourip|dnsabr|dnsalias|dnsdojo|dnsiskinky|doesntexist|dojin|dontexist|doomdns|dopaas|drayddns|dreamhosters|drive-platform|dsmynas|durumis|dyn-o-saur|dynalias|dyndns-at-home|dyndns-at-work|dyndns-blog|dyndns-free|dyndns-home|dyndns-ip|dyndns-mail|dyndns-office|dyndns-pics|dyndns-remote|dyndns-server|dyndns-web|dyndns-wiki|dyndns-work|dynns|dynuddns|dynuhosting|elasticbeanstalk|emrappui-prod.af-south-1.amazonaws|emrappui-prod.ap-east-1.amazonaws|emrappui-prod.ap-northeast-1.amazonaws|emrappui-prod.ap-northeast-2.amazonaws|emrappui-prod.ap-northeast-3.amazonaws|emrappui-prod.ap-south-1.amazonaws|emrappui-prod.ap-south-2.amazonaws|emrappui-prod.ap-southeast-1.amazonaws|emrappui-prod.ap-southeast-2.amazonaws|emrappui-prod.ap-southeast-3.amazonaws|emrappui-prod.ap-southeast-4.amazonaws|emrappui-prod.ca-central-1.amazonaws|emrappui-prod.ca-west-1.amazonaws|emrappui-prod.eu-central-1.amazonaws|emrappui-prod.eu-central-2.amazonaws|emrappui-prod.eu-north-1.amazonaws|emrappui-prod.eu-south-1.amazonaws|emrappui-prod.eu-south-2.amazonaws|emrappui-prod.eu-west-1.amazonaws|emrappui-prod.eu-west-2.amazonaws|emrappui-prod.eu-west-3.amazonaws|emrappui-prod.il-central-1.amazonaws|emrappui-prod.me-central-1.amazonaws|emrappui-prod.me-south-1.amazonaws|emrappui-prod.sa-east-1.amazonaws|emrappui-prod.us-east-1.amazonaws|emrappui-prod.us-east-2.amazonaws|emrappui-prod.us-gov-east-1.amazonaws|emrappui-prod.us-gov-west-1.amazonaws|emrappui-prod.us-west-1.amazonaws|emrappui-prod.us-west-2.amazonaws|emrnotebooks-prod.af-south-1.amazonaws|emrnotebooks-prod.ap-east-1.amazonaws|emrnotebooks-prod.ap-northeast-1.amazonaws|emrnotebooks-prod.ap-northeast-2.amazonaws|emrnotebooks-prod.ap-northeast-3.amazonaws|emrnotebooks-prod.ap-south-1.amazonaws|emrnotebooks-prod.ap-south-2.amazonaws|emrnotebooks-prod.ap-southeast-1.amazonaws|emrnotebooks-prod.ap-southeast-2.amazonaws|emrnotebooks-prod.ap-southeast-3.amazonaws|emrnotebooks-prod.ap-southeast-4.amazonaws|emrnotebooks-prod.ca-central-1.amazonaws|emrnotebooks-prod.ca-west-1.amazonaws|emrnotebooks-prod.eu-central-1.amazonaws|emrnotebooks-prod.eu-central-2.amazonaws|emrnotebooks-prod.eu-north-1.amazonaws|emrnotebooks-prod.eu-south-1.amazonaws|emrnotebooks-prod.eu-south-2.amazonaws|emrnotebooks-prod.eu-west-1.amazonaws|emrnotebooks-prod.eu-west-2.amazonaws|emrnotebooks-prod.eu-west-3.amazonaws|emrnotebooks-prod.il-central-1.amazonaws|emrnotebooks-prod.me-central-1.amazonaws|emrnotebooks-prod.me-south-1.amazonaws|emrnotebooks-prod.sa-east-1.amazonaws|emrnotebooks-prod.us-east-1.amazonaws|emrnotebooks-prod.us-east-2.amazonaws|emrnotebooks-prod.us-gov-east-1.amazonaws|emrnotebooks-prod.us-gov-west-1.amazonaws|emrnotebooks-prod.us-west-1.amazonaws|emrnotebooks-prod.us-west-2.amazonaws|emrstudio-prod.af-south-1.amazonaws|emrstudio-prod.ap-east-1.amazonaws|emrstudio-prod.ap-northeast-1.amazonaws|emrstudio-prod.ap-northeast-2.amazonaws|emrstudio-prod.ap-northeast-3.amazonaws|emrstudio-prod.ap-south-1.amazonaws|emrstudio-prod.ap-south-2.amazonaws|emrstudio-prod.ap-southeast-1.amazonaws|emrstudio-prod.ap-southeast-2.amazonaws|emrstudio-prod.ap-southeast-3.amazonaws|emrstudio-prod.ap-southeast-4.amazonaws|emrstudio-prod.ca-central-1.amazonaws|emrstudio-prod.ca-west-1.amazonaws|emrstudio-prod.eu-central-1.amazonaws|emrstudio-prod.eu-central-2.amazonaws|emrstudio-prod.eu-north-1.amazonaws|emrstudio-prod.eu-south-1.amazonaws|emrstudio-prod.eu-south-2.amazonaws|emrstudio-prod.eu-west-1.amazonaws|emrstudio-prod.eu-west-2.amazonaws|emrstudio-prod.eu-west-3.amazonaws|emrstudio-prod.il-central-1.amazonaws|emrstudio-prod.me-central-1.amazonaws|emrstudio-prod.me-south-1.amazonaws|emrstudio-prod.sa-east-1.amazonaws|emrstudio-prod.us-east-1.amazonaws|emrstudio-prod.us-east-2.amazonaws|emrstudio-prod.us-gov-east-1.amazonaws|emrstudio-prod.us-gov-west-1.amazonaws|emrstudio-prod.us-west-1.amazonaws|emrstudio-prod.us-west-2.amazonaws|encoreapi|est-a-la-maison|est-a-la-masion|est-le-patron|est-mon-blogueur|eu-1.evennode|eu-2.evennode|eu-3.evennode|eu-4.evennode|eu-central-1.elasticbeanstalk|eu-north-1.elasticbeanstalk|eu-south-1.elasticbeanstalk|eu-south-2.elasticbeanstalk|eu-west-1.elasticbeanstalk|eu-west-2.elasticbeanstalk|eu-west-3.elasticbeanstalk|eu|eu.meteorapp|eu.pythonanywhere|eu1-plenit|execute-api.af-south-1.amazonaws|execute-api.ap-east-1.amazonaws|execute-api.ap-northeast-1.amazonaws|execute-api.ap-northeast-2.amazonaws|execute-api.ap-northeast-3.amazonaws|execute-api.ap-south-1.amazonaws|execute-api.ap-south-2.amazonaws|execute-api.ap-southeast-1.amazonaws|execute-api.ap-southeast-2.amazonaws|execute-api.ap-southeast-3.amazonaws|execute-api.ap-southeast-4.amazonaws|execute-api.ap-southeast-5.amazonaws|execute-api.ca-central-1.amazonaws|execute-api.ca-west-1.amazonaws|execute-api.eu-central-1.amazonaws|execute-api.eu-central-2.amazonaws|execute-api.eu-north-1.amazonaws|execute-api.eu-south-1.amazonaws|execute-api.eu-south-2.amazonaws|execute-api.eu-west-1.amazonaws|execute-api.eu-west-2.amazonaws|execute-api.eu-west-3.amazonaws|execute-api.il-central-1.amazonaws|execute-api.me-central-1.amazonaws|execute-api.me-south-1.amazonaws|execute-api.sa-east-1.amazonaws|execute-api.us-east-1.amazonaws|execute-api.us-east-2.amazonaws|execute-api.us-gov-east-1.amazonaws|execute-api.us-gov-west-1.amazonaws|execute-api.us-west-1.amazonaws|execute-api.us-west-2.amazonaws|familyds|fastly-edge|fastly-terrarium|fastvps-server|fentiger.mythic-beasts|firebaseapp|firewall-gateway|fldrv|forgeblocks|frame.claudeusercontent|framercanvas|freebox-os|freeboxos|freemyip|from-ak|from-al|from-ar|from-ca|from-ct|from-dc|from-de|from-fl|from-ga|from-hi|from-ia|from-id|from-il|from-in|from-ks|from-ky|from-ma|from-md|from-mi|from-mn|from-mo|from-ms|from-mt|from-nc|from-nd|from-ne|from-nh|from-nj|from-nm|from-nv|from-oh|from-ok|from-or|from-pa|from-pr|from-ri|from-sc|from-sd|from-tn|from-tx|from-ut|from-va|from-vt|from-wa|from-wi|from-wv|from-wy|geekgalaxy|gentapps|gentlentapis|getmyip|giize|githubusercontent|gleeze|googleapis|googlecode|gotdns|gotpantheon|gr|grayjayleagues|hatenablog|hatenadiary|health-carereform|hercules-app|hercules-dev|herokuapp|hk|hobby-site|homelinux|homesecuritymac|homesecuritypc|homeunix|hostedpi|hotelwithflight|iamallama|il-central-1.elasticbeanstalk|instance.datadetect|ip-ddns|ip.linodeusercontent|is-a-anarchist|is-a-blogger|is-a-bookkeeper|is-a-bulls-fan|is-a-caterer|is-a-chef|is-a-conservative|is-a-cpa|is-a-cubicle-slave|is-a-democrat|is-a-designer|is-a-doctor|is-a-financialadvisor|is-a-geek|is-a-green|is-a-guru|is-a-hard-worker|is-a-hunter|is-a-landscaper|is-a-lawyer|is-a-liberal|is-a-libertarian|is-a-llama|is-a-musician|is-a-nascarfan|is-a-nurse|is-a-painter|is-a-personaltrainer|is-a-photographer|is-a-player|is-a-republican|is-a-rockstar|is-a-socialist|is-a-student|is-a-teacher|is-a-techie|is-a-therapist|is-an-accountant|is-an-actor|is-an-actress|is-an-anarchist|is-an-artist|is-an-engineer|is-an-entertainer|is-certified|is-gone|is-into-anime|is-into-cars|is-into-cartoons|is-into-games|is-leet|is-not-certified|is-slick|is-uberleet|is-with-theband|isa-geek|isa-hockeynut|issmarterthanyou|it|jcloud-ver-jpc.ik-server|jcloud.ik-server|jdevcloud|jed.wafaicloud|jpn|js.wpenginepowered|kasserver|kozow|la1-plenit|ladesk|likes-pie|likescandy|live-website|localtonet|logoip|loseyourip|lovableproject|lpusercontent|lynx.mythic-beasts|magicpatternsapp|me-central-1.elasticbeanstalk|me-south-1.elasticbeanstalk|media.strapiapp|members.linode|messwithdns|meteorapp|mex|miniserver|mochausercontent|modelscape|mrap.accesspoint.s3-global.amazonaws|mwcloudnonprod|myactivedirectory|myasustor|mycloudnas|mydatto|mydbserver|mydobiss|myiphost|mynascloud|myqnapcloud|mysecuritycamera|myshopblocks|myshopify|myspreadshop|mytabit|mytuleap|myvnc|neat-url|net-freaks|nfshost|o365.cloud.nospamproxy|ocelot.mythic-beasts|on-aptible|on-forge|on-vapor|oncilla.mythic-beasts|onrender|onthewifi|onza.mythic-beasts|ooguy|operaunite|orsites|outsystemscloud|ownprovider|paas.hosted-by-previder|paas.massivegrid|pages.wiardweb|pagespeedmobilizer|pgfog|pivohosting|pixolino|playstation-cloud|pleskns|point2this|polyspace|postman-echo|preview.emergentagent|pro.typeform|pythonanywhere|qa2|qbuser|qualifioapp|quicksytes|rackmaze|rag-cloud-ch.hosteur|rag-cloud.hosteur|readthedocs-hosted|remotewd|reservd|rhcloud|rice-labs|routingthecloud|ru|ryd.wafaicloud|s3-1.amazonaws|s3-accesspoint-fips.ca-central-1.amazonaws|s3-accesspoint-fips.ca-west-1.amazonaws|s3-accesspoint-fips.dualstack.ca-central-1.amazonaws|s3-accesspoint-fips.dualstack.ca-west-1.amazonaws|s3-accesspoint-fips.dualstack.us-east-1.amazonaws|s3-accesspoint-fips.dualstack.us-east-2.amazonaws|s3-accesspoint-fips.dualstack.us-gov-east-1.amazonaws|s3-accesspoint-fips.dualstack.us-gov-west-1.amazonaws|s3-accesspoint-fips.dualstack.us-west-1.amazonaws|s3-accesspoint-fips.dualstack.us-west-2.amazonaws|s3-accesspoint-fips.us-east-1.amazonaws|s3-accesspoint-fips.us-east-2.amazonaws|s3-accesspoint-fips.us-gov-east-1.amazonaws|s3-accesspoint-fips.us-gov-west-1.amazonaws|s3-accesspoint-fips.us-west-1.amazonaws|s3-accesspoint-fips.us-west-2.amazonaws|s3-accesspoint.af-south-1.amazonaws|s3-accesspoint.ap-east-1.amazonaws|s3-accesspoint.ap-northeast-1.amazonaws|s3-accesspoint.ap-northeast-2.amazonaws|s3-accesspoint.ap-northeast-3.amazonaws|s3-accesspoint.ap-south-1.amazonaws|s3-accesspoint.ap-south-2.amazonaws|s3-accesspoint.ap-southeast-1.amazonaws|s3-accesspoint.ap-southeast-2.amazonaws|s3-accesspoint.ap-southeast-3.amazonaws|s3-accesspoint.ap-southeast-4.amazonaws|s3-accesspoint.ap-southeast-5.amazonaws|s3-accesspoint.ca-central-1.amazonaws|s3-accesspoint.ca-west-1.amazonaws|s3-accesspoint.dualstack.af-south-1.amazonaws|s3-accesspoint.dualstack.ap-east-1.amazonaws|s3-accesspoint.dualstack.ap-northeast-1.amazonaws|s3-accesspoint.dualstack.ap-northeast-2.amazonaws|s3-accesspoint.dualstack.ap-northeast-3.amazonaws|s3-accesspoint.dualstack.ap-south-1.amazonaws|s3-accesspoint.dualstack.ap-south-2.amazonaws|s3-accesspoint.dualstack.ap-southeast-1.amazonaws|s3-accesspoint.dualstack.ap-southeast-2.amazonaws|s3-accesspoint.dualstack.ap-southeast-3.amazonaws|s3-accesspoint.dualstack.ap-southeast-4.amazonaws|s3-accesspoint.dualstack.ap-southeast-5.amazonaws|s3-accesspoint.dualstack.ca-central-1.amazonaws|s3-accesspoint.dualstack.ca-west-1.amazonaws|s3-accesspoint.dualstack.eu-central-1.amazonaws|s3-accesspoint.dualstack.eu-central-2.amazonaws|s3-accesspoint.dualstack.eu-north-1.amazonaws|s3-accesspoint.dualstack.eu-south-1.amazonaws|s3-accesspoint.dualstack.eu-south-2.amazonaws|s3-accesspoint.dualstack.eu-west-1.amazonaws|s3-accesspoint.dualstack.eu-west-2.amazonaws|s3-accesspoint.dualstack.eu-west-3.amazonaws|s3-accesspoint.dualstack.il-central-1.amazonaws|s3-accesspoint.dualstack.me-central-1.amazonaws|s3-accesspoint.dualstack.me-south-1.amazonaws|s3-accesspoint.dualstack.sa-east-1.amazonaws|s3-accesspoint.dualstack.us-east-1.amazonaws|s3-accesspoint.dualstack.us-east-2.amazonaws|s3-accesspoint.dualstack.us-gov-east-1.amazonaws|s3-accesspoint.dualstack.us-gov-west-1.amazonaws|s3-accesspoint.dualstack.us-west-1.amazonaws|s3-accesspoint.dualstack.us-west-2.amazonaws|s3-accesspoint.eu-central-1.amazonaws|s3-accesspoint.eu-central-2.amazonaws|s3-accesspoint.eu-north-1.amazonaws|s3-accesspoint.eu-south-1.amazonaws|s3-accesspoint.eu-south-2.amazonaws|s3-accesspoint.eu-west-1.amazonaws|s3-accesspoint.eu-west-2.amazonaws|s3-accesspoint.eu-west-3.amazonaws|s3-accesspoint.il-central-1.amazonaws|s3-accesspoint.me-central-1.amazonaws|s3-accesspoint.me-south-1.amazonaws|s3-accesspoint.sa-east-1.amazonaws|s3-accesspoint.us-east-1.amazonaws|s3-accesspoint.us-east-2.amazonaws|s3-accesspoint.us-gov-east-1.amazonaws|s3-accesspoint.us-gov-west-1.amazonaws|s3-accesspoint.us-west-1.amazonaws|s3-accesspoint.us-west-2.amazonaws|s3-ap-east-1.amazonaws|s3-ap-northeast-1.amazonaws|s3-ap-northeast-2.amazonaws|s3-ap-northeast-3.amazonaws|s3-ap-south-1.amazonaws|s3-ap-southeast-1.amazonaws|s3-ap-southeast-2.amazonaws|s3-ca-central-1.amazonaws|s3-deprecated.ap-southeast-5.amazonaws|s3-deprecated.eu-west-1.amazonaws|s3-deprecated.us-east-1.amazonaws|s3-deprecated.us-east-2.amazonaws|s3-deprecated.us-west-2.amazonaws|s3-eu-central-1.amazonaws|s3-eu-north-1.amazonaws|s3-eu-west-1.amazonaws|s3-eu-west-2.amazonaws|s3-eu-west-3.amazonaws|s3-external-1.amazonaws|s3-fips-us-gov-east-1.amazonaws|s3-fips-us-gov-west-1.amazonaws|s3-fips.ca-central-1.amazonaws|s3-fips.ca-west-1.amazonaws|s3-fips.dualstack.ca-central-1.amazonaws|s3-fips.dualstack.ca-west-1.amazonaws|s3-fips.dualstack.us-east-1.amazonaws|s3-fips.dualstack.us-east-2.amazonaws|s3-fips.dualstack.us-gov-east-1.amazonaws|s3-fips.dualstack.us-gov-west-1.amazonaws|s3-fips.dualstack.us-west-1.amazonaws|s3-fips.dualstack.us-west-2.amazonaws|s3-fips.us-east-1.amazonaws|s3-fips.us-east-2.amazonaws|s3-fips.us-gov-east-1.amazonaws|s3-fips.us-gov-west-1.amazonaws|s3-fips.us-west-1.amazonaws|s3-fips.us-west-2.amazonaws|s3-me-south-1.amazonaws|s3-object-lambda.af-south-1.amazonaws|s3-object-lambda.ap-east-1.amazonaws|s3-object-lambda.ap-northeast-1.amazonaws|s3-object-lambda.ap-northeast-2.amazonaws|s3-object-lambda.ap-northeast-3.amazonaws|s3-object-lambda.ap-south-1.amazonaws|s3-object-lambda.ap-south-2.amazonaws|s3-object-lambda.ap-southeast-1.amazonaws|s3-object-lambda.ap-southeast-2.amazonaws|s3-object-lambda.ap-southeast-3.amazonaws|s3-object-lambda.ap-southeast-4.amazonaws|s3-object-lambda.ap-southeast-5.amazonaws|s3-object-lambda.ca-central-1.amazonaws|s3-object-lambda.ca-west-1.amazonaws|s3-object-lambda.eu-central-1.amazonaws|s3-object-lambda.eu-central-2.amazonaws|s3-object-lambda.eu-north-1.amazonaws|s3-object-lambda.eu-south-1.amazonaws|s3-object-lambda.eu-south-2.amazonaws|s3-object-lambda.eu-west-1.amazonaws|s3-object-lambda.eu-west-2.amazonaws|s3-object-lambda.eu-west-3.amazonaws|s3-object-lambda.il-central-1.amazonaws|s3-object-lambda.me-central-1.amazonaws|s3-object-lambda.me-south-1.amazonaws|s3-object-lambda.sa-east-1.amazonaws|s3-object-lambda.us-east-1.amazonaws|s3-object-lambda.us-east-2.amazonaws|s3-object-lambda.us-gov-east-1.amazonaws|s3-object-lambda.us-gov-west-1.amazonaws|s3-object-lambda.us-west-1.amazonaws|s3-object-lambda.us-west-2.amazonaws|s3-sa-east-1.amazonaws|s3-us-east-2.amazonaws|s3-us-gov-east-1.amazonaws|s3-us-gov-west-1.amazonaws|s3-us-west-1.amazonaws|s3-us-west-2.amazonaws|s3-website-ap-northeast-1.amazonaws|s3-website-ap-southeast-1.amazonaws|s3-website-ap-southeast-2.amazonaws|s3-website-eu-west-1.amazonaws|s3-website-sa-east-1.amazonaws|s3-website-us-east-1.amazonaws|s3-website-us-gov-west-1.amazonaws|s3-website-us-west-1.amazonaws|s3-website-us-west-2.amazonaws|s3-website.af-south-1.amazonaws|s3-website.ap-east-1.amazonaws|s3-website.ap-northeast-1.amazonaws|s3-website.ap-northeast-2.amazonaws|s3-website.ap-northeast-3.amazonaws|s3-website.ap-south-1.amazonaws|s3-website.ap-south-2.amazonaws|s3-website.ap-southeast-1.amazonaws|s3-website.ap-southeast-2.amazonaws|s3-website.ap-southeast-3.amazonaws|s3-website.ap-southeast-4.amazonaws|s3-website.ap-southeast-5.amazonaws|s3-website.ca-central-1.amazonaws|s3-website.ca-west-1.amazonaws|s3-website.dualstack.af-south-1.amazonaws|s3-website.dualstack.ap-northeast-1.amazonaws|s3-website.dualstack.ap-northeast-2.amazonaws|s3-website.dualstack.ap-northeast-3.amazonaws|s3-website.dualstack.ap-south-1.amazonaws|s3-website.dualstack.ap-south-2.amazonaws|s3-website.dualstack.ap-southeast-1.amazonaws|s3-website.dualstack.ap-southeast-2.amazonaws|s3-website.dualstack.ap-southeast-3.amazonaws|s3-website.dualstack.ap-southeast-4.amazonaws|s3-website.dualstack.ap-southeast-5.amazonaws|s3-website.dualstack.ca-central-1.amazonaws|s3-website.dualstack.ca-west-1.amazonaws|s3-website.dualstack.eu-central-1.amazonaws|s3-website.dualstack.eu-central-2.amazonaws|s3-website.dualstack.eu-south-1.amazonaws|s3-website.dualstack.eu-south-2.amazonaws|s3-website.dualstack.eu-west-1.amazonaws|s3-website.dualstack.eu-west-3.amazonaws|s3-website.dualstack.il-central-1.amazonaws|s3-website.dualstack.me-central-1.amazonaws|s3-website.dualstack.sa-east-1.amazonaws|s3-website.dualstack.us-east-1.amazonaws|s3-website.dualstack.us-east-2.amazonaws|s3-website.dualstack.us-gov-east-1.amazonaws|s3-website.dualstack.us-gov-west-1.amazonaws|s3-website.dualstack.us-west-1.amazonaws|s3-website.dualstack.us-west-2.amazonaws|s3-website.eu-central-1.amazonaws|s3-website.eu-central-2.amazonaws|s3-website.eu-north-1.amazonaws|s3-website.eu-south-1.amazonaws|s3-website.eu-south-2.amazonaws|s3-website.eu-west-1.amazonaws|s3-website.eu-west-2.amazonaws|s3-website.eu-west-3.amazonaws|s3-website.il-central-1.amazonaws|s3-website.me-central-1.amazonaws|s3-website.me-south-1.amazonaws|s3-website.sa-east-1.amazonaws|s3-website.us-east-1.amazonaws|s3-website.us-east-2.amazonaws|s3-website.us-gov-east-1.amazonaws|s3-website.us-gov-west-1.amazonaws|s3-website.us-west-1.amazonaws|s3-website.us-west-2.amazonaws|s3.af-south-1.amazonaws|s3.amazonaws|s3.ap-east-1.amazonaws|s3.ap-northeast-1.amazonaws|s3.ap-northeast-2.amazonaws|s3.ap-northeast-3.amazonaws|s3.ap-south-1.amazonaws|s3.ap-south-2.amazonaws|s3.ap-southeast-1.amazonaws|s3.ap-southeast-2.amazonaws|s3.ap-southeast-3.amazonaws|s3.ap-southeast-4.amazonaws|s3.ap-southeast-5.amazonaws|s3.ca-central-1.amazonaws|s3.ca-west-1.amazonaws|s3.dualstack.af-south-1.amazonaws|s3.dualstack.ap-east-1.amazonaws|s3.dualstack.ap-northeast-1.amazonaws|s3.dualstack.ap-northeast-2.amazonaws|s3.dualstack.ap-northeast-3.amazonaws|s3.dualstack.ap-south-1.amazonaws|s3.dualstack.ap-south-2.amazonaws|s3.dualstack.ap-southeast-1.amazonaws|s3.dualstack.ap-southeast-2.amazonaws|s3.dualstack.ap-southeast-3.amazonaws|s3.dualstack.ap-southeast-4.amazonaws|s3.dualstack.ap-southeast-5.amazonaws|s3.dualstack.ca-central-1.amazonaws|s3.dualstack.ca-west-1.amazonaws|s3.dualstack.eu-central-1.amazonaws|s3.dualstack.eu-central-2.amazonaws|s3.dualstack.eu-north-1.amazonaws|s3.dualstack.eu-south-1.amazonaws|s3.dualstack.eu-south-2.amazonaws|s3.dualstack.eu-west-1.amazonaws|s3.dualstack.eu-west-2.amazonaws|s3.dualstack.eu-west-3.amazonaws|s3.dualstack.il-central-1.amazonaws|s3.dualstack.me-central-1.amazonaws|s3.dualstack.me-south-1.amazonaws|s3.dualstack.sa-east-1.amazonaws|s3.dualstack.us-east-1.amazonaws|s3.dualstack.us-east-2.amazonaws|s3.dualstack.us-gov-east-1.amazonaws|s3.dualstack.us-gov-west-1.amazonaws|s3.dualstack.us-west-1.amazonaws|s3.dualstack.us-west-2.amazonaws|s3.eu-central-1.amazonaws|s3.eu-central-2.amazonaws|s3.eu-north-1.amazonaws|s3.eu-south-1.amazonaws|s3.eu-south-2.amazonaws|s3.eu-west-1.amazonaws|s3.eu-west-2.amazonaws|s3.eu-west-3.amazonaws|s3.il-central-1.amazonaws|s3.me-central-1.amazonaws|s3.me-south-1.amazonaws|s3.sa-east-1.amazonaws|s3.us-east-1.amazonaws|s3.us-east-2.amazonaws|s3.us-gov-east-1.amazonaws|s3.us-gov-west-1.amazonaws|s3.us-west-1.amazonaws|s3.us-west-2.amazonaws|sa-east-1.elasticbeanstalk|sa|sakuratan|sakuraweb|same-app|same-preview|saves-the-whales|scrysec|securitytactics|selfip|sells-for-less|sells-for-u|servebbs|servebeer|servecounterstrike|serveexchange|serveftp|servegame|servehalflife|servehttp|servehumour|serveirc|servemp3|servep2p|servepics|servequake|servesarcasm|shopitsite|siiites|simple-url|simplesite|sinaapp|site.tb-hosting|smushcdn|space-to-rent|sphinx.mythic-beasts|stackhero-network|static.observableusercontent|strapiapp|streak-link|streaklinks|streakusercontent|streamlitapp|stufftoread|subsc-pay|taveusercontent|teaches-yoga|temp-dns|theworkpc|thingdustdata|townnews-staging|try-snowplow|trycloudflare|tuleap-partners|uk|unusualperson|upsunapp|us-1.evennode|us-2.evennode|us-3.evennode|us-4.evennode|us-east-1.amazonaws|us-east-1.elasticbeanstalk|us-east-2.elasticbeanstalk|us-gov-east-1.elasticbeanstalk|us-gov-west-1.elasticbeanstalk|us-west-1.elasticbeanstalk|us-west-2.elasticbeanstalk|us|us1-plenit|vfs.cloud9.af-south-1.amazonaws|vfs.cloud9.ap-east-1.amazonaws|vfs.cloud9.ap-northeast-1.amazonaws|vfs.cloud9.ap-northeast-2.amazonaws|vfs.cloud9.ap-northeast-3.amazonaws|vfs.cloud9.ap-south-1.amazonaws|vfs.cloud9.ap-southeast-1.amazonaws|vfs.cloud9.ap-southeast-2.amazonaws|vfs.cloud9.ca-central-1.amazonaws|vfs.cloud9.eu-central-1.amazonaws|vfs.cloud9.eu-north-1.amazonaws|vfs.cloud9.eu-south-1.amazonaws|vfs.cloud9.eu-west-1.amazonaws|vfs.cloud9.eu-west-2.amazonaws|vfs.cloud9.eu-west-3.amazonaws|vfs.cloud9.il-central-1.amazonaws|vfs.cloud9.me-south-1.amazonaws|vfs.cloud9.sa-east-1.amazonaws|vfs.cloud9.us-east-1.amazonaws|vfs.cloud9.us-east-2.amazonaws|vfs.cloud9.us-west-1.amazonaws|vfs.cloud9.us-west-2.amazonaws|vipsinaapp|vivenushop|vs.mythic-beasts|w-corp-staticblitz|w-credentialless-staticblitz|w-staticblitz|wafflecell|webadorsite|webspace-host|webview-assets.aws-cloud9.af-south-1.amazonaws|webview-assets.aws-cloud9.ap-east-1.amazonaws|webview-assets.aws-cloud9.ap-northeast-1.amazonaws|webview-assets.aws-cloud9.ap-northeast-2.amazonaws|webview-assets.aws-cloud9.ap-northeast-3.amazonaws|webview-assets.aws-cloud9.ap-south-1.amazonaws|webview-assets.aws-cloud9.ap-southeast-1.amazonaws|webview-assets.aws-cloud9.ap-southeast-2.amazonaws|webview-assets.aws-cloud9.ca-central-1.amazonaws|webview-assets.aws-cloud9.eu-central-1.amazonaws|webview-assets.aws-cloud9.eu-north-1.amazonaws|webview-assets.aws-cloud9.eu-south-1.amazonaws|webview-assets.aws-cloud9.eu-west-1.amazonaws|webview-assets.aws-cloud9.eu-west-2.amazonaws|webview-assets.aws-cloud9.eu-west-3.amazonaws|webview-assets.aws-cloud9.il-central-1.amazonaws|webview-assets.aws-cloud9.me-south-1.amazonaws|webview-assets.aws-cloud9.sa-east-1.amazonaws|webview-assets.aws-cloud9.us-east-1.amazonaws|webview-assets.aws-cloud9.us-east-2.amazonaws|webview-assets.aws-cloud9.us-west-1.amazonaws|webview-assets.aws-cloud9.us-west-2.amazonaws|webview-assets.cloud9.af-south-1.amazonaws|webview-assets.cloud9.ap-east-1.amazonaws|webview-assets.cloud9.ap-northeast-1.amazonaws|webview-assets.cloud9.ap-northeast-2.amazonaws|webview-assets.cloud9.ap-northeast-3.amazonaws|webview-assets.cloud9.ap-south-1.amazonaws|webview-assets.cloud9.ap-southeast-1.amazonaws|webview-assets.cloud9.ap-southeast-2.amazonaws|webview-assets.cloud9.ca-central-1.amazonaws|webview-assets.cloud9.eu-central-1.amazonaws|webview-assets.cloud9.eu-north-1.amazonaws|webview-assets.cloud9.eu-south-1.amazonaws|webview-assets.cloud9.eu-west-1.amazonaws|webview-assets.cloud9.eu-west-2.amazonaws|webview-assets.cloud9.eu-west-3.amazonaws|webview-assets.cloud9.me-south-1.amazonaws|webview-assets.cloud9.sa-east-1.amazonaws|webview-assets.cloud9.us-east-1.amazonaws|webview-assets.cloud9.us-east-2.amazonaws|webview-assets.cloud9.us-west-1.amazonaws|webview-assets.cloud9.us-west-2.amazonaws|wiredbladehosting|withgoogle|withyoutube|wixsite|wixstudio|woltlab-demo|workisboring|wpdevcloud|wpenginepowered|wphostedmail|wpmucdn|writesthisblog|x.mythic-beasts|x0|xen.prgmr|xtooldevice|yali.mythic-beasts|yolasite|za",
+  "community": "myforum|nog|ravendb",
+  "company": "mybox",
+  "cool": "de|elementor",
+  "cv": "dev|store",
+  "cx": "assessments|ath|calculators|cloudns|funnels|info|paynow|quizzes|researched|tests",
+  "cy": "j.scaleforce.com",
+  "cz": "*.cloud.metacentrum|co|custom.metacentrum|e4|flt.cloud.muni|realm|rsc.contentproxy9|usr.cloud.muni",
+  "de": "*.bwcloud-os-instance|*.frusky|*.xenonconnect|123webseite|12hp|2ix|4lima|barsy|bplaced|co|com|community-pro|customer.speedpartner|ddnss|ddnssec|diskussionsbereich|dnshome|dnsupdater|dyn-berlin|dyn-ip24|dyn.cosidns|dyn.ddnss|dyn.home-webserver|dynamisches-dns|dyndns.ddnss|dyndns1|dyndnssec|firewall-gateway|fuettertdasnetz|git-repos|goip|heimdns|home-webserver|home64|in-berlin|in-brb|in-butter|in-dsl|in-vpn|internet-dns|io.noc.ruhr-uni-bochum|ipv64|iservschule|isteingeek|istmein|keymachine|l-o-g-i-n|lcube-server|lebtimnetz|leitungsen|lima-city|logoip|mein-iserv|my-gateway|my-router|my|myhome-server|myspreadshop|pages-research.it.hs-heilbronn|pages.it.hs-heilbronn|rub|ruhr-uni-bochum|schuldock|schulplattform|schulserver|spdns|square7|srvdns|svn-repos|taifun-dns|test-iserv|traeumtgerade|virtual-user|virtualuser|webspaceconfig|xn--gnstigbestellen-zvb|xn--gnstigliefern-wob",
+  "design": "bss|graphic",
+  "dev": "*.aa.crm|*.ab.crm|*.ac.crm|*.ad.crm|*.ae.crm|*.af.crm|*.ci.crm|*.d.crm|*.gateway|*.inbrowser|*.lcl|*.lclstage|*.pa.crm|*.pb.crm|*.pc.crm|*.pd.crm|*.pe.crm|*.pf.crm|*.s.brave|*.stg|*.stgstage|*.user.localcert|*.w.crm|*.wa.crm|*.wb.crm|*.wc.crm|*.wd.crm|*.we.crm|*.webhare|*.wf.crm|api.lp|archer.replit|barsy|bearblog|bones.replit|botdash|brave|canary.replit|codepen|deno-staging|deno|erp|fly|githubpreview|global.replit|grebedoc|hacker.replit|hrsn|id.replit|is-a-fullstack|is-a-good|is-a|is-cool|is-not-a|iserv|janeway.replit|kim.replit|kira.replit|kirk.replit|leapcell|localplayer|loginline|lp|mediatech|mocha-sandbox|modx|myaddr|ngrok-free|ngrok|objects.lp|odo.replit|pages|panel|paris.replit|payload|picard.replit|pike.replit|platter-app|prerelease.replit|r2|reed.replit|relay.evervault|replit|riker.replit|runcontainers|sisko.replit|spock.replit|staging.replit|sulu.replit|t3.storage|t3.storageapi|tarpit.replit|teams.replit|tucker.replit|vercel|vivenushop|web.erp|wesley.replit|worf.replit|workers|xmit",
+  "direct": "libp2p",
+  "diy": "discourse|imagine",
+  "dk": "123hjemmeside|biz|co|firm|myspreadshop|reg|store",
+  "ec": "base|official",
+  "edu": "git-pages.rit",
+  "education": "co",
+  "email": "intouch|p.tawk|p.tawkto",
+  "es": "123miweb|myspreadshop",
+  "estate": "*.compute",
+  "eu": "*.nxa|*.transurl|auth.cognito-idp.eusc-de-east-1.on.amazonwebservices|barsy|cloudns|deuxfleurs|directwp|dnshome|jelastic.dogado|prvw|spdns",
+  "eus": "user.party",
+  "events": "co|koobin",
+  "fan": "mkm",
+  "fi": "123kotisivu|dy|fi.cloudplatform|iki|kapsi|myspreadshop|xn--hkkinen-5wa",
+  "financial": "co",
+  "fm": "*.user|radio",
+  "fr": "123siteweb|aeroport|avocat|chambagri|chirurgiens-dentistes-en-france|chirurgiens-dentistes|dedibox|experts-comptables|fbx-os|fbxos|freebox-os|freeboxos|goupile|kdns|medecin|myspreadshop|notaires|on-web|pharmacien|port|veterinaire|ynh",
+  "fun": "ms|vicp|yicp|zicp",
+  "games": "pley|sheezy",
+  "gay": "pages",
+  "gdn": "cnpy",
+  "gg": "*.at.ply|botdash|d6.ply|daemon.panel|kaas|panel|stackit",
+  "global": "appwrite",
+  "goog": "*.usercontent|cloud|translate",
+  "gr": "barsy|simplesite",
+  "group": "discourse",
+  "gw": "nx",
+  "health": "hra",
+  "hk": "inc|ltd",
+  "host": "bolt|cloudaccess|easypanel|emergent|fastvps|freesite|gadget|half|iserv|jele|mircloud|myfast|tempurl|wp2|wpmudev",
+  "hosting": "opencraft",
+  "hr": "shop.brendly",
+  "ht": "rt",
+  "id": "e|zone",
+  "ie": "myspreadshop",
+  "il": "mytabit.co|ravpage.co|tabitorder.co",
+  "in": "barsy|cloudns|indevs|supabase|web",
+  "info": "barrel-of-knowledge|barrell-of-knowledge|barsy|cloudns|dnsupdate|dvrcam|dynamic-dns|dyndns|for-our|forumz|groks-the|groks-this|here-for-more|ilovecollege|knowsitall|mayfirst|mittwald|mittwaldserver|no-ip|nsupdate|selfip|typo3server|v-info|webhop",
+  "io": "*.azurecontainer|*.moonscale|*.on-k3s|*.on-rio|*.raw.icp0|*.raw.icp1|*.s.brave|*.stolos|*.sys.qcx|2038|ap.ngrok|apigee|apps.lair|au.ngrok|b-data|barsy|basicserver|beagleboard|bitbucket|bluebite|boxfuse|brave|browsersafetymark|bubbleapps|cdn.bubble|cleverapps|client.scrypted|cloudbeesusercontent|cust.dev.thingdust|cust.disrec.thingdust|cust.prod.thingdust|cust.testing.thingdust|darklang|dedyn|definima|devices.resinstaging|drive-platform|dyndns.dappnode|editorx|edugit|eu.ngrok|fh-muenster|gitbook|github|gitlab|hasura-app|hostyhosting|hypernode|icp0|icp1|id.forgerock|in.ngrok|jele|jp.ngrok|keenetic|kiloapps|loginline|lolipop|mo-siemens|mock.pstmn|musician|myaddr|myrdbx|ngrok|paas.beebyte|pantheonsite|pstmn|qcx|qoto|qzz|readthedocs|reservd.dev.thingdust|reservd.disrec.thingdust|reservd.testing.thingdust|resindevice|sa.ngrok|sandcats|sekd1.beebyteapp|site.rb-hosting|stage.nodeart|telebit|tickets|us.ngrok|utwente|vaporcloud|virtualserver|webflow|webflowtest|webthings|wixstudio",
+  "ir": "arvanedge|vistablog",
+  "it": "123homepage|16-b|32-b|64-b|dnshome|ibxos|iliadboxos|jc.neen|myspreadshop|syncloud",
+  "je": "of",
+  "jp": "0am|0g0|0j0|0t0|2-d|angry|babyblue|babymilk|backdrop|bambina|bitter|blush|bona|boo|boy|boyfriend|but|buyshop|candypop|capoo|catfood|cheap|chicappa|chillout|chips|chowder|chu|ciao|cocotte|coolblog|cranky|crap|cutegirl|daa|daynight|deca|deci|digick|eek|egoism|fakefur|fashionstore|fem|flier|flop|floppy|fool|frenchkiss|gehirn.ne|girlfriend|girly|gloomy|gonna|greater|hacca|halfmoon|handcrafted|hateblo|hatenablog|hatenadiary|heavy|her|hiho|hippy|holy|hungry|icurus|itigo|ivory.ne|jeez|jellybean|kawaiishop|kikirara|kill|kilo|kuron|littlestar|lolipopmc|lolitapunk|lomo|lovepop|lovesick|mail-box.ne|main|matrix|mimoza|mints.ne|mods|mokuren.ne|mond|mongolian|moo|mydns|namaste|netgamers|nikita|nobushi|noor|nyanta|o0o0|oops|opal.ne|parallel|parasite|pecori|peewee|penne|pepper|perma|pgw|pigboat|pinoko|punyu|pupu|pussycat|pya|raindrop|rdy|readymade|rgr|rs.webaccel|rulez|s3.isk01.sakurastorage|s3.isk02.sakurastorage|sadist|sakura.ne|saloon|sblo|schoolbus|secret|skr|staba|stripper|sub|sumomo.ne|sunnyday|supersale|tank|theshop|thick|tonkotsu|topaz.ne|uh-oh|under|undo|upper|user.aseinet.ne|user.webaccel|usercontent|velvet|verse|versus|vivian|watson|weblike|websozai|whitesnow|wjg|xii|zombie",
+  "kg": "ae|us|xx",
+  "kr": "c01|eliv-api|eliv-cdn|eliv-dns|mmv|vki",
+  "krd": "co|edu",
+  "kz": "jcloud",
+  "la": "bnr",
+  "lc": "oy",
+  "limo": "*.eth",
+  "link": "*.dweb|*.eth|*.inbrowser|canva|cyon|ipfs.nftstorage|ipfs.storacha|ipfs.w3s|joinmc|keenetic|myfritz|mypep",
+  "live": "*.ewp|aem|hlx",
+  "lol": "omg",
+  "lu": "123website",
+  "md": "ir",
+  "me": "barsy|brasilia|c66|craft|ddns|diskstation|dnsfor|dscloud|edgestack|filegear-sg|filegear|grok|hopto|i234|loginto|lohmus|mcdir|mybox|myds|nohost|noip|opencloud|seprox.hooc|site.transip|soundcast|synology|tcp4|vp4|webhop",
+  "media": "framer",
+  "menu": "barsy|barsyonline",
+  "mn": "nyc",
+  "mobi": "barsy|dscloud",
+  "mp": "ju",
+  "ms": "minisite",
+  "name": "forgot.her|forgot.his|ispmanager|keenetic",
+  "net": "*.c.ts|*.hosting.ovh|*.icp|*.localto|*.p.azurewebsites|*.webpaas.ovh|1.azurestaticapps|2.azurestaticapps|3.azurestaticapps|4.azurestaticapps|5.azurestaticapps|6.azurestaticapps|7.azurestaticapps|a.prod.fastly|a.ssl.fastly|adobeaemcloud|adobeio-static|adobeioruntime|akadns|akamai-staging|akamai|akamaiedge-staging|akamaiedge|akamaihd-staging|akamaihd|akamaiorigin-staging|akamaiorigin|akamaized-staging|akamaized|alwaysdata|apps-1and1|appudo|at-band-camp|atl.jelastic.vps-host|australiacentral-01.azurewebsites|australiacentral2-01.azurewebsites|australiaeast-01.azurewebsites|australiasoutheast-01.azurewebsites|austriaeast-01.azurewebsites|azure-api|azure-mobile|azureedge|azurefd|azurestaticapps|azurewebsites|b.ssl.fastly|barsy|belgiumcentral-01.azurewebsites|blackbaudcdn|blob.core.usgovcloudapi|blob.core.windows|blogdns|boomla|botdash|bounceme|bplaced|brazilsouth-01.azurewebsites|brazilsoutheast-01.azurewebsites|broke-it|buyshouses|canadacentral-01.azurewebsites|canadaeast-01.azurewebsites|casacam|cdn-edges|cdn.cloudflare|cdn.cloudflareanycast|cdn.cloudflarecn|cdn.cloudflareglobal|cdn.prod.atlassian-dev|cdn77-ssl|centralindia-01.azurewebsites|centralus-01.azurewebsites|centralus.azurestaticapps|centraluseuap-01.azurewebsites|channelsdvr|chilecentral-01.azurewebsites|clickrising|cloudaccess|cloudapp|cloudflare|cloudfront|cloudfunctions|cloudjiffy|cloudycluster|community-pro|ctfcloud|dattolocal|ddns-ip|ddns|de5|debian|definima|denmarkeast-01.azurewebsites|deno|dns-cloud|dns-dynamic|dnsalias|dnsdojo|dnsup|does-it|dontexist|dsmynas|dynalias|dynathome|dynu|dynuddns|dynv6|eastasia-01.azurewebsites|eastasia.azurestaticapps|eastasiastage-01.azurewebsites|eastus-01.azurewebsites|eastus2-01.azurewebsites|eastus2.azurestaticapps|eastus2euap-01.azurewebsites|eastus3-01.azurewebsites|eating-organic|edgekey-staging|edgekey|edgesuite-staging|edgesuite|endofinternet|familyds|fastlylb|feste-ip|file.core.usgovcloudapi|file.core.windows|firewall-gateway|fr-1.paas.massivegrid|fra1-de.cloudjiffy|francecentral-01.azurewebsites|francesouth-01.azurewebsites|freetls.fastly|from-az|from-co|from-la|from-ny|gb|germanynorth-01.azurewebsites|germanywestcentral-01.azurewebsites|gets-it|ggff|global.prod.fastly|global.ssl.fastly|grafana-dev|ham-radio-op|heteml|hicam|homeftp|homeip|homelinux|homeunix|hu|in-dsl|in-the-band|in-vpn|in|indiasouthcentral-01.azurewebsites|indonesiacentral-01.azurewebsites|iobb|ipifony|ipv64|is-a-chef|is-a-geek|isa-geek|israelcentral-01.azurewebsites|israelnorthwest-01.azurewebsites|italynorth-01.azurewebsites|j.scaleforce|japaneast-01.azurewebsites|japanwest-01.azurewebsites|jelastic.saveincloud|jioindiacentral-01.azurewebsites|jioindiawest-01.azurewebsites|jls-sto1.elastx|jls-sto2.elastx|jls-sto3.elastx|jp|keyword-on|kicks-ass|kinghost|knx-server|koreacentral-01.azurewebsites|koreasouth-01.azurewebsites|krellian|live-on|localcert|lon-1.paas.massivegrid|lon-2.paas.massivegrid|luyani|mafelo|malaysiawest-01.azurewebsites|map.fastly|map.fastlylb|meinforum|memset|mexicocentral-01.azurewebsites|moonscale|myamaze|mydatto|mydissent|myeffect|myfritz|mymediapc|mypsx|myradweb|mysecuritycamera|myspreadshop|mysynology|newzealandnorth-01.azurewebsites|nhlfan|njs.jelastic.vps-host|no-ip|nordeste-idc.saveincloud|northcentralus-01.azurewebsites|northcentralusstage-01.azurewebsites|northeastus5-01.azurewebsites|northeurope-01.azurewebsites|norwayeast-01.azurewebsites|norwaywest-01.azurewebsites|now-dns|ny-1.paas.massivegrid|ny-2.paas.massivegrid|office-on-the|oninferno|opik|ownip|pages.torproject|pgafan|podzone|polandcentral-01.azurewebsites|privatizehealthinsurance|qatarcentral-01.azurewebsites|r.cdn77|rackmaze|redirectme|reserve-online|ric.jelastic.vps-host|routingthecloud|ru|sandbox.deno|schokokeks|scrapper-site|se|seidat|selfip|sells-it|senseering|servebbs|serveblog|serveftp|serveminecraft|server-on|servicebus.usgovcloudapi|servicebus.windows|sg-1.paas.massivegrid|shopselect|siteleaf|sn.mynetname|soc.srcf|southafricanorth-01.azurewebsites|southafricawest-01.azurewebsites|southcentralus-01.azurewebsites|southcentralus2-01.azurewebsites|southeastasia-01.azurewebsites|southeastus5-01.azurewebsites|southindia-01.azurewebsites|spaincentral-01.azurewebsites|spryt|square7|squares|static-access|storage.yandexcloud|subsc-pay|supabase|swedencentral-01.azurewebsites|swedensouth-01.azurewebsites|switzerlandnorth-01.azurewebsites|switzerlandwest-01.azurewebsites|sytes|taiwannorth-01.azurewebsites|taiwannorthwest-01.azurewebsites|thruhere|torproject|trafficmanager|ts|tunnelmole|twmail|u.channelsdvr|uaecentral-01.azurewebsites|uaenorth-01.azurewebsites|uk|uksouth-01.azurewebsites|ukwest-01.azurewebsites|uni5|user.srcf|usgovcloudapp|usgovtrafficmanager|vpndns|vps-host|vps.hrsn|vusercontent|web.core.usgovcloudapi|web.core.windows|webhop|website.yandexcloud|west1-us.cloudjiffy|westcentralus-01.azurewebsites|westeurope-01.azurewebsites|westeurope.azurestaticapps|westindia-01.azurewebsites|westus-01.azurewebsites|westus2-01.azurewebsites|westus2.azurestaticapps|westus3-01.azurewebsites|yandexcloud|za|zabc",
+  "network": "*.alces|aem|appwrite|arvo|azimuth|co|tlon",
+  "new": "*.builtwithrocket",
+  "news": "noticeable",
+  "ng": "biz|co.biz|col|dl.biz|firm|gen|go.biz|lg.biz|ltd|ngo|on.biz|plc",
+  "nl": "*.transurl|123website|cistron|co|demon|gov|hosting-cluster|khplay|myspreadshop",
+  "no": "123hjemmeside|co|myspreadshop",
+  "now": "dyn|here|tmp",
+  "nu": "enterprisecloud|merseine|mine|shacknet",
+  "nz": "cloudns",
+  "one": "*.kin|service|website",
+  "online": "barsy|book|eero-stage|eero|heimdns|leapcell|websitebuilder",
+  "orange": "tech",
+  "org": "accesscam|ae|al.eu|altervista|app.os.fedoraproject|app.os.stg.fedoraproject|asso.eu|at.eu|au.eu|barsy|be.eu|beta.wmcloud|bg.eu|blogdns|blogsite|bmoattachments|boldlygoingnowhere|c.cdn77|ca.eu|cable-modem|camdvr|cd.eu|ch.eu|cloud.fedoraproject|cloudns|cn.eu|collegefan|couchpotatofries|cy.eu|cz.eu|ddnss|de.eu|dk.eu|dnsalias|dnsdojo|doesntexist|dontexist|doomdns|dpdns|dsmynas|duckdns|dvrdns|dynalias|dyndns|dynserv|edu.eu|ee.eu|endofinternet|endoftheinternet|es.eu|eu|familyds|fedorainfracloud|fedorapeople|fi.eu|fr.eu|freeddns|freedesktop|from-me|fspages|game-host|go.dyndns|gotdns|gr.eu|hatenadiary|hepforge|hk|hobby-site|home.dyndns|homedns|homeftp|homelinux|homeunix|hopto|hr.eu|httpbin|hu.eu|ie.eu|il.eu|in-dsl|in-vpn|in.eu|int.eu|ip-dynamic|is-a-bruinsfan|is-a-candidate|is-a-celticsfan|is-a-chef|is-a-geek|is-a-knight|is-a-linux-user|is-a-patsfan|is-a-soxfan|is-found|is-local|is-lost|is-saved|is-very-bad|is-very-evil|is-very-good|is-very-nice|is-very-sweet|is.eu|isa-geek|it.eu|jp.eu|jpn|js|kicks-ass|kr.eu|lt.eu|lu.eu|lv.eu|me.eu|misconfused|mk.eu|mlbfan|mt.eu|my-firewall|my.eu|myfirewall|myftp|mysecuritycamera|mywire|net.eu|nflfan|ng.eu|nl.eu|no-ip|no.eu|now-dns|nz.eu|pimienta|pl.eu|podzone|poivron|potager|pt.eu|pubtls|read-books|readmyblog|ro.eu|routingthecloud|roxa|rsc.cdn77|ru.eu|s3.teckids|se.eu|selfip|sellsyourhome|servebbs|serveftp|servegame|si.eu|sk.eu|small-web|spdns|ssl.origin.cdn77-secure|stuff-4-sale|sweetpepper|toolforge|tr.eu|tunk|tuxfamily|twmail|ufcfan|uk.eu|us.eu|us|webhop|webredirect|wmcloud|wmflabs|za|zapto",
+  "ovh": "nerdpol",
+  "page": "aem|codeberg|deuxfleurs|heyflow|hlx|mybox|pdns|plesk|prvcy|rocky|statichost",
+  "ph": "cloudns",
+  "photos": "framer",
+  "pictures": "1337",
+  "pizza": "ngrok",
+  "pl": "art|beep|bielsko|cfolks|co|dfirma|dkonto|ecommerce-shop|gda|gdansk|gdynia|gliwice|homesklep|krakow|krasnik|leczna|lodz|lubartow|lublin|med|myspreadshop|pabianice|plock|poniatowa|poznan|sdscloud|shoparena|sieradz|simplesite|skierniewice|sopot|swidnik|torun|unicloud|wroc|you2|zakopane|zgierz",
+  "place": "co",
+  "plus": "*.at.playit|playit|with.playit",
+  "pm": "name|own",
+  "pro": "barsy|cloudns|keenetic|ngrok",
+  "pt": "123paginaweb",
+  "pub": "*.id|*.kin|barsy",
+  "pw": "cloudns|x443",
+  "re": "can|netlib",
+  "reviews": "aem",
+  "rip": "clan",
+  "ro": "barsy|co|shop",
+  "rocks": "lima-city|myddns|stackit|webspace",
+  "rs": "barsy|ox|shop.brendly",
+  "ru": "*.hosting.myjino|*.landing.myjino|*.spectrum.myjino|*.vps.myjino|ac|adygeya|bashkiria|bir|cbg|com|dagestan|edu|eurodir|gov|grozny|hb.cldmail|int|kalmykia|kustanai|marine|mcdir|mcpre|mil|mircloud|mordovia|msk|myjino|mytis|na4u|nalchik|net|nov|org|pp|pyatigorsk|ras|spb|vladikavkaz|vladimir|vps.mcdir",
+  "run": "*.appwrite|*.build|*.code|*.database|*.migration|canva|cloud|development|iran.liara|liara|lovable|needle|onporter|ravendb|repl|stackit|val|vercel|web.val|wix",
+  "scot": "co|gov|me|mygov|org|service.gov",
+  "se": "123minsida|com|iopsys|itcouldbewor|myspreadshop",
+  "services": "loginline",
+  "sg": "enscaled",
+  "sh": "botda|ent.platform|eu.platform|hashbang|lovable|now|teleport|us.platform",
+  "shop": "barsy|barsyonline|base|hoplix|shopware",
+  "show": "ms",
+  "si": "f5|gitapp|gitpage",
+  "site": "*.cloudera|*.platformsh|*.tst|ams.scw|barsy|byen|caffeine|chatgpt|co|convex|cpanel|cyon|eu-west-1.convex|fastvps|figma-gov|figma|heyflow|jele|jouwweb|loginline|madethis|my.canva|notion|novecore|omniwe|opensocial|piebox|playcode|preview|puter|scw|sol|sourcecraft|square|srht|support|us-east-1.convex|waw.scw|wpsquared",
+  "so": "surveys",
+  "space": "app-ionos|deployagent|heiyu|hf|myfast|project|static.hf|uber|vibehost|xs4all",
+  "st": "*.cn|helioho|kirara|noho",
+  "store": "barsy|sellfy|shopware|storebase",
+  "studio": "ai",
+  "su": "abkhazia|adygeya|aktyubinsk|arkhangelsk|armenia|ashgabad|azerbaijan|balashov|bashkiria|bryansk|bukhara|chimkent|dagestan|east-kazakhstan|exnet|georgia|grozny|ivanovo|jambyl|kalmykia|kaluga|karacol|karaganda|karelia|khakassia|krasnodar|kurgan|kustanai|lenug|mangyshlak|mordovia|msk|murmansk|nalchik|navoi|north-kazakhstan|nov|obninsk|penza|pokrovsk|sochi|spb|tashkent|termez|togliatti|troitsk|tselinograd|tula|tuva|vladikavkaz|vladimir|vologda",
+  "support": "barsy",
+  "systems": "knightpoint|miren",
+  "team": "discourse|jelastic",
+  "tech": "cleverapps",
+  "technology": "co",
+  "tf": "sch",
+  "th": "online|shop",
+  "tn": "orangecloud",
+  "to": "611|direct.quickconnect|nett|oya|vpnplus|x0",
+  "today": "prequalifyme",
+  "tools": "dyn.addr|myaddr",
+  "top": "*.wadl|ntdll",
+  "tv": "better-than|dyndns|from|on-the-web|sakura|worse-than",
+  "tw": "mydns|mymailer.com|url",
+  "ua": "biz|cc|co|cx|inf|ltd|pp|v",
+  "uk": "*.oraclegovcloudapps|adimo.co|affinitylottery.org|api.gov|barsy.co|barsy|barsyonline.co|campaign.gov|conn|copro|cust.retrosnub.co|glug.org|hosp|independent-commission|independent-inquest|independent-inquiry|independent-panel|independent-review|j.layershift.co|lug.org|lugs.org|myspreadshop.co|nh-serv.co|nimsite|no-ip.co|public-inquiry|pymnt|raffleentry.org|royal-commission|service.gov|weeklylottery.org",
+  "us": "aberdeen.wa|azure-api|azurewebsites|bainbridge-isl.wa|bellevue.wa|bremerton.wa|centralia.wa|chehalis.wa|cloudns|forks.wa|freeddns|gh.srv|gig-harbor.wa|gl.srv|golffan|heliohost|hoquiam.wa|is-by|keyport.wa|kingston.wa|land-4-sale|mircloud|ngo|noip|olympia.wa|phx.enscaled|pointto|port-angeles.wa|port-ludlow.wa|port-orchard.wa|port-townsend.wa|poulsbo.wa|redmond.wa|renton.wa|sea.wa|seattle.wa|sequim.wa|servername|shelton.wa|silverdale.wa|srv|stuff-4-sale|yarrow-point.wa",
+  "uy": "gv",
+  "vc": "*.0e|d.gv|gv|mydns",
+  "vip": "hidns",
+  "website": "framer",
+  "wf": "biz|sch",
+  "wiki": "framer",
+  "work": "imagine-proxy|puter",
+  "ws": "*.advisor|cloud66|dyndns|mypets",
+  "wtf": "ddns",
+  "xn--p1acf": "xn--41a|xn--80aaa0cvac|xn--90a1af|xn--90amc|xn--c1avg|xn--h1ahn|xn--h1aliz|xn--j1adp|xn--j1aef|xn--j1ael8b",
+  "xyz": "*.telebit|botdash|caffeine|exe|opentunnel",
+  "yt": "org",
+  "zone": "*.triton|*.zerops|lima|prg1-zerops|stackit",
+});
+/* END GENERATED PRIVATE PSL */
+
 const wardenOneIcannCache = new Map();
-function wardenOneIcannSuffix(host) {
+const wardenOnePrivateCache = new Map();
+function wardenOneCompactRules(tld, groups, cache) {
+  if (!Object.prototype.hasOwnProperty.call(groups, tld)) return null;
+  let rules = cache.get(tld);
+  if (!rules) {
+    rules = new Set(groups[tld].split('|'));
+    cache.set(tld, rules);
+  }
+  return rules;
+}
+
+function wardenOneCompactSuffix(host, groups, cache, defaultTld, extraGroups, extraCache) {
   const labels = host.split('.');
   const tld = labels[labels.length - 1];
-  if (!Object.prototype.hasOwnProperty.call(WARDENONE_ICANN_GROUPS, tld)) return tld;
-  let rules = wardenOneIcannCache.get(tld);
-  if (!rules) {
-    rules = new Set(WARDENONE_ICANN_GROUPS[tld].split('|'));
-    wardenOneIcannCache.set(tld, rules);
-  }
+  const rules = wardenOneCompactRules(tld, groups, cache);
+  const extra = extraGroups ? wardenOneCompactRules(tld, extraGroups, extraCache) : null;
+  if (!rules && !extra) return defaultTld ? tld : '';
+  const has = (rule) => !!(rules?.has(rule) || extra?.has(rule));
   for (let i = 0; i < labels.length - 1; i++) {
-    if (rules.has('!' + labels.slice(i, -1).join('.'))) return labels.slice(i + 1).join('.');
+    if (has('!' + labels.slice(i, -1).join('.'))) return labels.slice(i + 1).join('.');
   }
   for (let i = 0; i < labels.length - 1; i++) {
     const plain = labels.slice(i, -1).join('.');
     const tail = labels.slice(i + 1, -1).join('.');
-    if (rules.has(plain) || rules.has(tail ? '*.' + tail : '*')) return labels.slice(i).join('.');
+    if (has(plain) || has(tail ? '*.' + tail : '*')) return labels.slice(i).join('.');
   }
-  return tld;
+  return defaultTld ? tld : '';
+}
+
+function wardenOneIcannSuffix(host) {
+  return wardenOneCompactSuffix(host, WARDENONE_ICANN_GROUPS, wardenOneIcannCache, true);
 }
 
 const WARDENONE_PRIVATE_SUFFIXES = Object.freeze([
@@ -271,8 +486,8 @@ function regDomain(host) {
   try { if (/[^\x00-\x7f]/.test(value)) value = new URL('http://' + value).hostname; } catch (_) {}
   value = value.replace(/\.+$/, '');
   const bare = value.replace(/^www\./, '');
-  // www.ck is a PSL exception; stripping www from a suffix can change its owner.
-  return bare !== value && bare === wardenOneIcannSuffix(bare) ? value : bare;
+  // A www label can itself be a tenant or PSL exception, rather than an alias.
+  return bare !== value && wardenOneIsPublicSuffix(bare) ? value : bare;
 }
 
 function wardenOneSuffixMatch(host, suffixes) {
@@ -285,7 +500,7 @@ function wardenOneSuffixMatch(host, suffixes) {
 }
 
 function sharedTenantSuffix(host) {
-  return wardenOneSuffixMatch(host, WARDENONE_PRIVATE_SUFFIXES)
+  return wardenOnePslSuffix(regDomain(host))
     || wardenOneSuffixMatch(host, WARDENONE_OPAQUE_TENANT_SUFFIXES);
 }
 
@@ -312,13 +527,11 @@ function registrableDomain(host) {
 }
 
 function sameSiteDomain(a, b) {
-  const left = registrableDomain(a);
-  const right = registrableDomain(b);
-  return !!(left && right && left === right);
+  return sameSiteIdentity(a, b);
 }
 
-/* Full private rules remain worker-only (SEC-07). Frames receive their own site in
- * the worker config; until then, the curated tenant floor still separates known platforms. */
+/* Raw PSL indexes stay in trusted contexts. Content worlds query the same generated
+ * data through compact, lazy TLD groups, before any worker configuration arrives. */
 let __wardenOnePslIndex = null;
 let __wardenOneFullPslIndex = null;
 function wardenOnePslIndex(includeIcann = false) {
@@ -347,7 +560,10 @@ function wardenOnePslIndex(includeIcann = false) {
  * labels wins, a wildcard standing for exactly one label. '' when no private rule matches. */
 function wardenOnePslSuffix(host, includeIcann = false) {
   const index = wardenOnePslIndex(includeIcann);
-  if (!index.loaded) return '';
+  if (!index.loaded) {
+    return wardenOneCompactSuffix(host, WARDENONE_PRIVATE_GROUPS, wardenOnePrivateCache, includeIcann,
+      includeIcann ? WARDENONE_ICANN_GROUPS : null, wardenOneIcannCache);
+  }
   const labels = String(host || '').split('.');
   for (let i = 0; i < labels.length; i++) {
     if (index.exception.has(labels.slice(i).join('.'))) return labels.slice(i + 1).join('.');
@@ -359,6 +575,21 @@ function wardenOnePslSuffix(host, includeIcann = false) {
     if (index.plain.has(candidate) || (i + 1 < labels.length && index.wildcard.has(labels.slice(i + 1).join('.')))) best = candidate;
   }
   return best;
+}
+
+function wardenOneIsPublicSuffix(host) {
+  const h = String(host || '').trim().toLowerCase().replace(/\.+$/, '');
+  if (!h || h.includes(':') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(h)) return false;
+  const index = wardenOnePslIndex(true);
+  const suffix = wardenOnePslSuffix(h, true) || wardenOneIcannSuffix(h);
+  // A wildcard root would also exempt the unrelated registrants below it.
+  if (h === suffix || index.wildcard.has(h)) return true;
+  if (index.loaded) return false;
+  const labels = h.split('.');
+  const tld = labels.pop();
+  const wildcard = labels.length ? '*.' + labels.join('.') : '*';
+  return !!(wardenOneCompactRules(tld, WARDENONE_PRIVATE_GROUPS, wardenOnePrivateCache)?.has(wildcard)
+    || wardenOneCompactRules(tld, WARDENONE_ICANN_GROUPS, wardenOneIcannCache)?.has(wildcard));
 }
 
 /* registrableDomain with the complete private list, for trust decisions: "are these two hosts one
@@ -384,19 +615,10 @@ function sameSiteIdentity(a, b) {
   return !!(left && right && left === right);
 }
 
-/* Directional host-list matching. Ordinary entries cover their subdomains, as
- * users expect. A private platform apex (github.io) covers only itself rather
- * than every tenant, and opaque infrastructure entries are exact-host only. */
+/* Exemptions cover descendants only inside the same authoritative site boundary. */
 function hostMatchesSite(host, candidate) {
   const h = regDomain(host);
   const d = regDomain(candidate);
   if (!h || !d) return false;
-  if (d === wardenOneIcannSuffix(d)) return h === d;
-  const opaque = wardenOneSuffixMatch(h, WARDENONE_OPAQUE_TENANT_SUFFIXES)
-    || wardenOneSuffixMatch(d, WARDENONE_OPAQUE_TENANT_SUFFIXES);
-  if (opaque) return h === d;
-  const privateSuffix = wardenOneSuffixMatch(h, WARDENONE_PRIVATE_SUFFIXES)
-    || wardenOneSuffixMatch(d, WARDENONE_PRIVATE_SUFFIXES);
-  if (privateSuffix && d === privateSuffix) return h === d;
   return h === d || (h.endsWith('.' + d) && sameSiteIdentity(h, d));
 }

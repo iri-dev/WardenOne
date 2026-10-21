@@ -764,8 +764,7 @@
     overrides||{
 
     }),
-    host=location.hostname.replace(/^www\./,
-    "").toLowerCase(),
+    host=regDomain(location.hostname),
     /* Only the reader's allowlist may disable the whole engine. Compatibility
        relief must name individual paused protections, never silently gate every
        feature while leaving the ready marker set. */
@@ -1965,9 +1964,7 @@
       }
     })(),
     SITE_BOUNDARY=(()=>{
-      const normalize=host=>String(host||"").trim().replace(/^www\./,
-      "").replace(/^\.+|\.+$/g,
-      "").toLowerCase(),
+      const normalize=host=>"function"==typeof regDomain?regDomain(host):String(host||"").trim().toLowerCase(),
       site=host=>{
         return"function"==typeof siteIdentity?siteIdentity(host):normalize(host)
       };
@@ -1977,7 +1974,7 @@
         right)=>{
           const a=normalize(left),
           b=normalize(right);
-          return!!a&&!!b&&(a===b||a.endsWith("."+b)||b.endsWith("."+a))
+          return!!a&&!!b&&("function"==typeof hostMatchesSite?hostMatchesSite(a,b)||hostMatchesSite(b,a):a===b)
         },
         siblingCandidate:(left,
         right)=>{

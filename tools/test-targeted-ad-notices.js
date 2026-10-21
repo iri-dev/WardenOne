@@ -49,14 +49,16 @@ vm.runInContext('__woToastReady=!0', early);
 earlyListener({ detail: { src: 'bridge', type: 'blocked_popup', detail: {}, trusted: true } });
 assert.strictEqual(vm.runInContext('__woToastPending.length', early), 1, 'ready notices are left for the live toast listener');
 
-async function world(debug, matches = []) {
+async function world(debug, matches = [], delayRules = false) {
   const sent = [], history = [], timers = [];
+  let releaseRules;
+  const pendingRules = new Promise((resolve) => { releaseRules = resolve; });
   let tabUrl = 'https://pawchive.pw/patreon/user/4618037';
   let debugListener, errorListener, errorFilter;
   const sandbox = {
     URL, Date, Number, String, Map, Set,
     setTimeout: (fn) => { timers.push(fn); },
-    fetch: async () => ({ json: async () => rules }),
+    fetch: () => delayRules ? pendingRules : Promise.resolve({ json: async () => rules }),
     hostMatchesSite: (host, site) => host === site || host.endsWith('.' + site),
     queueHistory: (entry) => history.push(entry),
     readMatchedRuleEvidence: async () => ({ ok: true, matches }),
@@ -75,8 +77,15 @@ async function world(debug, matches = []) {
   };
   vm.createContext(sandbox);
   vm.runInContext(source.slice(start, end), sandbox);
-  await vm.runInContext('attachTargetedAdNoticeListeners()', sandbox);
-  return { sent, history, debug: (info) => debugListener(info), error: (info) => errorListener(info), filter: () => errorFilter,
+  vm.runInContext('attachTargetedAdNoticeListeners()', sandbox);
+  assert.strictEqual(typeof errorListener, 'function', 'the error listener registers before startup yields');
+  if (!delayRules) await vm.runInContext('targetedAdRules()', sandbox);
+  return { sent, history, sites: Array.from(vm.runInContext('TARGETED_AD_SITES', sandbox)),
+    debug: (info) => debugListener(info), error: (info) => errorListener(info), filter: () => errorFilter,
+    loadRules: async () => {
+      releaseRules({ json: async () => rules });
+      await vm.runInContext('targetedAdRules()', sandbox);
+    },
     relay: (tabId, frameId, finding) => sandbox.relayFrameBlockNotice(tabId, frameId, finding),
     setTabUrl: (value) => { tabUrl = value; },
     flush: async () => { while (timers.length) await timers.shift()(); } };
@@ -84,17 +93,30 @@ async function world(debug, matches = []) {
 
 (async () => {
   const frame = await world(false);
-  /* The blocked-request listener is for the targeted rules' ad hosts only, found from the
-     ruleset by the sites the rules are scoped to rather than by rule number. */
+  /* The synchronous filter must stay narrow and match the packaged rule data. */
   const filter = frame.filter();
   assert(filter && Array.isArray(filter.urls) && !filter.urls.includes('<all_urls>'), 'the listener no longer hears every blocked request in the browser');
   const targeted = rules.filter((rule) => rule.action.type === 'block' && rule.condition.initiatorDomains
-    && rule.condition.initiatorDomains.some((site) => site === 'playmogo.com' || site === 'pawchive.pw'));
+    && rule.condition.initiatorDomains.some((site) => frame.sites.includes(site)));
   for (const rule of targeted) for (const domain of rule.condition.requestDomains) {
     assert(filter.urls.includes('*://*.' + domain + '/*'), 'the listener covers ' + domain);
   }
   assert.strictEqual(filter.urls.length, new Set(targeted.flatMap((rule) => rule.condition.requestDomains)).size, 'and nothing else');
+  assert.deepStrictEqual(Array.from(filter.types), ['script', 'sub_frame']);
   assert(!/TARGETED_AD_RULE_SITES|\[\[48,|\[49,/.test(source.slice(start, end)), 'no rule number is named in the worker');
+  assert(/\nattachTargetedAdNoticeListeners\(\);\n/.test(source), 'startup invokes the registration at top level');
+  for (let restart = 0; restart < 2; restart++) {
+    const cold = await world(false, [], true);
+    cold.error({ tabId: 11, timeStamp: Date.now(), error: 'net::ERR_BLOCKED_BY_CLIENT',
+      initiator: 'https://pawchive.pw/post', url: 'https://phonydepth.com/popup.js' });
+    await new Promise(setImmediate);
+    assert.strictEqual(cold.history.length, 0, 'cold-worker events wait for their rule evidence');
+    await cold.loadRules();
+    await new Promise(setImmediate);
+    await cold.flush();
+    assert.strictEqual(cold.history.length, 1, 'the first event survives delayed rule loading after restart ' + restart);
+    assert.match(cold.history[0].detail.why, /^The browser blocked/);
+  }
   for (const type of ['blocked_popup', 'blocked_gestureless_nav', 'blocked_meta_refresh', 'blocked_redirect_chain']) {
     frame.relay(11, 2, { type, detail: { matched: 'example.org', why: 'A frame action was stopped.' } });
   }

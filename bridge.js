@@ -409,18 +409,29 @@
 
   /* This isolated bridge owns hand-hidden rules, including when AdShield is off
      or the site is allowlisted. Hidden edits never use the forgeable MAIN relay. */
-  function bridgeSafeUserSelector(value) {
+  function bridgeSafeUserSelector(value, sheet) {
     const selector = String(value || '').trim();
     if (!selector || selector.length > 400 || /[{}<;@\\]/.test(selector)) return '';
     if (selector.indexOf('/*') >= 0 || selector.indexOf('*/') >= 0) return '';
     for (let i = 0; i < selector.length; i++) if (selector.charCodeAt(i) < 0x20) return '';
     if (/^(html|body|:root|\*)$/i.test(selector)) return '';
-    return selector;
+    try {
+      /* CSS recovery can accept an unterminated selector but consume its body.
+         Require the hide declaration to survive before using the parsed selector. */
+      sheet.insertRule(selector + '{display:none!important;}', 0);
+      const rule = sheet.cssRules[0];
+      const canonical = rule.style && rule.style.length === 1
+        && rule.style.getPropertyValue('display') === 'none'
+        && rule.style.getPropertyPriority('display') === 'important' ? rule.selectorText : '';
+      sheet.deleteRule(0);
+      return canonical || '';
+    } catch (_) { return ''; }
   }
   function bridgeApplyUserHidden(list) {
     try {
-      const selectors = (Array.isArray(list) ? list : [])
-        .map(bridgeSafeUserSelector).filter(Boolean).slice(0, 100);
+      const values = Array.isArray(list) ? list : [];
+      const sheet = values.length ? new CSSStyleSheet() : null;
+      const selectors = values.map((value) => bridgeSafeUserSelector(value, sheet)).filter(Boolean).slice(0, 100);
       let style = document.querySelector('style[data-wardenone-user-hidden="true"]');
       if (!style) {
         style = document.createElement('style');
@@ -428,7 +439,7 @@
         style.setAttribute('data-wardenone-user-hidden', 'true');
         (document.head || document.documentElement).appendChild(style);
       }
-      style.textContent = selectors.map((selector) => selector + '{display:none!important;}').join('');
+      style.textContent = selectors.map((selector) => selector + '{display:none!important;}').join('\n');
 
       /* The in-page Zapper marks what it hid with an attribute as well as
          relying on this stylesheet, and that attribute outlives the rule being
@@ -624,7 +635,7 @@
     } catch (_) {
       if (/[/?#]/.test(raw)) return '';
     }
-    const h = raw.toLowerCase().replace(/^www\./, '').replace(/^\.+|\.+$/g, '');
+    const h = regDomain(raw.toLowerCase().replace(/^\.+|\.+$/g, ''));
     if (!h || h.length > 253 || h.includes('*') || h.includes('%') || h.includes('/') || h.includes('\\')) return '';
     if (!/^[a-z0-9.-]+$/i.test(h) || h.includes('..') || bridgePrivateOrLocalHost(h)) return '';
     const labels = h.split('.');
@@ -1878,7 +1889,7 @@
   }
 
   function bridgeCleanHost(value) {
-    return String(value || '').replace(/^www\./, '').replace(/^\.+|\.+$/g, '').toLowerCase();
+    return regDomain(String(value || '').replace(/^\.+|\.+$/g, ''));
   }
 
   function bridgeHostMatchesList(host, list) {
@@ -2819,9 +2830,9 @@
   // world so it cannot rely on chrome.runtime directly; only these vetted message
   // kinds are forwarded through the isolated bridge.
   try {
-    const relayPageHost = () => String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+    const relayPageHost = () => regDomain(location.hostname);
     const relaySamePageHost = (host) => {
-      const clean = String(host || '').replace(/^www\./, '').toLowerCase();
+      const clean = regDomain(host);
       const here = relayPageHost();
       return !!(clean && here && clean === here);
     };
@@ -2836,7 +2847,7 @@
     const relayAllowedMessage = (raw) => {
       const msg = Object.assign({}, raw || {});
       if (msg.kind === 'adshield-cosmetic') {
-        const hostname = String(msg.hostname || '').replace(/^www\./, '').toLowerCase();
+        const hostname = regDomain(msg.hostname);
         if (!hostname || !/^[a-z0-9.-]+$/i.test(hostname)) return null;
         if (!relaySamePageHost(hostname)) return null;
         return { kind: 'adshield-cosmetic', hostname, playerPage: msg.playerPage === true };
@@ -2867,7 +2878,7 @@
         return { kind: 'mute-toast', type, minutes };
       }
       if (msg.kind === 'domain-age') {
-        const domain = String(msg.domain || '').replace(/^www\./, '').toLowerCase();
+        const domain = regDomain(msg.domain);
         if (!domain || !/^[a-z0-9.-]+$/i.test(domain)) return null;
         if (!relaySamePageHost(domain)) return null;
         return { kind: 'domain-age', domain };

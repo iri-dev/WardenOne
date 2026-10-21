@@ -115,6 +115,8 @@ function makeRunner(world) {
   const resolverFrom = BG.indexOf('function sitePausedUntil(cfg, host) {');
   const resolverTo = BG.indexOf('function hostMatchesAllowlist(', resolverFrom);
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8') + '\n'
+    + fs.readFileSync(path.join(ROOT, 'psl-private.js'), 'utf8'), sandbox);
   /* The pause shortcut writes through the worker's config write path. */
   vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ, sandbox, { filename: 'config-write-harness' });
   vm.runInContext(BG.slice(resolverFrom, resolverTo) + BLOCK

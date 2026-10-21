@@ -93,6 +93,7 @@ function bridgeRealm() {
     woOn: (target, type, fn) => { state.listeners[type] = fn; },
   };
   const ctx = vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), ctx);
   vm.runInContext([
     iife(BRIDGE, 'const __woAuth=(function(){'),
     engineMacLine[0].trim(),
@@ -113,6 +114,7 @@ function emitterRealm(onDetail) {
     document: { dispatchEvent(ev) { onDetail(ev.detail); return true; } },
   };
   const ctx = vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), ctx);
   vm.runInContext([
     iife(GUARD, 'const __woAuth=(function(){'),
     'let token = TOKEN_IN; let woKey = KEY_IN; let lastGestureBeacon = 0; let navSignalSeq = 0;',
@@ -150,6 +152,7 @@ function workerRealm(options) {
     setTimeout: () => {},
   };
   const ctx = vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), ctx);
   vm.runInContext(BG.slice(adTargetFrom, adTargetTo) + '\n'
     + grabFn(BG, 'messageCleanHost') + '\n' + BG.slice(from, to)
     + '\nthis.__state = { PLAYER_GESTURE_AT, TOP_NAV_OWNED_AT, LAST_TOP_URL, LAST_GESTURE_AT, PRESSED_LINK_AT, PRESSED_LINK_HOST, PRESSED_LINK_URL, PRESSED_LINK_SOURCE_URL, TOP_NAV_OWNED_HOST: typeof TOP_NAV_OWNED_HOST !== "undefined" ? TOP_NAV_OWNED_HOST : null };',

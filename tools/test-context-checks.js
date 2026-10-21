@@ -296,29 +296,22 @@ check('and it admits when the shield that would have slept it is switched off',
 check('a click with no tab falls back to the tab you are looking at',
   /async function wardenMenuTargetTab\(tab\)[\s\S]{0,200}return await wardenTabActionNoticeTarget\(\);/.test(BG));
 
-/* A site you blocked yourself has to actually be blocked.
-
-   YouTube, youtu.be and youtube-nocookie each carry an allowAllRequests on
-   main_frame so WardenOne's own blocking cannot break playback. That is there to
-   stop US breaking a site, not to overrule the reader -- but the learned block
-   sat below it, so "Block this site" on YouTube saved the rule, reported success,
-   and the page loaded normally. Both numbers are read from the source here, so
-   moving either one without the other fails rather than silently re-breaking it. */
+/* Media compatibility must preserve both explicit and learned security blocks. */
 {
   const compat = BG.slice(BG.indexOf('const frameAllowRules = ['), BG.indexOf('const pairs = ['));
-  const compatPriority = Number((compat.match(/priority: (\d+)/) || [])[1]);
+  const compatPriority = Number((BG.match(/const MEDIA_COMPAT_RULE_PRIORITY = (\d+);/) || [])[1]);
   const learnedPriority = BG.match(/priority: entry\.userBlocked \? (\d+) : \(grabber && cfg\.warnGrabberDomains !== false \? (\d+) : (\d+)\)/);
   const userPriority = Number(learnedPriority && learnedPriority[1]);
   const autoPriority = Number(learnedPriority && learnedPriority[3]);
-  check('the YouTube compatibility allow still covers the whole frame',
-    /action: \{ type: 'allowAllRequests' \}/.test(compat)
+  check('YouTube compatibility allows only the frame request itself',
+    /action: \{ type: 'allow' \}/.test(compat) && !/allowAllRequests/.test(compat)
       && /'main_frame'/.test(compat) && compatPriority > 0);
   check('a site you blocked yourself outranks it',
     userPriority > compatPriority,
     'a block below the compat allow is saved, reported, and then ignored');
-  check('and a block WardenOne worked out on its own does not',
-    autoPriority > 0 && autoPriority < compatPriority,
-    'compatibility should still win over a guess');
+  check('an automatic security block also outranks media compatibility',
+    autoPriority > compatPriority,
+    'media compatibility must not disable a learned security block');
   check('the block still covers the top-level navigation',
     /: \['main_frame', 'sub_frame', 'image'/.test(BG)
       && /condition: \{ requestDomains: \[d\], resourceTypes \}/.test(BG));
