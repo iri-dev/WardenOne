@@ -245,7 +245,8 @@ class Cdp {
       this.ws = ws;
       ws.addEventListener('open', () => resolve());
       ws.addEventListener('error', (e) => {
-        this.failure = 'devtools socket failed' + (e && e.message ? ': ' + e.message : '');
+        const detail = e && (e.error && e.error.message || e.message);
+        this.failure = 'devtools socket failed' + (detail ? ': ' + detail : '');
         this.rejectPending(this.failure);
         reject(new Error(this.failure));
       });
@@ -284,6 +285,15 @@ class Cdp {
     });
   }
   on(fn) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter((f) => f !== fn); }; }
+  async reconnect(port) {
+    if (!this.failure) throw new Error('refusing to replace a working devtools socket');
+    const browser = await fetchJson('http://127.0.0.1:' + port + '/json/version');
+    if (browser.webSocketDebuggerUrl !== this.wsUrl) throw new Error('the original browser is no longer running');
+    const replacement = new Cdp(this.wsUrl);
+    await replacement.connect();
+    this.close();
+    return replacement;
+  }
   waitFor(predicate, timeoutMs) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { off(); reject(new Error('timed out waiting for ' + (predicate.name || 'event'))); }, timeoutMs || 15000);
@@ -318,7 +328,13 @@ async function launch(edge, variant, extensionDir, port, profileDir, extraArgs) 
   throw new Error('the browser did not open its DevTools endpoint on port ' + port);
 }
 async function killBrowser(cdp, port) {
+  let replacement;
+  if (cdp.failure) {
+    try { replacement = await cdp.reconnect(port); } catch (_) {}
+  }
+  if (replacement) cdp = replacement;
   try { await cdp.send('Browser.close'); } catch (_) {}
+  if (replacement) replacement.close();
   for (let i = 0; i < 25; i++) {
     try { await fetchJson('http://127.0.0.1:' + port + '/json/version'); } catch (_) { return; }
     await sleep(200);

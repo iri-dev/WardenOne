@@ -225,7 +225,18 @@ async function run() {
       'the paused private Settings save was released after Erase all');
     /* A split-incognito worker can outlive the regular worker's reload. */
     const reloadDeadline = Date.now() + 20000;
-    while ((await cdp.send('Target.getTargets')).targetInfos.some((target) => retiringWorkers.has(target.targetId))) {
+    let reconnected = false;
+    const reloadTargets = async () => {
+      try { return await cdp.send('Target.getTargets'); }
+      catch (error) {
+        if (!cdp.failure || reconnected) throw error;
+        cdp = await cdp.reconnect(port);
+        reconnected = true;
+        console.log('[erase race] reattached to the original browser after reload: ' + error.message);
+        return cdp.send('Target.getTargets');
+      }
+    };
+    while ((await reloadTargets()).targetInfos.some((target) => retiringWorkers.has(target.targetId))) {
       if (Date.now() >= reloadDeadline) throw new Error('Timed out waiting for the pre-erase workers to stop');
       await sleep(100);
     }

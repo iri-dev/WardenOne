@@ -89,7 +89,10 @@ async function run() {
     await navigateBlocked(original);
     await navigateBlocked(base + '/tenant-b');
     await navigateBlocked(base + '/tenant-a?token=different');
-    await navigateBlocked(base + '/redirect');
+    // Seed this warning before the HTTP redirect can commit its final address.
+    const redirectWarning = await evaluate(`safeBrowsingBlockPageUrl({url:${JSON.stringify(base + '/redirect')},tabId:${tab.id},provider:'Fixture',threats:'MALWARE',context:'page'})`);
+    await cdp.send('Page.navigate', { url: redirectWarning }, page);
+    await warningFor(base + '/redirect');
     await continueWarning();
     await warningFor(base + '/other-tenant');
     console.log('[ok] ' + browser.Browser + ': actual warning Continue reaches only the original URL once; revisits, other tenants, query changes and HTTP redirects are checked');
