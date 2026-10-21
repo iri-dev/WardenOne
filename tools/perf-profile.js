@@ -333,7 +333,9 @@ async function extensionReady(cdp, port, expectedVersion, browserContextId) {
      extension under test is found by asking each MV3 worker for its manifest, never by taking
      the first chrome-extension:// target. The worker may start a moment after the endpoint is
      up, so this polls; an idle worker is woken by opening one of the extension's pages. */
-  const deadline = Date.now() + 20000;
+  const deadline = Date.now() + 60000;
+  const wakeAt = Date.now() + 8000;
+  let lastWorkerError = '';
   let wakeTarget = null;
   for (;;) {
     const { targetInfos } = await cdp.send('Target.getTargets');
@@ -346,7 +348,7 @@ async function extensionReady(cdp, port, expectedVersion, browserContextId) {
         await cdp.send('Runtime.enable', {}, sessionId);
         const r = await cdp.send('Runtime.evaluate', { expression: 'JSON.stringify({ name: chrome.runtime.getManifest().name, version: chrome.runtime.getManifest().version, id: chrome.runtime.id })', returnByValue: true }, sessionId);
         manifest = JSON.parse((r && r.result && r.result.value) || 'null');
-      } catch (_) { manifest = null; }
+      } catch (error) { manifest = null; lastWorkerError = String(error.message || error); }
       if (manifest && manifest.name === 'WardenOne') {
         if (manifest.version !== expectedVersion) throw new Error('the loaded worker reports version ' + manifest.version + ', the repository is ' + expectedVersion);
         /* The worker's own task time, where the browser exposes it: Edge's worker target does not
@@ -361,8 +363,9 @@ async function extensionReady(cdp, port, expectedVersion, browserContextId) {
       }
       try { await cdp.send('Target.detachFromTarget', { sessionId }); } catch (_) {}
     }
-    if (Date.now() > deadline) throw new Error('no running WardenOne worker was found: the extension did not load, or its worker never started');
-    if (!wakeTarget && Date.now() > deadline - 12000) {
+    if (Date.now() > deadline) throw new Error('no running WardenOne worker was found: '
+      + JSON.stringify({ targets: targetInfos.map(t => ({ type: t.type, url: t.url })), lastWorkerError }));
+    if (!wakeTarget && Date.now() > wakeAt) {
       /* Past the first several seconds with no worker: it may be idle. WardenOne opens its
          onboarding page on install, which names the id; opening a page of it wakes the worker. */
       const page = targetInfos.find((t) => inContext(t) && t.type === 'page' && /^chrome-extension:\/\/[a-p]{32}\/onboarding\.html/.test(t.url));

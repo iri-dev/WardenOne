@@ -26,7 +26,7 @@
 
 ### Changed
 
-- Minimum-Chrome CI uses software ANGLE and checks Canvas/WebGL rendering before the extension suites, avoiding native GPU startup crashes on Windows runners.
+- Minimum-Chrome CI uses Windows 2022 with software ANGLE and checks Canvas/WebGL rendering before the extension suites. Browser startup allows slow worker registration and reports target details on failure.
 
 - Security history redacts all path segments after sensitive routes, including short codes and lowercase tokens. Nested detail sanitization now drops unexamined content and enforces depth, field-count and size limits.
 

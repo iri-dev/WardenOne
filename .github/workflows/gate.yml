@@ -184,7 +184,7 @@ jobs:
   # run once that Chrome is in place, so a failed download cannot fall back to Edge and pass.
   browser-minimum:
     name: minimum-chrome-regression
-    runs-on: windows-2025
+    runs-on: windows-2022
     timeout-minutes: 20
     concurrency:
       group: gate-${{ github.ref }}-minimum

@@ -271,7 +271,32 @@ async function checkExtensionReadinessContexts() {
   }
 }
 
-Promise.all([checkLaunchScheduling(), checkNavigationCounters(), checkExtensionReadinessContexts()]).then(() => {
+async function checkSlowExtensionReadiness() {
+  const from = SRC.indexOf('async function extensionReady(');
+  const to = SRC.indexOf('async function releaseWorker(', from);
+  const id = 'a'.repeat(32);
+  let clock = 0;
+  let available = true;
+  const context = { Date: { now: () => clock }, sleep: async ms => { clock += ms; } };
+  vm.runInNewContext(SRC.slice(from, to) + '\nthis.ready=extensionReady;', context);
+  const cdp = { send: async method => {
+    if (method === 'Target.getTargets') return { targetInfos: available && clock >= 25000
+      ? [{ type: 'service_worker', targetId: 'late-worker', url: 'chrome-extension://' + id + '/background.js' }] : [] };
+    if (method === 'Target.attachToTarget') return { sessionId: 'worker-session' };
+    if (method === 'Runtime.evaluate') return { result: { value: JSON.stringify({ name: 'WardenOne', version: 'fixture', id }) } };
+    return {};
+  } };
+  const ready = await context.ready(cdp, 0, 'fixture');
+  check('slow worker registration is awaited without restarting the browser', ready.workerTargetId === 'late-worker' && clock === 25000);
+  available = false;
+  clock = 0;
+  let error = '';
+  try { await context.ready(cdp, 0, 'fixture'); } catch (failure) { error = failure.message; }
+  check('a missing worker fails within a bounded wait with target diagnostics',
+    clock <= 61000 && error.includes('no running WardenOne worker') && error.includes('"targets":[]'));
+}
+
+Promise.all([checkLaunchScheduling(), checkNavigationCounters(), checkExtensionReadinessContexts(), checkSlowExtensionReadiness()]).then(() => {
   if (failed) { console.error('\n' + failed + ' failed, ' + passed + ' passed'); process.exitCode = 1; }
   else console.log('\nperf profile harness: ' + passed + ' checks passed');
 }).catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
