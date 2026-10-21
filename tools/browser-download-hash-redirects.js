@@ -52,10 +52,21 @@ async function run() {
       if (out.exceptionDetails) throw new Error(JSON.stringify(out.exceptionDetails));
       return out.result.value;
     };
+    await evaluate(`(() => {
+      const original=downloadHashObservation;
+      globalThis.__hashObservations=[];
+      downloadHashObservation=details=>{
+        const job=original(details);
+        if(__hashObservations.length<100) __hashObservations.push({url:details.url,id:details.requestId,
+          phase:details.statusCode?'redirect':'start',delta:job?details.timeStamp-job.startedAt:null,
+          matched:!!job,registered:!!job?.requests.has(details.requestId)});
+        return job;
+      };
+    })()`);
     const hash = (url, cap = 1024) => evaluate(`(async()=>{
       const r=await fetchBytesForHash(${JSON.stringify(url)},${cap});
       const {bytes,...summary}=r;
-      return {...summary,sha256:r.ok?await sha256Hex(bytes):null};
+      return {...summary,sha256:r.ok?await sha256Hex(bytes):null,...(r.ok?{}:{observations:__hashObservations})};
     })()`);
     // Public fixture names deliberately resolve to loopback; test the hash URL gate independently of DNS quarantine.
     await evaluate('updateStoredConfig(cfg=>{cfg.dnsRebindGuard=false;})');
