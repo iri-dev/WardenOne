@@ -44,8 +44,9 @@ async function checkLaunchScheduling() {
   const launches = [];
   const stop = new Error('stop after capturing the browser launch');
   const mockedModule = { exports: {} };
+  const mockProcess = { ...process, env: { ...process.env, WARDENONE_SOFTWARE_GL: '0' } };
   vm.runInNewContext(SRC + '\nmodule.exports.runVariant = runVariant; freePort = async () => 9222;', {
-    __dirname, module: mockedModule, process,
+    __dirname, module: mockedModule, process: mockProcess,
     require: (id) => {
       if (id === 'fs') return Object.assign({}, fs, { mkdtempSync: () => path.join(ROOT, 'mock-profile'), rmSync: () => {} });
       if (id === 'child_process') return Object.assign({}, require(id), {
@@ -73,6 +74,16 @@ async function checkLaunchScheduling() {
       features(shared).every((feature) => features(measured).includes(feature)));
   }
   check('performance metadata records its unthrottled scheduling', SRC.includes('backgroundThrottlingDisabled: true'));
+  check('normal browser runs retain their native renderer', !shared.some(arg => /^--use-(gl|angle)=/.test(arg)));
+  mockProcess.env.WARDENONE_SOFTWARE_GL = '1';
+  mockProcess.env.WARDENONE_HEADLESS = '1';
+  for (const variant of ['off', 'on']) {
+    await mocked.launch('mock-browser', variant, ROOT, 9222, 'mock-profile');
+    const args = launches.pop();
+    check(variant + ' CI runs can select software ANGLE without disabling WebGL',
+      ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'].every(flag => args.includes(flag))
+        && !args.includes('--disable-webgl') && !args.includes('--disable-gpu'));
+  }
 }
 
 /* ---- statistics ---------------------------------------------------------------------------- */

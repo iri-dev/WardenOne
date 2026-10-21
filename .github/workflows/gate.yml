@@ -194,6 +194,7 @@ jobs:
       CHROME_MINIMUM_SHA256: 'b400e16bec567f676e83ff33719b5657dd26113fb54a6e2ec875709363428e9b'
       WARDENONE_HEADLESS: '1'
       WARDENONE_BROWSER_NAME: 'Google Chrome'
+      WARDENONE_SOFTWARE_GL: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -216,67 +217,73 @@ jobs:
           "WARDENONE_BROWSER_PATH=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Output "Chrome $version at $exe"
 
+      - name: Verify Chrome graphics before running extension suites
+        id: runtime
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-runtime-smoke.js
+
       - name: Test the popup in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-popup-regression.js
 
       - name: Test Settings data, search and reset in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-settings-data.js
 
       - name: Test Settings arrangement, sites, Help and About in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-settings-arrange.js
 
       - name: Test simultaneous config writes in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-config-race.js
 
       - name: Test audit High regressions in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-audit-highs.js
 
       - name: Test cookie and WebRTC diagnostic audit regressions in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-audit-mediums.js
 
       - name: Test delayed DNR batching near quota in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-dnr-reconcile.js
 
       - name: Test Element Zapper selection, finishing and undo in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-element-zapper.js
 
       - name: Test the page engine, the bridge and a network rule in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-engine-smoke.js
 
       - name: Test redirected download hashing and private-network boundaries in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-download-hash-redirects.js
 
       - name: Test one-use reputation warning grants in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-reputation-bypass.js
 
       - name: Test image logger navigation, image blocks and Activity in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-image-logger-loads.js
 
       - name: Test media compatibility security boundaries and playback in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-media-security.js
 
       - name: Test IP-logger switches against live requests in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-grabber-switches.js
 
       - name: Test EyeShield site profiles in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-eyeshield-frames.js
 
       - name: Test Resource Saver previews and YouTube playback in Chrome at the minimum version
-        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-resource-saver.js
 
   # A passing push stages a commit-tagged draft, then makes it the sole rolling release
