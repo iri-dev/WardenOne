@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WebGPU fingerprinting shield. Run: node tools/test-webgpu-shield.js
- *
- * The anti-fingerprinting engine already rewrote WebGL's vendor and renderer,
- * and navigator.gpu answered the same question with better evidence and no
- * rewriting at all: adapter.info names vendor and architecture, and
- * adapter.limits is about thirty integers whose combination pins a GPU model
- * harder than UNMASKED_RENDERER does.
- *
- * The interesting part is not that WebGPU was unprotected. It is that spoofing
- * one surface and not the other is worse than spoofing neither: a page that
- * reads an NVIDIA card from WebGL and a real Radeon from WebGPU has been handed
- * a contradiction, which is rarer than either true answer and announces that
- * something is rewriting one of them. So the two identities come from one seeded
- * pick, and the first thing this suite checks is that they cannot drift apart.
- *
- * The suite runs the shipped block out of content.min.js against a fake
- * navigator.gpu rather than grepping for the code, because "the patch is
- * present" and "the patch answers correctly" have not been the same thing.
- */
+/* Keep WebGPU and WebGL identities consistent and exercise the shipped wrappers’ actual answers.
+   Run: node tools/test-webgpu-shield.js */
 'use strict';
 
 const assert = require('assert');

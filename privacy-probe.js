@@ -4,29 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * What a page can actually learn, measured rather than asserted.
- *
- * This file is injected TWICE into the same page: once into the MAIN world, where
- * WardenOne's shields have patched the globals, and once into the ISOLATED world, which
- * shares the DOM but has its own copies of every prototype and so sees the browser
- * unmodified. The two sets of readings are then compared.
- *
- * THAT COMPARISON IS THE WHOLE POINT. A privacy test that reads a setting and prints a
- * tick is worth nothing -- it would still print the tick after a Chrome update broke the
- * shield underneath it. Here, "protected" means the value a page receives is
- * demonstrably not the value the browser would have given it. If a shield ever stops
- * working, these two columns start agreeing and the test says so.
- *
- * Nothing here touches the network. Every probe is answerable inside the page, which is
- * also why some things a reader would reasonably expect -- what referrer a third party
- * receives, whether a third-party cookie survives -- are absent rather than guessed at:
- * they need a server on the other end, and inventing a result for them would be the
- * exact dishonesty this page exists to avoid.
- *
- * It must also leave the page as it found it. The probes that write to the document undo
- * themselves, including the history entry.
- */
+/* Compare MAIN-world readings with the ISOLATED world’s unmodified prototypes on the same page.
+   Probes stay local and undo DOM/history changes. Server-dependent properties are left untested. */
 (function () {
   'use strict';
 
@@ -186,9 +165,7 @@
   /* ---- the newer measuring surfaces --------------------------------------- */
   safe('fonts', () => {
     if (typeof window.queryLocalFonts !== 'function') return { available: false };
-    /* Not called. queryLocalFonts opens a permission prompt, and a test that makes the
-       browser ask for something is a test nobody runs twice. Whether the function is
-       reachable at all is the part worth reporting. */
+    /* Do not call queryLocalFonts: it can open a permission prompt. Report API reachability instead. */
     return { available: true, called: false };
   });
 
@@ -248,10 +225,7 @@
   safe('webrtcLocalIps', () => {
     const PC = window.RTCPeerConnection || window.webkitRTCPeerConnection;
     if (typeof PC !== 'function') return { available: false, ips: [] };
-    /* No STUN server, so nothing leaves this machine: host candidates alone reveal the
-       LOCAL addresses, which is the leak worth measuring and the one that needs no
-       network to demonstrate. A public-address test would mean contacting a third party,
-       which is not something a privacy test should do without being asked. */
+    /* Use no STUN server so the local-address probe sends no third-party traffic. */
     return new Promise((resolve) => {
       let pc = null;
       const ips = [];

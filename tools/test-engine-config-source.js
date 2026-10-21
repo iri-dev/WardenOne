@@ -4,31 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Where the engine's config comes FROM (H16).
- *
- * test-engine-config-ownership.js pins that the engine no longer returns the page-owned global as
- * its config object. That closed direct mutation and nothing else, because the refresh still READ
- * window.__WO_CONFIG__ -- and wo-config-change is an ordinary DOM event on document, which the
- * page can dispatch. So a page did not need to own the object:
- *
- *     window.__WO_CONFIG__ = { enabled:false, paymentCardGuard:false, ... };
- *     document.dispatchEvent(new CustomEvent('wo-config-change'));
- *
- * and the engine copied that in. An empty object was worse than a false one: the refresh drops
- * keys the incoming config no longer carries, so it deleted every setting. Both guard idioms in
- * the engine fall to an explicitly-false config -- `if (WO.x)` and `if (false !== WO.x)` -- so a
- * page could switch off Payment Card Guard, skimmer detection and the phishing blocker together.
- *
- * The source of truth is __woConfigStore now, written only by the token-checked config handler.
- * window.__WO_CONFIG__ is kept as a copy so twitch-adblock.js and debugging can read it, and
- * writing to that copy must not reach the engine.
- *
- * These tests drive the REAL __woSyncConfig lifted from src/content.js, because the interesting
- * behaviour is the key-dropping refresh, and a description of it here would be testing itself.
- *
- * Run: node tools/test-engine-config-source.js
- */
+/* Forged page globals or config events must not replace authenticated bridge configuration. (H16)
+   Run: node tools/test-engine-config-source.js */
 'use strict';
 
 const fs = require('fs');

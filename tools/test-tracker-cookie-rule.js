@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Wide Set-Cookie stripping, scoped to known trackers.
- * Run: node tools/test-tracker-cookie-rule.js
- *
- * The blanket third-party cookie rule covers image and ping only, and that
- * narrowness is correct for third parties as a class: sign-in and federation set
- * their cookies on frames, scripts and XHR, and stripping those signs people out.
- * It is why the rule sits six resource types short of the fifteen a browser can
- * issue, and it is not a defect.
- *
- * It is also not a reason to leave the cookies alone on doubleclick.net. A domain
- * whose only purpose is measurement is never the far side of an SSO handoff, so
- * the wide version is safe there — and the wide version is where the cookies
- * actually are, because a tracker reaching to set one uses a frame or a script
- * long before it uses a pixel.
- *
- * So this suite is mostly about scope. The wide rule must never escape the
- * tracker list, and the narrow rule must stay narrow.
- */
+/* Apply wide cookie stripping only to known tracker hosts while preserving federation exclusions.
+   Run: node tools/test-tracker-cookie-rule.js */
 'use strict';
 
 const assert = require('assert');

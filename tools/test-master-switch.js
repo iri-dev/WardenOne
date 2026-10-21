@@ -4,22 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Off means off (BUG-02).
- *
- * The master switch routed through removeWardenOneDynamicRules(), whose predicate enumerated
- * nine bands. Three bands that install blocking rules were not among them -- My Rules and
- * subscribed lists (750000), the per-site firewall (950000, plus its 960000 session band) and
- * the hand-written blocked-site list (970000) -- and their appliers had no enabled gate and
- * were re-run only from their own editors. So a site the reader had blocked stayed blocked with
- * the popup reading Disabled, across worker death and browser restart; and the allowlist rule
- * that could have overridden it was withdrawn in the same operation.
- *
- * This executes the shipped predicate against the shipped band constants, as the record's own
- * harness did, and then drives the shipped appliers against a fake DNR through off and on.
- *
- * Run: node tools/test-master-switch.js
- */
+/* Turning the master switch off clears user-authored bands; re-enabling restores them. (BUG-02)
+   Run: node tools/test-master-switch.js */
 'use strict';
 
 const fs = require('fs');

@@ -4,30 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Where does "download WardenOne" actually send somebody?
- *
- * This is not a style question. The v1.0.0 release sat 171 commits behind main while its page
- * still said "download the zip below", and everyone who followed that instruction installed a
- * months-old extension believing it was current. For a security tool that is the worst kind of
- * bug, because nothing looks wrong: the extension loads, the popup opens, and the protections
- * they think they have simply are not there.
- *
- * Three rules come out of that, and this suite holds all three:
- *
- * 1. Download calls to action point straight at the Latest `WardenOne-latest.zip` asset. There is
- *    no release-page choice to get wrong, and the stable version number never enters the URL.
- *
- * 2. The workflow publishes a complete commit-tagged release before marking it Latest.
- *
- * 3. Nothing hardcodes a version number. A link to /releases/tag/v1.0.1 is correct for exactly
- *    as long as it takes to publish v1.0.2, and then it silently becomes the same trap again.
- *
- * The index page is still fine to link to as an index, so this checks the download
- * CALLS TO ACTION specifically.
- *
- * Run: node tools/test-download-links.js
- */
+/* Check download links resolve to the intended published package and match documented release channels.
+   Run: node tools/test-download-links.js */
 'use strict';
 
 const fs = require('fs');
@@ -153,7 +131,7 @@ function oddReleaseLinks(text) {
   const settings = job('browser-settings');
   check('the Settings page runs in Edge on a Windows runner, every suite',
     /runs-on: windows-2025/.test(settings)
-      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 14
+      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 16
       && /run: node tools\/browser-settings-data\.js/.test(settings)
       && /run: node tools\/browser-settings-arrange\.js/.test(settings)
       && /run: node tools\/browser-config-race\.js/.test(settings)
@@ -162,6 +140,8 @@ function oddReleaseLinks(text) {
       && /run: node tools\/browser-dnr-reconcile\.js/.test(settings)
       && /run: node tools\/browser-element-zapper\.js/.test(settings)
       && /run: node tools\/browser-engine-smoke\.js/.test(settings)
+      && /run: node tools\/browser-download-hash-redirects\.js/.test(settings)
+      && /run: node tools\/browser-reputation-bypass\.js/.test(settings)
       && /run: node tools\/browser-image-logger-loads\.js/.test(settings)
       && /run: node tools\/browser-media-security\.js/.test(settings)
       && /run: node tools\/browser-grabber-switches\.js/.test(settings)
@@ -186,11 +166,11 @@ function oddReleaseLinks(text) {
       && /Get-FileHash -Algorithm SHA256/.test(minimum) && /-ne \$env:CHROME_MINIMUM_SHA256\) \{ throw/.test(minimum)
       && /-ne \$env:CHROME_MINIMUM_VERSION\) \{ throw/.test(minimum));
   check('it runs the popup, both Settings suites and the config race in that Chrome',
-    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-audit-highs', 'browser-audit-mediums', 'browser-dnr-reconcile', 'browser-element-zapper', 'browser-engine-smoke', 'browser-image-logger-loads', 'browser-media-security', 'browser-grabber-switches', 'browser-eyeshield-frames', 'browser-resource-saver']
+    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-audit-highs', 'browser-audit-mediums', 'browser-dnr-reconcile', 'browser-element-zapper', 'browser-engine-smoke', 'browser-download-hash-redirects', 'browser-reputation-bypass', 'browser-image-logger-loads', 'browser-media-security', 'browser-grabber-switches', 'browser-eyeshield-frames', 'browser-resource-saver']
       .every((t) => new RegExp('run: node tools/' + t + '\\.js').test(minimum))
       && /WARDENONE_BROWSER_NAME: 'Google Chrome'/.test(minimum) && /WARDENONE_HEADLESS: '1'/.test(minimum));
   check('no test there can run without that Chrome in place and pass on Edge instead',
-    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 13
+    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 15
       && /id: chrome/.test(minimum));
   const needs = ((/needs: \[([^\]]*)\]/.exec(rolling) || [])[1] || '').split(',').map((s) => s.trim());
   check('the rolling build waits for the gate, the real popup, the real Settings page and the minimum Chrome',

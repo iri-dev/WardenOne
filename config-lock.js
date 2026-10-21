@@ -4,27 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* One change to wardenone_config at a time, across the service worker and every extension page.
-
-   Every writer re-reads the stored config and merges into it before writing, but a merge cannot
-   help two writers that read at the same moment: Settings reads, the popup reads, Settings writes
-   its change, the popup writes its own over it without Settings'. Fired together in Edge, the
-   Settings change was lost in 20 of 40 tries and a notification mute in the worker in 34 of 40.
-
-   A Web Lock is shared by every context of the extension's origin, so a writer that holds this one
-   from its read to the end of its write makes the next writer read the result. Hold it only
-   around the read and the write, never around a wait on something that may itself want the lock:
-   locks do not nest, and the second request would wait for ever. Where the browser has no Web
-   Locks, the task simply runs, as before.
-
-   The lock does not reach a private window. In split incognito mode the private window has its own
-   worker and pages with their own Web Locks, but the same storage, so a write there can still read
-   before a write here and land after it: fired together in Edge, a regular Settings change was lost
-   in 19 of 40 tries against an incognito one. So each write also leaves a record of which writes
-   the stored config descends from (stampConfigWrite, written in the same set() as the config), and
-   checks a moment later that it is still in there (confirmConfigWrite). A writer that never saw it
-   leaves it out; the change is then made again on what is stored now. One that lands after those
-   checks are over is caught as it lands, and what it wrote away put back (repairOverwrittenConfig). */
+/* Hold the origin’s Web Lock across each config read/merge/write; nested lock requests deadlock.
+   Split-incognito contexts have separate locks but shared storage, so write lineage detects and
+   repairs cross-context overwrites through confirmation reads and storage-change events. */
 function withConfigLock(task) {
   try {
     const locks = typeof navigator !== 'undefined' && navigator.locks;
@@ -160,14 +142,8 @@ function confirmConfigWrite(id, again, triesLeft, changedKeys, operationOrder) {
   look(300, false);
 }
 
-/* The two looks above end 1.5 s after a write. A private write that read before it and lands
-   later still writes it away, and nothing looks again: held 2.1 s in Edge, a regular change to
-   another setting was gone for good. But storage hands every listener the config and record a
-   write replaced, and the records say which writes each side descends from and what those
-   changed. So when a write lands that never saw the one before it, the writes it wrote away are
-   known, and so are their keys: each goes back unless the overwriting side changed that key
-   later. This plans that from the change alone; null when nothing was lost or the records cannot
-   say (a key list cut short, a write too old to be listed), which leaves it to the looks above. */
+/* Use storage-change lineage to repair overwrites that arrive after confirmation reads finish.
+   Restore lost keys unless the other writer changed them later; incomplete lineage returns null. */
 function configOverwritePlan(oldRecord, newRecord, oldConfig, newConfig) {
   const isRecord = (record) => !!record && typeof record === 'object' && Array.isArray(record.ids);
   const isConfig = (config) => !!config && typeof config === 'object' && !Array.isArray(config);

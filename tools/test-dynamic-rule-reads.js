@@ -4,30 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A wake reads the dynamic rules once, and a browser start to unchanged state writes none.
- * Run: node tools/test-dynamic-rule-reads.js
- *
- * Chrome answers getDynamicRules by reading and parsing the whole dynamic-rule file, and only
- * then applying the ruleIds filter. With the remote lists in (~22,000 rules) every call costs
- * about 114 ms of browser CPU, even for a single id; with 136 rules it costs 1.1 ms. The band
- * filter (tools/test-cold-wake-writes.js) moved the reply off the UI thread but kept the parse,
- * and a cold wake made eight of them back to back: about a second of browser CPU. A browser
- * start made 23 reads and two writes, each write re-indexing every rule (~360 ms), for 4.7 s
- * (docs/perf/README.md, "Browser-process CPU while idle").
- *
- * Now the bands share one read per wake, filtered to all of them at once, and a write that
- * would change nothing is not sent. This suite runs the real appliers, the real reconcile and
- * the real serialisation queue in a fresh realm per wake, against a browser whose rules persist
- * between wakes and that holds a block of remote-list rules, and counts what Chrome is asked:
- * reads, the remote-list rules handed back, writes, and writes that changed nothing.
- *
- * Then it proves the shared read is never stale: a write drops it, a read in flight across a
- * write is not handed to a later caller, a failed read is not kept and is not retried
- * unfiltered, and an old one is not reused.
- *
- * Control: WARDENONE_BACKGROUND points at a pre-fix copy of the worker.
- */
+/* Share filtered dynamic-rule reads across appliers and skip writes when the installed bands match.
+   Run: node tools/test-dynamic-rule-reads.js */
 'use strict';
 
 const assert = require('assert');

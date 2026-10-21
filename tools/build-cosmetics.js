@@ -6,26 +6,9 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-/*
- * Release-time cosmetic compiler.
- *
- * WardenOne used to fetch upstream filter lists at runtime and turn ##+js(...) and procedural
- * (:remove(), :style(), :xpath(), :has-text()) records into commands its content engine then
- * dispatched. Chrome's Manifest V3 rules name that pattern directly: extension logic must be
- * self-contained, and "building an interpreter to run complex commands fetched from a remote
- * source, even if those commands are fetched as data" is called out as a violation. Passive
- * domain, URL and selector data is fine; command records are not.
- *
- * So the command-bearing half is compiled here, at release time, and shipped inside the reviewed
- * package. The daily runtime refresh keeps updating passive selectors only.
- *
- * The parser is LIFTED FROM background.js rather than reimplemented. If this file had its own
- * copy, the packaged rules could silently drift from what the runtime expects to consume; lifting
- * means there is exactly one parser and the build cannot disagree with it.
- *
- *   node tools/build-cosmetics.js            compile from the live feeds
- *   node tools/build-cosmetics.js --check    verify the committed file is present and well-formed
- */
+/* Compile command-bearing cosmetics at release time so remote updates remain passive data.
+   Lift the runtime parser from background.js to avoid a second syntax implementation.
+   Run: node tools/build-cosmetics.js [--check] */
 
 const fs = require('fs');
 const path = require('path');

@@ -1,20 +1,8 @@
-/* Audio is deliberately generated locally so WardenOne does not need remote media
- * or a collection of opaque packaged sound files. It is only reached after an
- * explicit opt-in or a preview button click.
- *
- * The tunes themselves live in notification-schema.js, with the settings page and
- * the worker's validator, because three copies of the list is three chances for
- * the page to offer a sound the player does not know and the reader to press
- * preview and hear nothing.
- */
+/* Generate opted-in/preview audio locally from notification-schema.js’s shared tune definitions. */
 let wardenAudioContext = null;
 
-/* The context lives for a sound, not for the session (LIFE-05). It used to be created lazily
-   and kept for as long as this document lived -- which, before the worker learned to close the
-   document, was the rest of the browser session. Once the last scheduled note has ended and a
-   short idle has passed, the context is closed and dropped; the next tune makes a new one
-   (playTone already treats a closed context as absent). The worker closes the document itself
-   a moment later; this keeps no audio graph alive in the meantime. */
+/* Close the AudioContext after the last note and idle grace (LIFE-05).
+   The next tune recreates it; the worker separately closes the document. */
 const WARDEN_AUDIO_IDLE_MS = 2000;
 let wardenAudioIdleTimer = 0;
 

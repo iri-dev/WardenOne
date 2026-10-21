@@ -6,22 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-/*
- * Session Security scoring.
- *
- * This grade is shown to users as a letter on a coloured badge, so being wrong
- * is expensive in both directions: a scary letter on a safe site teaches people
- * to ignore it, and a friendly letter on a leaking site is worse than showing
- * nothing at all.
- *
- * The scorer is pulled out of popup.js and executed against whole site profiles
- * rather than checked by reading it, because the failure that shipped was
- * arithmetic -- Google Search scored D on the strength of two analytics
- * parameters -- and no amount of reading the source catches that.
- *
- * The classifier in src/content.js is exercised the same way, since the grade is
- * only as good as the confidence it is handed.
- */
+/* Check session security scoring against representative events, reset and retention behaviour.
+   Run: node tools/test-session-score.js */
 
 const assert = require('assert');
 const fs = require('fs');

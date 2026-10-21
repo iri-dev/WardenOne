@@ -1,11 +1,5 @@
-# Publishes the website in site/ and the documents that are meant to be a public web page.
-#
-# The site is built from a staged directory containing only the built site and those
-# documents, so a file that is not copied in the step below cannot be published by accident.
-#
-# Jekyll stays in the loop because PRIVACY.md is the source for the privacy policy
-# the Web Store listing points at, and Jekyll renders it to HTML at /PRIVACY.
-# Uploading raw markdown would 404 that URL.
+# Publish only the explicitly staged site/public documents.
+# Keep Jekyll to render PRIVACY.md at /PRIVACY for the Web Store policy link.
 name: Pages
 
 # Deployed on request so extension-only changes do not redeploy the website.

@@ -13,12 +13,7 @@
   'use strict';
 
   const WO_GUARD_VERSION = '1.0.2';
-  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
-     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
-     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
-     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
-     older one, and it must release the old one's listeners, observers and timers first or both
-     copies stay live and are charged for the same work. */
+  /* Release the older version’s listeners, observers and timers before replacing it in an open document. */
   if (window.__wardenOneOAuthGuardInstalled === WO_GUARD_VERSION) return;
   if (window.__wardenOneOAuthGuardInstalled) {
     try {
@@ -27,9 +22,7 @@
   }
   window.__wardenOneOAuthGuardInstalled = WO_GUARD_VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -43,8 +36,7 @@
   };
   const woObserver = (...a) => woHold(new MutationObserver(...a));
   const woInterval = (...a) => woHold(setInterval(...a));
-  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
-     forwarding `this` keeps them behaving exactly as the host would call them. */
+  /* Preserve the native timer callback’s this binding. */
   const woTimeout = (fn, ms, ...rest) => {
     let id;
     id = setTimeout(function (...a) {
@@ -68,17 +60,8 @@
   };
 
   // ---- Shared DOM watcher ----
-  // Smart Script Shield, Script Drift and the Login Page Age check each ran their
-  // own whole-document subtree MutationObserver, two of them for a full 60 seconds
-  // on every top-level page. That fired three separate extension callbacks for every
-  // mutation batch during the busiest minute of a page's life -- all to answer the
-  // same question: did the DOM change?
-  //
-  // They share one observer now. Subscribers are deliberately independent: one
-  // unsubscribing must never stop the others, so the observer is disconnected only
-  // when the LAST subscriber leaves, and reconnected if one arrives afterwards
-  // (Smart Script Shield re-arms on popstate/hashchange, long after the others are
-  // finished). Records are passed through because Script Drift reads addedNodes.
+  // Share one observer across independent subscribers; disconnect only when the last leaves.
+  // Allow later subscriptions to reconnect, and retain addedNodes for Script Drift.
   const domWatchers = new Set();
   let domObserver = null;
   let domWatchPending = false;
@@ -132,47 +115,15 @@
       if (!domWatchers.size) domWatchStop();
     };
   }
-  // data:
-  //
-  //   * Any page can build an element matching a selector. The cookie escape hatch identified
-  //     its own button with closest('#rg-reload-loop [data-wo-cookie-allow="1"]'), so a page
-  //     could plant that exact structure, label it "Play video", and turn one genuine user click
-  //     into contentSettings.cookies -> allow for itself. The trusted-click check passed, because
-  //     the click really was the user's -- what was forged was the element, not the gesture.
-  //   * Any page can delete an element by id. The login-age warning exists to say "this site is
-  //     probably phishing", and the site it accuses could remove it with one call.
-  //
-  // Both are answered by owning the nodes instead of describing them. A CLOSED shadow root's
-  // handle exists only here, in the isolated world: `host.shadowRoot` is null from the page, so
-  // the page cannot read the contents, inject into them, or hand us a lookalike. And because we
-  // keep direct references to what we built, "is this ours?" is an object comparison instead of a
-  // selector match, and listeners bind to the exact node rather than to the document.
-  //
-  // The host still carries an id and data-wo-ui="1". Those are labels, not credentials -- the
-  // engine's overlay cleaner and EyeShield both skip WardenOne's own UI by them, and that has to
-  // keep working. Nothing trusts them any more.
+  // Own warning controls by node identity inside a closed shadow root. Page-controlled selectors
+  // and trusted clicks alone cannot authenticate a control. IDs/data attributes only label UI
+  // for cleaners and themes; they are not credentials.
   const WO_OWNED_HOST_STYLE = 'all:initial!important;position:fixed!important;inset:auto!important;'
     + 'z-index:2147483647!important;';
 
-  // The focus ring, painted inline rather than declared in a stylesheet.
-  //
-  // The warnings reset their buttons with `all:initial!important` in the style attribute to strip
-  // page CSS, and that takes the focus ring with it, so a keyboard user cannot see which action is
-  // selected. The obvious repair -- a `:focus-visible` rule in the overlay's own stylesheet -- does
-  // not work, and it is not a specificity problem to out-specify: an important declaration in a
-  // style attribute beats an important rule from any stylesheet, shadow root included. Measured in
-  // Chromium, every button still computed to `outline-style:none`, so the ring the code claimed to
-  // restore never drew.
-  //
-  // Setting the property inline puts it in the same declaration block as the reset, where the later
-  // declaration wins. An outline in `currentColor` is what forced-colors mode honours; a coloured
-  // box-shadow is discarded there.
-  //
-  // `scope` must be the node the focus events reach WITHOUT being retargeted -- the shadow root for
-  // an owned overlay, the host itself only in the light-DOM fallback. Bound on the host instead,
-  // every focusin from inside a closed shadow root arrives reporting the host as its target, so the
-  // ring would follow nothing and land on nothing. Measured: Tab moved between buttons and no ring
-  // was drawn at all.
+  // Apply focus outlines inline: the buttons’ inline all:initial!important defeats stylesheet rules.
+  // Use currentColor for forced-colors mode. Bind inside the shadow root so focus targets
+  // are not retargeted to the host.
   function woFocusRing(scope) {
     let painted = null;
     const drop = () => {

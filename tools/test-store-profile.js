@@ -4,19 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The Store package carries one purpose, and the code knows which package it is in (CWS-03).
- * Run: node tools/test-store-profile.js
- *
- * Chrome's Web Store allows one narrow purpose per extension. The Store package includes
- * EyeShield's display settings and Memory Shield's resource controls, including Tab Limit, and
- * omits Twitch Rewind. That is only honest if the code runs with exactly those choices, so this
- * suite does three things. It builds the Store tree the way the tool does and checks what is and is
- * not in it. It lifts the worker's guarded paths and the popup's applier and runs them under the
- * Store profile -- the module loader, the memory-* messages, the tab menu, EyeShield's registration,
- * the integrity list -- and again under the full profile, where none of them may change anything.
- * And it builds the zip twice and compares the bytes, because "deterministic" is a claim with a test.
- */
+/* Keep worker/UI feature availability aligned with the selected Store package profile. (CWS-03)
+   Run: node tools/test-store-profile.js */
 'use strict';
 
 const fs = require('fs');

@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The autofill trap, inside the Form Trap Detector.
- *
- * A page can carry credential fields the reader never sees, marked so a password
- * manager fills them, and read the result out with script. The reader never knew a
- * password box existed.
- *
- * THE ENTIRE DESIGN IS THE CALIBRATION. A hidden credential field on its own is not
- * evidence -- real logins use them constantly, and a detector that fires on that is a
- * detector nobody can leave switched on. So this suite is mostly about what must NOT
- * warn: every partial combination has to stay under TRAP_THRESHOLD, and only the full
- * one may cross it. Testing that it catches the trap is the easy half.
- *
- * scoreForm is lifted out of src/content.js and run for real.
- *
- * Run: node tools/test-autofill-trap.js
- */
+/* Require corroborating hidden-credential signals; partial combinations must remain below threshold.
+   Run: node tools/test-autofill-trap.js */
 'use strict';
 
 const fs = require('fs');

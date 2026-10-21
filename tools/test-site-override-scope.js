@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * "Turn off one protection here" offers only what can be turned off here (FEAT-01).
- *
- * The picker was generated from every boolean in the popup's KEYS, so it offered certificate
- * checks, list updates, Download Shield and Memory Shield -- features no page-side script ever
- * reads -- and confirmed "turned off for shop.example" while nothing changed. The only consumer
- * of siteOverrides is bridge.js, which applies them to the config it hands the page; and the
- * bridge's own gates read a copy the override never reached.
- *
- * The popup now carries a scope table: page-resolved protections, and mixed ones whose page
- * half stops here while a network or worker half keeps running, which the picker says. This
- * suite derives the same split from the sources that read each key -- the engine, the MAIN
- * guards, the bridge, the worker -- and fails when the table and the code disagree; then it
- * drives the shipped popup functions through the record's table: a content-only feature, a
- * worker-only one, a DNR-only one, a mixed one, and a global one that makes no sense per site.
- *
- * Run: node tools/test-site-override-scope.js
- */
+/* Offer per-site overrides only for protections whose runtime can honour them. (FEAT-01)
+   Run: node tools/test-site-override-scope.js */
 'use strict';
 
 const fs = require('fs');

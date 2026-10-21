@@ -4,20 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Hostile-message regressions for the background message surface.
- *
- * Every message reaching the service worker is untrusted. A content script runs on
- * a page the attacker controls, and the MAIN-world events feeding it are forgeable,
- * so the background must decide on sender context rather than on anything the
- * message says about itself.
- *
- * This walks every msg.kind the background handles and forges senders at each one:
- * no sender, a spoofed extension id, a tab claiming to be an extension page, a tab
- * asking about somebody else's host, and floods past the rate limit.
- *
- * Run: node tools/test-message-hardening.js
- */
+/* Exercise hostile worker-message inputs, sender gates and rate limits.
+   Run: node tools/test-message-hardening.js */
 'use strict';
 
 const fs = require('fs');

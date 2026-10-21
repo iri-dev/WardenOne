@@ -182,10 +182,7 @@ function applyToUI() {
       el.checked = config[k] !== false;
     });
   });
-  /* The engine runs fingerprint noise when the switch OR its legacy alias is on, and the
-     Maximum privacy bundle used to set the alias too -- so after choosing it, this switch read
-     off-able but turning it off changed nothing. It shows the truth here, and saving folds the
-     alias into it (readFromUI). */
+  /* Fold the legacy noise alias into the visible switch so turning it off disables both paths. */
   if (config.antiFingerprint === true) {
     document.querySelectorAll('input[data-key="antiFingerprintNoise"]').forEach((el) => { el.checked = true; });
   }
@@ -218,10 +215,7 @@ function paintTwitchRewindUI() {
 }
 /* STORE-OMIT-TWITCH-PAINT-END */
 
-// Reflect the saved Memory Shield mode (gentle/balanced/aggressive/emergency) into the
-// mode buttons. Hoisted so applyToUI() can repaint it after the config loads -- the
-// painter used to be local to initMemoryShield, so on reopen the highlight reverted to
-// the default and the picked mode looked like it hadn't saved (it had).
+// Keep the mode painter callable after async config load so reopening reflects the saved selection.
 function paintMemoryModes() {
   const wrap = $('mem-modes');
   if (!wrap) return;
@@ -274,27 +268,9 @@ function paintTabLimitUI() {
 
 // The site-breach lookup only works when its toggle is on (it contacts an
 // external service, so it's opt-in). Disable the button + note when off.
-/* Everything the reader has silenced, and the way back.
- *
- * A "never show this again" with no way to find it afterwards is a trap, so this
- * is the other half of the button on the notification card. The row hides itself
- * when nothing is muted rather than sitting there empty -- an always-present
- * panel reading "nothing here" is furniture.
- *
- * Expired entries are swept on render as well as on write, so what is listed is
- * what is actually in force. A card that says "silenced until 14:05" when 14:05
- * was an hour ago is worse than no card. */
-/* The words on the card, not the name of the code that drew it.
-
-   This panel exists to be recognised: someone silenced a notice a minute ago
-   and wants the same notice back. De-prefixing the internal key gets close
-   enough to read as correct -- and then hands them "Abuseipdb server" for
-   what the card called a suspicious server, or "Honeytoken read" for
-   suspicious script behaviour. Recognisable only if you wrote the code.
-
-   Kept in step with the engine's TOAST_INFO by the toast-mutes gate, which
-   fails if a type gains a title here that the card does not use, or gains a
-   card without a title here. The fallback stays for a type mid-rename. */
+/* List active notice mutes with an undo action; prune expired entries on render as well as write. */
+/* Match the engine’s displayed toast titles, not prettified internal keys.
+   The toast-mutes gate checks parity; retain a fallback for types being renamed. */
 const TOAST_TITLES = {
   blocked_popup: 'Popup blocked',
   blocked_gestureless_nav: 'Forced redirect blocked',
@@ -384,10 +360,7 @@ function renderMutedToasts(cfg) {
     .filter((type) => mutes[type] === 0 || Number(mutes[type]) > now)
     .sort();
   list.textContent = '';
-  /* Always shown, empty or not. It used to hide itself when nothing was muted,
-     which is tidier and meant that someone looking for the place to undo a
-     "never show this again" found nothing -- indistinguishable from the feature
-     not existing. An empty state that says so is worth the row. */
+  /* Keep mute management discoverable even when the list is empty. */
   if (!live.length) {
     const empty = document.createElement('div');
     empty.style.cssText = 'font-size:11.5px;color:var(--wo-text-soft);padding:2px 0;';
@@ -471,12 +444,8 @@ function reflectMasterDisable() {
   document.querySelectorAll('.eyeshield-range').forEach((r) => { r.disabled = !on; });
 }
 
-// Silent is painted over the toast and badge switches, never into them. The two controls are
-// greyed while it is on and keep showing the preference underneath, which is what the page
-// gets back the moment Silent is off; the bridge gates the page's copy (gateSilentPresentation
-// in bridge.js), so nothing here needs to write them false. It used to: the switches were unchecked as well
-// as greyed, the generic change handler read them back through readFromUI on the very next
-// save, and turning Silent off left both stored off.
+// Disable toast/badge controls under Silent without changing their stored preferences.
+// The bridge suppresses presentation in its delivered config.
 function reflectSilentMode() {
   const disabled = config.silentMode === true || !$('enabled').checked;
   ['showToasts', 'showBadge'].forEach((key) => {
@@ -841,14 +810,7 @@ function normalizeStoredProviderKeys(cfg) {
 }
 
 // ===== Settings backup =====
-// Nothing syncs to a server and there is no account, so without this a reinstall
-// means rebuilding 140-odd settings by hand.
-//
-// The config holds user-supplied third-party API keys, which are the only real
-// secrets here. They are stripped by PATTERN rather than by a hand-written list,
-// for the same reason bridge.js strips them that way: a list silently starts
-// leaking the day an eighth provider is added. The same rule blocks them on the
-// way IN, so a hand-edited file cannot inject a key either.
+// Strip API keys by name pattern on export and import so new providers cannot bypass a fixed list.
 const SECRET_FIELD_RE = /Key$/;
 const SETTINGS_FILE_MARKER = 'wardenone-settings';
 const SETTINGS_FILE_MAX_BYTES = 2 * 1024 * 1024;
@@ -923,9 +885,7 @@ function sanitizeImportedSettings(raw) {
     if (SECRET_FIELD_RE.test(key)) { ignored++; return; }
     const def = IMPORT_SCHEMA[key];
     const val = raw[key];
-    // The one host -> object key. The generic map branch below keeps only scalar values, so this
-    // used to come back as {} and be applied over the reader's stored overrides (PI-03). An entry
-    // that holds nothing usable is ignored, never applied as an empty map.
+    // Preserve nested per-site override maps; ignore unusable entries instead of applying an empty map (PI-03).
     if (key === 'siteOverrides') {
       if (!val || typeof val !== 'object' || Array.isArray(val)) { ignored++; return; }
       const result = sanitizeSiteOverrides(val);
@@ -1006,22 +966,9 @@ function importSettingsFromFile(file) {
   reader.readAsText(file);
 }
 
-// Read-modify-write. Re-reads storage at the write boundary and lays only the keys
-// this popup changed on top, so a concurrent writer's changes survive instead of
-// being reverted by our snapshot. On success `config` becomes exactly what was
-// stored, so the next diff starts from the truth rather than from a stale copy.
-//
-// onSaved receives the keys that arrived from the other writer, so the caller can
-// repaint just those controls.
-//
-// The read and the write hold the config lock (config-lock.js), so Settings, another page or the
-// worker writing at the same moment waits for this one and then reads its result. The lock is let
-// go before either callback runs, since a callback may save again.
-//
-// A private window has its own lock, so a save there can still land over this one without having
-// read it. A moment after saving, confirmConfigWrite (config-lock.js) checks; if this save was
-// written over, the same keys and values are saved again -- `retry` carries them, and the popup's
-// own copy is left alone, since it already counts them as saved.
+// Merge only changed keys into a fresh stored config under the shared lock. Release before callbacks.
+// Return the stored result and keys changed by other writers for repainting.
+// Cross-incognito confirmation may replay these values; do not rebase that retry on the popup snapshot.
 function persistConfig(onSaved, onError, retry) {
   const changedKeys = retry ? Object.keys(retry.changes) : popupChangedKeys();
   const changes = {};
@@ -1203,9 +1150,7 @@ function turnEverythingOn() {
   showLeftOffNote();
 }
 
-/* The button used to say "Turn everything on" while deliberately leaving five visible
-   protections off (FEAT-05). It now says what it does, and afterwards names what it left alone
-   and why, by the labels the reader sees on those switches. */
+
 function showLeftOffNote() {
   const note = $('all-on-note');
   if (!note) return;
@@ -1402,26 +1347,8 @@ function updateAllowlistBtn() {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Per-site control.
-//
-// Until now the only site-level lever was the allowlist, which turns the whole
-// engine off, permanently, until someone remembers to undo it. So a single guard
-// misreading a single site cost either that guard everywhere or every guard
-// there. Two narrower levers:
-//
-//   Pause     allowlistUntil[host] = when it lapses. Same effect as the
-//             allowlist, but it expires on its own.
-//   Turn off  siteOverrides[host][key] = false. One protection, one site,
-//             everything else still running.
-//
-// Both are resolved in bridge.js before the config reaches any content script,
-// so nothing downstream has to know they exist.
-// ---------------------------------------------------------------------------
-
-// Expired passes are dropped whenever we write, which is the only moment we are
-// already touching storage. Reading is left alone -- a decision path should not
-// be issuing writes.
+// Per-site control: expiring allowlistUntil pauses the whole site; siteOverrides disables named features.
+// The bridge resolves both before delivering config. Prune expired entries on writes, not decision reads.
 function prunePausedSites() {
   const until = config.allowlistUntil;
   if (!until || typeof until !== 'object') { config.allowlistUntil = {}; return; }
@@ -1474,11 +1401,7 @@ function protectionLabel(key) {
 }
 
 /* ---- My rules & custom lists (Advanced) ---------------------------------
-   User-authored content, not protections, so neither has a shield toggle: a
-   rule is on because it was written, and each list carries its own switch.
-   Everything here reports what was actually understood -- a rule that is stored
-   but not usable is worse than one that was refused, because the writer
-   believes it is working. */
+   Report unsupported or unenforced input; storing text alone does not mean its rule is active. */
 function fmtListWhen(ms) {
   const n = Number(ms);
   if (!n) return 'never';
@@ -1802,10 +1725,7 @@ function wireMyFilters() {
     });
   }
 
-  /* Straight from chrome.commands.getAll(), never from a table written here. The reader
-     can rebind or clear any of these in Chrome, and a hard-coded list would start lying
-     the moment they did -- which is worse than no list, because it would be a shortcut
-     printed next to an action it no longer runs. */
+  /* Read current bindings from chrome.commands.getAll(); users can rebind or clear the defaults. */
   const shortcutList = $('shortcut-list');
   if (shortcutList && chrome.commands && chrome.commands.getAll) {
     chrome.commands.getAll((commands) => {
@@ -3526,16 +3446,8 @@ function finishClear(ok, rowEl, btnEl, f) {
   }
 }
 
-// The only real way to hide a credential from page script. HttpOnly is enforced
-// by the browser: document.cookie stops returning the value, but the cookie is
-// still attached to requests, so the site keeps working and injected script has
-// nothing to steal.
-//
-// It cannot be done for localStorage, and no amount of cleverness changes that:
-// the site's own auth code and an injected script run in the same origin with
-// the same APIs, so anything that hides the token from one hides it from both.
-// For storage the honest defence is the one already shipped -- watch where the
-// token is being SENT, not who read it.
+// HttpOnly can hide cookie credentials from scripts while preserving browser requests.
+// LocalStorage has no equivalent: same-origin app and injected code share access. Watch exfiltration instead.
 function hardenSiteCookies(btnEl, statusEl) {
   if (!confirm('Hide this site\'s session cookies from page scripts?\n\n'
     + 'They keep working — the browser still sends them — but scripts on the page can no longer read them.\n\n'
@@ -4215,12 +4127,7 @@ function loadExtensionAlerts() {
       } else if (status.state === 'disabled' || status.enabled === false) {
         emptyEl.textContent = 'Extension Watch is turned off. Existing timeline entries are kept locally.';
       } else {
-        /* The state this should usually be in, so it is worth saying properly.
-           "0 need attention" next to a wall of cards was the old shape; now the
-           list is genuinely empty most of the time, and the panel should read as
-           a result rather than an absence. Recognised extensions are counted
-           because that is the reassuring part: WardenOne knows what they are,
-           and what they can do is what that kind of extension does. */
+
         const watched = Number(status.watchedCount) || 0;
         const known = Number(summary.recognized) || 0;
         emptyEl.textContent = 'Watching ' + watched + ' installed extension' + (watched === 1 ? '' : 's')
@@ -5453,32 +5360,10 @@ document.querySelectorAll('.perm-link').forEach((b) => {
 });
 
 // ----- SessionShield: how old is this domain? (RDAP, on-demand) -----
-/* Password exposure, by k-anonymity range query.
- *
- * The whole point is that the service never learns which password was asked
- * about. The password is hashed here; only the first five characters of the
- * hash are sent; the reply contains every suffix sharing that prefix -- hundreds
- * of unrelated passwords -- and the match is made in this function.
- *
- * It runs in the popup rather than the worker on purpose. An earlier version of
- * this feature lived in background.js behind a 'breach-check' message, which
- * meant a channel existed that a page could post hash prefixes into; nothing in
- * the interface could reach it, so what shipped was a documented feature that
- * did not exist and an open channel that did. The extension page already holds
- * the host permission, so doing it here needs no message kind at all.
- */
-/* The element picker: starting it, and the way back from it.
- *
- * The picker itself is injected on demand rather than declared in the manifest,
- * so it costs nothing on pages nobody asked about and no page script can start
- * it -- there is no content script sitting there listening for a signal.
- *
- * The list below is not decoration. Something hidden with no way to bring it
- * back is worse than whatever it was hiding, and the reader will not remember
- * the selector, the page or the day. Same lesson as the silenced notifications:
- * the undo has to be somewhere findable, and it has to be visible whether or
- * not anything is in it.
- */
+/* Hash passwords in this extension page and send only five hash characters for the range query.
+   Match suffixes locally. No worker message endpoint is needed for this privileged operation. */
+/* Inject the picker on demand. Keep saved hiding rules discoverable here so users can restore elements
+   without remembering the selector or original page. */
 function pickerHostFromTab(tab) {
   try { return new URL(tab.url).hostname; } catch (_) { return ''; }
 }

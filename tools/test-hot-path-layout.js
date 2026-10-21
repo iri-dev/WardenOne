@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Nothing on an every-interaction path may force layout.
- *
- * Three separate reports in this project traced back to the same mistake, so it is
- * worth a suite of its own rather than a comment each time:
- *   - the badge hit-testing with elementsFromPoint on pointermove (Spotify's volume
- *     slider went laggy),
- *   - scanMedia measuring size inside a MutationObserver, before layout,
- *   - clickText reading innerText on every click (measured inside a 384ms INP on
- *     Spotify, 167ms of it in handlers).
- *
- * The reads that force a synchronous style+layout flush are innerText,
- * offsetWidth/Height, getBoundingClientRect, getComputedStyle, elementFromPoint and
- * elementsFromPoint. None of them belong on a path that runs per click, per pointer
- * move, or per frame -- and where one is genuinely needed, the cheap test that
- * usually rejects the case must come FIRST.
- *
- * Run: node tools/test-hot-path-layout.js
- */
+/* Keep forced layout reads off ordinary interaction paths.
+   Run: node tools/test-hot-path-layout.js */
 'use strict';
 
 const assert = require('assert');

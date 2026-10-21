@@ -4,18 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * What a wrapped sink costs (PERF-11).
- * Run: node tools/bench-xss-sinks.js [--calls N] [--json]
- *
- * The XSS Behavior Guard wraps innerHTML, setAttribute and the other page sinks and, after the
- * native call, correlates the assigned text with the page's mutable sources. This drives the
- * real shipped scanner (through the fake DOM of tools/test-xss-behavior-guard.js) with benign
- * and malicious inputs of 1, 8 and 64 KiB, on a page whose URL and window.name carry sources,
- * and reports the per-call median and p95 of each sink, plus the detections, so a change to
- * the hot path is measured rather than guessed at. The suite tools/test-xss-sink-cost.js
- * asserts the detections and the shape of the cost; this prints the numbers.
- */
+/* Measure shipped XSS sink correlation on benign/malicious 1/8/64 KiB inputs (PERF-11).
+   Report median, p95 and detections through test-xss-behavior-guard.js’s fake DOM.
+   Run: node tools/bench-xss-sinks.js [--calls N] [--json] */
 'use strict';
 
 const { run } = require('./test-xss-behavior-guard.js');

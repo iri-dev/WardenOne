@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Warnings that behave as the modals they look like (M20).
- *
- * The nine high-stakes interstitials cover the viewport and demand an answer, but announced
- * nothing: no alertdialog role, no accessible name, no initial focus, no contained tab sequence,
- * no focus restoration. A screen reader was never told a phishing decision had appeared, and
- * keyboard focus stayed on the obscured page underneath.
- *
- * They are built in two places. The bridge and oauth-guard own theirs in a closed shadow root and
- * get the semantics from woOwnedOverlay.dialog(); the engine builds five in the page's own DOM,
- * where that helper cannot reach, and gets them from woDialog() in src/content.js. Two helpers,
- * one contract -- so this suite asserts the same guarantees on both halves rather than trusting
- * that the second copy grew the same behaviour.
- *
- * The riskiest part of fixing that is the focus trap: one that outlives its dialog breaks the page
- * it was warning about. So these assert the teardown as hard as the semantics.
- *
- * Run: node tools/test-warning-dialogs.js
- */
+/* Verify modal names, focus, keyboard containment and complete teardown in both warning implementations. (M20)
+   Run: node tools/test-warning-dialogs.js */
 'use strict';
 
 const fs = require('fs');
@@ -170,7 +153,7 @@ function build() {
 // The dispose region, lifted whole so the teardown below is the real one rather than a
 // re-implementation. Everything it touches is either a Node global or supplied here.
 const dFrom = BRIDGE.indexOf('  const woAbort = new AbortController();');
-const dTo = BRIDGE.indexOf('  // A per-page-load routing token.');
+const dTo = BRIDGE.indexOf('  const TOKEN = (function () {');
 if (dFrom < 0 || dTo <= dFrom) throw new Error('bridge dispose source markers not found');
 
 function buildDispose() {
@@ -483,22 +466,8 @@ function buildEngine() {
     'content.min.js is stale');
 }
 
-// ---------------------------------------------------------------------------
-// Closing a warning has to reach destroy(), on every path there is.
-//
-// destroy() is the only thing that releases the keyboard trap, hands focus back, stops the
-// self-healing watcher and removes the host. Three of the five bridge interstitials used to close
-// by calling wrap.remove() on the inner element instead: the panel vanished, so it looked right,
-// while the dialog stayed registered with focus never returned and an empty aria-modal box left in
-// the accessibility tree.
-//
-// The second half is the same defect from the other end. A bridge that is replaced while a warning
-// is up aborts every button's listener -- they all ride the abort signal -- but the trap is a raw
-// listener on the host and is not covered by it. Without the registry that left an undismissable
-// modal on the page. Repair is what triggers it: it stamps this file's version flag stale and
-// re-injects, and people press Repair when something looks wrong, which is when a warning is most
-// likely to be on screen.
-// ---------------------------------------------------------------------------
+// Every close path and bridge disposal must call destroy() to release the focus trap, restore focus
+// and remove the modal host. Removing only the inner panel leaves an inaccessible live dialog.
 {
   const { dom, sandbox } = build();
   const prior = dom.node('input');

@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Browser-in-the-Browser.
- *
- * The page draws a window inside itself -- title bar, close button, an address bar
- * reading accounts.google.com -- and puts its own sign-in form in it. No window
- * ever opens, so nothing watching window.open sees anything and the popup blocker
- * has nothing to block. It is the standard way OAuth sign-in is phished.
- *
- * The tell is a window-shaped container whose TITLE STRIP carries a domain the page
- * does not own. That is not enough on its own: online IDEs frame their preview pane
- * exactly like this and design tools draw browser mockups, so somewhere to type a
- * password has to be inside the same container. An embedded frame substitutes only
- * when the strip names a real identity provider.
- *
- * Most of this file is the second half of that: the legitimate things that look
- * similar and must come through untouched.
- *
- * Run: node tools/test-fake-window-guard.js
- */
+/* Require foreign browser-like chrome with credential evidence; preserve previews and browser mockups.
+   Run: node tools/test-fake-window-guard.js */
 'use strict';
 
 const assert = require('assert');

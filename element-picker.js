@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Point at the annoying thing and it goes away.
- *
- * Each selection saves immediately; Done or Escape ends selection without
- * undoing it. Ctrl+Z restores the element and retracts its saved rule.
- *
- * There were two of these for a while -- this one, and a "pick" mode that worked
- * out the same selector but showed you what it matched before saving. Two tools
- * for one job: both ended in a saved rule, and the only difference was whether
- * the confirmation arrived before or after the thing disappeared. What the
- * review panel actually contributed was two facts -- how much the rule catches,
- * and whether it is described by position and so likely to break on a redesign.
- * Those are worth knowing whether or not you asked to review, so the panel below
- * says them, and the second mode is gone.
- *
- * Hiding is by ATTRIBUTE, never by removing the node or writing inline styles
- * onto it. One rule in one stylesheet, and every zap on the page is undone by
- * dropping an attribute, so restoring it does not rebuild or clone any of the
- * page's DOM.
- */
+/* Selections save immediately; Ctrl+Z retracts the saved rule. Done/Escape only ends selection.
+   Hide via attributes so undo can restore the existing DOM without cloning nodes. */
 (function () {
   'use strict';
   if (window.__wardenOnePickerActive) return;
@@ -194,10 +176,7 @@
     try { return CSS.escape(value); } catch (_) { return String(value).replace(/[^\w-]/g, ''); }
   }
 
-  /* Whether a selector actually names this element or merely describes its
-     shape. "div" and "img.avatar" describe a shape every card on the page
-     shares; "#nav" and "a[href=/alice]" name one thing. Only the second kind is
-     worth anchoring to. */
+  /* Anchor to distinctive identity selectors rather than a shape shared by multiple cards. */
   function identifies(sel, tag) {
     return !!sel && sel !== tag && (sel.indexOf('#') === 0 || sel.indexOf('[') >= 0);
   }
@@ -306,14 +285,8 @@
       depth++;
     }
 
-    /* Nothing distinctive anywhere up the chain, so fall back to position.
-       This fallback used to be gated on the descriptive selector matching
-       NOTHING or MORE THAN EIGHT things, which left everything in between
-       returning a rule that hides every match. On a page of avatars that is
-       every avatar: hiding one person's picture hid all of them, and the same
-       went for a category tile or a stream title. A rule that hides more than
-       the thing you pointed at is wrong however few extras it takes with it, so
-       anything that is not already unique goes to position now. */
+    /* Fall back to position whenever the descriptive selector is not unique,
+       so choosing one element cannot hide several. */
     /* Anchored to something that names itself, before anything positional. */
     const anchored = anchoredSelector(el);
     if (anchored) return anchored;
@@ -357,14 +330,7 @@
 
   const style = document.createElement('style');
   style.textContent = [
-    /* Positioned by transform, not by left/top: `transition:all` over
-       left/top/width/height ran four layout-driven transitions on every mouse
-       move, which is why the highlight crawled. Transitioning only transform
-       was still wrong -- the box slid into place over about four frames while
-       its width and height snapped in one, so it trailed the pointer AND was
-       briefly the new element's size at the old element's position. Nothing is
-       transitioned now: the outline is welded to whatever is under the cursor,
-       which is what an inspector highlight is for. */
+    /* Do not transition the highlight: its position and size must follow the pointer together. */
     '.box{position:fixed;left:0;top:0;border:2px solid #9d54c9;background:rgba(157,84,201,.14);pointer-events:none;border-radius:4px;will-change:transform;contain:strict;}',
     '.box.zap{border-color:#df6ca9;background:rgba(223,108,169,.15);}',
     /* The same card the engine's own toasts use: pale lavender, a plum rail down
@@ -513,20 +479,13 @@
     pointerY = e.clientY;
     if (!moveRaf) moveRaf = requestAnimationFrame(trackPointer);
   }
-  /* The pointer can hold still while the page moves under it -- a scroll, a lazy
-     image landing, a sticky bar arriving. Without this the outline sits where the
-     element used to be until you jog the mouse. Capture, because the scroll that
-     matters is often an inner container rather than the window; passive, because
-     this only ever reads. */
+  /* Reposition even when the pointer is stationary and the page scrolls or shifts underneath it.
+     Capture inner-container scrolls passively. */
   function onScroll() {
     if (!moveRaf) moveRaf = requestAnimationFrame(trackPointer);
   }
 
-  /* `rule` is the selector that was written, when there is one. The review panel
-     used to be a separate mode whose whole job was answering two questions --
-     how much does this rule catch, and will it survive a redesign. Both are worth
-     knowing whether or not you asked to review, so they are said here instead of
-     behind a second tool. */
+  /* Show match count and selector stability for each saved rule, not in a separate picker mode. */
   function zapPanel(message, failed, rule) {
     const wrap = el('div');
     /* The heading is the count, because the count is the thing that changes
@@ -644,15 +603,8 @@
     return false;
   }
 
-  /* Cancelling the click is too late on a real page. A video player starts
-     playing on pointerdown, a link can be followed from mouseup, and YouTube does
-     both -- so by the time the click arrives to be cancelled, the video is
-     already running. The whole gesture is swallowed instead of just its last
-     event.
-
-     stopImmediatePropagation, not stopPropagation: the latter stops the event
-     travelling further but still runs every other listener already attached to
-     the same node in the same phase. */
+  /* Swallow the whole gesture: players and links can act on pointerdown or mouseup before click.
+     Use stopImmediatePropagation to suppress other listeners on the same node as well. */
   const SWALLOWED = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'auxclick', 'dblclick'];
   function swallow(e) {
     if (ours(e)) return;
@@ -699,9 +651,7 @@
 
   function onKey(e) {
     if (e.key === 'Escape') {
-      /* Leaves, keeps what you hid. Undoing everything on the way out made the
-         obvious exit the destructive one -- you press Escape to stop pointing at
-         things, not to get the adverts back. Ctrl+Z is the undo. */
+      /* Exit keeps saved hiding rules. Ctrl+Z is the explicit undo. */
       stop();
       return;
     }

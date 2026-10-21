@@ -4,20 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Tripwires for the things this extension deliberately does NOT do.
- * Run: node tools/test-known-limits.js
- *
- * Every check here guards a decision to leave something alone. That is unusual
- * for a test suite and it is the point: a deliberate non-change is only correct
- * while the reason for it holds, and reasons go stale silently. Nothing in the
- * codebase would otherwise notice the day one stopped being true, and the
- * decision would keep looking considered while having quietly become a bug.
- *
- * Each check therefore pins the PREMISE, not the behaviour. When a premise
- * changes, this suite fails and hands whoever changed it the decision that was
- * resting on it.
- */
+/* Keep deliberate coverage limits explicit and reject workarounds that would break supported sites.
+   Run: node tools/test-known-limits.js */
 'use strict';
 
 const fs = require('fs');

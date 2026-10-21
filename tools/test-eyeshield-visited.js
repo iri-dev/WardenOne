@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Which of these have you already read?
- * Run: node tools/test-eyeshield-visited.js
- *
- * EyeShield forces one colour onto every link so that a site's own palette
- * cannot leave unreadable text behind. A forced link colour takes :visited with
- * it -- the same declaration matches both states -- so a page of search results
- * came out uniformly unread. Light mode had a :visited rule from the start;
- * dark and ultra never did, which is exactly where it was reported.
- *
- * Two things have to hold, and they fail in different ways:
- *
- *   1. a :visited rule exists wherever a link colour is forced. Missing on
- *      Google specifically, because an #id selector outranks the generic rule.
- *   2. it re-states -webkit-text-fill-color. The fill paints OVER color, so a
- *      :visited rule that sets only color is overpainted by the fill from the
- *      rule above it and changes nothing on screen.
- *
- * Both were checked against a real Google results page with a genuinely visited
- * result before being written down here.
- */
+/* Preserve distinct visited-link colours, including result titles and text-fill overrides.
+   Run: node tools/test-eyeshield-visited.js */
 'use strict';
 
 const assert = require('assert');
@@ -192,19 +173,8 @@ check('the Google light sheet still restores :visited',
 
 // --- the result title needs naming, because Chrome ignores inheritance -------
 
-/* The check this file was missing, and the reason it passed while the headline
-   on every visited result stayed the wrong colour.
- *
- * Chrome will not apply an author colour to anything INSIDE a visited link. Set
- * the h3 green and an unvisited title goes green while a visited one does not --
- * it takes the browser's own visited colour, a pale lavender that on a dark page
- * reads as washed-out blue. So neither the plain title rule nor the generic
- * '#search a:visited *' reaches the title, however specific either one is.
- *
- * The only thing that does is a rule naming the title element with :visited on
- * the anchor. Every sheet that colours a result title therefore owes it a
- * partner, and the old check -- "is there a :visited rule somewhere" -- was
- * satisfied by a rule that Chrome discards. */
+/* Require a title-specific visited rule with :visited on its anchor. A generic descendant rule
+   is insufficient under Chrome’s visited-colour restrictions. */
 [['dark', googleDark], ['light', googleLight]].forEach(([name, sheet]) => {
   const colorsTitle = /(#search a h3|\.LC20lb|yuRUbf a h3)/.test(sheet);
   check('the Google ' + name + ' sheet still colours the result title',

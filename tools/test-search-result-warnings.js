@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Search-result warnings.
- *
- * THE PROMISES ARE THE FEATURE, and each one is a way this could go wrong rather than a
- * behaviour to confirm:
- *
- *   1. It never says a result is safe. No positive verdict exists, at any level.
- *   2. It answers from local lists only. No verdict path may reach the network -- ten
- *      badges per search would mean ten queries per search, handing a third party the
- *      thing the reader typed.
- *   3. "Known malicious" means the malware feeds, NOT the merged blocklist, which also
- *      holds ad and tracker hosts. One wrong "malicious" beside an analytics domain
- *      discredits every true one.
- *   4. It marks; it never hides or reorders.
- *
- * searchResultVerdictForHost is lifted out of background.js and run for real.
- *
- * Run: node tools/test-search-result-warnings.js
- */
+/* Use local negative evidence for result badges, with no automatic provider lookups or safety verdicts.
+   Run: node tools/test-search-result-warnings.js */
 'use strict';
 
 const fs = require('fs');

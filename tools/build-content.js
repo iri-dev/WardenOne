@@ -48,15 +48,8 @@ function regexKeywordBefore(input, index) {
   return !!(match && /^(return|throw|case|delete|void|typeof|new|in|of|yield|await)$/.test(match[0]));
 }
 
-// The build strips every newline, so a single // line comment in the source
-// swallows the entire rest of the file on the one output line. Nothing else
-// catches it: src/content.js still parses on its own, and the built runtime
-// parses too whenever the braces happen to balance, so the failure is silent
-// and total. Reject the construct at the source instead of relying on memory.
-//
-// Deliberately reuses the same tokenizer states as formatRuntime below rather
-// than grepping for '//', which would fire on every https:// inside a string
-// and on regexes like /\//. Only a // reached in code state is a comment.
+// The build removes newlines, so reject // comments before they can swallow following code.
+// Use tokenizer states to avoid treating URL strings and regex literals as comments.
 function findLineComments(source) {
   const input = String(source || '');
   const hits = [];
@@ -80,11 +73,7 @@ function findLineComments(source) {
       continue;
     }
     if (state === 'template') {
-      // The build strips every newline and its indentation, so a template literal spanning lines
-      // silently loses them from its VALUE. Nothing else catches it: src/content.js still parses,
-      // and the byte-exact rebuild check still passes, because both halves agree on the corrupted
-      // output. Same class of trap as the // comment this tokenizer already refuses, so it is
-      // refused in the same place rather than left to be remembered.
+      // Reject multiline template values too: newline stripping would silently change their contents.
       if (ch === '\n') templateNewlines.push(line - 1);
       if (escaped) escaped = false;
       else if (ch === '\\') escaped = true;

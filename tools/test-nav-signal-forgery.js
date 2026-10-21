@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A page cannot tell the worker that the reader authorised a navigation.
- * Run: node tools/test-nav-signal-forgery.js
- *
- * The forced-redirect interstitial (blockPopupTricks) fires when a page sends the whole tab to
- * another site by client_redirect and nothing in the tab explains it. What explains it is a
- * navigation signal from the in-page guard -- 'gesture' for a real click or keypress,
- * 'top-nav-authorized' when the guard's own logic let a navigation through -- relayed by the
- * isolated bridge to the worker. The bridge used to accept any wo-nav-signal that carried the
- * routing token, and the token is public: a page that dispatched
- * {token, kind:'top-nav-authorized'} every two seconds held the interstitial off for its own tab
- * for as long as it liked, no gesture required (SEC-13).
- *
- * Now the emitter signs each beacon -- an HMAC under the bridge's key, which the MAIN world was
- * handed once at document_start before any page script existed, over a sequence number, the kind
- * and the destination host -- and the bridge relays nothing that fails the signature, repeats a
- * number, or names no host for an authorisation. The worker binds an authorisation to the host it
- * was given for, so a genuine one cannot be armed with a decoy and spent on a different jump. The
- * real emitter, the real relay and the real worker guard are lifted and driven here, end to end
- * and as the page would attack each of them.
- */
+/* Forged or replayed page navigation signals must not suppress redirect protection. (SEC-13)
+   Run: node tools/test-nav-signal-forgery.js */
 'use strict';
 
 const assert = require('assert');

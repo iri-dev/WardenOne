@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WardenOne's warnings and its one privileged control used to be ordinary elements in the page's
- * DOM, identified again by id or CSS selector. Both halves of that were page-owned data:
- *
- *   M3: the cookie escape hatch matched closest('#rg-reload-loop [data-wo-cookie-allow="1"]'), so
- *       a page could plant that exact structure, label the button "Play video", and turn one
- *       genuine user click into contentSettings.cookies -> allow for itself. The isTrusted check
- *       passed, because the click really was the user's -- the forgery was the element.
- *   M8: the interstitials were divs with known ids appended to document.body, so the site a
- *       warning accused could delete the warning about it.
- *
- * The fix is ownership rather than description: a closed shadow root whose handle exists only in
- * the isolated world. This file drives that against a fake DOM, because the property being
- * asserted is behavioural -- a decoy must produce no permission change, and a removed warning
- * must come back. Source-text checks alone would not have caught the original bug either.
- *
- * Run with:
- *   node tools/test-owned-ui.js
- */
+/* Privileged warning controls must use owned node identity, with focus and teardown preserved. (M3, M8)
+   Run: node tools/test-owned-ui.js */
 'use strict';
 
 const fs = require('fs');
@@ -228,8 +211,8 @@ function loadCookieEscape() {
   // needs the real thing. Lifting it beats shimming it: the registry is small, self-contained, and
   // is what actually runs in the browser -- a shim could agree with a broken implementation.
   const registry = sourceBetween(BRIDGE,
-    '  /* Everything this copy holds',
-    '  // A per-page-load routing token.');
+    '  const woAbort = new AbortController();',
+    '  const TOKEN = (function () {');
 
   const helper = sourceBetween(BRIDGE,
     "  const WO_OWNED_HOST_STYLE = 'all:initial!important;",
@@ -498,19 +481,8 @@ function loadCookieEscape() {
     ENGINE.indexOf(ADOPT.slice(0, 40)) < ENGINE.indexOf('const host=badgeHost=document.createElement("div")'));
 }
 
-// ---------------------------------------------------------------------------
-// 7. The badge host itself. The shadow root protects what is inside it; nothing
-//    was protecting the host, which carried no styles at all. A page rule
-//    matching div or #rg-badge-host could reach it, and transform, filter,
-//    contain, perspective or backdrop-filter on the host makes it the containing
-//    block for the fixed-position badge inside its own shadow tree -- moving the
-//    badge to the host's corner instead of the window's.
-//
-//    Measured in a real engine against a page rule of
-//    "#rg-badge-host{transform:translateX(-120px) translateY(-80px)}":
-//    an unstyled host put the badge 136px/96px from the corner instead of 16/16.
-//    With all:initial it stayed at 16/16.
-// ---------------------------------------------------------------------------
+// Reset the badge host too: page transforms/filters/containment can otherwise reanchor its fixed child
+// despite shadow DOM isolation.
 {
   const hostStyle = (ENGINE.match(/host\.id="rg-badge-host",[\s\S]{0,900}?host\.setAttribute\("style",\s*"([^"]+)"/) || [])[1] || '';
   check('the badge host is styled at all', !!hostStyle);
@@ -561,19 +533,8 @@ function loadCookieEscape() {
     'the fix has to reach content.min.js, not just the source');
 }
 
-// ---------------------------------------------------------------------------
-// 8. Where the badge sits, on a page that scrolls and one that does not.
-//
-//    A fixed element is placed against the viewport's CONTENT edge and cannot
-//    cross a classic scrollbar. So the same 16px inset leaves a scrollbar's width
-//    of chrome beyond the badge on a scrolling page, and nothing at all on a page
-//    that does not scroll -- where it then hugs the window and reads as too tight.
-//
-//    The correction pads by whatever a classic scrollbar would have taken. It has
-//    to be a no-op in the two cases where the page is already right: a page that
-//    genuinely has the scrollbar, and a browser that draws overlay scrollbars and
-//    therefore never reserves the width at all.
-// ---------------------------------------------------------------------------
+// Compensate scrollbar-less pages without shifting pages that already reserve a gutter
+// or browsers using overlay scrollbars.
 {
   check('the badge offset is driven by a measured gutter, not a constant',
     /\.b\{[^}]*right:calc\(16px \+ var\(--rg-gutter,0px\)\)/.test(ENGINE),

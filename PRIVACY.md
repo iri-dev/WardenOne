@@ -54,7 +54,10 @@ account by WardenOne, and is **not** uploaded to us:
   Activity/History page). It records security events WardenOne itself acted on, not the pages
   you visited. Logged addresses keep the scheme, host and path, but drop the query string and
   fragment. Path segments that look like tokens or long identifiers are replaced with `*`.
-  Plain lowercase words and numbers of up to eight digits may remain, including names, short
+  Every segment after a sensitive route such as `reset`, `verify`, `invite` or `magic` is
+  redacted regardless of its shape. Nested event details are sanitized within depth, field
+  and size limits; content beyond those limits is dropped. Outside sensitive routes,
+  plain lowercase words and numbers of up to eight digits may remain, including names, short
   account or order numbers, or secrets that have those shapes. The log keeps at most
   the last 200 events and nothing older than 30 days (the same period as the notification
   copy of those events); **Clear history** on the Activity page removes it at once.
@@ -65,6 +68,9 @@ account by WardenOne, and is **not** uploaded to us:
   *session* storage (memory only, gone when the browser closes), filed under a random
   handle that is the only thing the warning page's own address carries. It is deleted the
   moment you continue, dropped when the tab closes, and expires after six hours regardless.
+  Continuing past a reputation warning creates a one-use grant for that tab and exact
+  address, identified by a SHA-256 digest. The next navigation consumes it, and an unused
+  grant stops being valid after 60 seconds. It does not exempt the rest of the host.
   An earlier version put the full address into the warning page's URL instead, which meant
   it went into browser history and session restore for as long as the tab lived. It no
   longer does. The related redirect-chain memory, used to explain a download that arrived

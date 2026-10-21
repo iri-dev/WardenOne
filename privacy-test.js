@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Turning two sets of readings into sentences.
- *
- * THE MEASUREMENT IS NEVER THE SETTING. Every verdict below is decided from what the two
- * probe runs actually returned. The settings arrive alongside them and are used for one
- * thing only: telling "you switched this off" apart from "this should have worked and did
- * not". Those are the same number and completely different news, and a page that could
- * not tell them apart would either cry wolf about deliberate choices or quietly excuse a
- * broken shield.
- *
- * Five verdicts, because "failed" is the wrong word for most of what a browser exposes:
- *   protected  the page got a different answer than the browser would have given
- *   minimal    readable, but there is nothing identifying in it
- *   partial    changed, but not everything that could have been
- *   design     available on purpose, or switched off on purpose -- counts for nothing
- *   exposed    the shield is on, and the page got the real value anyway
- *   untested   cannot be answered from inside a page without a server, and is not guessed
- */
+/* Verdicts come from measured probe results. Settings only distinguish intentional exposure
+   from a shield that failed; they must never substitute for a measurement. */
 'use strict';
 
 const params = new URLSearchParams(location.search);

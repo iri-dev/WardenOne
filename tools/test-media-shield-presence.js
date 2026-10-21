@@ -4,28 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Media Shield lets the browser ask when the reader is there (COMPAT-01).
- * Run: node tools/test-media-shield-presence.js
- *      WARDENONE_CONTENT_MIN=<older content.min.js> node tools/test-media-shield-presence.js
- *
- * With "Block camera & microphone" on -- the default -- every getUserMedia call on a site outside
- * the four-host media list was refused with a made-up NotAllowedError before Chrome's own prompt
- * could appear. Teams, Discord, Zoom in the browser, voice recorders and document scanners failed
- * on every ordinary site and told the reader their OS permission was wrong. The switch's own copy
- * promised something else: "a site that wants the microphone has to ask when you are actually
- * there."
- *
- * Now the decision is presence and the browser's own record, not the hostname. A request made
- * within ten seconds of a trusted click or key goes to Chrome -- in the same task as the page's
- * call, so nothing about the browser's prompt changes -- and Chrome decides, with its prompt, its
- * indicator and its denial. A request with nobody at the page proceeds only if the reader has
- * already pressed Allow for this site in Chrome, read through the permissions reference taken at
- * document_start; everything else is refused as before. Screen capture keeps a stricter rule
- * (presence is the whole test; Chrome holds no standing grant for it), and speech recognition --
- * the other route to the microphone -- follows the same decision. The shipped content.min.js is
- * sliced and driven here against a fake navigator, in every one of those states.
- */
+/* Allow browser-mediated media permission after trusted input; unattended calls need an existing grant. (COMPAT-01)
+   Run: node tools/test-media-shield-presence.js */
 'use strict';
 
 const fs = require('fs');

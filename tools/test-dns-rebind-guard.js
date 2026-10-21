@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * DNS rebinding detection. Run: node tools/test-dns-rebind-guard.js
- *
- * Intranet Guard decides from the hostname string, which is correct for what it
- * does and blind to rebinding: evil.example resolves to 192.168.1.1 and no
- * string test will ever see it. background.js said as much in a comment for a
- * long time before anything acted on it.
- *
- * Chromium offers extensions no synchronous "resolve this name before you allow
- * the request" hook, so the first request to a rebound host cannot be stopped by
- * anyone. chrome.webRequest does report details.ip once a response starts, which
- * is enough to answer the question the hostname could not, one request late.
- *
- * That makes the honesty of the boundary part of the feature, so this suite pins
- * both halves: the detection fires on the shapes that matter, and the copy does
- * not claim to prevent what it only detects.
- */
+/* Quarantine public hosts observed resolving to local addresses, while preserving local administration.
+   Run: node tools/test-dns-rebind-guard.js */
 'use strict';
 
 const assert = require('assert');

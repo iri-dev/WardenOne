@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Push-notification abuse.
- *
- * The permission itself is watched by permission-chain.js, which records that a
- * prompt happened and how it was answered. This covers the two halves that wrapper
- * cannot speak to: the page talking you into clicking Allow, and what arrives
- * afterwards.
- *
- * Known limit, pinned below: a notification shown from a service worker's push
- * event is created in the worker, not the page, and a content script cannot reach
- * it. What is covered is everything the page itself raises.
- *
- * The wrapper sits on window.Notification, which real sites construct, so a good
- * part of this file is about it staying invisible -- and about requestPermission
- * being passed straight through, because wrapping it here too would report one
- * prompt twice.
- *
- * Run: node tools/test-notification-guard.js
- */
+/* Detect imperative notification bait and page-created scam alerts without storing notification wording.
+   Run: node tools/test-notification-guard.js */
 'use strict';
 
 const assert = require('assert');

@@ -129,6 +129,18 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-engine-smoke.js
 
+      - name: Test redirected download hashing and private-network boundaries in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-download-hash-redirects.js
+
+      - name: Test one-use reputation warning grants in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-reputation-bypass.js
+
       - name: Test image logger navigation, image blocks and Activity in Edge
         if: success() || failure()
         env:
@@ -239,6 +251,14 @@ jobs:
         if: (success() || failure()) && steps.chrome.outcome == 'success'
         run: node tools/browser-engine-smoke.js
 
+      - name: Test redirected download hashing and private-network boundaries in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-download-hash-redirects.js
+
+      - name: Test one-use reputation warning grants in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success'
+        run: node tools/browser-reputation-bypass.js
+
       - name: Test image logger navigation, image blocks and Activity in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success'
         run: node tools/browser-image-logger-loads.js
@@ -284,13 +304,8 @@ jobs:
           node-version-file: .node-version
 
       - name: Package the extension
-        # Same command used to cut a real release: .gitattributes export-ignore keeps
-        # tools/, src/, site/, docs/ and .github/ out of the package.
-        #
-        # No --prefix. manifest.json must sit at the root of the zip, because GUI
-        # unzippers also create a folder named after the archive -- with a prefix,
-        # "Extract All" gives WardenOne-latest\WardenOne\manifest.json and
-        # "Load unpacked" then fails with "Manifest file is missing or unreadable".
+        # Keep manifest.json at the archive root; GUI extractors already add a wrapper directory.
+        # .gitattributes export-ignore excludes development-only files.
         run: git archive --format=zip -o WardenOne-latest.zip HEAD
 
       - name: Verify release archive inventory

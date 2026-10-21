@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The privacy self-test.
- *
- * This page exists to answer "what can a website actually learn about me right now", and
- * its entire worth rests on one property: THE VERDICT COMES FROM THE MEASUREMENT, NEVER
- * FROM THE SETTING. A page that printed a tick because a switch was on would keep
- * printing it after a browser update quietly broke the shield underneath -- which is
- * worse than having no test, because it would be evidence pointing the wrong way.
- *
- * So most of this suite is adversarial about that one thing: settings are fed in that
- * disagree with the readings, and the verdict has to follow the readings every time.
- *
- * The rest is about the two ways a test like this cheats:
- *   - grading itself on things it never measured (untestable ones must stay untestable);
- *   - counting deliberate choices as failures, which turns a report into fearware.
- *
- * compare() and buildChecks() are lifted out of privacy-test.js and run for real.
- *
- * Run: node tools/test-privacy-test.js
- */
+/* Derive self-test verdicts from MAIN/ISOLATED readings, using settings only to explain intentional exposure.
+   Run: node tools/test-privacy-test.js */
 'use strict';
 
 const fs = require('fs');

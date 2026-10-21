@@ -24,12 +24,7 @@ const ARCHIVE_EXT = /\.(zip|rar|7z|gz|tar|cab|ace|arj|tgz|bz2|xz|lzh)$/i;
 // mail/AV filters (Qakbot, IcedID, etc. ship malware inside .iso/.img/.vhd).
 const CONTAINER_EXT = /\.(iso|img|vhd|vhdx|udf)$/i;
 const MACRO_DOC_EXT = /\.(docm|xlsm|pptm|dotm|xlam|xltm|xlsb)$/i;
-// These used to be one regex, so `setup` scored exactly the same as `keygen`. That is the most
-// common legitimate installer filename on Windows, and it pushed an ordinary installer from an
-// unlisted-but-honest vendor two whole grades -- executable (+3) plus installer (+3) = 6, which
-// is grade E, "Dangerous". Meanwhile the words that genuinely mean trouble were diluted by
-// sharing a bucket with them. Splitting helps both directions at once: fewer scares on safe
-// installers, and a cleaner signal when a name really is a crack.
+// Separate ordinary installer names from crack/keygen signals so setup.exe is not scored like a crack.
 const BENIGN_INSTALLER_HINT = /(setup|install(er)?|update(r)?|full[-_. ]?installer)/i;
 // Anchored to a non-letter boundary. Unanchored, these matched any word CONTAINING them, so
 // firecracker.exe and nutcracker-setup.exe graded E "Dangerous" -- and so did SerialMonitor.exe and
@@ -418,19 +413,9 @@ function isKnownPublisherDomain(host) {
   return false;
 }
 
-// Known publishers that are MULTI-TENANT / user-content hosts: any third party can host
-// arbitrary binaries on them (github.com release assets from any repo, sourceforge project
-// files from any project). They are reputable platforms, but being on one is NOT a
-// publisher endorsement of the specific file -- so they get a softened rebate rather than
-// the full silent score-zero, ensuring a disguised/crack-named payload from a random
-// repo/project still surfaces for review.
-// githubusercontent.com is added alongside github.com because a real release download REDIRECTS
-// there -- github.com/../releases/download/.. lands on objects.githubusercontent.com, so the
-// softening written for github.com never applied to the host the file actually came from. It is
-// single-owner (GitHub/Microsoft), and it goes in BOTH sets: the publisher set to be eligible at
-// all, and this set so eligibility is the softened rebate rather than full silence.
-// Suffixes where anyone can take a subdomain, so the registrable domain is the platform rather
-// than an owner. Trusting the registrable domain here would hand over every tenant on it.
+// Multi-tenant publishers receive a reduced rebate: platform reputation does not endorse each file.
+// Include githubusercontent.com because GitHub release downloads redirect there.
+// Public hosting suffixes must not grant trust to every tenant.
 const SHARED_HOSTING_SUFFIXES = new Set([
   'cloudfront.net', 'amazonaws.com', 'windows.net', 'azureedge.net', 'azurewebsites.net',
   'pages.dev', 'workers.dev', 'r2.dev', 'netlify.app', 'vercel.app', 'web.app',
@@ -570,6 +555,73 @@ function formatBytesShort(n) {
   return size + ' B';
 }
 
+const DOWNLOAD_HASH_HOP_QUEUES = new Map();
+const DOWNLOAD_HASH_ACTIVE_HOPS = new Map();
+let downloadHashStartObserverReady = false;
+let downloadHashRedirectObserverReady = false;
+
+function downloadHashObservation(details) {
+  const job = details && DOWNLOAD_HASH_ACTIVE_HOPS.get(details.url);
+  return job && details.initiator === job.origin && details.tabId === -1 && details.method === 'GET'
+    && details.type === 'xmlhttprequest' && typeof details.requestId === 'string' ? job : null;
+}
+
+// Register synchronously so redirects can be bound to the hop's observed request ID.
+try {
+  chrome.webRequest.onBeforeRequest.addListener((details) => {
+    const job = downloadHashObservation(details);
+    if (job && details.timeStamp >= job.startedAt) job.requests.add(details.requestId);
+  }, { urls: ['http://*/*', 'https://*/*'], types: ['xmlhttprequest'], tabId: -1 });
+  downloadHashStartObserverReady = true;
+} catch (_) {}
+try {
+  chrome.webRequest.onBeforeRedirect.addListener((details) => {
+    const job = downloadHashObservation(details);
+    if (!job || !job.requests.has(details.requestId)) return;
+    job.redirect = { id: details.requestId, url: details.redirectUrl };
+    job.finish();
+  }, { urls: ['http://*/*', 'https://*/*'], types: ['xmlhttprequest'], tabId: -1 });
+  downloadHashRedirectObserverReady = true;
+} catch (_) {}
+
+function fetchDownloadHashHop(url, signal) {
+  const previous = DOWNLOAD_HASH_HOP_QUEUES.get(url) || Promise.resolve();
+  const task = previous.then(() => observeDownloadHashHop(url, signal));
+  const settled = task.catch(() => {});
+  DOWNLOAD_HASH_HOP_QUEUES.set(url, settled);
+  settled.then(() => { if (DOWNLOAD_HASH_HOP_QUEUES.get(url) === settled) DOWNLOAD_HASH_HOP_QUEUES.delete(url); });
+  return task;
+}
+
+async function observeDownloadHashHop(url, signal) {
+  if (signal.aborted) throw new Error('Hash fetch timed out');
+  let finish;
+  const observed = new Promise((resolve) => { finish = resolve; });
+  const aborted = () => finish();
+  const job = { origin: chrome.runtime.getURL('').replace(/\/$/, ''), startedAt: Date.now(), requests: new Set(), redirect: null, finish };
+  DOWNLOAD_HASH_ACTIVE_HOPS.set(url, job);
+  try {
+    // Manual Fetch hides Location. Observe only this worker's request, then validate before the next GET.
+    signal.addEventListener('abort', aborted, { once: true });
+    const response = await fetch(url, {
+      method: 'GET', credentials: 'omit', redirect: 'manual', cache: 'no-store', signal,
+    });
+    if (response.type !== 'opaqueredirect') return { response, redirectUrl: '' };
+    if (!downloadHashStartObserverReady || !downloadHashRedirectObserverReady) {
+      throw new Error('Hash redirect observation is unavailable');
+    }
+    await observed;
+    if (signal.aborted) throw new Error('Hash fetch timed out');
+    if (!job.redirect || job.requests.size !== 1 || !job.requests.has(job.redirect.id)) {
+      throw new Error('Hash redirect target could not be verified');
+    }
+    return { response, redirectUrl: job.redirect.url };
+  } finally {
+    signal.removeEventListener('abort', aborted);
+    DOWNLOAD_HASH_ACTIVE_HOPS.delete(url);
+  }
+}
+
 async function fetchBytesForHash(url, maxBytes) {
   let currentUrl = '';
   let requestedUrl = '';
@@ -578,6 +630,7 @@ async function fetchBytesForHash(url, maxBytes) {
     if ((u.protocol !== 'http:' && u.protocol !== 'https:') || isLocalOrPrivateHost(u.hostname)) {
       return { ok: false, skipped: true, reason: 'Hash check skipped for local or private-network URL', maxBytes };
     }
+    u.hash = '';
     currentUrl = u.href;
     requestedUrl = currentUrl;
   } catch (_) {
@@ -587,24 +640,20 @@ async function fetchBytesForHash(url, maxBytes) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), DOWNLOAD_HASH_TIMEOUT_MS);
     try {
-      const res = await fetch(currentUrl, {
-        method: 'GET',
-        credentials: 'omit',
-        redirect: 'manual',
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      if (res && res.status >= 300 && res.status < 400) {
-        const location = res.headers && res.headers.get('location');
+      const { response: res, redirectUrl } = await fetchDownloadHashHop(currentUrl, controller.signal);
+      if (res.type === 'opaqueredirect') {
+        if (redirects === 4) break;
         let nextUrl = '';
         try {
-          const next = new URL(String(location || ''), currentUrl);
+          if (!redirectUrl) throw new Error('Missing redirect target');
+          const next = new URL(redirectUrl, currentUrl);
           if (next.protocol !== 'http:' && next.protocol !== 'https:') {
             return { ok: false, skipped: true, reason: 'Hash check skipped after non-web redirect', maxBytes };
           }
           if (isLocalOrPrivateHost(next.hostname)) {
             return { ok: false, skipped: true, reason: 'Hash check skipped after local or private-network redirect', maxBytes };
           }
+          next.hash = '';
           nextUrl = next.href;
         } catch (_) {
           return { ok: false, skipped: true, reason: 'Hash check skipped after invalid redirect', maxBytes };
@@ -703,15 +752,8 @@ async function fetchBytesForHash(url, maxBytes) {
   return { ok: false, skipped: true, reason: 'Hash check skipped after too many redirects', maxBytes };
 }
 
-// The `bytes` field on a fetchBytesForHash result is polymorphic by `ok`: a Uint8Array of the data
-// when ok is true, a byte COUNT when it is false. Callers are separated by a guard today, so a
-// number never actually arrives here -- but one field carrying two types is a defect waiting for the
-// next return path, and crypto.subtle.digest's failure mode is an opaque TypeError that the caller
-// reports as "Hash computation failed". That reads like a crypto fault rather than "there was
-// nothing to hash", which is the wrong thing to tell someone about a download.
-//
-// An empty buffer is deliberately NOT rejected: a zero-byte file has a real, well-defined SHA-256,
-// and refusing to compute it would be wrong. Only a non-BufferSource is refused.
+// Failed fetch results carry a byte count, not a BufferSource. Reject that before calling digest.
+// An empty buffer is valid input and has a SHA-256 hash.
 async function sha256Hex(bytes) {
   const isBufferSource = bytes instanceof ArrayBuffer
     || (typeof ArrayBuffer.isView === 'function' && ArrayBuffer.isView(bytes));
@@ -1041,18 +1083,8 @@ async function enrichDownloadWithVirusTotalHash(rep, url, filename, cfg) {
   }
 }
 
-// Every mutation of the pending and handled stores runs one at a time (M25).
-//
-// Both are whole-object read/modify/writes: read the store, add or drop one entry, write the whole
-// thing back. Two legitimate scans running at once both read the same starting state, each writes
-// its own version, and the second one wins -- so one of the two records is simply gone from
-// storage while both are still in the heap. The heap goes at the next suspension, and what is left
-// is a paused download whose review panel the recovery scan then closes, or a handled record with
-// no pending record to recreate it from. Nothing is corrupted; what is lost is ownership of a file
-// WardenOne paused, which is the thing that has to be recoverable.
-//
-// The queue is the one M18 put under the state appliers -- same defect shape, same fix. The typeof
-// guard keeps this file drivable on its own, where background.js is not loaded.
+// Serialize whole-object writes so concurrent scans cannot lose pending or handled records (M25).
+// The fallback supports tests that load this module without background.js.
 function withDownloadStore(name, task) {
   return typeof serializeSubsystem === 'function' ? serializeSubsystem(name, task) : task();
 }
@@ -1344,13 +1376,8 @@ async function dismissDownloadReviewPanels(id) {
   } catch (_) {}
 }
 
-/* The address a review carries. A download URL from a CDN, a cloud drive or an authenticated
-   site routinely holds a signature, an account or document id, or an expiring bearer token in
-   its query -- and the review used to persist that in full, for up to two hours, in the
-   normal profile's durable storage (PRIV-05). Nothing needed it: decisions act on the Chrome
-   download id, the page shows the host, and the activity log sanitises what it is given. So
-   the review keeps the same form the activity log keeps: scheme, host, and a path with
-   token-shaped segments starred. The exact address lives in Chrome's own download item. */
+/* Persist only the redacted review URL; signed links and identifiers can be credentials (PRIV-05).
+   Decisions use the Chrome download ID, which also retains the exact URL outside our review store. */
 function downloadDisplayUrl(raw) {
   const text = String(raw || '');
   if (!text) return '';
@@ -1472,11 +1499,8 @@ async function handleDownloadDecision(id, decision, sender) {
     return { ok: true, decision: decision === 'trust-continue' ? 'trusted and continued' : 'continued', trustedHost };
   }
   if (decision === 'cancel') {
-    // Hard-remove instead of a bare cancel: chrome.downloads.cancel does nothing to a file
-    // that already finished writing (the small/cached-file race), so "Cancel" used to leave
-    // a flagged payload sitting on disk. hardRemoveDownload also deletes the bytes and
-    // erases the entry. We treat this as success even if an individual step reports an
-    // expected "already complete/removed" error -- the goal (file gone) is best-effort.
+    // Cancel alone does not remove already-completed downloads. Also attempt byte deletion and entry erasure
+    // for the small/cached-file race; tolerate expected already-complete/removed errors.
     const removed = await hardRemoveDownload(review.downloadId);
     logDownloadDecision(review, 'cancelled');
     await removePendingDownload(id);
@@ -1697,9 +1721,8 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
       reasons.push('Redirect chain touched an abuse-prone domain before the download');
     }
   }
-  // A bare ../ inside a parameter VALUE is ordinary (?path=../releases/App.exe), and by the time a
-  // URL reaches here the browser has already normalised real traversal out of the path. What is
-  // still worth flagging is a null byte or a double-encoded traversal, which only appear on purpose.
+  // A parameter value containing ../ is not path traversal. Flag null bytes or double encoding;
+  // the browser has already normalised traversal in the URL path.
   if (/%00|%25(2e|32)|(^|[/?&=])\.\.(%2f|%5c)/i.test(urlPathQuery)) {
     score += W.obfuscatedPath; reasons.push('Download URL contains obfuscated path characters');
   }
@@ -1769,13 +1792,8 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     if (m && isDangerous && declaredDocType && !(textNativeExt && !nameTrick)) {
       score += W.mimeDisagree; reasons.push('File type and its declared content type disagree');
     }
-    // application/octet-stream used to sit in this list beside x-msdownload. It does not belong.
-    // x-msdownload and x-msdos-program mean "this IS a Windows executable", which genuinely
-    // contradicts a .pdf name. octet-stream means "unspecified binary" -- it is what a great many
-    // ordinary servers send for every file they do not recognise, including perfectly normal PDFs.
-    // Treating it as a disguise cost more than a grade: it set dangerousMimeMismatch, which feeds
-    // `critical`, and critical DISABLES known-publisher silencing -- so a PDF from a trusted
-    // publisher served with a lazy content type was pulled out of silence and shown as High Risk.
+    // Only executable-specific MIME types contradict a document filename. application/octet-stream
+    // means unspecified binary and is common for legitimate PDFs and other files.
     if (m && /(x-msdownload|x-msdos-program)/.test(m) && /\.(pdf|jpg|jpeg|png|docx?|txt)$/i.test(name)) {
       score += W.mimeProgramNamedDoc; dangerousMimeMismatch = true; reasons.push('Served as a program but named like a document');
     }
@@ -1785,10 +1803,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   const trickCount = [hasDoubleExt, hasHiddenChars, hasPaddingTrick, dangerousMimeMismatch].filter(Boolean).length;
   if (trickCount >= 2) { score += W.multipleTricks; reasons.unshift('Multiple filename-disguise tricks combined (high-confidence malware pattern)'); }
 
-  // Executable from a bare IP over insecure HTTP with an installer/crack name is a
-  // classic drive-by drop -- the combination is worse than its parts.
-  // lureName, not installerName: this was the one consumer the benign/lure split did not repoint,
-  // so an ordinary Setup.exe from an intranet IP was still scored as though it were named crack.
+  // Combine insecure bare-IP delivery with lure names, not ordinary installer names.
   if (isDangerous && /^\d{1,3}(\.\d{1,3}){3}$/.test(host) && (lureName || isArchive)) {
     score += W.ipHostInstaller; reasons.push('Executable with installer/crack name from a raw IP host');
     if (privateHost) lanNoise += W.ipHostInstaller;
@@ -1822,14 +1837,8 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   // so an executable served from one is weighted higher.
   if (/\.(zip|mov)$/i.test(host)) { score += W.confusableTld; reasons.push('Source on a filename-confusable TLD (.zip/.mov)'); }
   else if (/\.(cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol)$/i.test(host)) {
-    // Softened for ONE shape only: a lone clean executable, which is the ordinary small-vendor
-    // installer that happens to live on a cheap TLD. Everything else still pays.
-    //
-    // The first attempt here suppressed the charge whenever the score equalled the file-type
-    // baseline, which read as reasonable and was wrong: an archive scores 1 for being an archive,
-    // so the test suppressed the TLD charge for EVERY zip and 7z, and a hidden-contents archive
-    // from a throwaway domain -- the drive-by shape this rule exists for -- dropped to grade B and
-    // went silent. Measured, not reasoned: it took an attack battery to see it.
+    // Waive the TLD charge only for a lone clean executable. Archives can have the same baseline
+    // score but still need the charge for hidden contents.
     const loneCleanExe = isDangerous && !isArchive && !isContainer && !isMacro && score === W.executable;
     if (!loneCleanExe) {
       score += W.throwawayTld; reasons.push('Source on a throwaway-style TLD');
@@ -2289,10 +2298,7 @@ async function runDownloadGuardScan(id, hint, reason) {
       return;
     }
     const trustedSites = Array.isArray(cfgStore && cfgStore[DOWNLOAD_TRUSTED_KEY]) ? cfgStore[DOWNLOAD_TRUSTED_KEY] : [];
-    // scoreDownload consults BLOCKED_DOMAINS and the recent-redirect window, both of which are
-    // hydrated asynchronously. The first download after a service-worker suspension used to be
-    // scored against an empty set and an empty window, so a file from a blocklisted host that
-    // arrived through a flagged redirect chain scored as if neither had happened (M17).
+    // Await blocklist and redirect-window hydration before scoring the first download after wake (M17).
     if (typeof securityStoresReady === 'function') await securityStoresReady();
     if (typeof RECENT_REDIRECT_MIRROR !== 'undefined') await RECENT_REDIRECT_MIRROR.ready();
     const downloadUrl = item.finalUrl || item.url || '';
@@ -2332,13 +2338,8 @@ async function runDownloadGuardScan(id, hint, reason) {
       return;
     }
 
-    // A risky download should ALWAYS surface a review the first time we see it,
-    // whether it finished fast (small/cached file) or slowly. The previous logic
-    // only showed a review if the file was still in-flight or had completed within
-    // 15s AND had no prior pending entry -- so a quick download that finished before
-    // the first scan ran was silently logged instead of reviewed (the "sometimes it
-    // shows, sometimes it doesn't" bug). We now treat "have we already handled/shown
-    // this id?" as the gate, not the completion timing.
+    // Review each risky ID once regardless of completion timing; small/cached downloads may finish
+    // before the first scan.
     const alreadyHandled = await isDownloadHandled(key);
     if (item.state === 'complete' && !isRecentCompletedDownload(item) && !pending && alreadyHandled) {
       // genuinely stale (finished long ago, already dealt with) -> just log, no popup
@@ -2377,14 +2378,8 @@ async function runDownloadGuardScan(id, hint, reason) {
     if (!oldReview || oldReview.grade !== review.grade || oldReview.score !== review.score) {
       logDownloadCheck(item, rep);
     }
-    // mark handled so a follow-up scan of the same id won't suppress (via the stale
-    // guard above) or duplicate this review.
-    // Known MV3 gap: if the service worker dies between the pause() calls above and
-    // this write, no handled-state is persisted and the next scan re-runs from
-    // scratch -- worst case a duplicate pause/review, never a missed one. Chrome
-    // offers no way to make pause+mark atomic (no transactional storage), so
-    // cleanupDownloadReviews() and the isDownloadHandled() check at the top absorb
-    // what's left of the window.
+    // Persist handled state after pausing. Worker termination between the two can cause a duplicate
+    // review; pause and storage writes cannot be atomic. Recovery must never silently resume it.
     await rememberHandledDownload(key, review.autoBlocked ? 'auto-blocked' : 'reviewed');
     await openDownloadReview(review);
   } catch (e) {
@@ -2434,17 +2429,9 @@ try {
   });
 } catch (_) {}
 
-// Anything WardenOne paused must be accounted for on every worker boot (M25).
-//
-// The early pause happens in onCreated, before the review record is written, and both the pause
-// timer and EARLY_PAUSED are heap-only -- so a worker death in that gap left a file paused in
-// Chrome with no pending record, no review panel and nothing that would ever look at it again.
-// The whole-object write race could strand one the same way.
-//
-// This asks Chrome directly rather than trusting our own records: every paused download in this
-// session that we have no pending record for, and have not already handled, gets its review
-// rebuilt. Duplicate review beats silent continuation, and nothing here resumes a file -- a
-// genuinely risky download stays paused until the user decides.
+// Reconcile Chrome’s paused downloads on every worker boot (M25). A worker can stop between
+// pausing and persisting the review, so storage alone cannot identify every orphan.
+// Rebuild missing reviews without resuming downloads.
 async function recoverStrandedPausedDownloads() {
   try {
     const cfgStore = await localGet('wardenone_config');
@@ -2471,9 +2458,7 @@ async function recoverStrandedPausedDownloads() {
   }
 }
 
-// One try per namespace, so a registration that throws cannot take an unrelated one with it
-// (LIFE-04): the session-boundary stamp and the review-tab cleanup have nothing in common but
-// the line they used to share.
+// Register each namespace independently so one failure cannot suppress unrelated listeners (LIFE-04).
 try {
   setTimeout(() => cleanupDownloadReviews(true), 1000);
   setTimeout(() => { recoverStrandedPausedDownloads().catch(() => {}); }, 1500);

@@ -4,20 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Clear clears, and the last close closes -- including the batch still waiting to be posted.
- * Run: node tools/test-logger-batch-reset.js
- *
- * The Network Logger holds a request in three places between capture and the page: the durable
- * ring, the in-flight joins, and a batch that waits 160 ms so a busy page does not post a message
- * per request. Clear emptied the first two; the last port's disconnect emptied the first two. The
- * third was outside both, so a batch queued just before Clear arrived after the "cleared" answer
- * and repopulated the page, and a batch queued just before the last logger closed was delivered to
- * the next logger to open -- against the page's own promise that the buffer goes with the last
- * close (L29). One reset now drops all three together, cancels the timer, and stamps a generation
- * so a timer callback from an earlier session cannot post into a later one. This suite drives the
- * real port protocol with fake timers through the card's three reproductions.
- */
+/* Clearing or closing capture must also discard a pending batch. (L29)
+   Run: node tools/test-logger-batch-reset.js */
 'use strict';
 
 const assert = require('assert');

@@ -4,18 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WardenOne Twitch ad blocker.
- *
- * Installs before Twitch's player and handles both server-side HLS ads and the
- * current display/audio-ad shells. The clean-stream strategy is informed by
- * the MIT-licensed TwitchAdSolutions, scamorza/TwitchAdBlock, and GosuDRM/TTV-AB
- * projects. Its exact Turbo/allow-ads cosmetic rule is adapted from GPLv3-licensed
- * uBlock Origin uAssets. This implementation is deliberately smaller: no React
- * internals, no player/page reloads, no synthetic media, and no remote proxy. If
- * Twitch offers no clean alternate playlist, native playback fails open instead
- * of starving the decoder.
- */
+/* Twitch ad blocker. Clean-stream strategy informed by MIT-licensed TwitchAdSolutions,
+   scamorza/TwitchAdBlock and GosuDRM/TTV-AB; Turbo/allow-ads cosmetics adapted from GPLv3 uAssets.
+   If no clean alternate exists, fail open to native playback. */
 (function wardenOneTwitchAdblock() {
   'use strict';
 
@@ -27,14 +18,9 @@
   const TWITCH_HOST_RE = /(^|\.)twitch\.tv$/i;
   const GQL_URL_RE = /^https:\/\/gql\.twitch\.tv\/gql(?:[?#]|$)/i;
   const MASTER_URL_RE = /\/api\/(?:v2\/)?channel\/hls\/[^/?#]+\.m3u8/i;
-  // Pre-rolls are not in the stream. Twitch's player carries two ad paths and
-  // names them itself -- stitchedAdMetadata for the SSAI break spliced into the
-  // manifest, and clientSideAdMetadata for a creative it requests and renders
-  // over the video -- so gapping an entire playlist never touches a pre-roll.
-  // The creative comes from its ad SDK: AdRequestBuilder starts on the Amazon
-  // bid host but withAdFormat() repoints it at edge.ads.twitch.tv, taking
-  // /ads/format for a standard video ad and /ads for the outstream and pause
-  // formats.
+  // SSAI uses stitchedAdMetadata; client-side creatives use clientSideAdMetadata.
+  // The SDK’s withAdFormat() moves requests from Amazon bidding to edge.ads.twitch.tv:
+  // /ads/format for standard video, /ads for outstream and pause ads.
   const AD_SERVICE_URL_RE =
     /^https:\/\/(?:edge\.ads\.twitch\.tv\/(?:ads|2018-01-01\/(?:3p\/)?ads)(?:[/?#]|$)|vaes\.amazon-adsystem\.com(?:[/?#]|$))/i;
   const VIDEO_AD_SERVICE_URL_RE =
@@ -76,17 +62,8 @@
     if (!embedFrame) return;
   }
   if (/^clips\.twitch\.tv$/i.test(location.hostname) || /^\/[^/]+\/clip\//i.test(location.pathname || '')) return;
-  /* A tab keeps the copy it loaded with until it reloads: Chrome does not inject a newer copy into
-     a tab that is already open, and Repair reloads a tab rather than running this script into it
-     again. If a second copy does arrive -- two installs side by side, say -- a newer one replaces
-     an older one only when the older one can hand back everything it holds, which its disposer
-     says by carrying __woReleases. Copies up to 1.0.1 cannot: their fetch and getItem hooks keep
-     the browser's own functions in a closure, and once their listeners were released those hooks
-     went on answering ad requests and Low Latency whatever the switches said. Such a copy is left
-     in charge, still listening to settings, until the tab reloads. Stacking on it looked like a
-     replacement while the old hooks still decided. A marked disposer that throws is treated the
-     same way: whatever it failed to release is still live, so this copy stays out. The function
-     called is the one checked, not the page-visible global read a second time. */
+  /* Replace an older copy only when its captured disposer advertises __woReleases and succeeds.
+     Legacy disposers leave fetch/storage hooks active; keep them in charge until tab reload. */
   if (window.__wardenOneTwitchAdblockReady === VERSION) return;
   if (window.__wardenOneTwitchAdblockReady) {
     const previous = window.__wardenOneTwitchAdblockDispose;
@@ -95,9 +72,7 @@
   }
   window.__wardenOneTwitchAdblockReady = VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -111,8 +86,7 @@
   };
   const woObserver = (...a) => woHold(new MutationObserver(...a));
   const woInterval = (...a) => woHold(setInterval(...a));
-  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
-     forwarding `this` keeps them behaving exactly as the host would call them. */
+  /* Preserve the native timer callback’s this binding. */
   const woTimeout = (fn, ms, ...rest) => {
     let id;
     id = setTimeout(function (...a) {
@@ -896,15 +870,8 @@
     playbackFailOpenTimer = woTimeout(finishPlaybackFailOpen, playbackFailOpenUntil - Date.now());
   }
 
-  /* Twitch reads its Low Latency preference while its player starts, and this page's settings
-     arrive from the extension asynchronously -- often after that read. An unset preference read
-     before they arrive starts the player in Low Latency for the rest of its life. Measured live: of
-     two tabs opened together, one ran Low Latency for its whole session and ran its buffer dry at
-     each switch to the clean stream (0.06 s, two stalls in 20 s); the other never did. So the last
-     setting that did arrive is kept under WardenOne's own key in Twitch's storage and stands in
-     until this load's settings come. With nothing kept -- a first visit -- the preference stays
-     native until they come, as before. The key only decides how an unset Low Latency preference
-     reads, so a page writing it changes nothing else. */
+  /* Cache the last setting under WardenOne’s key because Twitch reads Low Latency before config arrives.
+     Use it only for an unset native preference; first visits retain native behaviour until config arrives. */
   const STEADY_PLAYBACK_MEMORY_KEY = '__woTwitchSteadyPlayback';
   let nativeStorageGetItem = null;
   let nativeStorageSetItem = null;
@@ -1015,15 +982,9 @@
     const list = Array.isArray(parsed) ? parsed : [parsed];
     const token = list.find(tokenOperation);
     if (!token) return false;
-    // Twitch's player asks for the templated operation, PlaybackAccessToken_Template.
-    // Capturing that and replaying it for a backup stream sends that name alongside a
-    // persisted-query hash, and Twitch refuses the pair outright:
-    //   no operation with name "PlaybackAccessToken_Template"
-    // It answers HTTP 200 while doing so, so the failure surfaces only as a null token
-    // and kills every clean-backup route at exactly the moment a pre-roll needs one --
-    // the one break with no warm stream to fall back on. Adopt a template only when it
-    // names the operation the hash actually resolves to; otherwise leave both unset so
-    // the built-in PlaybackAccessToken request is used, which mints tokens reliably.
+    // A persisted-query hash cannot be paired with PlaybackAccessToken_Template: Twitch returns
+    // HTTP 200 with an operation-name error. Adopt only matching operations; otherwise use
+    // the built-in PlaybackAccessToken request.
     if (!/^PlaybackAccessToken$/i.test(String(token.operationName || 'PlaybackAccessToken'))) return false;
     try {
       const next = JSON.parse(JSON.stringify(token));
@@ -1417,16 +1378,9 @@
     });
   }
 
-  // Steadier playback: Twitch's Low Latency mode is off unless the viewer chose it.
-  // In Low Latency mode the player sits about a second behind live, which Twitch's own stream
-  // makes safe with prefetch hints. A clean backup carries none, so during an ad break the player
-  // ran with under one segment buffered and any hiccup stalled it -- measured live on a 720p60
-  // channel: buffer floor 0.0-0.4 s through breaks and a 3.5 s freeze; with Low Latency off the same
-  // breaks held a 3.0 s floor (4.7 s average) and nothing stalled. Twitch reads the preference as
-  // IG.get('lowLatencyModeEnabled', true) from localStorage, so only an UNSET value is answered
-  // 'false': a viewer who switches Low Latency on in Twitch's own settings writes 'true' and keeps
-  // it. Twitch's key is never written, so turning this off restores Twitch's default on the next
-  // player load; the only thing kept is which way this setting last arrived (see updateEnabled).
+  // Clean backups can lack the prefetch hints Low Latency needs to avoid stalls.
+  // Answer false only for an unset preference; preserve the viewer’s explicit Twitch choice.
+  // Never write Twitch’s key, so disabling this restores its default on the next player load.
   const LOW_LATENCY_KEY = 'lowLatencyModeEnabled';
   function installSteadyPlaybackPreference() {
     let proto = null;
@@ -1460,11 +1414,7 @@
         if (VIDEO_AD_SERVICE_URL_RE.test(url)) announceAdImminent();
         try { return Promise.resolve(emptyAdResponse()); } catch (_) {}
       }
-      // The player fetches the master on the page, then hands media URLs to a
-      // worker created afterwards. That worker never sees the master, so its
-      // media map stays empty, every lookup misses, and the whole clean-backup
-      // path is skipped -- which is why ads used to fall through to the gapper
-      // and stay visible. Mirror the master into the workers, passively.
+      // Mirror the page-fetched master into later workers so their media maps can resolve alternate streams.
       if (enabled && MASTER_URL_RE.test(url)) {
         const pending = nativeFetch.apply(this, arguments);
         try {
@@ -1670,14 +1620,8 @@
     attempt();
   }
 
-  // Swapping the video does not change what Twitch's own player believes: it still
-  // reads the ad markers in the native playlist, so it keeps showing the "Ad" badge
-  // and opens its picture-by-picture "watch while the ad plays" window over a
-  // stream that is already ad-free. Hide that chrome only while a swap is actually
-  // active, keyed off the state attribute.
-  //
-  // Injected exactly once and never from a MutationObserver: a callback that writes
-  // to the DOM it observes re-triggers itself and pins a renderer core.
+  // Hide native ad chrome only while a clean-stream swap is active.
+  // Inject once outside the MutationObserver to avoid triggering a write/observe loop.
 
   let adChromeCssInstalled = false;
   function installAdChromeCss() {
@@ -1690,15 +1634,9 @@
       style.id = 'wo-twitch-ad-chrome';
       adChromeCss = style;
       const gate = 'html[data-wo-twitch-adblock="blocked-clean"] ';
-      // Keep ad labels visible when a clean replacement was unavailable.
-      // The text-only commercial-break placeholder still has no safe selector.
-      // Structural rule for everything below: a selector that can match an
-      // ANCESTOR of the live <video> carries a :not(:has(video)) guard, because
-      // display:none on an ancestor blanks the whole picture for the break --
-      // far worse than the chrome it was meant to hide.
-      //
-      // Leaf-shaped ad markers only. Kept free of :has() so an engine without it
-      // still applies them.
+      // Keep ad labels when no clean replacement exists; the text-only break placeholder has no safe selector.
+      // Selectors that can match a video ancestor need :not(:has(video)) to avoid blanking playback.
+      // Keep leaf-only rules free of :has() for engines without support.
       const leafSelectors = [
         '[data-a-target="video-ad-label"]',
         '[data-a-target="video-ad-countdown"]',
@@ -1937,14 +1875,8 @@
     // the 2.5s pre-roll budget could use it. This remains below that outer budget
     // and does not delay mid-roll fallback, whose own wait stays bounded at 900ms.
     const BACKUP_POLL_TIMEOUT_MS = 1500;
-    // A clean backup with no prefetch hints (mobile_feed listed none when this was measured; it
-    // lists them now, and ordinaryMediaPlaylist keeps them) lets the player learn of each backup
-    // segment only once it is listed, and only on its next poll. A poll landing just before the
-    // backup published added nothing, the player was holding under one segment, and the picture
-    // ran dry -- the spinner at an ad break. Measured live:
-    // a poll at 215.29 s found no new segment, the buffer hit zero at 216.25 s, the next poll at
-    // 216.30 s had it. Such a poll is held and the backup re-polled until it advances, as LL-HLS
-    // blocking reload does, within this bound; past it the poll is answered exactly as before.
+    // If a backup poll has not advanced, briefly re-poll before answering, like LL-HLS blocking reload.
+    // This avoids draining a thin buffer when the poll just precedes segment publication.
     const BACKUP_HOLD_MS = 1500;
     const BACKUP_HOLD_STEP_MS = 250;
     const COMPLETE_MEDIA_RETRY_MS = 650;
@@ -3104,15 +3036,9 @@
       }
     }
 
-    /* Twitch now lists two DATERANGEs that the ad matchers count but that describe no ad media in
-       the window: twitch-trigger, present in every playlist from the start of the session, and the
-       twitch-maf-ad notice, which stays listed after its window has closed. Counted as live
-       markers they meant no native refresh was ever marker-free, so a pod's quarantine could only
-       end on its two-minute timeout: measured live, the player stayed on the alternate for over
-       three minutes per break, on one channel more than half the time it was watched -- every
-       alternate hiccup, token renewal and thin Low Latency buffer included. A refresh whose only
-       ad markers are those -- the trigger, or timed ranges that ended before its first segment
-       began -- is marker-free for release. Anything untimed, current or still to come is not. */
+    /* Ignore twitch-trigger and timed ad ranges ending before the first listed segment when releasing
+       quarantine. They can remain in every refresh after an ad ends. Untimed, current and future
+       ranges still count as live markers. */
     function lingeringAdMarkersOnly(evidence) {
       if (!evidence || evidence.confirmed > 0 || !Array.isArray(evidence.lines)) return false;
       let windowStart = NaN;

@@ -4,32 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The badge must never be the thing standing between someone and a control -- and it
- * must not be dead on every page that has a link in its corner.
- *
- * It is fixed to the bottom-right corner at the maximum z-index, which is exactly where
- * video and music players put their controls. Reported on YouTube: in fullscreen the badge
- * swallowed the hover and the click that reveal and press the exit button. Then reported
- * the other way round: "on most pages we cannot press the button". The first fix yielded
- * to ANY control under the badge, and on a page with links everywhere something is under
- * it nearly all the time -- so the badge went inert at load and, taking no pointer events,
- * never received the hover that would have re-checked. Dead until a resize.
- *
- * Three outcomes now, deliberately different:
- *   player, slider beside, fullscreen -> HIDDEN. Passing the click through is no comfort
- *              when you cannot see what you are dragging.
- *   anchored control (fixed, sticky, inside the fullscreen element, or in the flow of a
- *              document that cannot scroll, with no scrolling pane in between) -> the badge
- *              MOVES UP, clear of the control or of its whole block; only when nothing fits
- *              does it stay put and go inert.
- *   anything that scrolls away -> the badge is left alone. It is a floating widget like any
- *              other, and a flick of the wheel reaches whatever was under it.
- *
- * This evaluates the shipped functions out of src/content.js rather than a copy.
- *
- * Run: node tools/test-badge-yield.js
- */
+/* Keep the badge usable while yielding to anchored controls, stacked widgets and media players.
+   Run: node tools/test-badge-yield.js */
 'use strict';
 
 const assert = require('assert');

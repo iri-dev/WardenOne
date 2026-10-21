@@ -4,28 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Helpers the whole worker uses have to live where the whole worker can see them.
- * Run: node tools/test-background-scope.js
- *
- * background.js ends in one very long chrome.runtime.onMessage listener. A helper
- * written just above the handler that uses it lands INSIDE that listener, and in
- * strict mode a function declaration in a block is scoped to the block. The
- * handler still works, so it reads as correct. Everything else silently does not:
- *
- *   - navigation listeners calling it throw "X is not defined" at runtime, in a
- *     callback, where nothing in the build can see the failure
- *   - every const beside it is rebuilt on EVERY message, so anything meant to be
- *     remembered between messages is always empty
- *
- * That is what happened to the service-worker and consent-cookie helpers: 378
- * lines of module-level code sat inside the listener, so noteServiceWorkerRegistration
- * and maybeClearOnLeave threw on every navigation while their handlers worked fine.
- *
- * This finds the listener, lists what is declared directly in its body, and fails
- * if any of it is used from outside. It says nothing about handler locals -- those
- * are deeper, and are meant to be local.
- */
+/* Check worker helpers used by navigation listeners are not scoped inside the message handler.
+   Run: node tools/test-background-scope.js */
 'use strict';
 
 const assert = require('assert');

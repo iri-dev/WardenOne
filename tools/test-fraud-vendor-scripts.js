@@ -4,28 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Fraud and bot-check scripts are not fingerprinting libraries, and the difference decides
- * whether someone can sign into their bank.
- *
- * "Limit fingerprinting JavaScript" shipped on by default with one list of seventeen hosts.
- * Six were fingerprinting libraries -- refusing those costs the reader nothing. The other
- * eleven were ThreatMetrix, iovation, Sift, Forter, Riskified, PerimeterX, DataDome and
- * Kasada: vendors a site has handed an access decision to. Blocking one of those does not
- * quietly drop a tracker from a page that still works, it removes something the site
- * requires, and what the reader gets is a refused login or a declined order with nothing
- * naming the cause. None of WardenOne's three allow bands rescued them, so the only way out
- * was allowlisting the whole site.
- *
- * So the list is split, the gatekeeping half has its own switch and is off unless asked for,
- * and the rules carry the same login-compat exclusion every other blocking rule here carries.
- * The needles are path-anchored too: unanchored they matched the query string, so an
- * unrelated bundle requested with "?module=device-fingerprint" was refused on that alone.
- *
- * This runs the SHIPPED rule builder rather than a copy of it, because a copy would drift.
- *
- * Run: node tools/test-fraud-vendor-scripts.js
- */
+/* Keep access-gating bot vendors on their separate opt-in block switch.
+   Run: node tools/test-fraud-vendor-scripts.js */
 'use strict';
 
 const fs = require('fs');

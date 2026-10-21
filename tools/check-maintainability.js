@@ -196,6 +196,8 @@ function checkContentBuild() {
   'tools/test-feed-check-coverage.js',
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
+  'tools/test-download-hash-redirects.js',
+  'tools/test-reputation-bypass.js',
   'tools/test-download-review-format.js',
   'tools/test-extension-change-watch.js',
   'tools/test-extension-reputation.js',
@@ -439,6 +441,8 @@ function checkContentBuild() {
   'tools/browser-resource-saver.js',
   'tools/test-animated-image-saver.js',
   'tools/browser-engine-smoke.js',
+  'tools/browser-download-hash-redirects.js',
+  'tools/browser-reputation-bypass.js',
   'tools/browser-image-logger-loads.js',
   'tools/browser-grabber-switches.js',
   'tools/build-settings-data.js',
@@ -635,6 +639,8 @@ checkCommand('shared extension theme tests', ['tools/test-theme.js']);
 checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
+checkCommand('download hash redirect tests', ['tools/test-download-hash-redirects.js']);
+checkCommand('reputation navigation grant tests', ['tools/test-reputation-bypass.js']);
 checkCommand('download review formatting tests', ['tools/test-download-review-format.js']);
 checkCommand('extension change watcher tests', ['tools/test-extension-change-watch.js']);
 checkCommand('extension reputation tests', ['tools/test-extension-reputation.js']);
@@ -851,19 +857,8 @@ checkCommand('Resource Saver injection tests', ['tools/test-resource-saver-injec
 checkCommand('Animated image saver tests', ['tools/test-animated-image-saver.js']);
 checkCommand('YouTube prune tests', ['tools/test-yt-prune.js']);
 
-// ---------------------------------------------------------------------------
-// Coverage meta-checks (M15).
-//
-// Eight suites and eleven shipped scripts had drifted outside this gate. Nothing was failing --
-// running the orphans by hand passed -- but a future regression in any of them would have left the
-// official gate green, which is the whole problem: a suite nobody runs is worse than no suite,
-// because it looks like coverage.
-//
-// Adding them to the lists above fixes today. These checks fix tomorrow: they read the filesystem
-// and fail when anything is neither covered nor deliberately excluded, so the next file added
-// cannot quietly escape. A hand-maintained list is what drifted; a second hand-maintained list
-// would drift the same way.
-// ---------------------------------------------------------------------------
+// Coverage meta-checks (M15): discover scripts/suites from the filesystem and require each
+// to be covered or explicitly excluded. A second manual inventory would drift too.
 const gateSource = read('tools/check-maintainability.js') || '';
 
 // Suites that exist but are never executed here. This used to accept a suite whose name appeared
@@ -944,24 +939,8 @@ const gateSource = read('tools/check-maintainability.js') || '';
   }
 }
 
-// ---------------------------------------------------------------------------
-// Source encoding hygiene (L24).
-//
-// background.js shipped for five commits with a UTF-8 BOM and six mojibake sequences: an em dash,
-// an ellipsis, a middle dot and a combining-dot letter, each decoded as Windows-1252 and
-// re-encoded. Five were in comments, but one was the middle dot in the separator that joins the
-// reputation-provider summaries, so the corruption reached the UI. Nothing caught it. The file
-// parsed, every suite passed, and the damage was invisible unless you looked at the bytes.
-//
-// Note for anyone extending this: do NOT paste an example of the corruption into this file. An
-// earlier draft quoted the broken separator here and the check dutifully failed on its own
-// documentation. Describe the sequences; never reproduce them.
-//
-// Detection is by construction rather than by a list of known-bad strings: a two-byte UTF-8
-// sequence misread as Windows-1252 always lands as [U+00C0-U+00DF] followed by whatever CP1252
-// maps 0x80-0xBF to. Building that second set from the codepage catches sequences nobody has seen
-// yet, which a hardcoded list of the handful already encountered would not.
-// ---------------------------------------------------------------------------
+// Source encoding hygiene (L24): detect UTF-8 misread as Windows-1252 by constructing the byte mapping.
+// Do not paste corrupt examples into this file; the check scans its own source.
 {
   // CP1252 high range 0x80-0xBF. 0x81/0x8D/0x8F/0x90/0x9D are unmapped and cannot appear.
   const CP1252_HIGH = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ'

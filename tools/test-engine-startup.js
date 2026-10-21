@@ -6,29 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-/*
- * The overlay cleaner's `cleanerMonitoring` flag was declared inside a 31,000-character
- * comma-separated `const` chain, and start() assigns to it. That is a TypeError, thrown on the
- * first ordinary page load, because removeOverlays is on by default and the gate exempts only a
- * handful of hosts. Start-up aborted after some prototype patches were live but before the ready
- * version was published -- so the extension looked installed while a large part of it was not
- * running, and Repair could not certify the tab.
- *
- * The guard that actually catches a regression here is the STATIC one: the declaration must be a
- * `let` and must not be back inside a const chain. That was verified by reverting the fix -- the
- * static checks fail, and they are the reason this file exists.
- *
- * The run-the-engine check below is weaker than it looks, and the comment says so deliberately.
- * The stub page never supplies a config, so WO.removeOverlays is unset, the cleaner gate is never
- * taken and start() is never called -- meaning this check did NOT fail when the bug was put back.
- * It is still worth keeping: it proves the shipped bundle evaluates end to end without a
- * top-level assignment-to-constant, which is a real class of failure. It is not proof that the
- * cleaner path is sound. Driving the config far enough to reach start() would make it so, and is
- * the obvious next improvement.
- *
- * Run with:
- *   node tools/test-engine-startup.js
- */
+/* Execute the engine startup path to catch scope errors hidden by guarded callbacks.
+   Run: node tools/test-engine-startup.js */
 
 const fs = require('fs');
 const path = require('path');

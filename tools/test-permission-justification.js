@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Every permission in the manifest must be used by shipped code and explained to the reader.
- *
- * tabGroups was declared for long enough to reach a release candidate while nothing called
- * chrome.tabGroups at all -- Memory Shield reads tab.groupId, which belongs to chrome.tabs,
- * and background-memory.js says so in its own comment. The cost was not theoretical: it put
- * "View and manage your tab groups" in the install warning of a privacy extension, for an
- * API it never touched. Three more permissions -- declarativeNetRequestFeedback,
- * contextMenus and offscreen -- were declared and left off the permissions page, which
- * promises to show why each permission exists (CWS-02).
- *
- * Both halves are asserted here, in both directions, so the next permission added has to
- * arrive with a caller and an explanation, and one that is removed cannot leave a stale
- * row behind.
- *
- * Run: node tools/test-permission-justification.js
- */
+/* Match every manifest permission to a shipped API dependency and user-facing explanation. (CWS-02)
+   Run: node tools/test-permission-justification.js */
 'use strict';
 
 const fs = require('fs');

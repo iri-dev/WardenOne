@@ -4,18 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Twitch Rewind's disposer, run against the real twitch-rewind.js on a small fake player page.
- *
- * The published disposer used to release only what the shared registry holds -- listeners,
- * timers, observers, Chrome listeners. Rewind's real holdings are elsewhere: a running
- * MediaRecorder and its capture tracks, a buffer of chunks, replay blob URLs, a live picture it
- * muted during a rewind, and controls in Twitch's player bar. Those are released by shutdown(),
- * which disposal skipped, so a disposed copy kept encoding with nothing listening and a newer copy
- * started a second recorder beside it.
- *
- * Run: node tools/test-twitch-rewind-dispose.js
- */
+/* Dispose recorder tracks, buffers, blob URLs and controls as well as registry resources.
+   Run: node tools/test-twitch-rewind-dispose.js */
 'use strict';
 
 const fs = require('fs');

@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Hyperlink auditing: <a ping> removal, inside Link Cleanup.
- *
- * <a href="https://example.com" ping="https://tracker.example/click"> sends a request to
- * the ping URL when the link is clicked. The link looks and behaves completely normally.
- *
- * Two things have to hold, and they pull in opposite directions:
- *   - the ping goes, ALWAYS -- including to the site's own domain and to hosts no
- *     blocklist knows, which is the whole reason the network layer was not enough; and
- *   - href is untouched, so the click still lands where the reader could see it would.
- *
- * It also must not become its own feature: no toggle, no panel, no protection-count
- * entry. It rides the Link Cleanup switch that was already there.
- *
- * The real scrubber is lifted out of src/content.js and run against a small DOM.
- *
- * Run: node tools/test-link-ping-strip.js
- */
+/* Remove initial and late-added ping attributes without changing link navigation.
+   Run: node tools/test-link-ping-strip.js */
 'use strict';
 
 const fs = require('fs');

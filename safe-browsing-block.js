@@ -29,16 +29,6 @@
     });
   }
 
-  // One remove, then go. The record is its own storage key, so consuming it cannot race
-  // with anything else being written; the timer only guards against a callback that
-  // never fires.
-  function consumeRecord(then) {
-    let done = false;
-    const go = () => { if (!done) { done = true; then(); } };
-    try { chrome.storage.session.remove(RECORD_KEY, go); } catch (_) { go(); }
-    setTimeout(go, 800);
-  }
-
   // Validate the scheme here rather than relying on a check in another file. The worker only
   // stores http(s), but the guarantee that this page never navigates anywhere else rests here,
   // the same way it does in its siblings.
@@ -91,8 +81,6 @@
     const escapePanel = document.getElementById('escape');
     const proceed = document.getElementById('proceed');
     const foot = document.getElementById('foot');
-    const escapeHost = document.getElementById('escape-host');
-    if (escapeHost) escapeHost.textContent = host || 'this site';
 
     // The escape route is revealed rather than shown, and the button that uses it stays
     // disabled for a few seconds. Someone who genuinely knows this site is a false
@@ -147,8 +135,8 @@
       if (proceed.hasAttribute('disabled') || !url) return;
       proceed.setAttribute('disabled', 'disabled');
       proceed.textContent = 'Continuing…';
-      chrome.runtime.sendMessage({ kind: 'safe-browsing-allow-once', host: host }, (res) => { void chrome.runtime.lastError;
-        if (res && res.ok) { consumeRecord(() => { location.href = url; }); return; }
+      chrome.runtime.sendMessage({ kind: 'safe-browsing-allow-once', handle }, (res) => { void chrome.runtime.lastError;
+        if (res && res.ok) { location.href = url; return; }
         proceed.textContent = 'Could not continue';
         const ready = document.getElementById('escape-ready');
         if (ready) ready.textContent = 'Could not continue. Go back or open activity.';

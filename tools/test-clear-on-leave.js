@@ -4,19 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Clearing cookies after a banner the user had to accept.
- *
- * Auto-reject handles a banner that offers a way to say no. This is for the ones
- * that do not: the user clicks Accept to reach the page, and the cookies that
- * bought them entry stay behind. When the last tab for that site goes, so do they.
- *
- * This is the only feature in the extension that deletes the user's data, so the
- * checks below are mostly about when it must NOT run, and about the one thing it
- * must never take with it: the sign-in.
- *
- * Run: node tools/test-clear-on-leave.js
- */
+/* Clean recognised consent/tracking cookies on departure while preserving session cookies.
+   Run: node tools/test-clear-on-leave.js */
 'use strict';
 
 const assert = require('assert');

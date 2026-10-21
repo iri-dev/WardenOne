@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Does the site-permission sweep actually run (M-privacy-cleaner)?
- *
- * Camera, microphone and location grants pile up the way consent cookies do, so the Privacy
- * cleaner offers to hand them all back to "ask". contentSettings cannot enumerate which sites hold
- * a grant -- a Chrome limitation, which is why there is a sweep and no listing -- but it can clear
- * a type, and that is the useful half.
- *
- * This suite exists because the first version of that sweep PARSED PERFECTLY and failed on every
- * click. It was declared inside the message listener and read two consts declared further down the
- * same function, so calling it from the clean-browser branch above them threw ReferenceError before
- * it executed a line. A syntax check cannot see that, and neither can reading it. Only running it
- * can. So this suite runs it, against the Chrome shapes that matter:
- *
- *   - every content-setting type available
- *   - a realistic Chrome, where several types are simply not exposed to extensions
- *   - one type erroring while the rest succeed
- *   - contentSettings missing altogether
- *
- * Run: node tools/test-permission-sweep.js
- */
+/* Exercise permission-cleaner wiring and report reset failures rather than claiming success.
+   Run: node tools/test-permission-sweep.js */
 'use strict';
 
 const fs = require('fs');

@@ -4,29 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The File System Access API -- the one thing in this family nothing watched.
- *
- * WardenOne already recorded WebUSB, Web Serial, WebHID and Web Bluetooth. showDirectoryPicker
- * reaches further than any of them: read, or with mode readwrite write, over a whole folder tree
- * on the machine -- and the handle survives the visit, because a site can keep it in IndexedDB
- * and come back to it. "Pick your Downloads folder so we can scan it" is a shape scams already
- * use, and it left no trace anywhere.
- *
- * Nothing is blocked, for the same reason nothing is blocked for the device APIs: Chrome's own
- * picker is the real gate, and web editors, photo tools and IDEs use these properly every day.
- * The point is the record.
- *
- * Two things earn one, and the second matters more. Asking is loud -- a picker opens and you are
- * looking at it. A site that already holds a granted handle from an earlier visit is the quiet
- * case: queryPermission answers "granted" and it reads or writes with no prompt at all. So there
- * the ANSWER decides, not the call.
- *
- * The check this file exists for above all others: the folder is never named. Recording the path
- * would put the thing being protected into the log.
- *
- * Run: node tools/test-file-access-guard.js
- */
+/* Observe file pickers and existing grants without blocking browser consent or logging paths.
+   Run: node tools/test-file-access-guard.js */
 'use strict';
 
 const assert = require('assert');

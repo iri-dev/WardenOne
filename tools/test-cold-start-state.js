@@ -3,20 +3,8 @@
    Official source: https://github.com/iri-dev/WardenOne
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Security state has to be ready, and durable, for the FIRST event (M17).
- *
- * Registering a listener is synchronous; hydrating its state from storage is not, and Chrome
- * dispatches as soon as the worker starts rather than waiting for a storage read. An MV3 worker is
- * torn down constantly, so "the first event after a suspension" is not an edge case -- it is most
- * events. Three stores were decided from before they were loaded, and one of them then published
- * itself over what that first event had just written.
- *
- * Every hydration callback here is held open deliberately. That window IS the finding: a harness
- * that resolves storage immediately cannot see any of it.
- *
- * Run: node tools/test-cold-start-state.js
- */
+/* The first event must await security hydration; restored state must retain newer live changes. (M17)
+   Run: node tools/test-cold-start-state.js */
 'use strict';
 
 const fs = require('fs');

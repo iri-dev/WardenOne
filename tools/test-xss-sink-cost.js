@@ -4,22 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The XSS sink wrappers stay cheap without changing a verdict (PERF-11).
- * Run: node tools/test-xss-sink-cost.js
- *
- * Every wrapped sink (innerHTML, setAttribute, timers, navigation...) correlates its value with
- * the page's mutable sources after the native call. Three things keep that off the hot path:
- * the URL, path and window.name are re-registered only when they changed (or a static source
- * was pushed out of the list), the analysis tests containment before it walks tags and decodes
- * only a value that can decode, and a verdict is remembered per value, sink and filter for as
- * long as the source set is unchanged. Each of those is a place a stale answer could hide, so
- * this suite drives the real shipped scanner through the fake DOM of
- * tools/test-xss-behavior-guard.js and asserts: the verdicts of the paths the shortcuts touch;
- * that a remembered "clean" is forgotten the moment a new source arrives, the URL moves or the
- * name changes; that a reflected URL value is still caught after ninety-six messages have
- * evicted it; and that the cost has the shape the benchmark measured, with room to spare.
- */
+/* Bound correlation work while invalidating cached verdicts when mutable sources change or are evicted. (PERF-11)
+   Run: node tools/test-xss-sink-cost.js */
 'use strict';
 
 const fs = require('fs');

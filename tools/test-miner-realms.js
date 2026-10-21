@@ -3,23 +3,8 @@
    Official source: https://github.com/iri-dev/WardenOne
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The deep cryptominer detector across two worlds (M23).
- *
- * cryptominer-detect.js runs in MAIN; bridge.js runs in ISOLATED. They share a document and a
- * postMessage channel, and they do NOT share a window -- `window.x` set by one is invisible to the
- * other. The detector used to ask for a replayed handshake by calling window.__wardenOneBridgeReplay,
- * which the bridge publishes on its own window, so the call could never land. A detector injected
- * after the one-time handshake therefore never got a token, rejected every config that followed,
- * and sat on confirmed detections forever, having killed nothing and reported nothing.
- *
- * The old suite asserted this by checking that both files contained the string
- * `__wardenOneBridgeReplay`. They did. That is exactly what a defect between two realms looks like
- * to a test that models neither, so this one models both: separate window objects, one shared
- * document, one shared message channel.
- *
- * Run: node tools/test-miner-realms.js
- */
+/* Deliver config across MAIN/ISOLATED and recover dynamically injected detectors that missed the handshake. (M23)
+   Run: node tools/test-miner-realms.js */
 'use strict';
 
 const fs = require('fs');

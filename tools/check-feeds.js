@@ -4,27 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Are the blocklist feeds still usable?
- *
- * NOT part of the maintainability gate, on purpose: it talks to the internet, so
- * it would fail on a train, and a network flake is not a broken build. Run it by
- * hand, and whenever the blocked-domain count in the popup looks wrong.
- *
- * THIS CHECKS WHAT THE EXTENSION ACTUALLY DOES, which the first version of this
- * script did not. That version sent a 400-byte range request and reported "all
- * 30 feeds reachable" — a result that says nothing at all, because the extension
- * downloads the WHOLE list under a byte cap and a wall-clock timeout. A feed can
- * answer a range request instantly and still be refused every single time:
- *
- *   - hagezi's adblock/tif.txt is 43 MB against an 18 MB cap. Swapping the dead
- *     hosts/tif.txt for it "fixed" a 404 into a silent too-large rejection, and
- *     the popup went on reporting feeds as unreachable.
- *
- * So: full download, the real cap, the real timeout. Slow is a finding.
- *
- * Run: node tools/check-feeds.js
- */
+/* Check full feed downloads against the extension’s actual byte/time limits, not just reachability.
+   Network-dependent and excluded from the local gate.
+   Run: node tools/check-feeds.js */
 'use strict';
 
 const fs = require('fs');

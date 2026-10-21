@@ -47,18 +47,8 @@ const CLICKFIX_TYPES = new Set([
   'warned_command_paste',
 ]);
 
-/*
- * The command samples below are assembled from fragments rather than written out.
- *
- * This file is a test FOR a malware-delivery detector, so it necessarily contains
- * malware-delivery commands -- and an on-access scanner reading it from disk sees
- * exactly that. One did: it deleted this file mid-edit, taking the suite with it,
- * because the literal strings were sitting in a file being written.
- *
- * Assembling them at runtime keeps the guard's input byte-identical while leaving
- * nothing runnable on disk. Not evasion -- there is no malware here to hide, only
- * a scanner correctly recognising its own test fixtures.
- */
+/* Assemble command fixtures at runtime so on-access antivirus does not delete the test source.
+   The detector still receives byte-identical samples. */
 const cmd = (...parts) => parts.join('');
 const WIN_RUN = () => cmd('Win', String.fromCharCode(43), 'R');
 const POWERSHELL = () => cmd('Power', 'Shell');

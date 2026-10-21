@@ -4,35 +4,13 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* WardenOne EyeShield: dynamic site theming (dark / ultra / light / brightness)
- *
- * Instead of slapping `filter: invert()` on <html> (which negative-izes every
- * image and washes everything to muddy mid-grays), we rewrite the COLOR VALUES
- * inside the page's own stylesheets (CSSOM), its CSS custom properties, and any
- * inline style="" colors. Each color is transformed by ROLE:
- *   - foreground (text/icons) -> pushed bright   (high contrast on dark)
- *   - background/surfaces     -> pushed dark
- *   - borders                 -> kept subtle
- * Hue is preserved; images/video/canvas are never touched.
- *
- * Modes:
- *   dark  : remap a light page to a comfortable dark theme.
- *   ultra : like dark, but OLED-black backgrounds with still-readable text.
- *   light : remap a dark page to light.
- *   off   : no color change.
- * Already-dark pages are left alone in dark/ultra; already-light pages are left
- * alone in light. Brightness is a separate full-screen dim scrim (no filter).
- */
+/* EyeShield remaps CSSOM, custom-property and inline colours by foreground/background/border role.
+   Preserve hue and leave images, video and canvas alone. Brightness uses a separate dimming scrim. */
 (function () {
   'use strict';
 
   const WO_GUARD_VERSION = '1.0.2';
-  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
-     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
-     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
-     tab, only report honestly that it could not. A same-version re-injection still refreshes,
-     which is what this guard has always done and what the popup relies on; an older copy is now
-     released first instead of being left running alongside its replacement. */
+  /* Dispose an older version before replacing it. Same-version reinjection still refreshes the current theme. */
   if (window.__wardenOneEyeShieldInstalled === WO_GUARD_VERSION) {
     try {
       if (typeof window.__wardenOneEyeShieldRefresh === 'function') window.__wardenOneEyeShieldRefresh();
@@ -46,9 +24,7 @@
   }
   window.__wardenOneEyeShieldInstalled = WO_GUARD_VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -62,8 +38,7 @@
   };
   const woObserver = (...a) => woHold(new MutationObserver(...a));
   const woInterval = (...a) => woHold(setInterval(...a));
-  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
-     forwarding `this` keeps them behaving exactly as the host would call them. */
+  /* Preserve the native timer callback’s this binding. */
   const woTimeout = (fn, ms, ...rest) => {
     let id;
     id = setTimeout(function (...a) {
@@ -73,12 +48,7 @@
     woPending.add(id);
     return id;
   };
-  // Chrome's extension events are not DOM events: they are not covered by the abort signal above
-  // and they have no equivalent of removeEventListener-by-signal. Repair reinstalls this script in
-  // every frame, so a listener registered here and never removed accumulates one more copy per
-  // Repair -- and every copy answers, so old and new bridges race on form and media health.
-  //
-  // The exact callback reference has to be kept, because removeListener matches by identity.
+  // Chrome events ignore AbortSignal; retain callback identities for removeListener during disposal.
   const woChromeListeners = [];
   const woOnMessage = (fn) => {
     try {
@@ -282,16 +252,9 @@
     return isManagedThemeHost() && !needsManagedObserverHost() ? [document] : rootsList();
   }
 
-  // Anti-flash: the trusted config snapshot is async, so at document_start the page would
-  // paint in its native colours (white flash on YouTube etc.) before our theme
-  // lands. The mode is known synchronously anyway: while a mode is on, the worker
-  // registers the one-line eyeshield-preload-<mode>.js AHEAD of this file in the same
-  // registration, and it sets a property in this isolated world that the page cannot
-  // see. A dark/light backdrop is painted from it immediately, replaced by the real
-  // theme once config loads, and removed if the mode turns out to be off. The mode
-  // used to be cached in each site's own localStorage instead -- readable by the site,
-  // and left behind on uninstall (PRIV-12) -- so that key is removed wherever it is
-  // still found, and never written again.
+  // Anti-flash: use the registered isolated preload mode until async config arrives.
+  // Replace or remove that backdrop once config resolves. Remove legacy site-localStorage mode keys
+  // and never write them again: sites could read them and uninstall did not clear them (PRIV-12).
   try {
     const hinted = window.__wardenOneEyeShieldPreloadMode;
     // Discord themes itself via <html> classes (its own light/dark themes) — skip the
@@ -379,15 +342,9 @@
   function clean(rgba) { return rgba && rgba.length >= 3 && rgba.slice(0, 3).every((n) => !Number.isNaN(n)) ? rgba : null; }
   function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
 
-  // role: 'fg' | 'bg' | 'border'   mode: 'dark' | 'ultra' | 'light'
-  //
-  // ABSOLUTE mapping by role, NOT lightness inversion. Text is forced into a
-  // bright band and backgrounds into a dark band regardless of the input's
-  // lightness. This is what makes it look clean whether the page started light
-  // OR already dark: a light page's dark text -> bright, and an already-dark
-  // page's light text STAYS bright (inversion would wrongly darken it -> the
-  // muddy/unreadable bug). Relative ordering within each band is preserved so
-  // hierarchy (headings vs body, canvas vs cards) survives.
+  // role: fg | bg | border; mode: dark | ultra | light.
+  // Map roles into absolute brightness bands while preserving ordering within each band.
+  // Inversion would darken text that was already light.
   function transform(rgba, mode, role) {
     const hsl = rgbToHsl(rgba[0], rgba[1], rgba[2]);
     const l0 = hsl[2];
@@ -427,12 +384,8 @@
     }
     l = clamp01(l);
     let s = hsl[1];
-    // Chroma preservation for text. HSL saturation lies at the extremes: a near-white
-    // like #eef0ff (Google's AI-Overview headings) reads as s≈1.0, so naively lowering
-    // its lightness made the faint tint BLOOM into vivid periwinkle (the "purple
-    // headings" bug). Chroma C = s*(1-|2l-1|) is the honest colourfulness; hold the
-    // ORIGINAL chroma at the new lightness so near-white stays near-white while a
-    // genuinely-coloured link/error keeps its hue. Hue itself is never touched.
+    // Preserve original chroma, not HSL saturation, when moving text lightness.
+    // Near-white saturated tints must not become vivid colours; hue stays unchanged.
     if (role === 'fg') {
       const c0 = s * (1 - Math.abs(2 * l0 - 1));
       const den = 1 - Math.abs(2 * l - 1);
@@ -536,15 +489,8 @@
     return out;
   }
   function roleForProp(p) { if (BG.has(p)) return 'bg'; if (BORDER.has(p)) return 'border'; return 'fg'; }
-  // Custom properties carry no inherent role; guess from the name, then from the
-  // value's own lightness (a near-white var is probably a background, etc.).
-  // A custom property carries no inherent role, so we infer one. The reliable
-  // signal is USAGE — which kind of property the variable is plugged into
-  // (`color:var(--x)` => fg, `background:var(--x)` => bg). buildVarRoles() scans
-  // every rule once and tallies this. Name and value-lightness are only weak
-  // fallbacks. (Value-lightness alone is WRONG on dark-themed sites: there a
-  // light value is the TEXT, not a background — that flipped text/bg roles and
-  // made text invisible, e.g. on Google which defaults dark.)
+  // Infer custom-property roles from usage first. Names and value lightness are weak fallbacks;
+  // a light value may be foreground text on an already-dark page.
   let varRoles = new Map(); // '--x' -> { fg, bg, border } usage counts
   let varDeps = [];         // [childVar, parentVar]: parentVar's value contains var(childVar)
   const VARRE = /var\(\s*(--[\w-]+)/g;
@@ -729,17 +675,8 @@
         }
       }
     }
-    // When a background is clipped to text (gradient headings:
-    // `-webkit-background-clip:text;color:transparent`) the background IS the
-    // visible text, so it must be treated as foreground, not a surface —
-    // otherwise it gets lightened/darkened into invisibility.
-    // BUT `background-clip:text` only makes the background act as the text when the
-    // text itself is transparent. Some elements set clip:text yet paint a solid
-    // text colour and have their clip overridden to border-box by the cascade
-    // (Google's AI-Overview highlight <mark>) — there the background is a real
-    // visible box, and lightening it as "text" washed the highlight out. Only honour
-    // clip:text as foreground when the rule makes its text transparent (or declares
-    // no text colour at all, so a transparent fill can cascade in).
+    // Treat background-clip:text as foreground only with transparent or unspecified text fill.
+    // An opaque text colour can leave a genuine background box that still needs surface treatment.
     const clip = style.getPropertyValue('-webkit-background-clip') || style.getPropertyValue('background-clip') || '';
     const fillVal = style.getPropertyValue('-webkit-text-fill-color');
     const colorVal = style.getPropertyValue('color');
@@ -869,13 +806,8 @@
   let themeBuiltWithoutSites = false;
 
   // ---------- post-remap contrast guard ----------
-  // The absolute role remap (fg -> bright, bg -> dark) can occasionally land text and its
-  // background on near-equal colours on un-tuned sites (heavy CSS-variable theming, gradient
-  // text fill, or site !important rules out-specifying the remap), producing invisible /
-  // very-low-contrast text. After a theme is applied we sample real text controls and, where
-  // rendered contrast is below WCAG text thresholds, force a guaranteed high-contrast inline
-  // text colour. Original inline paint is saved in a WeakMap so the fix can be cleanly
-  // reverted when the theme is removed or re-evaluated.
+  // Repair sampled low-contrast text after remapping. Keep original inline paint in a WeakMap
+  // so removing or reevaluating the theme can restore it.
   function ewParseRgb(str) {
     const rgba = clean(parseFunc(String(str || '').trim()));
     if (!rgba) return null;
@@ -887,16 +819,8 @@
   }
   function ewContrast(a, b) { const hi = Math.max(ewLum(a), ewLum(b)); const lo = Math.min(ewLum(a), ewLum(b)); return (hi + 0.05) / (lo + 0.05); }
   const ewRgbCss = (c) => 'rgb(' + Math.round(c.r) + ', ' + Math.round(c.g) + ', ' + Math.round(c.b) + ')';
-  // Keep the hue the site chose and move only its lightness until it clears the threshold.
-  //
-  // The flat fallback in contrastGuard is right for text that is merely hard to read, and wrong
-  // wherever the COLOUR IS the information. Twitch gives every chat participant their own hue, and
-  // on a dark theme a good number of those fail the contrast check -- so rewriting each failure to
-  // one near-white turned a room full of distinguishable names into a wall of identical text. The
-  // same applies to any tag, label or legend that encodes meaning as colour.
-  //
-  // Near-greys are deliberately left to the fallback: they carry no identity to preserve, and a
-  // grey nudged along its own lightness is just the flat colour arrived at less predictably.
+  // Preserve hue for meaningful colours such as Twitch usernames; change only lightness for contrast.
+  // Near-greys can use the ordinary fallback.
   function ewReadableVariant(fg, bg, threshold) {
     let hsl;
     try { hsl = rgbToHsl(fg.r, fg.g, fg.b); } catch (_) { return null; }
@@ -938,15 +862,8 @@
     }
     return false;
   }
-  /* A video player's chrome sits on the video, not on the page, and it is fully
-     specified by the site profiles. The guard must not touch it: its background
-     walk stops after 8 ancestors, and on a YouTube watch page the player's black
-     is found at the 8th -- the last one that fits. One more wrapper (chapters, a
-     live badge, a hover tooltip) and the walk returns nothing, the guard falls
-     back to the PAGE background, and white player text against an assumed white
-     page scores 1.00 -- so it repaints the clock near-black, inline and
-     important, which no stylesheet can outrank. That is the clock going white
-     and then black a moment later. */
+  /* Do not contrast-remap player chrome. A bounded ancestor walk can miss its video background
+     and incorrectly repaint white controls against the assumed page background. */
   const EW_PLAYER_CHROME = '#movie_player,.html5-video-player,.ytp-chrome-top,.ytp-chrome-bottom,'
     + '.video-player,.persistent-player,[data-a-target="video-player"],[data-a-target="player-controls"]';
   /* Resolved once per run rather than asked per element. `closest()` with this
@@ -1260,18 +1177,8 @@
   function getGrayscale() { return getPct('eyeShieldGrayscale', 'eyeShieldGrayscaleByHost', 0, 100, 0); }
 
   // ---------- adjustment filter (brightness / contrast / saturation / warmth / grayscale) ----------
-  // Applied as a single CSS filter on <html>, independent of the colour-remap so it
-  // works in every mode (including Normal/off), exactly like the brightness scrim.
-  // It sits on the document element (not a child) so position:fixed layouts keep
-  // working — the root stays the containing block. Warmth is sepia() and grayscale()
-  // is last after sepia so a warm tint still shows through a grayscale pass. All at
-  // neutral (100/100/100/0/0) means the filter is removed (no-op).
-  //
-  // EXCEPTION — Twitch: a filter on <html> makes every <video> descendant a filter
-  // input, which drags the stream off the GPU's zero-copy video overlay and forces
-  // a viewport-sized filter pass on every decoded frame (awful stream performance).
-  // There, scope the identical filter to the <video> surfaces via a stylesheet so
-  // the page composites normally and only the small video texture is shaded.
+  // Use one root filter independent of theme mode. On Twitch, scope it to video surfaces instead:
+  // a viewport filter prevents efficient video-overlay compositing.
   function setAdjustStyle(css) {
     let st = document.getElementById(ADJUST_ID);
     if (!css) { if (st) st.remove(); return; }
@@ -1415,16 +1322,8 @@
   }
 
   // ---------- cross-origin (foreign) stylesheets ----------
-  // Same-origin sheets are read straight from `cssRules`; cross-origin (CDN-hosted)
-  // sheets throw on `cssRules` and were previously skipped, so their colours were
-  // never remapped — that is the "dark page with white patches / unreadable text on
-  // dark" breakage on many sites. We fetch the sheet TEXT ourselves, from the page's
-  // own context and on the page's own terms (see fetchForeignSheet), parse it into a
-  // constructable stylesheet we CAN read, and run it through the SAME transform
-  // pipeline. This only ADDS coverage: every existing readable-CSS / inline / repair
-  // path is untouched, and any failure here just falls back to today's behaviour. We
-  // emit ONLY the recoloured declarations (selectorText + transformed colour props),
-  // so a sheet's relative url() backgrounds are never re-hosted/broken.
+  // Fetch unreadable sheet text in the page’s context and run the same colour transform.
+  // Emit only recoloured declarations so relative asset URLs keep their original base.
   const FOREIGN_MAX_SHEETS = 64;
   const FOREIGN_CACHE_MAX_CHARS = 4 * 1024 * 1024;
   const FOREIGN_XFORM_MAX_CHARS = 2 * 1024 * 1024;
@@ -1679,22 +1578,11 @@
       danger: '#f87171',
       dangerText: '#1b0505',
       border: '#2a2f3a',
-      // True white on true black. #f3f5f8 was a cool off-white: bright enough on
-      // paper (19:1) but it reads as "white, but not quite", which is more tiring
-      // than either a clean white or an honestly dimmer grey. Ultra is the OLED
-      // mode -- if any mode should commit to #fff, it is this one.
+
       text: '#ffffff',
       muted: '#a9b0bc',
       link: '#8ab4ff',
-      // Violet against the blue of an unread link -- a hue apart, not a shade
-      // apart, so it survives being read quickly and does not depend on anyone
-      // remembering which of two blues means what.
-      //
-      // The first attempt at this was #cba6f7, and it was the right hue and the
-      // wrong colour: pale enough that beside a light blue it read as a lighter
-      // blue. Hue distance was never the problem -- that was already 49deg --
-      // saturation was. This carries the same hue further from grey. 7.4:1 on
-      // true black.
+      // Keep visited links violet and sufficiently saturated to distinguish them from unread blue.
       visited: '#c07cf0',
       focus: '#6ea8ff',
       selection: '#2f5fb0',
@@ -1807,17 +1695,8 @@
       + text + '{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + muted + '{color:' + p.muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + 'a[href],[role="link"]{color:' + p.link + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      // The line above takes :visited down with it. A forced link colour applies
-      // to both states, so on a page of results every link came out the same
-      // colour whether or not the reader had already opened it. Restoring it
-      // costs one rule, and :visited outranks the plain selector, so the order
-      // here is for reading rather than for the cascade.
-      //
-      // -webkit-text-fill-color paints OVER color, so it has to be repeated
-      // here or the fill from the rule above keeps painting the unvisited
-      // colour on top. currentColor is correct and was checked on a real
-      // search page rather than reasoned about: Chrome resolves it against the
-      // visited colour, and the purple comes back.
+      // Restore :visited after forcing link colours. Repeat -webkit-text-fill-color:currentColor
+      // because an explicit fill otherwise paints over the visited color.
       + 'a[href]:visited,[role="link"]:visited{color:' + p.visited + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + field + '{background-color:' + p.input + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + p.text + ' !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
       + field + '::placeholder{color:' + p.muted + ' !important;-webkit-text-fill-color:' + p.muted + ' !important;opacity:1 !important;}'
@@ -1843,14 +1722,9 @@
       // (:focus / :focus-visible are excluded), so accessibility is unaffected.
       + '*:not(:focus):not(:focus-visible){outline-color:transparent !important;}'
       + 'img,picture,video,canvas,svg,iframe,embed,object{filter:none !important;}'
-      // GitHub-scoped repairs (github.com is non-managed -> generic path):
-      // (1) the green primary CTA was crushed to the neutral control colour because
-      //     buttonSafe's :not(.class) chain (specificity 0,4,0) out-weighs the all-:where
-      //     primaryControl rule (0,0,0); re-assert GitHub's brand green at >buttonSafe
-      //     specificity (buttonSafe + a class = 0,5,0) so the primary CTA stays branded.
-      // (2) GitHub's floating-label inputs (CtaFormControl) hide their placeholder until
-      //     focus; line ~1140 force-shows EVERY placeholder, revealing it ON TOP of the
-      //     label -> doubled text. Keep it hidden while unfocused (focus still shows it).
+      // GitHub fallback repairs: outrank buttonSafe to preserve branded primary controls.
+      // Keep floating-label placeholders hidden until focus so forced placeholder visibility
+      // does not overlap their labels.
       + (isGH
         ? buttonSafe + '[class*="primary" i]{background-color:#2da44e !important;border-color:#2da44e !important;color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;}'
           + buttonSafe + '[class*="primary" i]:hover{background-color:#2c974b !important;border-color:#2c974b !important;}'
@@ -1957,14 +1831,8 @@
 
 
 
-  // Twitch chat names, and the exclusion every broad text rule has to carry.
-  //
-  // A name's colour is data: Twitch gives each participant a hue and sets it as an INLINE style.
-  // An important stylesheet declaration outranks a normal inline one, so any `!important` colour
-  // rule that reaches these elements repaints the whole room to a single value -- which is what
-  // made chat a wall of identical white text. Two rules could reach them: the chat text rule
-  // named them outright, and the site-wide text rule matches `[class*="Text"]`, which catches the
-  // styled-component classes Twitch generates around chat.
+  // Exclude Twitch usernames from every broad !important text rule. Their inline hues identify
+  // participants, including within generated Text-class wrappers.
   const TWITCH_CHAT_NAME = '.chat-line__username,.chat-author__display-name';
   const TWITCH_NOT_CHAT_NAME = ':not(.chat-line__username):not(.chat-author__display-name)'
     + ':not(.chat-line__username *):not(.chat-author__display-name *)';
@@ -2061,9 +1929,7 @@
      intended behaviour there and also the safe failure if the file is ever missing. */
   var __eyeSitesResolved = false;
   var __eyeSites = null;
-  /* Only a found file is remembered. A miss used to be cached for the life of the page, so a
-     tab where the core ran before the sites file arrived -- one refreshed by the popup, or
-     caught up after theming was turned on -- stayed generic even once the file was there. */
+  /* Cache found builders only; a sites file loaded later must recover an earlier miss. */
   function eyeSites() {
     if (__eyeSitesResolved) return __eyeSites;
     try { if (!(globalThis.__woEyeSites && typeof globalThis.__woEyeSites.factory === 'function')) return null; } catch (_) { return null; }
@@ -2366,31 +2232,9 @@
     for (var i = 0; i < els.length; i++) discordFixEl(els[i], want);
   }
 
-  /* GitHub: drive its NATIVE theme. GitHub ships complete light and dark themes -- every
-     surface, input, link and icon tuned together -- and picks one with data-color-mode on
-     <html>. The site profile used to paint its own colours over whichever the reader had, and
-     that fought GitHub's components: the search box draws the typed text on a layer BEHIND a
-     transparent <input>, so painting inputs opaque hid what was being typed; forcing every link
-     to one pale blue flattened file names, commit messages and real links into one colour; and
-     a stroke added to every SVG made the octicons heavy. Switching the attribute uses GitHub's
-     own design instead; Ultra only takes its canvas to black on top (githubCSS).
-
-     A page carries only the theme stylesheets it needs, as ordinary links named after the theme
-     (.../assets/dark-<hash>.css): light AND dark for a reader on "sync with system", but only
-     the chosen one for a reader who picked light or dark -- every other theme is parked as a
-     link[data-color-theme] placeholder with data-href instead of href. Switching the attribute
-     to a theme that is not loaded leaves GitHub's light colours in force under the new mode --
-     dark text on a black page, white buttons, invisible icons -- which is what a signed-in
-     reader on GitHub light saw. So the mode is switched only once its stylesheet is on the
-     page, loading it first where needed exactly as GitHub's own theme picker does (by giving
-     the placeholder its href). Until then, and if it cannot load, GitHub stays as it is.
-
-     The reader's own variant (dimmed, high contrast, colour-blind) is used when it can be had,
-     and plain light or dark otherwise.
-
-     The page's own values are kept on the isolated-world window rather than in this copy, so a
-     copy that replaces this one after an update restores what the PAGE had, not what this copy
-     set. */
+  /* Select GitHub’s native theme only after its stylesheet loads; activate data-href placeholders as needed.
+     Prefer the user’s variant, then plain light/dark. Store original page values on the isolated window
+     so replacement copies restore the page’s state rather than the previous copy’s overrides. */
   const GITHUB_THEME_ATTRS = ['data-color-mode', 'data-light-theme', 'data-dark-theme'];
   let githubWant = null;
   let githubVariant = null;
@@ -2480,22 +2324,9 @@
     });
   }
 
-  /* ChatGPT: drive its NATIVE theme too. Its builds switch theme with a `dark`/`light` class on
-     <html> or with a `data-theme` attribute (the signed-in app -- see below), plus an inline
-     color-scheme, and ship complete colour sets for both, so switching those is all it takes.
-     The site profile used to paint over it instead, with selectors
-     written for an older app: in Light the composer stayed dark and the sidebar's conversations
-     were left near-white on a light sidebar; in the dark modes every button's glyph was forced
-     white, blanking ChatGPT's white send and voice discs. The signed-out home page is a separate
-     build that only follows the system theme; its switch is pinned from the stylesheet
-     (chatGPTCSS). Original values are kept on the window, as for GitHub.
-
-     The class is a SCOPE, not a page switch: ChatGPT's tokens are declared on `.dark` and on
-     `.light` (and `.dark .light`), so any element inside the page carrying `dark` re-darkens
-     everything under it. Flipping only <html> left a signed-in page in Light with its dark
-     backgrounds, while everything drawn through light-dark() went light -- dark text on dark.
-     So every scope is flipped, and scopes React renders or restores later are flipped as they
-     appear (the same shape as the Discord driver above). Off puts each one back. */
+  /* Use ChatGPT’s native theme classes/attributes; the signed-out build also needs its stylesheet rule.
+     Flip nested dark/light scopes as React adds them, not just html. Keep original values across
+     replacement copies and restore each scope when disabled. */
   let chatgptWant = null;
   let chatgptObserver = null;
   let chatgptRescanTimer = 0;
@@ -2670,14 +2501,8 @@
     restoreYouTubeMusicNativeTheme();
   }
 
-  /* Did the site's own theme take? These three switch the site's OWN theme -- an attribute, a
-     class, a stylesheet the site ships -- and each of those is a name the site can change.
-     When one does, the switch stops working and the page just stays as it was: Light over a
-     dark page, Dark over a light one, with nothing to say so. So a moment after switching, the
-     page's background is measured. Clearly the wrong side for the mode, twice, 2.5 s apart (and
-     never while GitHub is still fetching a theme stylesheet), and the page is handed to the
-     general engine that themes every other site. A page that paints no background colour of
-     its own, or one in between, is left alone: only a clear miss counts. */
+  /* If native theme switching clearly misses the requested background twice, fall back to generic theming.
+     Wait for GitHub’s pending stylesheet; leave transparent and ambiguous backgrounds alone. */
   const NATIVE_THEME_HOSTS = ['github', 'chatgpt', 'youtubemusic'];
   let nativeCheckTimer = 0;
   function pageBackgroundLuminance() {

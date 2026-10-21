@@ -4,22 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Node harness for the tracker-frame cookie and storage guard in
- * anti-redirect.js. Run: node tools/test-tracker-frame-guard.js
- *
- * Why this suite exists. "Block third-party cookies" is two halves. The network
- * half strips Set-Cookie and is deliberately limited to image and ping
- * responses, because sign-in and federation set their cookies on frames,
- * scripts and XHR. Covering the frame case was the in-page half's job -- but
- * that code sat in the main engine, which is injected with all_frames:false, so
- * its "am I a cross-origin subframe" test could never once be true. The feature
- * had a frame-shaped hole for as long as it had existed and nothing failed,
- * because unreachable code does not fail. This suite pins both directions: the
- * guard fires inside real tracker frames, and it stays out of the way
- * everywhere else -- above all in the sign-in frames the narrow network rule
- * exists to protect.
- */
+/* Run cookie/storage guards in tracker child frames and preserve ordinary sign-in frames.
+   Run: node tools/test-tracker-frame-guard.js */
 'use strict';
 
 const fs = require('fs');
@@ -294,7 +280,7 @@ const sweepDone = (function supercookieSweepClearsStorage() {
   check('the dead supercookie sweep is gone from the engine',
     engineSrc.indexOf('installSupercookieGuard') < 0);
   check('the note records where they went',
-    /Both now live in anti-redirect\.js/.test(engineSrc));
+    /Frame cookie guards live in anti-redirect\.js/.test(engineSrc));
   /* SessionShield's storage watcher reads this flag to avoid wrapping
      document.cookie twice. Deleting it with the rest would turn that read into a
      ReferenceError swallowed by a try/catch, taking the watcher down in silence. */

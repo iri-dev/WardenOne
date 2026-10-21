@@ -4,21 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Silencing a kind of notification, and getting it back.
- * Run: node tools/test-toast-mutes.js
- *
- * A warning with no way to turn it off is one people learn to close without
- * reading, so the card now offers an hour, two hours, the working day, or never
- * again. The half that matters more is the other one: a "never show this again"
- * that cannot be found afterwards is a trap, so every mute is listed and
- * reversible in the popup, and the list only shows what is actually in force.
- *
- * The channel is deliberately narrow. A page can name a warning TYPE and a
- * duration and nothing else -- no host, no setting -- so the worst a hostile
- * page can do is quieten a card about itself, which it could already achieve by
- * not triggering one.
- */
+/* Persist, apply and undo notice mutes while pruning expired entries.
+   Run: node tools/test-toast-mutes.js */
 'use strict';
 
 const assert = require('assert');

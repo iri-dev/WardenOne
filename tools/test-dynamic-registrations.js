@@ -150,19 +150,8 @@ check('no DNR rule refuses the Twitch ad service',
     && !/edge\.ads\.twitch\.tv/.test(background),
   'blocking the ad service at the network layer strands the break with a frozen picture');
 
-// ---------------------------------------------------------------------------
-// Every flag that decides a dynamic registration must be in the early-out key (M23).
-//
-// refreshExtensionState() builds a key from the settings it cares about and returns immediately
-// when it has not changed. Two reconcilers read a flag that was never in that key, so once any
-// other change had primed it, toggling only cryptominerCpuWatch or flagSearchJunk produced an
-// identical key, the function returned before reaching the reconciler, and the script was neither
-// registered nor unregistered -- the switch in the popup simply did nothing.
-//
-// Adding the two flags fixes today. This check fixes tomorrow: it reads the reconcilers and fails
-// when any of them decides on a flag the key does not carry, so the next feature added cannot
-// quietly repeat it. A hand-maintained key is what drifted; another hand-maintained list of the
-// things in it would drift the same way.
+// Require every flag used by a dynamic reconciler to appear in the early-out key (M23).
+// Derive dependencies from the code instead of duplicating the flag list.
 {
   // Scoped to refreshExtensionState. refreshBlocklistRuleset has an early-out key of its own,
   // earlier in the file, and reading that one instead would make this check pass on the wrong text.

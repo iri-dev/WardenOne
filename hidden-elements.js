@@ -160,16 +160,8 @@ async function loadHiddenSites() {
    browser warning, and this is destructive enough to deserve a deliberate second
    press rather than a dialog people dismiss by reflex. The armed state times out
    so a stray click cannot sit waiting to be completed by an unrelated one. */
-/* Reset, for one site or for all of them.
- *
- * Both are irreversible, so both take two presses: the first arms the button and
- * says what it is about to do, the second does it. One helper rather than two
- * copies -- the per-site button appeared later, and a second copy of this is how
- * the two end up behaving differently.
- *
- * The armed state expires so a stray press cannot sit waiting to be completed by
- * an unrelated one minutes later, and arming any button disarms the others so
- * there is never more than one loaded question on screen. */
+/* Reset requires two presses, with an expiring armed state. Arming another button disarms the first
+   so an old confirmation cannot be completed accidentally. */
 const armedButtons = new Set();
 
 function disarmAll() {

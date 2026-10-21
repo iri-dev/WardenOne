@@ -26,6 +26,12 @@
 
 ### Changed
 
+- Security history redacts all path segments after sensitive routes, including short codes and lowercase tokens. Nested detail sanitization now drops unexamined content and enforces depth, field-count and size limits.
+
+- Reputation-warning overrides now apply once to the exact warned address in its original tab, with a 60-second expiry. Other paths, redirects and subsequent visits still receive reputation checks.
+
+- URL-content hash checks now follow browser-observed redirects one validated hop at a time, so redirected downloads reach the final response without permitting local/private-network destinations. Credential omission, redirect/time/size limits and the saved-file hash caveat remain in place.
+
 - Site exemptions now use the complete private Public Suffix List in both page worlds as well as the worker. Shared-hosting platform exceptions cannot disable protections on unrelated tenants, including before the worker configuration arrives.
 - Trusting a download now records its hosting tenant rather than the whole platform, and user download exceptions use the shared site matcher.
 - Pausing sites now rejects public suffixes, including private hosting platforms and PSL wildcard rules. Unsafe entries already in storage no longer create broad network exceptions; valid tenant sites and PSL exceptions remain supported.

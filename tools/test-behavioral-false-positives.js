@@ -4,21 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Behavioural scanner false positives on everyday sites.
- *
- * The scanner used to reach "Suspicious site behavior" from two signals that
- * every large site produces -- a cross-site asset fetched before the first
- * click, plus canvas/WebGL measurement -- so ordinary browsing (X, Reddit,
- * LinkedIn, a shop on its own CDN) raised a scam warning, and at score 60+ the
- * background LEARNS the domain and starts DNR-blocking it.
- *
- * These tests execute the scanner section of the shipped content.min.js bundle
- * against fake pages.
- *
- * Run with:
- *   node tools/test-behavioral-false-positives.js
- */
+/* Run behavioural scoring against ordinary site patterns as well as malicious fixtures.
+   Run: node tools/test-behavioral-false-positives.js */
 'use strict';
 
 const assert = require('assert');

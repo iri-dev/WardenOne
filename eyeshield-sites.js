@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* Eye Shield's per-site themes.
- *
- * These are the hand-tuned stylesheets for the ten sites Eye Shield manages by name --
- * YouTube, Google, Reddit, Amazon, Twitch, ChatGPT, GitHub, Stack Overflow, Wikipedia and
- * Hacker News. They were part of eyeshield.js, which is registered for every frame of
- * every site, so browsing anywhere meant compiling Reddit's stylesheet and Google's
- * search-box rules in every iframe on the page and never calling them: themeFooter()
- * picks a builder by hostname and returns '' for everything else (COST-03).
- *
- * Split out and registered TOP FRAME ONLY. The trade is deliberate and worth stating: an
- * embedded frame belonging to a managed host -- a Twitch chat embed, say -- now gets the
- * generic theme rather than the site-tuned one. Most of what is here targets top-level
- * page chrome an embed does not have, and the core still themes those frames.
- *
- * The builders are unchanged. They are wrapped in a factory so they keep reading the
- * core's palette and host helpers by their own names, rather than every reference being
- * rewritten -- the version of this change that edits 186 KB of stylesheet bodies is the
- * version that silently breaks one selector and nobody notices for a month.
- */
+/* Site-specific theme builders load only in top frames; embedded frames use the generic theme.
+   The factory shares palette and host helpers with the core without duplicating theme logic. */
 (function () {
   'use strict';
   var reg = globalThis.__woEyeSites || (globalThis.__woEyeSites = {});
@@ -58,17 +41,8 @@
        near-black on a black player. */
     return '#player,#player-container,#movie_player,.html5-video-player{background-color:#000000 !important;color:#ffffff !important;}'
       + '#movie_player .html5-video-container,#movie_player .html5-video-container *,#movie_player .video-stream,#movie_player video,#movie_player .ytp-cued-thumbnail-overlay,#movie_player .ytp-cued-thumbnail-overlay-image,#movie_player .ytp-iv-video-content{background-color:transparent !important;border-color:transparent !important;box-shadow:none !important;}'
-      /* The controls keep YouTube's own paint -- none of it is overridden here.
-         The player redesign draws every control on a translucent dark pill
-         (rgba(0,0,0,.3) behind play, next, the volume group, the clock, the
-         chapter title and the right-hand group), and those pills are the only
-         thing between a white icon and a white frame. Earlier rules forced every
-         button and every div in the bottom chrome transparent to guard against a
-         page remap that does not run on YouTube, and on a bright video the
-         controls vanished. Nothing else in the site theme reaches the player, so
-         the colours below are the whole of it: white in every mode, because the
-         player is black in every mode and the page's own text colour must not
-         leak in. */
+      /* Keep the player’s native translucent control backgrounds for contrast over bright video.
+         Player text stays white in every page theme. */
       + '#movie_player button' + NOT_SWATCH + ',#movie_player [role="button"]' + NOT_SWATCH + ',#movie_player .ytp-button' + NOT_SWATCH + ',#movie_player [class*="button" i]' + NOT_SWATCH + '{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + '#movie_player .ytp-time-display,#movie_player .ytp-time-display *,#movie_player .ytp-chapter-title-content,#movie_player .ytp-chapter-container,#movie_player .ytp-bound-time-left,#movie_player .ytp-bound-time-right{color:#eeeeee !important;-webkit-text-fill-color:#eeeeee !important;text-shadow:none !important;opacity:1 !important;}'
       /* YouTube makes the elapsed time a shade brighter than the duration
@@ -409,25 +383,9 @@
       + 'video,.html5-video-player,.ytp-player-content,.ytp-chrome-bottom,.ytp-gradient-top,.ytp-gradient-bottom{filter:none !important;}';
   }
 
-  /* YouTube Music is its own app on a YouTube host: ytmusic-* elements themed through
-     --ytmusic-* variables. The YouTube theme names neither, so almost none of it landed there,
-     and the little that did was harmful -- its bare `#content` selector matched the overlay div
-     YouTube Music lays over every album and playlist cover, and painting it the page colour
-     turned each cover into a flat square (black in Ultra, white in Light).
-
-     The app is designed dark. Dark keeps its own look. Ultra takes the canvas to true black and
-     sinks the raised surfaces -- cards, the player bar, menus, the search box -- from YouTube
-     Music's greys to near-black, since on a page that was already #030303 a black canvas alone
-     changes nothing anyone can see.
-
-     Light is built in three layers, measured on the live app (home, Explore, an album, the
-     now-playing page and the player bar): the core removes the `dark` attribute so YouTube's
-     own light colours apply to everything shared with YouTube; the variables below turn
-     YouTube Music's own surfaces light; and the core rewrites the text and icon colours its
-     stylesheets hard-code for a dark page (managedRemapsOwnText). Two things are left for this
-     stylesheet: the tinted artwork backdrop at the top of a page, faded to the page colour
-     instead of to black, and the wordmark -- an image of white lettering -- shown as its own
-     icon beside the word set in the app's own typeface. */
+  /* YouTube Music uses ytmusic-* components and variables, so it needs a separate theme.
+     Light mode combines native light colours, these variables and the core’s text/icon remap.
+     Do not paint #content: Music uses it as an artwork overlay. */
   function youtubeMusicCSS(remap) {
     if (!isYouTubeMusicHost()) return '';
     const shell = ':root,html,body,ytmusic-app,ytmusic-app-layout';
@@ -462,17 +420,8 @@
         + 'ytmusic-logo a::after{content:"Music";font-family:"YouTube Sans","YT Sans",Roboto,Arial,sans-serif;font-weight:700;font-size:20.5px;letter-spacing:-.45px;line-height:1;color:#030303;}';
     }
     if (remap !== 'dark' && remap !== 'ultra') return '';
-    /* Dark and Ultra used to be invisible here. Dark kept the app exactly as it was, and Ultra
-       set variables the components never read: each one re-declares its own (the search box
-       sets --ytmusic-search-background locally), and the chips, the search field, the active
-       sidebar entry and the tonal buttons paint hard-coded translucent white. On a page already
-       #030303, Normal, Dark and Ultra were indistinguishable side by side. So both now paint the
-       visible pieces directly, and neither ever makes anything lighter than YouTube Music's own:
-         Dark  -- calmer: the tinted artwork wash behind the top of the page is gone, and the grey
-                  fills (chips, search, active sidebar entry, tonal buttons) sink to half-strength.
-         Ultra -- true black: black canvas, bars and fills, each control drawn as a crisp outline
-                  instead of a grey block, and the dimmed secondary text brought up to near white.
-       A selected chip keeps its own white fill in both, so which filter is on stays obvious. */
+    /* Components override some theme variables locally, so paint these controls directly.
+       Dark reduces their fills; Ultra uses black with outlines. Selected chips retain a visible fill. */
     const chip = 'ytmusic-chip-cloud-chip-renderer:not([is-selected]) a.ytmusic-chip-cloud-chip-renderer';
     const search = 'ytmusic-search-box .search-box.ytmusic-search-box';
     const guideActive = 'ytmusic-guide-entry-renderer[active] tp-yt-paper-item';
@@ -510,17 +459,8 @@
     const chatShell = '[data-a-target="stream-chat"],[data-a-target="stream-chat-header"],[data-test-selector="chat-room-component-layout"],.stream-chat,.chat-room,.chat-shell,.chat-list,.chat-list--default';
     const chatList = '[data-a-target="chat-scroller"],[data-test-selector="chat-scrollable-area__message-container"],.chat-scrollable-area__message-container,.chat-list__lines,[role="log"]';
     const chatMessage = '[data-a-target="chat-line-message"],[data-test-selector="chat-line-message"],.chat-line__message,.chat-line__message-container,.chat-line__message-body,.chat-line__message--emote-button';
-    // The chat name is the one piece of text in here whose COLOUR is information.
-    //
-    // Twitch gives every participant their own hue and sets it as an inline style. This rule paints
-    // chat text with `!important`, and an important stylesheet declaration outranks a normal inline
-    // one -- so naming the username elements here (directly, and via the `span` catch-all) repainted
-    // every person in the room to the single theme foreground. Chat became a wall of identical
-    // white text with no way to tell who was speaking, which is the opposite of readable.
-    //
-    // The names are excluded instead, so their own colours survive. Ones that are genuinely too
-    // dark against the themed background are still handled -- contrastGuard lifts them while
-    // keeping their hue, rather than flattening them all to one value.
+    // Exclude usernames from forced text colours: Twitch’s inline hues identify participants.
+    // contrastGuard can lift dark names without replacing their hue.
     const chatName = TWITCH_CHAT_NAME;
     const chatText = chatMessage + ',' + chatMessage + ' span' + TWITCH_NOT_CHAT_NAME + ',' + chatMessage + ' a,' + chatMessage + ' button,[data-a-target="chat-message-text"],[data-a-target="chat-message-text"] *,.text-fragment';
     const chatMeta = '[data-a-target="chat-line-timestamp"],.chat-line__timestamp,.chat-author__intl-login,.chat-line__message .tw-c-text-alt,.chat-line__message .tw-c-text-alt-2';
@@ -960,49 +900,19 @@
       // bg (not transparent) keeps them flat AND still overrides a light-served Google. Late rule
       // => same specificity as the surface/row rules above but wins by source order.
       + '#search .Ww4FFb,#search .wHYlTd,#search .tF2Cxc,#search .ULSxyf,#search .Wt5Tfe,#search .related-question-pair,#search .dnXCYb,#search .EyBRub,#search .LGOjhe,#search .X5LH0c,#search .g,#rso .Ww4FFb,#rso .ULSxyf,#rso .tF2Cxc{background:' + bg + ' !important;background-color:' + bg + ' !important;border-color:transparent !important;box-shadow:none !important;}'
-      // Put the result title and the site-name line back the right way round.
-      // Google's markup is <a href><h3>Title</h3></a>, with a SEPARATE anchor for
-      // the site name above it. Two rules above collide at equal specificity
-      // (`#search a *` and `#search h3`, both 101), so source order decided it and
-      // the h3 rule -- being later -- painted titles with `text` while the generic
-      // anchor rule painted the site-name line with `link`. The result was the
-      // exact inverse of Google's own dark mode: white titles and blue site names,
-      // i.e. the least important line on every result was the loudest thing on it.
-      // These two win on specificity (102 and 110), not on ordering luck.
+      // Use higher specificity than #search a * and #search h3 to keep result titles blue
+      // and the separate site-name anchor in the text colour.
       + '#search a h3,#rso a h3,#rhs a h3,#search h3 a,#rso h3 a,#search a .LC20lb,#rso a .LC20lb{color:' + link + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      // The result TITLE needs its own :visited rule, and the reason is not the
-      // cascade. Chrome refuses author colour on anything INSIDE a visited link:
-      // set the h3 green and an unvisited title goes green while a visited one
-      // does not -- it gets the browser's own visited colour instead, which on a
-      // dark page is a pale lavender that reads as washed-out blue. So the
-      // generic '#search a:visited *' above cannot reach the title however
-      // specific it is, and the title rule right above this one cannot either.
-      // A rule naming the h3 with :visited on the anchor is the one thing that
-      // does apply. Verified on a real results page: with only this rule changed
-      // the title follows, and with it removed the title goes back to the
-      // browser's colour while the site-name line still changes.
-      //
-      // This is what "only the URL turned purple, the headline stayed blue"
-      // was: one of the two lines was being coloured by us and the other by
-      // Chrome.
+      // Chrome’s visited-link colour restrictions require an explicit h3 rule with :visited on its anchor.
+      // The generic a:visited * rule does not colour result titles reliably.
       + '#search a:visited h3,#rso a:visited h3,#rhs a:visited h3,#search h3 a:visited,#rso h3 a:visited,#search a:visited .LC20lb,#rso a:visited .LC20lb{color:' + visited + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + '#search cite,#rso cite,#search .VuuXrf,#rso .VuuXrf,#search .UdQCqe,#rso .UdQCqe,#search .byrV5b,#rso .byrV5b,#search .tjvcx,#rso .tjvcx{color:' + muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + googleSearchBoxCSS(remap);
   }
 
-  /* GitHub is themed with its OWN light and dark themes: the core switches data-color-mode on
-     <html> to match the mode (applyGitHubNativeTheme), so every component keeps the colours
-     GitHub designed for it -- the search box's transparent input over its rendered text, file
-     names in the text colour and links in GitHub's blue, octicons at their drawn weight.
-
-     What is left here is small. The core header paints the page a flat background of its own,
-     which would sit behind GitHub's surfaces in a different shade, so the page takes GitHub's
-     canvas back, and the colour scheme follows whichever theme GitHub is actually showing --
-     the switch waits for GitHub's stylesheet, so for a moment it can still be the old one. Ultra
-     then takes the canvas to true black and lifts the muted panels and overlays to GitHub's own
-     dark canvas colour, so menus and dialogs still stand off the page; that is keyed to the dark
-     mode being in force for the same reason. The --color-* names are the older generation of the
-     same tokens, still read by a few views. */
+  /* The core selects GitHub’s native theme; restore its canvas rather than painting over components.
+     Key Ultra overrides to the active dark theme because stylesheet loading can delay the switch.
+     Older views still read the --color-* tokens. */
   function githubCSS(mode) {
     if (!isGitHubHost()) return '';
     const page = 'html,body{background-color:var(--bgColor-default) !important;color:var(--fgColor-default) !important;}'

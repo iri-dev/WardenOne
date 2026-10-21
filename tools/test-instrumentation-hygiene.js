@@ -3,20 +3,8 @@
    Official source: https://github.com/iri-dev/WardenOne
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Two pieces of instrumentation hygiene, both raised by the independent review.
- *
- * L22: Notification.requestPermission has two shapes -- it returns a Promise and it accepts a
- * legacy callback -- and a browser may honour both for the same call. Emitting from each path
- * independently reported one prompt twice: two log entries for one decision, and two charges
- * against the rate limit that keeps this instrumentation cheap.
- *
- * L23: every chrome.downloads callback must read chrome.runtime.lastError, or Chromium logs
- * "Unchecked runtime.lastError" for an invalid id or an externally cancelled download. The current
- * call sites all do; this pins that so the next one added cannot quietly not.
- *
- * Run: node tools/test-instrumentation-hygiene.js
- */
+/* Verify instrumentation cleanup and truthful status reporting after failed setup. (L22, L23)
+   Run: node tools/test-instrumentation-hygiene.js */
 'use strict';
 
 const fs = require('fs');

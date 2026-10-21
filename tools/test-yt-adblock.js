@@ -575,18 +575,8 @@ async function main() {
   }
 
   {
-    /* The appendChild proxy hands every about:blank iframe our fetch, so ad code
-       that borrows one still goes through the hooks. A frame sandboxed without
-       allow-scripts but with allow-same-origin is the one that matters most: no
-       content script can patch it from inside, so this write from the parent is
-       the only thing that reaches it. Skipping it, on the belief that the write
-       caused Chrome's "Blocked script execution in 'about:blank'" warning, left
-       YouTube's own such frame with a clean fetch. The write does not cause that
-       warning (it is Chrome declining to inject WardenOne's MAIN-world scripts);
-       only an opaque-origin frame, which the parent cannot reach into, is skipped.
-
-       Read out of the shipped guard rather than restated, so a rewrite of the
-       condition is what gets tested. */
+    /* Exercise the shipped parent-frame fetch patch, including same-origin sandboxes without scripts.
+       Only inaccessible opaque origins may be skipped; Chrome’s injection warning is unrelated. */
     const guard = /var opaqueOrigin = ([^;]+);/.exec(src);
     ok("the sandbox guard is in the iframe proxy", !!guard);
     ok("the old allow-scripts skip is gone", !/var scriptsBlocked =/.test(src));

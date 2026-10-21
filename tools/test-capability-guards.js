@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Back-button traps, and three capabilities nothing else could see.
- *
- * Back trap: a page pushes a history entry, then pushes another every time you
- * press Back, so Back never leaves. Pushing history is NOT the tell -- every
- * single-page app does it constantly. The tell is pushing the same address you are
- * already on, immediately after a popstate, which is the moment Back fired. Most of
- * this file is that distinction.
- *
- * Capabilities: the native payment sheet (the card guard only watched form fields),
- * idle detection (presence tracking), and a site asking to install itself as an app
- * (an installed site opens with no address bar). None is blocked -- Chrome confirms
- * each one -- and the wrappers sit in front of APIs real sites use, so they have to
- * stay invisible.
- *
- * Run: node tools/test-capability-guards.js
- */
+/* Detect repeated back-button re-arming and observe native capability use without blocking consent.
+   Run: node tools/test-capability-guards.js */
 'use strict';
 
 const assert = require('assert');

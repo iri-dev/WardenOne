@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The offscreen audio document lives for a sound, not for the session.
- * Run: node tools/test-offscreen-lifecycle.js
- *
- * Notification sounds play in an offscreen document (the worker has no audio). The first sound
- * of a session created it and nothing ever closed it: chrome.offscreen.closeDocument appeared
- * nowhere in the package, so one extension document, its scripts and an open AudioContext sat
- * resident for the rest of the browser session in exchange for half a second of tone (LIFE-05).
- *
- * Now the worker closes the document once it has been idle for a short grace after the last
- * sound -- long enough that a burst of notifications shares one document and no tune is cut,
- * short enough to matter -- and the document releases its own AudioContext after the same kind
- * of idle, so it holds no audio graph while it waits. The creation hardening (shared in-flight
- * promise, the one retry for a listener that is not up yet) is kept exactly, because it matters
- * more once the document can legitimately be absent again. The shipped manager and the shipped
- * document are lifted and driven here with fake timers and a chrome.offscreen that keeps state.
- *
- * Control: WARDENONE_NOTIFICATION_MANAGER / WARDENONE_OFFSCREEN point at pre-fix copies.
- */
+/* Close idle audio documents, preserve in-flight playback and recreate safely after concurrent close. (LIFE-05)
+   Run: node tools/test-offscreen-lifecycle.js */
 'use strict';
 
 const assert = require('assert');

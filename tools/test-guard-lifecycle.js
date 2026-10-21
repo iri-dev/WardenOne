@@ -4,21 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The nine auxiliary content scripts used a bare boolean install guard. Chrome does not
- * re-inject into tabs that are already open when an extension updates, so a tab that outlives an
- * update keeps the old copy -- and with a boolean flag that was permanent: the new copy saw a
- * truthy flag and returned on line one. chrome.scripting.executeScript still resolved, which is
- * why Repair used to report success it had not earned (H1).
- *
- * They are now version-coupled: same version returns (or, for EyeShield, refreshes), an older
- * version is released and replaced. This file pins both halves of that -- the comparison, and the
- * release -- because a version-coupled guard WITHOUT a working dispose is worse than the boolean
- * was: it would layer a second complete copy into the page instead of declining to install.
- *
- * Run with:
- *   node tools/test-guard-lifecycle.js
- */
+/* Replacing a content-script version must release its resources; same-version injection stays idempotent. (H1)
+   Run: node tools/test-guard-lifecycle.js */
 'use strict';
 
 const assert = require('assert');
@@ -174,26 +161,17 @@ for (const g of GUARDS) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 4. The nine registries are the same code. Nine hand-maintained copies would drift; this
-//    asserts they have not, so a fix to one is a fix to all.
-// ---------------------------------------------------------------------------
-// The shared core, with the Chrome-event extension removed.
-//
-// Two of these files -- bridge.js and eyeshield.js -- also register chrome.runtime.onMessage
-// listeners, which are not DOM events, are not covered by the abort signal, and need
-// removeListener by identity. They therefore carry MORE than the shared registry, legitimately.
-// Comparing whole blocks would either fail or push us into adding an unused helper to the eight
-// files that do not need one. So the core is what must be identical; the extension is checked on
-// its own terms by the cross-file sweep below.
+// Compare the shared registry core separately from optional Chrome listeners.
+// Chrome events ignore AbortSignal and require identity-based removal; scripts without them
+// should not need unused helpers to pass the shared-core check.
 function sharedRegistryCore(src, g) {
   const dispose = g.dispose;
-  const from = src.indexOf('  /* Everything this copy holds');
+  const from = src.indexOf('  const woAbort = new AbortController();');
   const disposeAt = src.indexOf(g.disposeDecl);
   const to = src.indexOf('  };\n', disposeAt);
   assert(from >= 0 && to > from, 'could not find the registry block');
   let core = src.slice(from, to);
-  const chromeAt = core.indexOf("  // Chrome's extension events are not DOM events");
+  const chromeAt = core.indexOf('  const woChromeListeners = [];');
   if (chromeAt >= 0) {
     const resumeAt = core.indexOf('  ' + g.disposeDecl, chromeAt);
     core = core.slice(0, chromeAt) + core.slice(resumeAt);
@@ -207,7 +185,9 @@ function sharedRegistryCore(src, g) {
   // The drain is bridge-specific by nature and is asserted on its own in test-warning-dialogs.js;
   // what has to stay identical across all ten is the registry they share.
   core = core.replace(/    \/\* Before anything is torn down[\s\S]*?\n    \}\n/, '');
-  return core.split(dispose).join('__DISPOSE__');
+  return core.split(dispose).join('__DISPOSE__')
+    .replace(/^[ \t]*\/\/[^\n]*\n/gm, '')
+    .replace(/\n(?:[ \t]*\n)+/g, '\n');
 }
 
 const registries = GUARDS.map((g) => sharedRegistryCore(sources.get(g.file), g));
@@ -460,8 +440,8 @@ for (const g of GUARDS.filter((x) => !x.refreshes && !x.versionExpr)) {
   // legitimately carry MORE than the shared core, because they are the two that register Chrome
   // extension events. So the shared core is what has to match; the Chrome extension is compared
   // separately, by the checks above and the cross-file sweep below.
-  const from = bridge.indexOf('  /* Everything this copy holds');
-  const to = bridge.indexOf('  // Chrome\'s extension events are not DOM events');
+  const from = bridge.indexOf('  const woAbort = new AbortController();');
+  const to = bridge.indexOf('  const woChromeListeners = [];');
   assert(from >= 0 && to > from, 'could not find the bridge registry');
   check('bridge: registry core is identical to the other nine',
     sharedRegistryCore(bridge, { dispose: '__wardenOneBridgeDispose', disposeDecl: 'window.__wardenOneBridgeDispose = () => {' }) === registries[0]);

@@ -202,18 +202,8 @@ check('the scan covers a realistic surface', required.size >= 30, required.size 
     claimedKept.join(', ') + ' -- two comments disagreeing is how the three files got in');
 }
 
-/* ---- the package has to be loadable, not merely complete ------------------- *
- * Shipping every file is not enough if the folder shape defeats "Load unpacked".
- *
- * The v1.0.1 zip was built with `git archive --prefix=WardenOne/`, so the archive contained a
- * WardenOne/ folder holding everything. But every GUI unzipper ALSO creates a folder named after
- * the archive, so Windows "Extract All" produced WardenOne-v1.0.1\WardenOne\manifest.json. Point
- * Chrome at the folder you just extracted -- the obvious thing to do, and what the instructions
- * said -- and it refuses with "Manifest file is missing or unreadable". The extension looks broken
- * before it has run a line of code.
- *
- * So manifest.json belongs at the root of the archive, which is also what the Chrome Web Store
- * expects. The command must stay prefix-free everywhere it is written down. */
+/* Keep manifest.json at the archive root. GUI extractors already create a wrapper folder;
+   a git archive --prefix would add a second level and break Load unpacked instructions. */
 {
   check('manifest.json sits at the root of the release package',
     packaged.has('manifest.json'),

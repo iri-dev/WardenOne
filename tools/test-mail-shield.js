@@ -4,30 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Mail Shield — email tracking pixels in webmail.
- *
- * The whole feature turns on one fact: Gmail proxies remote images through
- * googleusercontent.com, so at the NETWORK layer there is no tracker domain left
- * to block — but it keeps the original URL in the FRAGMENT of the proxy URL it
- * writes into the DOM. A fragment is never sent to a server, which is why a
- * blocklist cannot see it and why this has to happen in the page.
- *
- * The classifier is lifted out of mail-shield.js and run against real markup
- * shapes, with a fake DOM element, so the rules are exercised rather than
- * described.
- *
- * The two properties that matter:
- *
- * 1. IT MUST NOT EAT REAL IMAGES. A newsletter's photographs, logos and product
- *    shots have to come through untouched. Every rule here is narrow on purpose,
- *    and the negative cases below are the point of the suite.
- * 2. A WRONG GUESS MUST BE HARMLESS. The pixel is replaced with a transparent
- *    image of the same declared size rather than blocked, so even a mistake is
- *    invisible instead of leaving a broken-image icon in someone's mail.
- *
- * Run: node tools/test-mail-shield.js
- */
+/* Detect webmail tracking pixels without hiding ordinary message images or breaking attachment viewing.
+   Run: node tools/test-mail-shield.js */
 'use strict';
 
 const fs = require('fs');

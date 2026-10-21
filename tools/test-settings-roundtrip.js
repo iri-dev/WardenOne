@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A settings backup restores what it recorded (PI-03, PI-04).
- *
- * The importer validated each value against the shape of the popup's default. siteOverrides maps
- * a host to an object of feature keys; the generic map branch keeps only scalar values, so every
- * host failed and the key came back as {} -- counted as applied, then written over the reader's
- * stored overrides. "Applied 160 settings" with every per-site exception gone. Separately, the
- * exporter writes the worker's table and the importer checked the popup's, so five of WardenOne's
- * own exported settings came back as "unrecognised".
- *
- * This lifts the shipped exporter and importer, runs a configuration carrying every shape in the
- * schema through them, and requires deep equality with the original minus secrets. No key may
- * ever be applied as an empty object when the file held entries for it, and every key the
- * worker's DEFAULT_CONFIG has must be importable.
- *
- * Run: node tools/test-settings-roundtrip.js
- */
+/* Export and restore supported settings without admitting secrets or changing their scope. (PI-03, PI-04)
+   Run: node tools/test-settings-roundtrip.js */
 'use strict';
 
 const fs = require('fs');

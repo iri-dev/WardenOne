@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Script Drift must keep a record of the script, never a record of where you have been.
- *
- * The baseline store was keyed by the exact third-party script URL and each record carried
- * a seenOn list of up to eight first-party sites. At 700 baselines that is 5,600 site-to-
- * script relationships -- a readable map of the reader's browsing -- and nothing in the
- * product ever read a single one of them. host, displayUrl, versioned, previousHash and
- * firstSeen were the same story: written on every check, read by nothing, because the
- * warning builds its text from the CURRENT fetch. Meanwhile PRIVACY.md said "only the hash
- * is kept" (PRIV-02).
- *
- * What is asserted here:
- *   - the record contains only fields something reads back
- *   - the key is a digest, so the file is not a list of URLs the browser fetched
- *   - old records -- legacy-keyed, stale, or carrying the graph -- are purged on read,
- *     and the purge is persisted rather than waiting for the next drift
- *   - drift detection still works, which is the thing all of this must not cost
- *
- * Run: node tools/test-script-drift-storage.js
- */
+/* Persist script identity without retaining the page URLs where it was observed. (PRIV-02)
+   Run: node tools/test-script-drift-storage.js */
 'use strict';
 
 const fs = require('fs');

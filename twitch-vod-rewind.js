@@ -4,19 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-// WardenOne — Twitch "watch from earlier" (live VOD rewind)
-//
-// The chunk-URL walk-back approach is impossible on Twitch (segment URLs are
-// opaque signed tokens, not a walkable index). But when a streamer has "Store
-// past broadcasts" enabled, Twitch is already recording the whole stream to a
-// VOD in real time, and that VOD is seekable from minute zero WHILE the stream
-// is still live. So instead of reconstructing anything, we just find that
-// in-progress VOD's id and hand the viewer off to Twitch's own VOD player at the
-// moment they joined (or earlier) — real quality, full seekbar, no transmuxing.
-//
-// This file is dual-mode: require()d in Node it exports the pure helpers for the
-// test suite; loaded as a content script (ISOLATED world, twitch.tv, top frame)
-// it runs the runtime.
+// Find Twitch’s in-progress archived VOD and open it at the viewer’s join time.
+// Signed segment URLs cannot be walked backwards. Channels without archived broadcasts have no VOD.
+// Node exports pure helpers; the top-frame isolated content script runs the UI.
 (function () {
   'use strict';
 
@@ -124,12 +114,7 @@
 
   if (typeof window === 'undefined' || window.top !== window) return;
   const WO_GUARD_VERSION = '1.0.2';
-  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
-     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
-     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
-     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
-     older one, and it must release the old one's listeners, observers and timers first or both
-     copies stay live and are charged for the same work. */
+  /* Release the older version’s listeners, observers and timers before replacing it in an open document. */
   if (window.__wardenOneVodRewind === WO_GUARD_VERSION) return;
   if (window.__wardenOneVodRewind) {
     try {
@@ -138,9 +123,7 @@
   }
   window.__wardenOneVodRewind = WO_GUARD_VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -154,8 +137,7 @@
   };
   const woObserver = (...a) => woHold(new MutationObserver(...a));
   const woInterval = (...a) => woHold(setInterval(...a));
-  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
-     forwarding `this` keeps them behaving exactly as the host would call them. */
+  /* Preserve the native timer callback’s this binding. */
   const woTimeout = (fn, ms, ...rest) => {
     let id;
     id = setTimeout(function (...a) {
@@ -165,12 +147,7 @@
     woPending.add(id);
     return id;
   };
-  // Chrome's extension events are not DOM events: they are not covered by the abort signal above
-  // and they have no equivalent of removeEventListener-by-signal. Repair reinstalls this script in
-  // every frame, so a listener registered here and never removed accumulates one more copy per
-  // Repair -- and every copy answers, so old and new bridges race on form and media health.
-  //
-  // The exact callback reference has to be kept, because removeListener matches by identity.
+  // Chrome events ignore AbortSignal; retain callback identities for removeListener during disposal.
   const woChromeListeners = [];
   const woOnMessage = (fn) => {
     try {

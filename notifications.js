@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The Notification Centre page.
- *
- * It owns no rules of its own. The catalogue and the settings shape live in
- * notification-schema.js, shared with the worker, so what this page offers and
- * what the worker honours cannot drift into two different answers.
- *
- * Two things here are worth more than they look.
- *
- * GROUPING. The settings have carried groupSimilar since they were written and
- * nothing implemented it, which on a tracker-heavy site means the history is
- * forty identical lines and the one warning that mattered is somewhere in the
- * middle of them. Repeats of the same kind, on the same site, within an hour,
- * collapse to one line that expands.
- *
- * READ STATE IS NOT DECORATION. Opening the page does not silently clear it,
- * because a count that vanishes before you have looked at what it was counting
- * is worse than no count. The toolbar count is optional; the centre retains the
- * unread state whether or not that count is shown.
- */
+/* Notification Centre. Settings and notification kinds come from notification-schema.js.
+   Repeats group by kind and site within an hour; opening the page does not mark them read. */
 'use strict';
 
 const NC = {
@@ -63,11 +45,7 @@ function sanitize(raw) {
     ? sanitizeWardenNotificationSettings(raw) : defaults();
 }
 
-/* Drawn rather than typed. Every other WardenOne page uses inline stroked SVG;
-   this one used emoji, which is why it read as a homemade page next to the rest
-   -- emoji also change shape per platform and are the one glyph a font stack
-   cannot control. Same 24-box, same 2px stroke, same currentColor as popup.html,
-   so the icons take the row's tone for free. */
+
 const ICON_PATHS = {
   shield: ['M12 3l7 3v5.2c0 4.4-3 7.6-7 8.8-4-1.2-7-4.4-7-8.8V6z'],
   link: ['M10 13a5 5 0 0 0 7.4.4l2.2-2.2a5 5 0 0 0-7-7l-1.3 1.2',
@@ -359,9 +337,7 @@ function renderRules() {
         });
       dur.value = rule.duration || 'default';
 
-      /* Built from the shared palette rather than a list written out here, so a
-         sound added to the schema appears without anyone remembering to add it
-         in two places. */
+
       const snd = document.createElement('select');
       soundChoices().forEach((entry) => {
         const o = document.createElement('option');
@@ -371,18 +347,14 @@ function renderRules() {
       /* 'notification' was the old name for what is now 'soft'. */
       snd.value = (rule.sound === 'notification') ? 'soft' : (rule.sound || 'none');
 
-      /* Hearing it is the only way to choose it. A dropdown of seven names is
-         seven guesses otherwise. */
+
       const hear = el('button', 'act');
       hear.appendChild(iconSvg('play'));
       hear.title = 'Hear this sound';
       hear.setAttribute('aria-label', 'Hear the sound for ' + def.label);
       hear.addEventListener('click', () => playSound(snd.value));
 
-      /* And the same for the length. The default has a Try it; a category that
-         overrides the default needs its own, or the one number on the row you
-         actually changed is the one you cannot see. Shows a real card carrying
-         this category's own title, at this category's own length. */
+
       const timeIt = el('button', 'act');
       timeIt.appendChild(iconSvg('timer'));
       timeIt.title = 'See how long this one stays';
@@ -392,18 +364,10 @@ function renderRules() {
         previewToast(mode.value === 'persistent' ? 'persistent' : value, NC.settings.position, def.label);
       });
 
-      /* A duration on something that never appears, or a sound on something
-         silent, is a control that does nothing. Disabled rather than hidden so
-         the row does not change shape as you use it. */
+      /* Disable unavailable controls without hiding them, so the row keeps its layout. */
       const sync = () => {
-        /* Only "Off" means nothing can ever appear, so only "Off" greys the rest
-           of the row out. "History only" used to as well, which meant the four
-           categories that ship that way -- trackers, list updates, experimental
-           warnings and system messages -- had no editable timing at all: to set
-           one you had to switch the category to Toast, set it, and switch it
-           back. A setting you cannot reach without turning the thing on first is
-           not a setting. Duration stays disabled on "Until dismissed" because
-           that mode has no duration by definition. */
+        /* Only Off disables the row. Keep History only editable so timing can be set before enabling toasts.
+           Persistent cards have no duration. */
         const silent = mode.value === 'off';
         dur.disabled = silent || mode.value === 'persistent';
         snd.disabled = silent;
@@ -568,9 +532,7 @@ function updateHistory(action, ids) {
   });
 }
 
-/* Every field the manager stores is kept. The page used to project records down to six fields
-   and read a `message` the manager never writes, so descriptions were blank and repeat counts
-   and samples vanished. */
+/* Retain canonical manager records, including summaries, repeat counts and samples. */
 function normalizeItems(raw) {
   return (Array.isArray(raw) ? raw : [])
     .filter((i) => i && typeof i === 'object' && Number.isFinite(Number(i.at)))
@@ -600,13 +562,7 @@ function normalizeItems(raw) {
 
 /* ---- the live timing preview -------------------------------------------- */
 
-/* Borrowed from tools/toast-harness.html, which exists because a duration is
-   not a number you can judge -- it is a length of time you have to sit through.
-   The harness was a developer page; there is no reason the person choosing the
-   setting should not have the same thing.
-   It draws a real card, in the corner they picked, for exactly the length they
-   picked, with the time left counting down on it. "Until dismissed" gets a card
-   with no timer, which is the only honest way to show that setting. */
+/* Preview the selected position and duration with a real card; persistent mode has no timer. */
 let tryTimer = 0;
 let tryTick = 0;
 let tryRaf = 0;
@@ -649,12 +605,7 @@ function previewToast(value, position, title) {
   };
 
   if (ms) {
-    /* The bar used to be redrawn from a 60ms interval, which is neither the
-       frame rate nor a multiple of it, so the preview stuttered -- and a preview
-       of a toast is a claim about how that toast will look. The real toast hands
-       the bar to a CSS transition and lets the compositor run it; this does the
-       same. The countdown is the only thing left on a timer, and it is written
-       from requestAnimationFrame and only when the tenth actually changes. */
+    /* Use a compositor transition for the bar. Update countdown text only when its displayed tenth changes. */
     const started = Date.now();
     bar.style.transition = 'none';
     bar.style.transform = 'scaleX(1)';

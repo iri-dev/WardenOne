@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Hiding something by hand, and getting it back.
- * Run: node tools/test-element-picker.js
- *
- * Three things have to hold, and they fail in different ways.
- *
- * THE SELECTOR IS PASTED INTO A STYLESHEET. Selectors are joined with commas and
- * dropped into a rule, so a value carrying a brace closes that rule and starts
- * writing CSS of its own. Nothing can put an arbitrary string in there today --
- * they come from the picker, built out of the DOM -- but that is a property of
- * today's callers, not of the store, so the store checks.
- *
- * THE RULE HAS TO STILL WORK NEXT WEEK. A selector built from a class name that
- * the site's build tool generated matches beautifully until the next deploy and
- * then silently stops. Silent is the problem: the reader has no reason to look,
- * so the feature appears to work while doing nothing.
- *
- * IT HAS TO BE REVERSIBLE. Something hidden with no way back is worse than the
- * thing it hid. Same lesson as the silenced notifications, and the same answer:
- * a list, per site, in the popup.
- */
+/* Verify unique saved selectors, gesture suppression and undo without removing page-owned DOM.
+   Run: node tools/test-element-picker.js */
 'use strict';
 
 const assert = require('assert');

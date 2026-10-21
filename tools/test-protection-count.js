@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * How many protections WardenOne actually has, asserted in every place that claims a number.
- *
- * The README said "80+" for long enough that it drifted to 99 without anyone noticing, the
- * GitHub About repeated it, and the popup's "You're safe" panel showed a denominator of 87
- * from a third list that had gone its own way. Three numbers, three sources, none agreeing.
- * A count nobody checks is a count that rots, so this makes HEALTH_SHIELD_KEYS the single
- * source of truth and fails the build when a claim stops matching it.
- *
- * The denominator has to mean something specific to be worth printing: protections you can
- * actually switch off. So two kinds of key are deliberately excluded, and both exclusions
- * are asserted here rather than left to memory --
- *   - the watch-only guards, which have no toggle because they never block; and
- *   - antiFingerprint, a legacy alias that antiFingerprintNoise already ORs in, so it could
- *     never be turned on or off on its own and counting it inflated the total by one.
- *
- * Run: node tools/test-protection-count.js
- */
+/* Derive published protection totals from classified guards and detect unclassified switches.
+   Run: node tools/test-protection-count.js */
 'use strict';
 
 const fs = require('fs');

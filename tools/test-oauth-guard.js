@@ -231,18 +231,8 @@ const microsoftUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/autho
   check('M4 Spanish Microsoft credential surface stays quiet', state.modals.length === 0 && state.reports.length === 0, state);
 }
 
-/*
- * Signing in to GitHub with GitHub's own tooling was warned about as a risky
- * third-party OAuth grant. GitHub CLI, GitHub Desktop, GitHub Mobile and
- * Codespaces all land on the same /login/oauth/authorize page as any other app,
- * and `repo` there scored High -- so the guard fired every time, on a grant
- * with no third party in it.
- *
- * The exemption has to survive someone trying to wear it. The publisher line is
- * rendered by the provider, but the app supplies the name printed after "by",
- * so the phrase is anchored to the sentence that asks for access and refuses a
- * second "by" in between.
- */
+/* Exempt provider-owned GitHub tools without trusting an app-controlled publisher substring.
+   Anchor the provider sentence and reject an intervening second "by". */
 const githubRepoUrl = 'https://github.com/login/oauth/authorize?client_id=xyz&scope=repo%20delete_repo';
 const githubGrantTail = ' wants to access your iri account Repositories Public and private '
   + 'read and write all public and private repository data Authorize Cancel';

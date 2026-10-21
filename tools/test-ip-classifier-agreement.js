@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Every place WardenOne decides "is this address private/local?" gives the same answer.
- *
- * There were several, and one drifted: normalizeIpLiteral tested the text "fe80", while IPv6
- * link-local is fe80::/10 -- fe80 through febf -- so [fe90::1], [fea0::1] and [febf::1] passed as
- * PUBLIC. isLocalOrPrivateHost depends on it, and Download Shield uses that to refuse re-fetching
- * a download from a local address. The DNS-rebinding classifier and the intranet network rule had
- * the range right; the engine's local-admin check had the same "fe80" mistake. An IPv4 private
- * address written as IPv4-mapped IPv6 ([::ffff:10.0.0.1], which the URL parser turns into
- * [::ffff:a00:1]) was caught by the background classifiers but by neither the intranet rule nor the
- * engine check.
- *
- * background.js now has one IPv6 range classifier (ipv6Range) that both of its classifiers call.
- * The engine check and the intranet rule are a separate script and DNR regexes, so this test runs
- * all four -- the shipped code, lifted -- over one table and requires them to agree.
- *
- * Run: node tools/test-ip-classifier-agreement.js
- */
+/* Compare private/local address classification across worker, page and DNR implementations.
+   Run: node tools/test-ip-classifier-agreement.js */
 'use strict';
 
 const fs = require('fs');

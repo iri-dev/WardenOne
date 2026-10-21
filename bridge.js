@@ -4,47 +4,28 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WardenOne -- bridge (ISOLATED world)
- * ====================================
- * The MAIN-world content script (content.js) does the actual blocking, but it
- * can't talk to the extension's background service worker directly. This bridge
- * runs in the ISOLATED world (same page, but with access to chrome.* APIs) and
- * relays two things:
- *   1. block/detection events from the main world -> background (for the badge)
- *   2. config overrides from background -> main world (via window.postMessage)
- */
+/* ISOLATED-world bridge between MAIN-world guards and the extension worker.
+   Authenticate relayed events and deliver worker-resolved configuration to the page modules. */
 (function () {
   'use strict';
 
   const BRIDGE_VERSION = '1.0.2';
   if (window.__wardenOneBridgeVersion === BRIDGE_VERSION) {
-    /* Same version: this document already has a current bridge. Let it re-run its replay,
-       then stop -- unconditionally. The return used to sit INSIDE the typeof check, so a
-       bridge whose replay had not been assigned yet (it is set 840 lines below this point, so
-       anything throwing in between left the flag set and the replay missing), or whose replay
-       a page had overwritten with a non-function, fell through and installed a SECOND complete
-       bridge over the first: another 36 listeners, another observer, another runtime listener.
-       A page could force that on demand with window.__wardenOneBridgeReplay = 1. */
+    /* A same-version injection may replay config but must never reinstall listeners, even without a replay hook. */
     try {
       if (typeof window.__wardenOneBridgeReplay === 'function') window.__wardenOneBridgeReplay();
     } catch (_) {}
     return;
   }
   if (window.__wardenOneBridgeVersion) {
-    /* A different version means this document holds an older bridge -- after an extension
-       update, or after Repair marked it stale so it could re-arm the tab. Release what that
-       copy holds before installing over it, or both stay live and both are charged for every
-       event the page produces. */
+    /* Dispose the previous version before installing this bridge to avoid duplicate listeners and observers. */
     try {
       if (typeof window.__wardenOneBridgeDispose === 'function') window.__wardenOneBridgeDispose();
     } catch (_) {}
   }
   window.__wardenOneBridgeVersion = BRIDGE_VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -58,8 +39,7 @@
   };
   const woObserver = (...a) => woHold(new MutationObserver(...a));
   const woInterval = (...a) => woHold(setInterval(...a));
-  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
-     forwarding `this` keeps them behaving exactly as the host would call them. */
+  /* Preserve the native timer callback’s this binding. */
   const woTimeout = (fn, ms, ...rest) => {
     let id;
     id = setTimeout(function (...a) {
@@ -69,12 +49,7 @@
     woPending.add(id);
     return id;
   };
-  // Chrome's extension events are not DOM events: they are not covered by the abort signal above
-  // and they have no equivalent of removeEventListener-by-signal. Repair reinstalls bridge.js in
-  // every frame, so a listener registered here and never removed accumulates one more copy per
-  // Repair -- and every copy answers, so old and new bridges race on form and media health.
-  //
-  // The exact callback reference has to be kept, because removeListener matches by identity.
+  // Chrome events ignore AbortSignal; retain callback identities for removeListener during disposal.
   const woChromeListeners = [];
   const woOnMessage = (fn) => {
     try {
@@ -84,16 +59,8 @@
     return fn;
   };
 
-  /* Overlays this copy currently has on screen. Bridge-only, like the Chrome listeners above, so
-     it lives outside the registry core the other nine guards share.
-     destroy() is the only thing that releases the keyboard trap, hands focus back, stops the
-     self-healing watcher and removes the host -- and dispose has to be able to reach them. Every
-     button inside a warning is registered through woOn, so it rides the abort signal; the trap is
-     a raw listener on the host and does not. A bridge replaced while a warning is up therefore
-     used to abort every button and leave the dialog on the page with nothing able to close it.
-     That is not a rare path: Repair deliberately stamps this file's version flag stale and
-     re-injects (background.js REPAIR_COMPONENTS), and people press Repair precisely when something
-     looks wrong -- which is when a warning is most likely to be showing. */
+  /* Destroy overlays before aborting their handlers so keyboard traps, focus and self-heal watchers
+     are released when Repair replaces this bridge. */
   const woOverlays = new Set();
 
   window.__wardenOneBridgeDispose = () => {
@@ -120,22 +87,9 @@
     }
   };
 
-  // A per-page-load routing token. It keeps accidental/cross-extension messages
-  // out, but the MAIN-world page can observe window messages, so background-side
-  // handlers still treat token-bearing page events as forgeable and constrain the
-  // dangerous paths with sender checks, rate limits, and sanitized inputs.
-  // A ROUTING NONCE, not a secret (M27).
-  //
-  // This value is broadcast into the page with postMessage so the MAIN-world scripts can tag their
-  // traffic back. The page shares that world, so any script listening early enough holds it as
-  // well. It exists to tell WardenOne's messages apart from every other postMessage on a busy
-  // page, and to stop stale traffic from a previous bridge being answered -- nothing more.
-  //
-  // Checking `d.token === TOKEN` therefore proves the message is addressed to this bridge. It does
-  // NOT prove who sent it. Anything arriving over a page-visible channel must be treated as a
-  // claim, and must not be sufficient on its own to change trusted state: the permission-chain
-  // path now requires corroboration the worker gathered itself before it will warn or write
-  // history. Add a new inbound signal here and the same rule applies to it.
+  // The page-visible routing nonce is not a secret and cannot authenticate the sender (M27).
+  // Treat token-only claims as forgeable; constrain them with worker corroboration,
+  // sender checks, rate limits and input validation.
   const TOKEN = (function () {
     try {
       const a = new Uint32Array(4); crypto.getRandomValues(a);
@@ -155,15 +109,8 @@
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
     const U8=Uint8Array,U32=Uint32Array,D="0123456789abcdef";
-    /* This code runs in the page's own world, where the page can replace any built-in method after
-       load. So nothing that touches the key calls one. The key becomes its two HMAC pad blocks ONCE,
-       in key(), at the document_start hand-off before any page script exists; after that a
-       signature is index reads and arithmetic on typed arrays -- no .set, .subarray, .length,
-       substr, parseInt or toString -- each of which a page could replace to be handed the key: a
-       patched String.prototype.substr, Uint8Array.prototype.set or typed-array length getter each
-       recovered the whole key from one signature (tools/test-main-world-key-isolation.js). The
-       message text is not secret; a page that tampers with how it is read only spoils its own
-       signature, which it could already do by stopping the event. */
+    /* Derive HMAC pads before page scripts run. Signing must not call replaceable built-ins with key data;
+       a patched string/typed-array method could otherwise capture the key. Message data is not secret. */
     function encode(text){
       const s=String(text),out=new U8(3*s.length+3);
       let n=0;
@@ -272,14 +219,8 @@
       return out;
     } catch (_) { return ''; }
   })();
-  // "The page could have run": a script of the page's own exists only once the parser has
-  // produced a <script>, a frame or plugin element, an element carrying an on* handler
-  // attribute, or the <body> -- or once the document has finished loading. At document_start
-  // none of that has been built. What may already sit under <html> is a <style> or two that
-  // this extension's own MAIN-world modules (Spotify, Twitch, YouTube) append before this
-  // bridge runs; those are inert. The first seal counted any element at all as "the page has
-  // run", so on exactly those sites the key never went out and every signed message that
-  // followed was refused.
+  // Seal key delivery once executable page content could have run. Extension-inserted styles
+  // at document_start are inert and must not prevent the initial handoff.
   const BRIDGE_INERT_TAG = /^(?:head|meta|title|link|style|base)$/;
   const pageCouldHaveRun = () => {
     try {
@@ -322,16 +263,8 @@
   const signedPart = (kind, payload, message) => (KEY ? __woAuth.hmac(KEY, message.seq + '\n' + kind + '\n' + String(payload)) : '');
   const engineMac = (kind, text) => (KEY ? __woAuth.hmac(KEY, kind + '\n' + String(text)) : '');
 
-  /* ROUTING TOKEN = ROUTING ONLY; THE KEY = ANYTHING WARDENONE BELIEVES.
-     The token rides every message on this bus and a page can read it, so a message that carries
-     only the token proves nothing about who sent it. Security events (blocked_*, detected_*,
-     gated_*, warned_*, behavioral_risk) were accepted on the token alone: a page could dispatch
-     blocked_payment_card_submit or detected_grabber_domain about itself and have WardenOne put it
-     in the Activity log, count it on the toolbar badge and pop its own branded notice on the page.
-     The permission-chain signal, the media-active flag Memory Shield consults before sleeping a
-     tab, and the reload-loop notice worked the same way. Each is now signed under the key this
-     bridge handed out at document_start, over a number that only moves forward -- one counter per
-     sender -- and its content; a page can still dispatch all of them, and none of them counts. */
+  /* Authenticate security events, permission signals and media state with HMAC and monotonic sequences.
+     A public routing token cannot authorize history, badge or warning updates. */
   const KEY_PADS = KEY ? __woAuth.key(KEY) : null;
   const EVENT_SOURCES = new Set(['engine', 'hardener', 'miner', 'bridge', 'adshield']);
   const eventSeqSeen = Object.create(null);
@@ -677,17 +610,8 @@
   let bridgeFrameSite = '';
 
   // ---- Shared DOM watcher ----
-  // Smart Script Shield, Script Drift and the Login Page Age check each ran their
-  // own whole-document subtree MutationObserver, two of them for a full 60 seconds
-  // on every top-level page. That fired three separate extension callbacks for every
-  // mutation batch during the busiest minute of a page's life -- all to answer the
-  // same question: did the DOM change?
-  //
-  // They share one observer now. Subscribers are deliberately independent: one
-  // unsubscribing must never stop the others, so the observer is disconnected only
-  // when the LAST subscriber leaves, and reconnected if one arrives afterwards
-  // (Smart Script Shield re-arms on popstate/hashchange, long after the others are
-  // finished). Records are passed through because Script Drift reads addedNodes.
+  // Share one observer across independent subscribers; disconnect only when the last leaves.
+  // Allow later subscriptions to reconnect, and retain addedNodes for Script Drift.
   const domWatchers = new Set();
   const domElementWatchers = new Set();
   let domObserver = null;
@@ -808,25 +732,9 @@
   const WO_OWNED_HOST_STYLE = 'all:initial!important;position:fixed!important;inset:auto!important;'
     + 'z-index:2147483647!important;';
 
-  // The focus ring, painted inline rather than declared in a stylesheet.
-  //
-  // The warnings reset their buttons with `all:initial!important` in the style attribute to strip
-  // page CSS, and that takes the focus ring with it, so a keyboard user cannot see which action is
-  // selected. The obvious repair -- a `:focus-visible` rule in the overlay's own stylesheet -- does
-  // not work, and it is not a specificity problem to out-specify: an important declaration in a
-  // style attribute beats an important rule from any stylesheet, shadow root included. Measured in
-  // Chromium, every button still computed to `outline-style:none`, so the ring the code claimed to
-  // restore never drew.
-  //
-  // Setting the property inline puts it in the same declaration block as the reset, where the later
-  // declaration wins. An outline in `currentColor` is what forced-colors mode honours; a coloured
-  // box-shadow is discarded there.
-  //
-  // `scope` must be the node the focus events reach WITHOUT being retargeted -- the shadow root for
-  // an owned overlay, the host itself only in the light-DOM fallback. Bound on the host instead,
-  // every focusin from inside a closed shadow root arrives reporting the host as its target, so the
-  // ring would follow nothing and land on nothing. Measured: Tab moved between buttons and no ring
-  // was drawn at all.
+  // Apply focus outlines inline: the buttons’ inline all:initial!important defeats stylesheet rules.
+  // Use currentColor for forced-colors mode. Bind inside the shadow root so focus targets
+  // are not retargeted to the host.
   function woFocusRing(scope) {
     let painted = null;
     const drop = () => {
@@ -1385,19 +1293,9 @@
     if (!smartPlayerDeadlockDue) return '';
     // A watch-shaped route, or a subframe, which is a player context in its own right.
     if (smartPlayerRoute() || window.top !== window) return 'route-blocked';
-    // An ordinary top-level page that painted nothing is the OTHER shape this happens in, and it
-    // used to get no recovery at all -- the scoping here said such a page "gains nothing", which
-    // was true when the only thing recovery could rescue was a player. A site whose own
-    // application code sits on a separate registrable domain has it refused as third-party and
-    // then never paints, which is H13, M35, and a black page reported from live use.
-    //
-    // It earns a look, not an allowance. Nothing here decides anything: background acts only where
-    // webRequest independently observed a blocked third-party script in this exact frame, which no
-    // page can manufacture, and recovery still refuses hosts known for tracking or fingerprinting.
-    // Blankness alone, on a page that blocked nothing, does nothing at all. Once an ordinary
-    // top-level page has rendered normally, switch the mutation-driven scans into a throttled,
-    // element-only follow-up mode. Text-changing controls no longer reach it, while a late player
-    // root or an application shell that becomes blank can still be noticed before final teardown.
+    // Blankness only requests investigation. Recovery needs a worker-observed script block in this frame
+    // and still excludes tracking/fingerprinting hosts. After a normal render, throttle follow-up scans
+    // to element additions so text-changing controls do not trigger page-wide work.
     if (smartPageIsBlank()) return 'page-blocked';
     setSmartPlayerQuietWatch();
     return '';
@@ -1550,15 +1448,8 @@
         'iframe[allowfullscreen]', 'iframe[allow*="autoplay"]', 'iframe[allow*="fullscreen"]',
         'iframe[allow*="picture-in-picture"]', 'iframe[allow*="encrypted-media"]',
       ].join(','))) return true;
-      // When the player UI is itself built by the third-party script Smart Script
-      // Shield blocked, none of the checks above can ever match: no <video>, no
-      // player root, and no labelled control is ever created. The recovery gesture
-      // then becomes unreachable and the page sits on a dead spinner forever --
-      // clicking the player is also invisible here, because a click inside a
-      // cross-origin embed never reaches this document. Once this frame has
-      // produced strong player evidence, treat any trusted click in it as player
-      // intent. A page can fake the evidence DOM, but it cannot fake a trusted
-      // user gesture, and that gesture is the property the recovery gate relies on.
+      // After strong player evidence, accept any trusted frame click as player intent: blocked scripts
+      // may have prevented the player UI from being built. Cross-origin embed clicks do not reach the parent.
       if (smartPlayerEvidence && (window.top !== window || smartPlayerRoute())) return true;
       if (!smartPlayerRoute()) return false;
       const control = target.closest('button,[role="button"],[data-episode],[data-server],a[href]');
@@ -1618,17 +1509,8 @@
     });
   } catch (_) {}
 
-  // M36. When Smart Script Shield is the reason a page is broken, say so.
-  //
-  // Refusing third-party scripts is what the shield is for, and on nearly every page it is right
-  // and invisible. When it is wrong the page simply fails -- a black player, a splash screen that
-  // never advances -- and the only route out is to already suspect the extension, find the Script
-  // Shield panel and trust the site by hand. Three separate findings had that shape and each was
-  // diagnosed only because someone happened to test with the extension off.
-  //
-  // Two conditions, evaluated where each is knowable: the page decides whether it looks broken,
-  // background decides whether we refused anything on this navigation. Neither alone is worth
-  // showing -- a refusal happens on almost every page, and a slow page is not our doing.
+  // M36. Show a broken-page notice only when page evidence and worker-observed script blocks agree.
+  // Either signal alone is common on legitimate pages.
   let smartScriptNoticeOverlay = null;
   let smartScriptNoticeShown = false;
   let smartScriptNoticeAsked = false;
@@ -1641,16 +1523,8 @@
       && window.top === window;
   }
 
-  // Why the page looks broken, or '' if it does not.
-  //
-  // These three are the shapes the known reports actually had, and they are deliberately narrow.
-  // A detector broad enough to catch "one widget on an otherwise working page did not render"
-  // would fire on working pages, and a notice that cries wolf is worse than the silence it
-  // replaces -- people learn to dismiss it and then it is there for nothing.
-  // "This page painted nothing." One definition, two callers with different patience: the recovery
-  // signal above asks at four seconds and needs only this, while the notice below waits until the
-  // page has had every chance and also counts a page that never finished loading. Two separate
-  // notions of blank would drift into disagreeing about the same page.
+  // Return a narrow broken-page reason or empty string. Share the blank-page definition with recovery;
+  // the notice waits longer and also checks a page that never finishes loading.
   function smartPageIsBlank() {
     try {
       if (document.prerendering) return false;
@@ -1797,17 +1671,8 @@
 
   function setLearnedGrabberDomains(learned) {
     try {
-      // Both stages happen here now, at the storage boundary, so the merge in
-      // sendConfig can trust the result instead of redoing the second one on every
-      // page load in every frame.
-      //
-      // The order is load-bearing and matches what the two places used to do between
-      // them. The bare-hostname regex runs FIRST and is the stricter of the two: it
-      // rejects anything carrying a scheme, port or edge dots, which the shared gate
-      // would otherwise happily parse a blockable hostname out of. Sanitising first
-      // would turn a malformed learned key like "https://sub.example.co.uk/p" into a
-      // live auto-block rather than discarding it -- blocking more than before, which
-      // is the direction that breaks working sites.
+      // Reject malformed learned keys before normalising hosts. Normalisation first could turn
+      // a stored URL or edge-dotted key into a live auto-block. Validate once at the storage boundary.
       learnedGrabberDomains = sanitizeBridgeHostList(
         Object.keys(learned || {})
           .map((d) => String(d || '').replace(/^www\./, '').toLowerCase())
@@ -1969,16 +1834,9 @@
       return bridgeHostOfOrigin(list[list.length - 1]);
     } catch (_) { return ''; }
   }
-  // Whether the anti-fingerprinting noise runs in this frame. fingerprint-realm.js runs the
-  // engine's noise in the frames the engine never reaches, but it cannot read a switch off the
-  // page and must not trust one a page posts, so the verdict is decided here -- where the
-  // allowlist and the per-site switches are already resolved -- and travels inside the signed
-  // config. Same decision the engine takes for the top frame (enabled, the switch or its alias,
-  // not paused for the host), taken twice: once for this frame's own host and once for the
-  // page's top host. "Pause on this site" and "noise off here" are choices about the page, and
-  // an embedded frame is part of the page; a payment or captcha frame that broke under the noise
-  // is fixed by the same pause that fixes the page around it. The per-site switches for this
-  // frame's own host were already applied to `clean` above; the top host's are consulted here.
+  // Resolve frame noise in ISOLATED and include it in signed config. Both frame and top-site choices
+  // apply: pausing a page must also pause its embedded payment/captcha frames.
+  // Frame-host overrides are already in clean; consult top-host overrides here.
   function bridgeFrameNoiseAllowed(clean) {
     try {
       if (!clean || clean.enabled === false) return false;
@@ -2250,16 +2108,8 @@
     delete clean.webglSaverBlockHosts;
     delete clean.webglSaverAllowHosts;
     delete clean.siteOverrides;
-    // Silent mode is a gate over presentation, not a rewrite of it. The engine reads
-    // showToasts and showBadge and nothing else, so Silent has to reach it as those two
-    // being off -- and this copy, the one the page gets, is where that happens, the same
-    // way a per-site override reaches it just above. The stored preferences underneath are
-    // never touched: the popup used to write them false while Silent was on and read the
-    // disabled switches back on the way out, so turning Silent off left both off until the
-    // reader found and re-enabled two separate switches. Whichever surface set silentMode
-    // (the popup's toggle or the onboarding choice), the page sees the same thing, and
-    // Normal gets back exactly what was chosen before. Read from the merged view, so a
-    // partial update while Silent is on cannot let a switch back through.
+    // Project Silent mode onto showToasts/showBadge in the merged config without changing stored preferences.
+    // Read the merged view so partial updates cannot re-enable presentation while Silent is active.
     gateSilentPresentation(clean, bridgeConfig.silentMode === true);
     clean.forgetMeList = sanitizeBridgeHostList(clean.forgetMeList, 1000);
     // Engine-only host lists have a separate MAC, so other MAIN-world readers do not hash
@@ -2324,21 +2174,8 @@
     window.__wardenOneBridgeReplay = bridgeReplay;
   } catch (_) {}
 
-  // The same replay, reachable from the MAIN world.
-  //
-  // `window` is not shared: this file runs in ISOLATED, so the global above is on a window the
-  // main world can never see. cryptominer-detect.js runs in MAIN and asked for a replay through
-  // it, which meant its `typeof ... === 'function'` test was false every single time and the
-  // request silently did nothing -- so a detector injected after the one-time handshake never got
-  // a token, rejected the config that followed, and sat on confirmed detections forever.
-  //
-  // `document` IS shared, and is already how the main world talks to this one. A page can dispatch
-  // this too, and gains nothing by it: a replay re-sends the same handshake and the same sanitized
-  // config the page has already been posted. It is rate-limited so it cannot be used to spam.
-  //
-  // Every MAIN consumer (the engine, anti-redirect, permission-chain, the miner detector, the
-  // Spotify module) asks once at its own start, in case this bridge ran before it; the budget
-  // has to cover all of them in the same second and still leave a page nothing worth spamming.
+  // MAIN cannot call the ISOLATED window replay hook; use the shared document event instead.
+  // Replay only the existing handshake/config, rate-limited with enough budget for every MAIN consumer.
   woOn(document, 'wo-bridge-replay', () => {
     if (!bridgeRateOk('wo-bridge-replay', 12, 60000)) return;
     try { bridgeReplay(); } catch (_) {}
@@ -2347,20 +2184,8 @@
   // 1. Listen for the custom events the main-world trap dispatches on document,
   //    and forward block/detection counts to the background for the toolbar badge.
   /* ---- engine watchdog -------------------------------------------------------------
-     The MAIN-world engine shares its world with the page, so a page can call its dispose
-     and switch it off. That is a known limit of MAIN-world injection and cannot be
-     prevented from inside that world -- the page owns it. The engine already answers it
-     halfway: disposing clears its own ready markers, so the tab stops claiming to be
-     protected and a fresh injection can take hold. The comment there says the point is
-     that "the bypass has to be repeated rather than done once and left".
-     It was not, though, because nothing ever re-injected. One call at document_start
-     switched the engine off for the life of the page and no one found out.
-     This half closes that. It runs in the ISOLATED world, which the page cannot reach or
-     read, so a page can silence the engine but cannot silence the thing that notices. If
-     the engine never announced itself, or announced itself and then went quiet, the worker
-     is asked to look and put it back.
-     A page can still spoof the marker to look installed. That is a much higher bar than
-     one call, and it is the honest limit of what this can do. */
+     ISOLATED watches for a missing or disposed MAIN engine and asks the worker to restore it.
+     MAIN is page-controlled, so this detects outages rather than preventing all interference. */
   /* The engine has to PROVE it is there. "installed" counts only when it carries the key's
      signature, and a live engine is one that answers a challenge with the key: the bridge
      dispatches wo-ping with a fresh nonce and the engine, still inside that dispatch, emits a
@@ -2407,17 +2232,8 @@
     }
   } catch (_) {}
 
-  /* The redirect interstitial is the one thing a wo-event makes the worker DO -- navigate the
-     tab to WardenOne's own warning page with a Continue button pointing at the event's url --
-     and the token that routes these events is public. A page that dispatched
-     blocked_gestureless_nav with a url of its own and silent:false put its landing page behind a
-     genuine, WardenOne-branded Continue on a real chrome-extension:// page, and could raise it
-     eight times a minute to devalue the warning a real hijack raises (SEC-15). The guard now
-     signs an interstitial request under the key this bridge handed out at document_start, over
-     a number that only moves forward and the destination, the reason and the kind the page will
-     show (the SEC-13 scheme); nothing that fails the signature, repeats a number or was altered
-     in flight is relayed. The badge count for the same event is unchanged: a block is a number,
-     not an action. */
+  /* SEC-15: interstitial requests navigate the tab, so require a signature over destination, reason,
+     kind and monotonic sequence. A public routing token cannot authorize a branded Continue page. */
   let interstitialSeqSeen = 0;
   const interstitialRequestSigned = (detail) => {
     const seq = Number(detail && detail.seq);
@@ -2493,18 +2309,8 @@
     }
   }, true);
 
-  // Navigation attribution signals. Deliberately NOT routed through the wo-event
-  // path above: they are not findings, must never reach the history or the badge,
-  // and are far too frequent for the security-event budget.
-  //
-  // And they are signed (SEC-13). Two of them -- 'gesture' and 'top-nav-authorized' -- tell
-  // the worker that a cross-site navigation was the reader's doing, which switches the
-  // forced-redirect interstitial off for that tab; a page holding only the public token used
-  // to be able to say that itself, every two seconds, for as long as it liked. A beacon now
-  // counts only when its HMAC under the key this bridge handed out at document_start
-  // verifies over a sequence number that has moved forward, the kind, and -- for an
-  // authorisation -- the host it is for. The page still sees every one of these events and
-  // can dispatch them; it cannot sign one, and it cannot replay one.
+  // Navigation attribution signals. Keep this control traffic outside history/badge budgets.
+  // Bind kind, host and sequence to the bridge key because these signals suppress warnings (SEC-13).
   let navSignalSeqSeen = 0;
   woOn(document, 'wo-nav-signal', (e) => {
     const d = (e && e.detail) || {};
@@ -2603,18 +2409,9 @@
     bridgeAskUntilAnswered({ kind: 'content-config-get', need: wanted }, (res) => !!(res && res.ok), cb,
       { attempts: maxAttempts });
   };
-  // The full snapshot gathers several datasets and can arrive after a first player click, so the
-  // worker is also asked for only the popup switches (storage stays private to trusted extension
-  // contexts). Apart from the popup guards and the player-frame guards these switches cover, no
-  // MAIN-world guard is enabled until the full content-config-get reply arrives -- and none of
-  // them is enabled before an answer of either kind says what the reader chose.
-  //
-  // Asked until answered, like the full snapshot, but on a short budget: it matters only for the
-  // moments before the full snapshot lands, so it stops as soon as that has. A cold worker -- the
-  // first message of a new document is what wakes it -- used to answer this one request with
-  // runtime.lastError, and a player frame stayed unguarded until the full snapshot arrived, which
-  // on a slow wake was seconds. Retries at 150 ms doubling, five attempts, two seconds' wait per
-  // attempt: well inside the worker's 500-a-minute allowance for this message.
+  // Fetch the small popup/player switch snapshot while the full config loads. Only an answered snapshot
+  // may enable its guards; other MAIN guards wait for full config. Retry cold-worker failures briefly
+  // and stop when full config arrives.
   const BOOTSTRAP_RETRY = { attempts: 5, baseMs: 150, maxMs: 1200, deadlineMs: 2000, stop: () => bridgeConfigReady };
   const requestRedirectBootstrap = () => {
     bridgeAskUntilAnswered({ kind: 'redirect-bootstrap-get' }, (res) => !!(res && res.ok && res.overrides), (res) => {
@@ -2904,18 +2701,8 @@
     }, true);
   } catch (_) {}
 
-  // Cookie reload-loop escape. The bridge now BUILDS this notice rather than watching the page
-  // for one, because the previous arrangement could not tell WardenOne's button from a copy of
-  // it. The engine detects the loop -- it is the side that sees the navigations -- but it runs in
-  // world MAIN, which is the page's own JS context, so anything it creates is indistinguishable
-  // from something the page created. Only the isolated world can own a node the page cannot
-  // reach, and only the owner of the node can safely act on a click on it.
-  //
-  // Honest about what this does and does not close: a page can still observe the token and ask
-  // for the notice to be shown, because the token is not a secret. What it can no longer do is
-  // control the words next to the button, or collect the click. The user sees WardenOne's own
-  // text, saying cookies are blocked and that allowing them applies to this site -- and the
-  // permission changes only on a trusted click on a node inside our closed shadow root.
+  // Cookie reload-loop escape. Only trusted clicks on ISOLATED-owned controls may allow cookies.
+  // The page can request a notice but cannot supply its wording or substitute the approval button.
   try {
     const cookieStopKey = () => '__wo_rlstop_' + String(location.hostname || '');
     let cookieOverlay = null;
@@ -3019,22 +2806,8 @@
   } catch (_) {}
 
   // ---- Memory Shield: form-dirty + active-media tracking ----
-  // So Memory Shield never sleeps a tab where the user has typed into a form (and
-  // would lose their input on discard+reload), we watch for input on form fields
-  // and answer a background query about whether this page has unsaved form data.
-  // We ALSO track whether the page is actively using the camera/microphone, so a
-  // video-call / recording tab is never slept out from under the user.
-  // Computed at query time, never latched. The old version set a boolean the first time anything
-  // was typed into any field -- a site search box counted -- and nothing ever set it false again:
-  // not submit, not navigation, not clearing the field. On a single-page app the document lives
-  // for the whole session, so one keystroke exempted the tab from Memory Shield permanently and
-  // the feature quietly stopped working the more the browser was used.
-  //
-  // Scanning when asked is affordable because Memory Shield only asks when it is considering this
-  // tab, not on every keystroke. Every uncertain answer here resolves to "dirty": this guard is
-  // what stops the extension throwing away a tab holding unsaved work, so being wrong in the
-  // permissive direction costs the user their typing, while being wrong the other way costs some
-  // memory that was not reclaimed.
+  // Compute form state when queried rather than latching the first keystroke for the document’s lifetime.
+  // Uncertain state counts as dirty: discarding can lose input, whereas keeping a tab only costs memory.
   const FORM_SCAN_CAP = 4000;
 
   // A field counts as edited only if it differs from what the markup shipped with -- otherwise
@@ -3084,15 +2857,8 @@
       return true;
     }
   };
-  // Detect active camera/mic by wrapping getUserMedia in THIS (isolated) world.
-  // Note: page scripts call getUserMedia in the MAIN world; to catch that too we
-  // also listen for a signal Media Shield can post. As a robust fallback, we check
-  // navigator.mediaDevices for active tracks periodically isn't possible, so we
-  // rely on the wrap + the MAIN-world relay below.
-  // Streams captured in THIS world, asked about their own state rather than tracked by a flag.
-  // MediaStreamTrack.stop() does not dispatch 'ended' -- per spec -- so the old listener-only
-  // clear never ran for the ordinary case of a page stopping its own capture, and the flag stayed
-  // true for the life of the page.
+  // Track isolated-world streams directly and use the signed MAIN relay for page captures.
+  // MediaStreamTrack.stop() emits no ended event, so inspect track state rather than latching a flag.
   const liveStreams = new Set();
 
   const pageHasLiveCapture = () => {
@@ -3468,19 +3234,8 @@
     }
   } catch (_) {}
 
-  // ---- Browser Abuse Guard: REMOVED (perf, weak machines) ----
-  // The 1s main-thread-lag setInterval + longtask PerformanceObserver were
-  // removed. They ran on every top-level page forever, could not stop a true
-  // hard-freeze (the renderer locks before any extension code runs), only
-  // produced a best-effort "leave?" nag on soft pulsing-freeze pages the user
-  // can already close, and false-fired on heavy legit apps. Net win: one fewer
-  // permanent per-tab CPU wakeup and observer.
-
   // ---- Login Page Age Check ----
-  // A password field on a brand-new domain is a strong phishing signal. We detect the
-  // password field here (the ISOLATED world has both the DOM and chrome.*), ask the
-  // background for the domain's registration age (keyless RDAP, cached), and if the
-  // domain is very new we warn BEFORE the user types a password. Top frame only, once.
+  // Check registration age after a password field appears, once per top frame, and warn before entry.
   try {
     if (window.top === window && /^https?:$/.test(location.protocol)) {
       let laChecked = false, laShown = false;

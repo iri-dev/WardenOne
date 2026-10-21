@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The tracker learner may suggest; only the reader decides (SEC-04).
- *
- * Every input the learner sees -- the third-party domain, the signal, the first-party site --
- * arrives in a page-supplied event relayed by the bridge. Three sites, three hits and two
- * browser sessions used to promote a domain to 'learned' and emit a priority-1800 block rule
- * against it, browser-wide, with no initiator constraint, persisting across sessions and
- * upgrades. The thresholds make forgery slower; they do not make the evidence trustworthy, and
- * the learner's own harness showed the record's attack reaching 'learned'.
- *
- * Now meeting the thresholds makes a PROPOSAL. It waits in the popup, and a block rule exists
- * only for a domain the reader approved: 'learned' carries an approval stamp the store shape
- * requires, and a 'learned' entry from an earlier build without one comes back as a proposal.
- * This drives the real functions -- observation, store shape, decision, rule builder --
- * against a fake DNR, with both sessions' signals forged, exactly as the record's verification
- * asked, and requires that nothing the page does creates a rule.
- *
- * Run: node tools/test-tracker-learner-consent.js
- */
+/* Forged observations may create a proposal, but only explicit approval may create a learned block. (SEC-04)
+   Run: node tools/test-tracker-learner-consent.js */
 'use strict';
 
 const fs = require('fs');

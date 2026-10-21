@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Tracking parameters added through history.pushState / replaceState.
- *
- * A single-page app can rewrite the address bar with no navigation, so /article becomes
- * /article?utm_source=foo without the reader clicking anything and with no link for the
- * link cleaner to see.
- *
- * THE RISK HERE IS OVER-REACH, not under-reach. This runs on the address a page is
- * currently using, so anything it deletes by mistake is live app state: a search page's
- * query, a wizard's step, an auth handoff. Most of this suite is therefore about what
- * must SURVIVE -- unknown parameters, the site's own parameters, the path, the hash --
- * and the per-site rules that are right for a copied link and wrong here.
- *
- * The real wrapper is lifted out of src/content.js and installed on a fake history.
- *
- * Run: node tools/test-history-url-clean.js
- */
+/* Clean tracking parameters added through history methods without disrupting route changes.
+   Run: node tools/test-history-url-clean.js */
 'use strict';
 
 const fs = require('fs');

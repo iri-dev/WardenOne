@@ -1,12 +1,6 @@
-/* Copies the facts the site states about WardenOne out of the extension repository.
-   Usage: node sync-data.js [path-to-extension-repo]   (defaults to the folder above site/)
-   Writes src/data/catalogue.json, copies the product captures listed below into public/images,
-   and copies the icon and the three published documents (PRIVACY, CREDITS, SUPPORT)
-   into public/. None of these copies is tracked, so they cannot drift from the repository.
-   Everything is read from files the extension itself ships or its gate keeps current, so the
-   site's feature list and numbers match the extension instead of being retyped by hand.
-   In a git checkout every input comes from the last commit (HEAD), not the working tree, so the
-   site describes what is published rather than uncommitted local work. */
+/* Sync site data, captures and public documents from extension sources.
+   Usage: node sync-data.js [path-to-extension-repo]
+   In a Git checkout read HEAD so the site describes published, rather than local, changes. */
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');

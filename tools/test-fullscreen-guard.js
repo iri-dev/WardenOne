@@ -4,22 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Full-screen address-bar spoofing.
- *
- * In full screen the browser's own address bar is gone, so a page can paint one of
- * its own -- padlock, reload arrow, a domain it does not own -- and ask for a
- * password with nothing on screen to check it against. Chrome's "press Esc" hint
- * fades after a couple of seconds and the attack is timed around it.
- *
- * The thing that separates this from a slide deck is a domain the page does NOT own
- * drawn in the top strip of the screen, arriving together with either browser
- * furniture or somewhere to type a password. Everything legitimate about full
- * screen -- video, games, presentations, maps -- has to come through untouched,
- * which is most of what this file checks.
- *
- * Run: node tools/test-fullscreen-guard.js
- */
+/* Detect fullscreen address-bar impersonation without warning on ordinary media and presentations.
+   Run: node tools/test-fullscreen-guard.js */
 'use strict';
 
 const assert = require('assert');

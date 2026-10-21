@@ -4,28 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * What WardenOne actually does on YouTube, and whether it says so.
- *
- * The engine derives a per-host config, and the YouTube branch used to be the
- * opposite of a list: it turned EVERY boolean off and switched two back on. That
- * paused 64 default-on protections on all of youtube.com -- detectPhishing,
- * blockTrackers, sessionShield, blockTokenExfil, detectSkimmers,
- * paymentCardGuard, intranetProtection, blockCameraMic and cleanCopyLinks among
- * them -- while every one of those switches still read as ON in the popup.
- *
- * It was also self-defeating: it restored adShield and scriptletEngine and then
- * set enabled:false, and scriptletRuntimeOn reads WO.enabled first, so the two
- * exemptions it went out of its way to keep were dead anyway.
- *
- * The rule now: name what is paused, never what survives. A protection can only
- * be off on YouTube by being listed, and the list says why. YouTube is also the
- * ONLY host that pauses anything -- Amazon and Shopify used to take a whole-
- * engine exit, which is gone. These checks run the real derivation over the real
- * defaults.
- *
- * Run: node tools/test-youtube-compat.js
- */
+/* Keep YouTube’s paused protections explicit and disclose the same list the engine applies.
+   Run: node tools/test-youtube-compat.js */
 'use strict';
 
 const fs = require('fs');

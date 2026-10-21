@@ -6,18 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-/*
- * Insecure sign-in guard.
- *
- * Warns before a password is typed into an unencrypted page. The whole feature
- * lives or dies on one regex: which hosts count as "local network" and are
- * therefore left alone. Get it too narrow and the guard nags on every router,
- * NAS and printer admin page, where http is normal and there is no https to
- * offer -- that is how a real warning trains people to dismiss warnings.
- *
- * So the exclusion list is pulled out of src/content.js and run against actual
- * addresses rather than eyeballed.
- */
+/* Warn before password entry on HTTP pages or HTTPS forms that submit to HTTP.
+   Run: node tools/test-insecure-login.js */
 
 const assert = require('assert');
 const fs = require('fs');

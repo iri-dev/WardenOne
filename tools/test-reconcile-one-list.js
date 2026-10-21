@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The reconciler has one list of components, and a failure never switches a protection off.
- * Run: node tools/test-reconcile-one-list.js
- *
- * refreshExtensionState() had a success path of 24 appliers and two fallback paths -- a .catch
- * and an outer catch -- meant to express the same desired state. They did not: the .catch left
- * out Header Shield and both cookie rules, the outer catch left out those and three more, both
- * called several appliers with a hard false or {enabled:false}, and two calls were pasted twice
- * (BUG-08). Reached, they would have answered an unknown configuration by switching six
- * protections off and leaving three at whatever Chrome happened to hold.
- *
- * Now there is one list. Each component is run through a thunk, so an applier that throws
- * synchronously fails as THAT component and the rest still run; the two fallback paths touch no
- * component at all -- an error before or around the list means the desired state is unknown, and
- * unknown means leave Chrome's state alone and record the reconcile as degraded, exactly the
- * MV3-01 contract, whose marker and wake-time retry then run the whole list again. The shipped
- * orchestrator is driven here with every applier stubbed, on all three paths.
- *
- * Control: WARDENONE_BACKGROUND points at a pre-fix copy of the worker.
- */
+/* Share one component inventory and never disable a requested protection merely because repair failed. (BUG-08, MV3-01)
+   Run: node tools/test-reconcile-one-list.js */
 'use strict';
 
 const fs = require('fs');

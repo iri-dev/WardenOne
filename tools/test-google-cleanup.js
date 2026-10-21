@@ -4,19 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Node harness for the "Hide Google AI & sponsored results" feature
- * (googleSearchResultCleanup). Slices the const-chain between
- * "const GOOGLE_CLEANUP_SELECTORS=" and "const startGoogleCleanup=" out of the
- * SHIPPED content.min.js, runs it in a vm sandbox against a minimal fake DOM,
- * emulates the injected stylesheet (the browser applies it BEFORE the sweep),
- * and asserts the structural invariants that broke in v36/v39/v40/v41/v42:
- *   - the top AI Overview module (incl. its "Show more" button + shell) is gone
- *   - nothing inside .related-question-pair is ever hidden
- *   - nothing containing organic results (#rso/#search/#res/#center_col or
- *     >=5 .MjjYud) is ever hidden or collapsed, at any viewport width
- * Run: node tools/test-google-cleanup.js
- */
+/* Execute search-cleanup selectors and scheduling against representative results and unrelated pages.
+   Run: node tools/test-google-cleanup.js */
 'use strict';
 
 const fs = require('fs');

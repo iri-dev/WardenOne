@@ -4,19 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* Micro-benchmark for the iframe image-logger detector (frame-image-logger.js) alone.
-   Each run loads one detector into a fresh same-origin frame and times DOM work in it,
-   mutation-observer callbacks included, on a cross-origin-isolated page so the timer is
-   fine-grained. Variants: `none` (no detector), `floor` (an observer with the same options
-   that only walks its records, the price of observing at all), `current` (the working
-   tree) and, with --compare <git-rev|file>, `compare`. The shapes:
-     imageChurn      the perf-profile image fixture: 64 images changing src/srcset
-     frameworkBuild  a 1,093-element tree appended parent-first into a 2,000-node DOM
-     playerTicks     300 single-node updates in a 3,000-node DOM, like a player clock
-     lazyLoad        a loader setting src and srcset on 300 images at once
-   usage: node tools/bench-frame-image-logger.js [--reps 15] [--throttle 4]
-            [--compare HEAD] [--out file.json] [--edge <path>]
-   It needs Microsoft Edge (or --edge) and takes a few minutes; it is not part of the gate. */
+/* Benchmark detector work in fresh same-origin frames against no-script and observer-floor controls.
+   Run: node tools/bench-frame-image-logger.js [--reps 15] [--throttle 4] [--compare HEAD] [--out file.json] [--edge <path>]
+   Requires Edge; excluded from the local gate. */
 'use strict';
 
 const fs = require('fs');

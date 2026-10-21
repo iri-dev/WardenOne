@@ -4,18 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Activity-history retention checks.
- *
- * Every history write goes through queueHistory, which is the one place that can
- * guarantee a secret never reaches storage. Callers pass whole tab URLs and
- * redirect targets, and a URL's query string is where access tokens, OAuth
- * codes, password-reset tokens and email addresses live. The history is local
- * but long-lived and exportable, so retaining those would be a real leak in a
- * tool people install for privacy.
- *
- * Run: node tools/test-history-privacy.js
- */
+/* Check history retention, redaction and private-context storage boundaries.
+   Run: node tools/test-history-privacy.js */
 'use strict';
 
 const fs = require('fs');
@@ -254,6 +244,85 @@ check('queueHistory buffers the sanitized copy, not the caller entry',
     'got ' + safeUrlForLog('site.example/reset/SECRET123'));
 }
 
+{
+  const cases = [
+    ['/reset/123456?token=REDACT', '/reset/*'],
+    ['/verify/abcdefghijklmno?token=REDACT', '/verify/*'],
+    ['/reset/ABCD123456?token=REDACT', '/reset/*'],
+    ['/invite/alice/team/123456', '/invite/*/*/*'],
+    ['/magic/abc', '/magic/*'],
+    ['/account/reset-password/123456/confirm', '/account/reset-password/*/*'],
+    ['/password_reset/abcdefgh', '/password_reset/*'],
+    ['/verify-email/alice/123456', '/verify-email/*/*'],
+    ['/reset//123456/', '/reset//*/'],
+    ['/%72eset/123456', '/reset/*'],
+    ['/%2572eset/123456', '/*/*'],
+    ['/auth%2Freset/123456', '/*/*'],
+    ['/reset;lang=en/123456', '/*/*'],
+    ['/RESET/123456', '/*/*'],
+    ['/orders/123456', '/orders/123456'],
+    ['/docs/resetting/123456', '/docs/resetting/123456'],
+  ];
+  for (const [input, expected] of cases) {
+    for (const prefix of ['https://site.example', 'site.example']) {
+      const actual = safeUrlForLog(prefix + input);
+      check('sensitive route context: ' + prefix + input, actual === prefix + expected, actual);
+    }
+  }
+}
+
+{
+  const secretUrl = 'https://site.example/reset/123456?token=super-secret#fragment-secret';
+  const input = { one: { two: { three: { url: secretUrl, list: [secretUrl] } } } };
+  const output = sanitizeHistoryDetail(input, 0);
+  check('depth-three objects do not bypass URL sanitization',
+    output.one.two.three.url === 'https://site.example/reset/*'
+      && output.one.two.three.list[0] === 'https://site.example/reset/*', JSON.stringify(output));
+  check('sanitization leaves the source unchanged', input.one.two.three.url === secretUrl);
+  check('sanitized nested objects are copies', output.one !== input.one && output.one.two.three !== input.one.two.three);
+  check('leading whitespace cannot hide a detail URL',
+    sanitizeHistoryDetail({ url: '\n  ' + secretUrl }, 0).url === 'https://site.example/reset/*');
+
+  let deep = { url: secretUrl };
+  for (let i = 0; i < 20; i++) deep = { next: deep };
+  const deepOut = sanitizeHistoryDetail(deep, 0);
+  check('content beyond the depth limit is dropped', !JSON.stringify(deepOut).includes('super-secret'));
+  check('a caller starting at the depth limit receives no unexamined object', sanitizeHistoryDetail({ url: secretUrl }, 6) === null);
+  const cyclic = { url: secretUrl };
+  cyclic.self = cyclic;
+  const cyclicOut = sanitizeHistoryDetail(cyclic, 0);
+  check('cycles are dropped while safe sibling evidence survives',
+    cyclicOut.url === 'https://site.example/reset/*' && !('self' in cyclicOut));
+
+  const list = sanitizeHistoryDetail(Array.from({ length: 10000 }, () => secretUrl), 0);
+  check('array entries are capped and every retained entry is sanitized',
+    list.length === 32 && list.every(item => item === 'https://site.example/reset/*'));
+  const wide = sanitizeHistoryDetail(Object.fromEntries(Array.from({ length: 10000 }, (_, i) => ['field' + i, secretUrl])), 0);
+  check('object fields are capped and no excess value is copied',
+    Object.keys(wide).length === 32 && !JSON.stringify(wide).includes('super-secret'));
+
+  function fieldCount(value) {
+    if (!value || typeof value !== 'object') return 0;
+    return Object.keys(value).length + Object.values(value).reduce((sum, child) => sum + fieldCount(child), 0);
+  }
+  const tree = () => Object.fromEntries(Array.from({ length: 32 }, (_, i) => ['f' + i, { a: 1, b: 2, c: 3, d: 4 }]));
+  check('the field budget is shared across branches', fieldCount(sanitizeHistoryDetail(tree(), 0)) <= 128);
+  for (const text of ['a'.repeat(1024), '\u0000'.repeat(1024), '漢'.repeat(1024), '😀'.repeat(512)]) {
+    const large = Object.fromEntries(Array.from({ length: 32 }, (_, i) => ['field' + i, text]));
+    check('serialized detail size stays bounded for ' + JSON.stringify(text.slice(0, 2)),
+      JSON.stringify(sanitizeHistoryDetail(large, 0)).length <= 8192);
+  }
+  const oversized = sanitizeHistoryDetail({ tooLong: 'a'.repeat(1025), ['k'.repeat(81)]: secretUrl, keep: 1 }, 0);
+  check('oversized strings and keys are dropped', Object.keys(oversized).join(',') === 'keep');
+  let accessorRead = false;
+  const accessors = { keep: true, get url() { accessorRead = true; throw new Error('must not execute'); } };
+  const accessorOut = sanitizeHistoryDetail(accessors, 0);
+  check('accessor properties are not executed or copied', !accessorRead && accessorOut.keep && !('url' in accessorOut));
+  const unusual = sanitizeHistoryDetail({ invalid: NaN, fn() {}, big: 1n, keep: false }, 0);
+  check('unsupported scalar values are dropped without breaking history', Object.keys(unusual).join(',') === 'keep');
+  const keyOut = sanitizeHistoryDetail({ [secretUrl]: 'value' }, 0);
+  check('URL-shaped field names are sanitized too', Object.keys(keyOut)[0] === 'https://site.example/reset/*');
+}
 
 
 console.log('\nhistory privacy checks passed');

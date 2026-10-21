@@ -4,30 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The engine must not switch itself off on hosts the reader never chose, and a marker
- * that means "the script ran" must not be read as "protection is on".
- *
- * masterOn was built as `cfg.enabled !== false && !onAllowlist`, and onAllowlist was
- * computed against ["wootility.io", "shopify.com"].concat(cfg.allowlist || []) -- two
- * host families nobody picked, matched by hostMatchesSite so every subdomain went with
- * them. Everything downstream is gate(v) => !!masterOn && v, so every gated protection
- * evaluated false there: phishing blocking, ClickFix, XSS behaviour, Media Shield,
- * clipboard, form-trap, scam-lock, anti-fingerprint, all of it.
- *
- * The second half is what made it High rather than Medium. __woStartRuntime stamps
- * __wardenOneReadyVersion unconditionally -- the gate does not shorten the start path, it
- * only makes it do nothing -- and the worker's watchdog treated any non-empty marker as
- * "engine present". So the tab reported itself healthy to the popup, to Repair and to
- * Protection Health while nothing was running (BUG-01).
- *
- * Three things are asserted here, and each is a way the bug could come back:
- *   - the hard-coded seed list is empty, so only the reader's own allowlist gates
- *   - the two halves of WardenOne agree about which hosts are paused
- *   - "ran" and "protecting" are separate markers, and the watchdog reads the right one
- *
- * Run: node tools/test-engine-allowlist-honesty.js
- */
+/* Reject lookalike compatibility hosts and report the stopped engine accurately after disposal. (BUG-01)
+   Run: node tools/test-engine-allowlist-honesty.js */
 'use strict';
 
 const fs = require('fs');

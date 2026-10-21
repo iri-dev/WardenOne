@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Provider API keys must not leak out of extension storage.
- *
- * These are the only real secrets WardenOne holds. They are optional, user-supplied,
- * and belong to third-party accounts, so a leak costs the user something concrete.
- * The rules checked here are the ones that can be checked statically:
- *
- *   - never reach the MAIN world, where any page script could read them
- *   - never written into the activity history
- *   - masked in the interface
- *   - dropped when their provider is switched off
- *   - read by something: a key the worker never consults is a secret kept for a
- *     capability that does not exist (BUG-09), and the popup may only offer a
- *     field for a key the worker has
- *   - purged from stored config when a build stops having a use for one
- *
- * Run: node tools/test-secret-hygiene.js
- */
+/* Keep provider API keys out of page snapshots, backups and other untrusted boundaries. (BUG-09)
+   Run: node tools/test-secret-hygiene.js */
 'use strict';
 
 const fs = require('fs');

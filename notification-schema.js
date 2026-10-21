@@ -7,19 +7,8 @@ var WARDEN_NOTIFICATION_SECTIONS = [
   { id: 'wardenone', label: 'WardenOne', description: 'Updates, extension changes and protection health' },
 ];
 
-/* The sound palette, defined once.
- *
- * These are generated with oscillators rather than shipped as audio files: no
- * opaque binaries in the package, nothing to download, and nothing that can be
- * swapped for something else. The cost is that a "sound" here is a little tune,
- * so each one has to be distinguishable by SHAPE as well as pitch -- rising or
- * falling, one note or three, smooth or hard-edged. Six that differ only in
- * frequency would be six sounds nobody can tell apart.
- *
- * One list, shared by the settings page, the worker's validator and the
- * offscreen player. Three copies of it would be three chances for the page to
- * offer a sound the worker rejects and the reader hears nothing from.
- */
+/* Shared oscillator tunes for settings, validation and offscreen playback.
+   Vary rhythm as well as pitch so the choices remain distinguishable. */
 var WARDEN_NOTIFICATION_SOUNDS = [
   { id: 'none', label: 'Silent', notes: [], wave: 'sine', gap: 0 },
   /* A polished tap: one rising tone with a quiet upper harmonic. */

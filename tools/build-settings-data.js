@@ -4,25 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Builds settings-data.js: the Settings page's copies of tables that are written down elsewhere.
- * Run: node tools/build-settings-data.js           write settings-data.js
- *      node tools/build-settings-data.js --check   the gate: fail if settings-data.js is stale
- *
- * The Settings page used to carry a copy of these made once by hand, and nothing noticed when
- * the popup gained a switch or reworded one. Every table is now read from where it lives:
- *
- *   popup.html                  every switch, the section it sits in, its name and explanation
- *   popup.js                    DEFAULTS, IMPORT_ONLY_DEFAULTS (what a backup may hold), TOAST_TITLES
- *   background.js               DEFAULT_CONFIG's switch defaults, the Recommended and Maximum
- *                               privacy bundles, HEALTH_SHIELD_KEYS and WATCH_ONLY_GUARDS
- *   docs/source-inventory.json  the public sources behind each list, for the Sources summary
- *   build-profile.js            which settings belong to a utility the Store package leaves out
- *
- * What popup.html marks for the Store package to strip (STORE-OMIT-*), and the settings of a
- * utility the Store leaves out, are written into one marked block of their own, so the package
- * strips them from settings-data.js the same way.
- */
+/* Derive Settings tables from popup markup/defaults, worker defaults/bundles/guard inventories,
+   source inventory and build-profile.js. Keep Store-omitted utilities in their own marked block.
+   Run: node tools/build-settings-data.js [--check] */
 'use strict';
 
 const fs = require('fs');

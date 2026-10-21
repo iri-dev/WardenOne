@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The three page-text detectors share one scheduler, and churn no longer buys a scan (PERF-03).
- * Run: node tools/test-text-scan-scheduler.js
- *      WARDENONE_CONTENT_MIN=<older content.min.js> node tools/test-text-scan-scheduler.js
- *
- * Scam Lock, ClickFix and Fake Update each turned every mutation batch into a page-wide pass of
- * their own -- debounced at 700 or 800 ms, then forced through idle with a 600 ms timeout, for the
- * life of the document, with no notion of whether the batch carried anything they could act on. A
- * page that keeps changing paid about three whole-page passes a second indefinitely, and ClickFix's
- * pass reads body.innerText, a forced layout.
- *
- * Now one scheduler stands between a mutation and a pass with four rules -- relevance of the added
- * text, a change signature, exponential backoff on repeated negatives, deferral while hidden -- and
- * the three detectors register through it. The scheduler is sliced from the shipped content.min.js
- * and driven here with synthetic consumers, a fake document, a fake observer and fake timers, so
- * every claim is a count: how many passes a thousand irrelevant batches buy (none), how many an
- * unchanged page buys (none), how the spacing grows and when it resets. The detectors' own
- * relevance patterns are sliced too and tested against the text they must and must not fire on.
- */
+/* Skip irrelevant/unchanged text mutations, back off negatives and resume promptly for new evidence. (PERF-03)
+   Run: node tools/test-text-scan-scheduler.js */
 'use strict';
 
 const fs = require('fs');

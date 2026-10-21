@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * "Clear it when I leave" survives the worker being put to sleep (LIFE-01).
- * Run: node tools/test-on-leave-durability.js
- *      WARDENONE_BACKGROUND=<older background.js> node tools/test-on-leave-durability.js
- *
- * Clear cookies when I leave and Clear service workers when I leave both remembered "this site
- * accepted a banner / registered a worker" in a heap object, and which site a tab was on in another.
- * A loaded page produces no worker events, so Chrome ended the worker inside most visits; the reader
- * closed the tab later, a fresh worker woke with three empty maps, and both cleanups returned at
- * their first line. Nothing was logged, because each logs only on success. Two opt-in privacy
- * controls were switched off for the rest of most visits by an idle timer.
- *
- * Now both records ride a sessionMirror into storage.session -- bounded, dated, a day's TTL, newest
- * wins on restore -- and the closing tab's site is read the way Forget Me reads it: from the heap
- * when the worker is warm, from the stored record when it is not. This suite crosses the boundary
- * the old code never did: one realm records and persists, a second realm with an empty heap -- the
- * evicted worker, rewoken -- receives the tab close, sharing only the fake storage.session.
- */
+/* On-leave cleanup records must survive worker suspension without becoming durable visit history. (LIFE-01)
+   Run: node tools/test-on-leave-durability.js */
 'use strict';
 
 const fs = require('fs');
@@ -97,7 +81,7 @@ function worker(session, options) {
     FORGET_TAB_HOSTS_KEY: 'wardenone_forget_tab_hosts',
     FORGET_TAB_HOSTS_TTL_MS: DAY,
     REDIRECT_CHAINS: {}, POPUP_OPENED_AT: {},
-    forgetNavSignals() {}, forgetRebindTab() {}, forgetWarningRecordsForTab() {}, maybeBlockForcedTopRedirect() {},
+    forgetNavSignals() {}, forgetRebindTab() {}, forgetWarningRecordsForTab() {}, clearSafeBrowsingBypass() {}, maybeBlockForcedTopRedirect() {},
     navigationIsFileDownload() { return false; }, frameDrivenRedirectContext() { return null; }, maybeFlagFrameDrivenRedirect() {},
     registerListener: (name, register) => register(),
     chrome: {

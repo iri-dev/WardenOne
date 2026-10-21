@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * My Rules and Custom Lists: the user-owned filtering layer.
- *
- * A bundled list can only block what its maintainers thought of. These two are
- * the parts only the reader can supply -- a rule for a niche annoyance nobody
- * else will ever see, and a subscription to a list nobody has bundled.
- *
- * Neither is a "protection" with a switch, and that is deliberate: a rule is on
- * because it was written, and each list carries its own enabled flag. Giving
- * them shield toggles would inflate the protection count with things that
- * protect nobody until somebody types into them, which is the honesty problem
- * tools/test-protection-count.js exists to prevent.
- *
- * The rule this file really enforces: a rule that is stored but cannot work must
- * be REPORTED, never silently dropped. Someone who writes a rule and sees no
- * complaint believes they are protected, and a filter engine that lies about
- * that is worse than one with no user rules at all.
- *
- * Run: node tools/test-user-filters.js
- */
+/* Parse the supported user-rule subset and report unsupported or unenforced input.
+   Run: node tools/test-user-filters.js */
 'use strict';
 
 const fs = require('fs');
@@ -47,7 +29,7 @@ function region(startMarker, endMarker) {
   const b = BG.indexOf(endMarker, a);
   return a >= 0 && b > a ? BG.slice(a, b) : '';
 }
-const consts = region('const USER_RULE_BASE = 750000;', '/* One line in, one of three');
+const consts = region('const USER_RULE_BASE = 750000;', 'function parseUserFilterLine(raw) {');
 const lineFn = region('function parseUserFilterLine(raw) {', 'async function readUserRulesText');
 check('the constants and both parsers are where the slice expects them',
   !!consts && !!lineFn && lineFn.includes('function parseUserFilterText('));

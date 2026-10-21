@@ -4,17 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* WardenOne — DNS filtering verification.
- *
- * How the test works: most family/security DNS filters block known adult or
- * malware test domains by refusing to resolve them (the request fails fast or
- * returns a block page). We attempt to load a tiny resource from a domain that
- * filters commonly block. If the request fails to resolve/connect, filtering is
- * likely active; if it connects normally, it's likely NOT being filtered.
- *
- * This is a heuristic, not proof -- network errors can have other causes -- so
- * the result is worded as "likely", and we test a couple of domains.
- */
+/* Probe filter test domains with tiny resource loads. Connection failures suggest DNS filtering
+   but are not proof: unrelated network errors can produce the same result. */
 
 // Test domains: well-known adult sites that family DNS filters block. We only
 // no-cors HEAD-style probes, never rendered. We test ACROSS categories so the

@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Outbound requests do not introduce WardenOne, or its version, unless the API demands it.
- * Run: node tools/test-request-self-identification.js
- *
- * Every PhishTank lookup carried `X-WardenOne-Client: wardenone/<version>` -- a header PhishTank
- * neither documents nor reads (its API identifies applications by app_key and asks for a
- * descriptive User-Agent, which an extension's fetch cannot set). On a request that already
- * carries the reader's own key and the full URL, it narrowed "a client of this API" to "a
- * WardenOne 1.0.1 installation" and made readers separable by build, for nothing (DATA-03).
- *
- * The rule checked here, statically and by running the shipped request builder: no outbound
- * header names WardenOne or carries the extension version, and the one place the version does
- * travel -- Safe Browsing's `client` object, a field that API's schema requires -- says so in a
- * comment beside it. A new WO_CLIENT_VERSION use without such a comment fails the gate.
- *
- * Control: WARDENONE_BACKGROUND points at a pre-fix copy of the worker.
- */
+/* Avoid extension/version identifiers in outbound requests unless the provider API requires them.
+   Run: node tools/test-request-self-identification.js */
 'use strict';
 
 const assert = require('assert');

@@ -4,31 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A child frame pays for what it needs, not for what the top frame needs (PERF-02).
- *
- * The finding modelled the per-frame cost from bytes -- 298 KiB of source into every child
- * frame -- and an earlier assessment measured compile alone and found 3 ms a frame, the best
- * safe saving 0.43 ms, and stopped. The browser fixture (tools/measure-frame-cost.js) then
- * measured the real thing: about 13 ms of main-thread time and 0.7 MiB per child frame, of
- * which delivery was 0.7 ms and initialisation the rest. Two pieces of that initialisation
- * were doing top-frame work in every frame:
- *
- *   - anti-redirect.js installed the confirm-bait sweep -- a subtree observer and seven timed
- *     passes of elementFromPoint, each forcing layout -- in every frame, including the ad slot
- *     and the tracking pixel, where no dialog can fit and nothing is ever found. It now
- *     installs in a child frame only once the frame is dialog-sized, and a resize listener
- *     arms it the moment a small frame grows into one, because that is the overlay-ad shape.
- *   - bridge.js opened a second channel to the worker at document_start in every frame just
- *     to fetch the reader's hidden-element rules. They ride along with the config answer now;
- *     the separate request survives only for a refresh after the list is edited.
- *
- * Measured together, interleaved, five runs: 20 frames 350 -> 280 ms of script, 100 frames
- * 2,350 -> 1,225 ms and a load event 800 ms sooner. What is asserted here is the behaviour
- * those numbers rest on, run from the shipped source with the frame stubbed either way.
- *
- * Run: node tools/test-frame-aware-init.js
- */
+/* Child frames must skip top-frame-only work while retaining their own required guards. (PERF-02)
+   Run: node tools/test-frame-aware-init.js */
 'use strict';
 
 const fs = require('fs');

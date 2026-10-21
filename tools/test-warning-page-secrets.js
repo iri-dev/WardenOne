@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A warning page must never carry the address it is warning about in its own URL (PRIV-04).
- *
- * The redirect, Safe Browsing and certificate interstitials each received the raw URL as a
- * query parameter -- ?to=, ?u= -- up to 1,200 characters of it, query string included. That
- * made the TAB's URL a durable copy of the most sensitive addresses the browser sees, because
- * redirect chains are exactly where OAuth codes and reset tokens travel, and a tab URL goes
- * into history, session restore, screenshots and crash reports for as long as the tab lives.
- * The redirect mirror in storage.session kept the same addresses in plain text for ten minutes,
- * in a field (finalUrl) that nothing read.
- *
- * This runs the finding's own verification: a controlled address carrying userinfo, an OAuth
- * code, a reset token and a fragment goes through every builder and every page, and no raw
- * secret may appear in the page URL, the display, or the mirror. The exact address lives only
- * in a session record keyed by a random handle, is consumed when the reader continues, and a
- * page whose record is gone must still offer the way back.
- *
- * Run: node tools/test-warning-page-secrets.js
- */
+/* Keep raw destinations in expiring session records, not interstitial URLs or display text. (PRIV-04)
+   Run: node tools/test-warning-page-secrets.js */
 'use strict';
 
 const fs = require('fs');
@@ -158,7 +141,12 @@ function runPage(file, handle, session) {
     history: { length: 2, back() { nav.href = '(back)'; } },
     window: { open() {} },
     chrome: {
-      runtime: { getURL: (p) => 'chrome-extension://wo/' + p, lastError: null, sendMessage(msg, cb) { cb({ ok: true }); } },
+      runtime: { getURL: (p) => 'chrome-extension://wo/' + p, lastError: null, sendMessage(msg, cb) {
+        if (msg.kind === 'safe-browsing-allow-once') {
+          check('reputation page sends its warning handle, not a hostname', msg.handle === handle && !('host' in msg));
+          session.remove('wardenone_warning:' + msg.handle, () => cb({ ok: true }));
+        } else cb({ ok: true });
+      } },
       storage: { session },
       tabs: { create() {} },
     },
@@ -196,8 +184,8 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
         String(rec.url).indexOf(SECRETS.userinfo) === -1, rec.url);
       check(rec.kind + ' display form leaks no secret', leaks(rec.shown).length === 0, rec.shown);
       check(rec.kind + ' display form marks that a query was cut', /\?…$/.test(rec.shown), rec.shown);
-      check(rec.kind + ' display form stars the token-shaped path segment',
-        /\/reset\/\*\/confirm/.test(rec.shown), rec.shown);
+      check(rec.kind + ' display form redacts the entire sensitive-route tail',
+        /\/reset\/\*\/\*\?…$/.test(rec.shown), rec.shown);
       check(rec.kind + ' record is tied to its tab', rec.tabId === 7);
     }
     const redirectRec = Object.values(records).find((r) => r.kind === 'redirect');
@@ -224,7 +212,7 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
     await tick();
     const painted = Object.values(page.els).map((e) => e.textContent).join('\n');
     check(file + ' paints no secret anywhere in the DOM', leaks(painted).length === 0, leaks(painted).join(', '));
-    check(file + ' shows the display form of the address', page.els[shownId].textContent.indexOf('login.example.test/reset/*/confirm?') !== -1,
+    check(file + ' shows the display form of the address', page.els[shownId].textContent.indexOf('login.example.test/reset/*/*?') !== -1,
       page.els[shownId].textContent);
 
     /* continue: the record is consumed and the EXACT address is navigated to */

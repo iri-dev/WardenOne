@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Silent mode round-trips.
- * Run: node tools/test-silent-mode-roundtrip.js
- *
- * Silent mode is a gate over the page's presentation, not a rewrite of the reader's
- * choices. The popup used to paint the toast and badge switches unchecked while Silent was
- * on, the generic change handler read them straight back through readFromUI on the next
- * save, and turning Silent off left both stored off until the reader found two separate
- * switches to re-enable. Onboarding, meanwhile, wrote only silentMode -- so its Silent did
- * not silence anything, because the page engine reads showToasts and showBadge and nothing
- * else.
- *
- * Now the bridge gates the page's copy in sendConfig, right where per-site overrides already
- * reach it (gateSilentPresentation), both surfaces store silentMode alone, and the switches
- * keep the preference underneath. The suite drives the real popup
- * functions on a small DOM through every toast/badge combination and both directions of
- * the Silent switch, runs the real bridge send, and pins the one-time repair for profiles
- * the old popup already damaged to its exact signature and transition.
- */
+/* Silent mode must suppress presentation without erasing the preferences restored when it ends.
+   Run: node tools/test-silent-mode-roundtrip.js */
 'use strict';
 
 const assert = require('assert');

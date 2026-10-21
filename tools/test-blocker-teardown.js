@@ -4,20 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A dismissed blocker must give the page back.
- *
- * The full-page blockers -- the adult gate, the redirect-chain gate, the phishing block, the
- * IP-logger warning -- work by installing a stylesheet that hides every element on the page and
- * paints the body near-black, then drawing themselves on top of it. So that stylesheet outliving
- * its overlay is not a cosmetic problem: it is a black screen with nothing on it and no way back,
- * on a page the user chose to continue to.
- *
- * Reported from live use: continuing past the age gate on an adult site left the page black
- * forever, and the site's own age prompt never appeared -- it was there, hidden by our stylesheet.
- *
- * Run: node tools/test-blocker-teardown.js
- */
+/* Closing a blocker must remove its stylesheet, observer and queued self-heal work.
+   Run: node tools/test-blocker-teardown.js */
 'use strict';
 
 const fs = require('fs');

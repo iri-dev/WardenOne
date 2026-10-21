@@ -4,19 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* The protection itself, not just its pages, on a real web page. The extension-page suites prove
-   the popup and Settings run; this proves what a website meets:
-     - the page engine starts in the page's own world, at the shipped version;
-     - it acts on the config the bridge hands it: a tracking ping on a link is stripped, and with
-       that switch off in storage it is left alone, which the engine's built-in defaults alone
-       could not do;
-     - its signed report crosses the bridge to the worker, which counts it for the Site Dashboard;
-     - a shipped network rule matches a listed tracker, whose live request is blocked before it
-       leaves the browser, while an unlisted host on the same page still loads.
-   The page is served locally; --host-resolver-rules points the test host names at it.
-   Run: node tools/browser-engine-smoke.js
-   It drives the unpacked extension in a browser (tools/perf-profile.js), so it runs in CI's
-   browser jobs, Edge and Chrome at the manifest's minimum, rather than the local gate. */
+/* Check real-page startup, config changes, signed tally relay and network blocking in a local browser fixture.
+   Runs with Edge and minimum-supported Chrome in CI; requires host-resolver rules.
+   Run: node tools/browser-engine-smoke.js */
 'use strict';
 
 const assert = require('assert/strict');

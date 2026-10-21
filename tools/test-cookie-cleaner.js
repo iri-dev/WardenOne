@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Can the consent-cookie sweep sign anyone out?
- *
- * "Accept all" leaves a cookie on every site that asked, and the ad networks leave several more.
- * Clearing cookies wholesale removes them -- and every session cookie with them, so tidying up
- * costs you every login you had. The sweep exists to remove the first kind and not the second.
- *
- * That promise is only as good as the classifier, so this suite attacks it from the side that
- * matters. Two properties, and they are not equally important:
- *
- *   1. It removes the consent and tracking cookies it claims to. Nice to have.
- *   2. It NEVER removes anything that could be holding a session. Non-negotiable -- a miss here
- *      logs a real person out of their bank while they were trying to clean up trackers.
- *
- * The classifier is built as an allowlist of names to delete precisely so that an unknown cookie
- * is kept by default. The keep-list below is therefore the half worth staring at.
- *
- * Run: node tools/test-cookie-cleaner.js
- */
+/* Delete recognised consent/tracking cookies while retaining authentication and ambiguous cookie names.
+   Run: node tools/test-cookie-cleaner.js */
 'use strict';
 
 const fs = require('fs');

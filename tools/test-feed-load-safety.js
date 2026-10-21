@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A feed load that cannot complete leaves the rules Chrome is enforcing exactly as they are.
- * Run: node tools/test-feed-load-safety.js
- *
- * The IP-grabber feed (up to 1,000 dynamic rules at 740000) and the cryptominer feed (up to
- * 1,000 at 742000) are each assembled from a packaged JSON plus a storage key the daily update
- * maintains, on every cold start. The loaders used to empty their in-memory set first, read what
- * they could inside try/catch, and hand the applier whatever was left; the applier then replaced
- * the whole band with it. So a packaged fetch that failed -- an extension update replaces the
- * files under a running worker -- or a storage read that failed deleted live blocking rules from
- * Chrome, on a start nothing had asked for, with nothing logged and no retry before the next cold
- * start, while the popup went on reporting both protections as on (LIFE-02).
- *
- * Now a loader builds into a local set and replaces the live one only when every source read
- * completed; an incomplete load leaves the set and the band alone, says so, and retries on a
- * short bounded schedule. This suite is the card's own harness: the real loaders and appliers run
- * against a stubbed Chrome whose dynamic rules persist between "cold starts" (fresh realms), with
- * the packaged fetch failing, the storage read failing, and both -- and the band is never smaller
- * after a run than before it unless the owning setting is off, which is the one case where an
- * empty band is the right answer.
- */
+/* Incomplete feed loads must retain installed rules and retry without publishing a partial set. (LIFE-02)
+   Run: node tools/test-feed-load-safety.js */
 'use strict';
 
 const assert = require('assert');

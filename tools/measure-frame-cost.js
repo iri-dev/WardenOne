@@ -4,26 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * What does WardenOne cost a page per child frame, really? (PERF-02)
- *
- * Not a gate check: this drives a real browser. It serves a fixture page with N same-origin
- * child frames, launches Edge twice -- once with the unpacked extension from this checkout,
- * once with no extensions at all -- loads the fixture at 0, 5, 20 and 100 frames in each, and
- * reads the renderer's own accounting through the DevTools protocol: script time, task time,
- * JS heap, the load event, listener count. The extension's cost is the difference.
- *
- * Why Edge: Chrome 152 removed --load-extension; Edge still honours it. Why a real browser:
- * compile time measured in Node said 3 ms a frame and the finding modelled from bytes; the
- * renderer said 13 ms and 0.7 MiB a frame, almost none of it delivery. Only the browser
- * knows what an isolated world, its bindings, its observers and its round trips cost.
- *
- * Usage:   node tools/measure-frame-cost.js [runs]
- * Needs:   Edge at the path below, Node 24+ (built-in WebSocket), ports 8765/8766 and
- *          9451/9452 free. Nothing is installed; two throwaway profiles are created in the
- *          temp directory and both browsers are closed through the protocol at the end.
- * Output:  a table of extension-minus-control medians, and the raw runs as JSON next to it.
- */
+/* Measure renderer script/task time, heap and listeners with/without the extension at 0/5/20/100 frames.
+   Run: node tools/measure-frame-cost.js [runs] (Edge, Node 24+, free ports 8765/8766 and 9451/9452).
+   Uses temporary profiles; reports median differences and raw JSON. Excluded from the local gate. */
 'use strict';
 
 const { spawn } = require('child_process');

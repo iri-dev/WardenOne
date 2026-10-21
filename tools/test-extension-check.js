@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * "Check an extension before you install it."
- *
- * The Security Centre answers what is installed and whether it changed. This
- * answers the question that comes first, using the same bundled exact-ID
- * catalogue, for something that is not installed yet.
- *
- * Three things this suite exists to hold:
- *
- * 1. AN ID IS EXACT OR IT IS NOTHING. A one-character slip is a DIFFERENT
- *    extension, so a near-miss must be refused rather than helpfully corrected,
- *    and a lookalike host must never yield an ID.
- * 2. "NOT IN THE CATALOGUE" MUST NEVER READ AS "SAFE". The catalogue is a few
- *    hundred identities against a store of hundreds of thousands, so the ordinary
- *    answer is no record, and that is the answer most likely to be misread.
- * 3. NOTHING LEAVES THE MACHINE UNTIL ASKED. The local half is a lookup in a
- *    bundled file; telling Google which extension someone is considering is a
- *    separate, deliberate press.
- *
- * Run: node tools/test-extension-check.js
- */
+/* Run pre-install exact-ID reputation checks without requiring installation or exposing inventory to pages.
+   Run: node tools/test-extension-check.js */
 'use strict';
 
 const fs = require('fs');

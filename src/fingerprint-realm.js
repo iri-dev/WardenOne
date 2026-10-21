@@ -1,41 +1,13 @@
 /* WardenOne — Copyright (C) 2026 iri · GNU GPL v3 or later, see LICENSE · Official source: https://github.com/iri-dev/WardenOne · Upstream filter-list attribution: CREDITS.md · A modified copy must say so, with a date (GPLv3 5a), and keep this notice. */
-/* fingerprint-realm.js is GENERATED. Do not edit it: edit src/fingerprint-realm.js (this
-   bootstrap) or src/content.js (the two regions marked below, copied out byte for byte) and run
-   `node tools/build-content.js`. `node tools/build-content.js --check` fails when they drift.
+/* fingerprint-realm.js is GENERATED from this bootstrap and marked regions in src/content.js.
+   Run node tools/build-content.js after editing either source.
 
-   The anti-fingerprinting noise is realm-local: it rewrites the prototypes of the realm it runs
-   in and nothing else. The engine (content.min.js) runs in the top frame only, so every child
-   frame used to be a fresh realm with untouched prototypes -- and a page did not have to defeat
-   a single wrapper, it could pick a realm that had none. A hidden same-origin iframe hands over
-   a clean HTMLCanvasElement.prototype.toDataURL that works on a top-frame canvas; a third-party
-   frame measures itself and posts the result up; a cooperating frame does the same. This module
-   is the realm-level half of the answer (SEC-05): the identical noise function, run in every
-   frame the engine's manifest entry does not reach, with the same shared seed, so the realms a
-   page can compare agree with each other the way a real browser's realms do.
-
-   What it decides, and from where. A frame that is same-origin with its parent (about:blank,
-   srcdoc, a real URL) reads the parent's realm record synchronously at document_start, before
-   the parent page's appendChild has returned -- so the child is patched before anything can
-   borrow from it, and inherits the parent's verdict and seed. A cross-origin frame cannot read
-   its parent; it waits for the config its own isolated bridge fetches from the worker, which
-   carries the verdict for THIS frame (frameNoise: the reader's switch, the pause and per-site
-   choices for both the frame's host and the page's top host). Nothing here reads a switch off
-   window: the record is a non-configurable accessor the page cannot redefine, and the config
-   counts only when it carries the bridge's signature.
-
-   Not covered, and said so where the switch is described: web workers. A worker's realm is
-   unreachable from any content script, and the one way in -- re-serving the worker's source
-   from a blob -- changes self.location under scripts that use it, breaks module workers'
-   relative imports, and is forbidden for service workers (tools/test-known-limits.js pins that
-   decision). OffscreenCanvas inside a worker therefore still answers with the real machine. */
+   Patch each child realm with the engine’s noise and shared seed. Same-origin frames inherit the
+   parent’s protected realm record synchronously; cross-origin frames wait for signed bridge config.
+   Web workers remain unpatched: re-serving their source changes URLs and breaks module imports. */
 (function () {
   'use strict';
-  /* ---- 1. Where the engine already is, this module is not ------------------------------------
-     The engine owns the top frame of every http(s) (and file:) page and installs the noise there
-     itself. This module is for the realms its manifest entry never reaches: every child frame,
-     including about:blank and srcdoc children and blob:/data: children, and the top-level
-     about:blank or blob: window a page opens with window.open. Two engines in one realm would
-     patch it twice, and a wrapper wrapped is the kind of thing a detector looks for. */
+  /* Skip realms already owned by the top-frame engine; patch child and blank/blob popup realms once. */
   let isTop = false;
   try { isTop = window.top === window.self; } catch (_) { isTop = false; }
   let scheme = '';
@@ -59,10 +31,7 @@
     try { document.dispatchEvent(new CustomEvent('wo-realm-settled')); } catch (_) {}
   };
 
-  /* ---- 3. The two regions shared with the engine ---------------------------------------------
-     __woAuth (HMAC-SHA256, plain JS) verifies the bridge's signed config, exactly as the engine
-     does; __woFingerprintNoise installs the noise and returns the record to publish. Both are the
-     engine's own text, spliced in by the build. */
+  /* Build markers splice the engine’s authentication and noise implementations into this bootstrap. */
   /* @wardenone-include AUTH */
   /* @wardenone-include WEBGL-SAVER */
   /* @wardenone-include FINGERPRINT-NOISE */
@@ -91,13 +60,8 @@
   };
   const validRecord = (r) => !!(r && typeof r === 'object' && r.v === 1 && typeof r.noise === 'boolean');
 
-  /* ---- 5. Adoption: read a same-origin ancestor's record ------------------------------------
-     parent first, then top (a same-origin grandparent past a cross-origin parent), then the
-     opener for a top-level about:blank/blob: window. A cross-origin read throws and is skipped.
-     Captured ONCE, now: at document_start nobody has touched this realm yet, so parent, top and
-     opener are what the browser says they are -- but `parent` and `opener` are replaceable, and
-     a same-origin page could point them at an object of its own the moment this returns. The
-     late paths below read only these captured windows, whose record accessors cannot be redefined. */
+  /* Adopt from parent, top, then opener where same-origin reads succeed. Capture these windows now:
+     page code can later replace parent/opener, but not their protected realm-record accessors. */
   const SOURCES = (() => {
     const out = [];
     try { if (window.parent && window.parent !== window) out.push(window.parent); } catch (_) {}
@@ -130,13 +94,8 @@
     try { w.document.addEventListener('wo-realm-settled', adoptLater, true); } catch (_) {}
   });
 
-  /* ---- 6. Otherwise, this frame's own verified config -----------------------------------------
-     The key arrives once, in the bridge's synchronous wo-key event at document_start, and only
-     while no page script can have run -- the same rule the bridge applies before it hands the key
-     over. In an initial about:blank document the body already exists, so the bridge never
-     delivers there and neither is a key accepted there: a page dispatching its own wo-key into a
-     child it created does not get to sign that child's config. Such a child is same-origin with
-     its creator by construction and is settled by adoption above instead. */
+  /* Accept the one-time key only before executable page content could have run. Initial about:blank
+     children already have a body and must use same-origin adoption rather than accept a forged key. */
   const INERT_TAG = /^(?:head|meta|title|link|style|base)$/;
   const pageCouldHaveRun = () => {
     try {
