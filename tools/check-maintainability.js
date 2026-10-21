@@ -443,6 +443,7 @@ function checkContentBuild() {
   'tools/browser-engine-smoke.js',
   'tools/browser-download-hash-redirects.js',
   'tools/browser-reputation-bypass.js',
+  'tools/browser-runtime-smoke.js',
   'tools/browser-image-logger-loads.js',
   'tools/browser-grabber-switches.js',
   'tools/build-settings-data.js',

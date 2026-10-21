@@ -26,6 +26,8 @@
 
 ### Changed
 
+- Minimum-Chrome CI uses software ANGLE and checks Canvas/WebGL rendering before the extension suites, avoiding native GPU startup crashes on Windows runners.
+
 - Security history redacts all path segments after sensitive routes, including short codes and lowercase tokens. Nested detail sanitization now drops unexamined content and enforces depth, field-count and size limits.
 
 - Reputation-warning overrides now apply once to the exact warned address in its original tab, with a 60-second expiry. Other paths, redirects and subsequent visits still receive reputation checks.

@@ -169,9 +169,14 @@ function oddReleaseLinks(text) {
     ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-audit-highs', 'browser-audit-mediums', 'browser-dnr-reconcile', 'browser-element-zapper', 'browser-engine-smoke', 'browser-download-hash-redirects', 'browser-reputation-bypass', 'browser-image-logger-loads', 'browser-media-security', 'browser-grabber-switches', 'browser-eyeshield-frames', 'browser-resource-saver']
       .every((t) => new RegExp('run: node tools/' + t + '\\.js').test(minimum))
       && /WARDENONE_BROWSER_NAME: 'Google Chrome'/.test(minimum) && /WARDENONE_HEADLESS: '1'/.test(minimum));
-  check('no test there can run without that Chrome in place and pass on Edge instead',
-    (minimum.match(/if: \(success\(\) \|\| failure\(\)\) && steps\.chrome\.outcome == 'success'/g) || []).length === 15
-      && /id: chrome/.test(minimum));
+  const browserSteps = minimum.split(/\n      - /).filter(step => /run: node tools\/browser-/.test(step));
+  const suites = browserSteps.filter(step => !step.includes('run: node tools/browser-runtime-smoke.js'));
+  check('minimum Chrome checks software rendering before extension suites',
+    /WARDENONE_SOFTWARE_GL: '1'/.test(minimum)
+      && browserSteps[0].includes('id: runtime') && browserSteps[0].includes('browser-runtime-smoke.js'));
+  check('every extension suite requires the pinned Chrome and a working graphics runtime',
+    suites.length === 16 && suites.every(step => step.includes("steps.chrome.outcome == 'success'")
+      && step.includes("steps.runtime.outcome == 'success'")) && /id: chrome/.test(minimum));
   const needs = ((/needs: \[([^\]]*)\]/.exec(rolling) || [])[1] || '').split(',').map((s) => s.trim());
   check('the rolling build waits for the gate, the real popup, the real Settings page and the minimum Chrome',
     ['gate', 'browser-popup', 'browser-settings', 'browser-minimum'].every((n) => needs.includes(n)), needs.join(', '));

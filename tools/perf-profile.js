@@ -302,6 +302,8 @@ async function launch(edge, variant, extensionDir, port, profileDir, extraArgs) 
     '--disable-features=msEdgeShoppingUI,msImplicitSignin,msEdgeStartupBoost',
   ];
   if (process.env.WARDENONE_HEADLESS === '1') args.push('--headless=new');
+  // Chrome 121's native GPU backend crashes on the Windows CI image; keep WebGL available in software.
+  if (process.env.WARDENONE_SOFTWARE_GL === '1') args.push('--use-gl=angle', '--use-angle=swiftshader');
   if (variant === 'off') args.push('--disable-extensions');
   else args.push('--disable-extensions-except=' + extensionDir, '--load-extension=' + extensionDir);
   if (Array.isArray(extraArgs)) args.push(...extraArgs);
