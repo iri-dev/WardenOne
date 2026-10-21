@@ -4,28 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * What "high confidence" is allowed to mean.
- * Run: node tools/test-phishing-confidence.js
- *
- * blockHighConfidencePhishing turns a warning into an interstitial, so the tier
- * it reads is load-bearing in a way the other tiers are not: a wrong "high"
- * interrupts an ordinary visit even though the reader can choose to continue.
- *
- * It was once unsafe to switch on. Run against real hostnames, the old rule rated
- * nine of fifteen ordinary sites high -- apple.stackexchange.com, sony.co.uk,
- * crypto.stanford.edu, target.scene7.com -- for two reasons:
- *
- *   1. the registrable label was taken as "second from the right", which has no
- *      idea what a public suffix is, so sony.co.uk read as sld="co" and Sony's
- *      own site looked like a Sony subdomain spoof
- *   2. a brand word anywhere left of the registrable domain was rated high on
- *      its own, and most short brand names are also ordinary words
- *
- * So this suite is a corpus, not a set of assertions about code shape. The rule
- * may be rewritten however anyone likes; what it may not do is start blocking
- * the left-hand column.
- */
+/* Require corroborating evidence for high-confidence brand-spoof warnings.
+   Run: node tools/test-phishing-confidence.js */
 'use strict';
 
 const assert = require('assert');

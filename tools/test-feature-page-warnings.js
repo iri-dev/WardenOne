@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A page that explains what WardenOne detects is not the thing it detects.
- *
- * WardenOne's website lists every protection with its name, its default and its description,
- * generated from settings-data.js. Opened with WardenOne running, that features page got the
- * full-screen tech-support scam warning (and the bridge's copy of it): the scam guard's own
- * description quotes fake "your computer is infected / locked -- call this number" pages. The
- * home page got the ClickFix warning for saying a fake "verify you're human" page tells you to
- * press Win+R and paste a command.
- *
- * This builds that features page's text from the settings data the site is generated from, the
- * way the site lays it out, and runs the shipped page-text detectors (Scam Lock, ClickFix, Fake
- * Update) from content.min.js over it. None may warn. And the fix must not become a way past
- * them: the same descriptions pasted into a real scam page do not save it.
- *
- * Run: node tools/test-feature-page-warnings.js
- */
+/* Feature documentation and quoted scam examples must not trigger the protections they describe.
+   Run: node tools/test-feature-page-warnings.js */
 'use strict';
 
 const assert = require('assert');

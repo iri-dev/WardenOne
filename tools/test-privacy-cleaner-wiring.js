@@ -4,29 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The Privacy Cleaner's controls have to reach the worker (PI-01).
- *
- * "Consent banners & tracking cookies" shipped ticked by default, was announced in the README
- * and the changelog, and had never once run. Three links were missing and any one of them
- * would have been enough: the checkbox was read by nothing, the request field was sent by
- * nobody, and the implementation was called from nowhere. The reason it survived review is a
- * naming near-miss -- the element is cl-consent, the field is consentCookies, and neither
- * string appears in the other's file, so nothing looked broken from either end.
- *
- * Nothing errored either. A reader ticking only that box got "Pick at least one thing to
- * clean", which reads as a UI quirk, and a reader leaving it ticked among others got a
- * cheerful summary that simply never mentioned consent cookies.
- *
- * So this asserts the wiring as a set relationship in three places at once -- panel, sender,
- * worker -- rather than checking any single link. A new checkbox that reaches nothing, or a
- * worker field nobody sends, fails here by name.
- *
- * It then runs the shipped handler, because the wiring being present is not the same as the
- * feature working, and checks the promise printed on the control itself: "Keeps you signed in".
- *
- * Run: node tools/test-privacy-cleaner-wiring.js
- */
+/* Each cleaner control must reach a supported worker action and return its outcome. (PI-01)
+   Run: node tools/test-privacy-cleaner-wiring.js */
 'use strict';
 
 const fs = require('fs');

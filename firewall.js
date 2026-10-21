@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* The per-site firewall.
-
-   A decision matrix for one site: every domain the page loads, and what each of
-   them is allowed to do there. Dynamic filtering rather than another blocklist --
-   the rules are the reader's, they apply to one site, and they beat everything
-   WardenOne would otherwise decide.
-
-   Two things make it usable rather than merely powerful:
-
-   1. THE ROWS ARE WHAT THIS PAGE ACTUALLY LOADED, not a guess. It listens on the
-      same capture the network logger uses, so a row exists because a request
-      happened, and each row already knows whether WardenOne blocked it and which
-      list decided. The reader is overriding something specific, not filling in a
-      blank grid.
-   2. UNDO IS ALWAYS ONE CLICK. A matrix that can switch off a site's own CDN can
-      break that site completely; the answer is not to hide the danger but to
-      make walking it back trivial and obvious.
-
-   Nothing here is guesswork about what a domain is "for". A cell says what
-   happened and what the reader chose, and nothing else. */
+/* Per-site request decisions, populated from the network logger’s observed requests.
+   Keep undo available because blocking a site’s own CDN can break the page. */
 'use strict';
 
 const $ = (id) => document.getElementById(id);

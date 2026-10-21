@@ -4,20 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Generates the compact UTS #39 mapping embedded in idn-utils.js.
- *
- * WardenOne compares decoded IDN labels only with protected brand names made from ASCII
- * letters and digits. A confusable prototype containing any other character cannot equal
- * one of those names, so the generated runtime table keeps every official mapping whose
- * complete prototype is ASCII alphanumeric and omits irrelevant prototypes. The source
- * table is still parsed in full and the gate requires a plausible mapping count plus named
- * cross-script entries, so a format change cannot silently produce a tiny table.
- *
- *   node tools/build-idn-confusables.js
- *   node tools/build-idn-confusables.js --from confusables.txt
- *   node tools/build-idn-confusables.js --check
- */
+/* Generate UTS #39 mappings whose complete prototype is ASCII alphanumeric, matching protected brands.
+   Parse the full source and check counts/cross-script entries to catch source-format drift.
+   Run: node tools/build-idn-confusables.js [--from confusables.txt | --check] */
 'use strict';
 
 const crypto = require('crypto');

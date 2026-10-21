@@ -4,20 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The build profile: which of WardenOne's separable utilities this package carries (CWS-03).
- *
- * WardenOne's Store purpose is protective browsing with reader control over page presentation
- * and resource use. EyeShield supports readability; Memory Shield releases resources used by
- * inactive tabs, and Tab Limit is part of that resource control. The Store decision for each
- * feature is explicit below.
- *
- * tools/build-store-package.js sets `profile` to `store` and strips omitted utility entries
- * from the packaged copy; in the repository the profile says `full` and carries every utility.
- * `features` is the decision record: each utility with its Store decision and everything it would carry. The
- * worker imports this file, the popup loads it, and both degrade a missing feature to "not in this
- * build" rather than to an error. docs/store-single-purpose.md is generated from this table.
- */
+/* Build feature decisions shared by the worker, popup and generated docs/store-single-purpose.md.
+   The Store packager strips omitted utilities; missing features must degrade to unavailable. */
 
 const WARDENONE_BUILD = Object.freeze({
   // BUILD-PROFILE-BEGIN (rewritten by tools/build-store-package.js; the repository copy is the full build)

@@ -4,17 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* WardenOne YouTube module
- *
- * Rebuilt from the active AdGuard YouTube filter rules in:
- *   Extension/filters/chromium/filter_2.txt, lines 37700-37732
- *
- * This file intentionally avoids WardenOne's older YouTube heuristics. The
- * behavior here is a compact, readable port of AdGuard's current YouTube rules:
- * JSON pruning for ad schedule fields, anti-abnormality defusing, native
- * fetch/Request iframe workaround, SSAP timeout/segment handling, and AdGuard's
- * bounded player-request recovery modes.
- */
+/* YouTube module based on AdGuard’s Extension/filters/chromium/filter_2.txt, lines 37700–37732.
+   Ports JSON pruning, anti-abnormality handling, iframe fetch/Request, SSAP and bounded recovery. */
 (function () {
   "use strict";
 
@@ -37,15 +28,8 @@
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
     const U8=Uint8Array,U32=Uint32Array,D="0123456789abcdef";
-    /* This code runs in the page's own world, where the page can replace any built-in method after
-       load. So nothing that touches the key calls one. The key becomes its two HMAC pad blocks ONCE,
-       in key(), at the document_start hand-off before any page script exists; after that a
-       signature is index reads and arithmetic on typed arrays -- no .set, .subarray, .length,
-       substr, parseInt or toString -- each of which a page could replace to be handed the key: a
-       patched String.prototype.substr, Uint8Array.prototype.set or typed-array length getter each
-       recovered the whole key from one signature (tools/test-main-world-key-isolation.js). The
-       message text is not secret; a page that tampers with how it is read only spoils its own
-       signature, which it could already do by stopping the event. */
+    /* Derive HMAC pads before page scripts run. Signing must not call replaceable built-ins with key data;
+       a patched string/typed-array method could otherwise capture the key. Message data is not secret. */
     function encode(text){
       const s=String(text),out=new U8(3*s.length+3);
       let n=0;
@@ -845,28 +829,11 @@
           var out = Reflect.apply(target, thisArg, args);
           try {
             if (masterEnabled() && out instanceof HTMLIFrameElement && out.src === "about:blank") {
-              /* A frame sandboxed WITHOUT allow-scripts still gets our fetch when
-                 it keeps allow-same-origin. It cannot run code, so no content
-                 script can patch it from inside -- which is exactly why a page
-                 would borrow a clean fetch from one -- and only this write, from
-                 the parent, reaches it. YouTube makes one of these on every watch
-                 page. Only a frame with an opaque origin (a sandbox without
-                 allow-same-origin) is skipped: the parent cannot reach into it,
-                 and the write would only throw.
-
-                 This write is NOT what Chrome reports as "Blocked script
-                 execution in 'about:blank' because the document's frame is
-                 sandboxed". Measured in Edge 150: the same write with WardenOne
-                 off logs nothing. The warning is Chrome declining to inject
-                 WardenOne's MAIN-world scripts (blank-frame coverage, SEC-05)
-                 into a frame that forbids scripts -- one per script file -- and
-                 it is filed under WardenOne because a WardenOne insertion wrapper
-                 is on the stack when the page inserts the frame. */
+              /* Same-origin frames sandboxed without allow-scripts still need the parent’s fetch patch.
+                 Opaque origins are inaccessible. Chrome’s sandbox injection warning concerns content-script
+                 injection, not this property write. */
               var sandboxAttr = null;
-              /* Only skip on positive evidence of a sandbox. If the attribute
-                 cannot be read at all, assume the frame is ordinary and hook it
-                 -- failing the other way would silently stop hooking every
-                 about:blank frame, which is the thing this proxy exists for. */
+              /* Skip only confirmed opaque sandbox frames. If attributes are unreadable, retain the ordinary-frame hook. */
               try { sandboxAttr = out.getAttribute ? out.getAttribute("sandbox") : null; } catch (_) { sandboxAttr = null; }
               var opaqueOrigin = typeof sandboxAttr === "string" && !/(^|\s)allow-same-origin(\s|$)/.test(sandboxAttr);
               if (!opaqueOrigin && out.contentWindow) {
@@ -941,15 +908,8 @@
     };
     installSsapPushCapture = function () {
       if (!masterEnabled()) return;
-      // Array#push is one of the hottest methods on any page, and routing every
-      // call on YouTube through a Proxy costs 15.6ns -> 41.5ns each, measured.
-      // The capture can only ever collect something while this experiment flag
-      // is on, so when the page config has already loaded and says it is off,
-      // installing would slow down every push on the page for ten seconds to
-      // collect nothing. Before the config arrives we genuinely cannot tell, and
-      // catching the early pushes is the whole point, so that case is unchanged
-      // -- this only skips the installs we can prove are pointless, which
-      // includes every yt-navigate-start within a mix, where config is loaded.
+      // Skip the Array#push proxy once config proves the experiment is off; it is a hot page-wide method.
+      // Before config arrives, retain capture so early pushes are not missed.
       var ssapFlags = window.yt && window.yt.config_ && window.yt.config_.EXPERIMENT_FLAGS;
       if (ssapFlags && !ssapFlags.html5_enable_ssap_entity_id) return;
       if (Array.prototype.push !== realPush && Array.prototype.push !== ssapPushProxy) return;

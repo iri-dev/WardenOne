@@ -12,12 +12,7 @@
 (function () {
   'use strict';
   const WO_GUARD_VERSION = '1.0.2';
-  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
-     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
-     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
-     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
-     older one, and it must release the old one's listeners, observers and timers first or both
-     copies stay live and are charged for the same work. */
+  /* Release the older version’s listeners, observers and timers before replacing it in an open document. */
   if (window.__wardenOneSearchJunk === WO_GUARD_VERSION) return;
   if (window.__wardenOneSearchJunk) {
     try {
@@ -26,9 +21,7 @@
   }
   window.__wardenOneSearchJunk = WO_GUARD_VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -42,8 +35,7 @@
   };
   const woObserver = (...a) => woHold(new MutationObserver(...a));
   const woInterval = (...a) => woHold(setInterval(...a));
-  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
-     forwarding `this` keeps them behaving exactly as the host would call them. */
+  /* Preserve the native timer callback’s this binding. */
   const woTimeout = (fn, ms, ...rest) => {
     let id;
     id = setTimeout(function (...a) {
@@ -467,17 +459,12 @@
     if (doWarn && (off || cfg.warnSearchResults === false)) { doWarn = false; clearMarks(); }
     if (off || cfg.flagSearchJunk !== true) return;
     doJunk = true;
-    /* The packaged seed list arrives inside this answer, read by the worker (BUG-10). This script
-       used to fetch it itself by its own package URL, which a content script cannot do for a
-       file that is not web-accessible -- the fetch was refused, the failure swallowed, and
-       the pass switched itself off while the toggle read "on". The worker reads the file where it
-       can be read, and reports a list it could not read; nothing is fetched here. */
+    /* Read the packaged scraper seed from the worker’s config reply; it is not web-accessible.
+       The worker owns load-failure reporting (BUG-10). */
     addHosts(response.searchJunkDomains);
     var aux = response.supplemental;
     addHosts(aux && aux.searchJunkDomainsExtra);
-    /* The scraper list being empty used to end the script. It cannot now: the warning pass has
-       its own reason to run and does not use that list at all. Empty here means the worker had
-       nothing to send, and the worker is the one that says so. */
+    /* An empty scraper list must not stop the independent warning pass. */
     if (!Object.keys(hosts).length) { doJunk = false; return; }
     if (begun) scheduleScan(); else begin();
   });

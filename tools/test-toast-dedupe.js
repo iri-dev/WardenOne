@@ -227,23 +227,8 @@ function check(name, condition, extra) {
     'with tracker blocking off the warning is the only thing the user would get');
 }
 
-// ---------------------------------------------------------------------------
-// 4. A warning has to stay up long enough to READ.
-//
-// The dwell was a flat five seconds for every card, whether it said "Popup
-// blocked" or carried a title, a four-line explanation, a severity, an action
-// and a matched value. The long ones were gone before they could be finished,
-// which teaches people to ignore the short ones too.
-//
-// Dwell is now reading time: tokens counted as words, a long token charged as
-// more than one, priced at a deliberately slow 168 words per minute against a
-// ~240 wpm adult average. Two discounts sit on top of that curve, both of them
-// from watching the cards in real use rather than from the reading model: a flat
-// term on every card, then a banded one: nothing under the seven-second mark, a
-// full second inside the seven-second band, half a second past it. That band step
-// inverts the ordering once, deliberately. It stops while the pointer or keyboard
-// focus is on the card, and while the tab is not on screen.
-// ---------------------------------------------------------------------------
+// Dwell follows reading length with the deliberate band discounts.
+// Pause while hovered, focused or hidden; verify the intentional ordering step at the band boundary.
 /* Dwell is two statements now -- the reading curve, then a discount clamped at
    the seven-second mark -- so they are parsed separately and a change to either
    one is reported as itself rather than as "the expression moved". */
@@ -488,21 +473,8 @@ function modelMs(pace, w) {
     's -- the spread is what makes this by-the-words rather than flat');
 }
 
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// 5. tools/toast-harness.html has to keep working.
-//
-// It runs the real showToast slice and swaps the pace constants for sliders, so
-// a timing can be felt instead of argued about. It used to fetch content.min.js,
-// which meant it only worked behind a server; it now carries an embedded copy so
-// it opens by double-click. An embedded copy can go stale, so it is checked
-// against the build the same way content.min.js is checked against src.
-//
-// The harness is gitignored on purpose, so it is absent on a fresh clone and in
-// CI. That is not a failure -- these checks only have something to say where the
-// file exists. Skipping is stated out loud rather than passing silently, so a
-// green run never implies the harness was verified when it was simply not there.
-// ---------------------------------------------------------------------------
+// Check the optional local toast harness’s embedded runtime against the build.
+// It is gitignored and absent in CI, so report a skip rather than imply it was verified.
 {
   const harnessPath = path.join(ROOT, 'tools', 'toast-harness.html');
   const harness = fs.existsSync(harnessPath) ? fs.readFileSync(harnessPath, 'utf8') : '';

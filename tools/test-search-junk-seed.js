@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The scraper pass's seed list arrives, and a list that cannot be read is said (BUG-10).
- * Run: node tools/test-search-junk-seed.js
- *      WARDENONE_BACKGROUND=<older background.js> WARDENONE_SEARCH_JUNK=<older search-junk.js> node tools/test-search-junk-seed.js
- *
- * search-junk.js, a content script, fetched its own packaged search-junk-domains.json through the
- * package URL. Since Chrome 85 a content script's fetch runs with the page's privileges, and a
- * packaged file that is not web-accessible is refused -- so the seed never arrived, the failure was
- * swallowed, the host set stayed empty and the pass switched itself off, while the popup toggle went
- * on reading "on" and nothing anywhere said otherwise. The manifest declares no web-accessible
- * resources, rightly: exposing the file to every page would have been the wrong fix.
- *
- * The worker reads the file now, where a packaged file can be read, and the seed travels inside the
- * content-config answer beside the runtime lists. A read that fails is remembered as a failure:
- * Protection Health names it while the switch is on, the activity record gets one entry per worker
- * life, and the next snapshot build tries again. The reader is driven here with a fake fetch through
- * every outcome, the merge is checked against the real packaged file, and the content script is held
- * to fetching nothing.
- */
+/* Deliver the packaged scraper seed through an authorized context and expose load failures. (BUG-10)
+   Run: node tools/test-search-junk-seed.js */
 'use strict';
 
 const fs = require('fs');

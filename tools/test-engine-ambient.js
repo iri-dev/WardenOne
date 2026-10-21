@@ -6,19 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-/*
- * Guards tools/lib/engine-ambient.js against the engine drifting away from it.
- *
- * The lifting suites -- the ones that slice a region of src/content.js out by string marker and
- * eval it in a hand-built sandbox -- cannot see anything the engine declares in its teardown
- * preamble. engine-ambient.js supplies those helpers as shims so a lifted fragment that calls one
- * still runs. That only holds while the shim list covers what the preamble actually declares, so
- * this suite parses the preamble and fails if the engine grows a helper that has no shim.
- *
- * Without this, adding a helper produces a confusing "<name> is not defined" in whichever
- * unrelated suite happens to lift a region containing a call. With it, the failure lands here and
- * names the missing helper.
- */
+/* Keep the harness ambient declarations aligned with the shipped engine’s external dependencies.
+   Run: node tools/test-engine-ambient.js */
 
 const vm = require('vm');
 const fs = require('fs');

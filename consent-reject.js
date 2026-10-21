@@ -19,9 +19,7 @@
   }
   window.__wardenOneConsentRejectVersion = CONSENT_REJECT_VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -35,8 +33,7 @@
   };
   const woObserver = (...a) => woHold(new MutationObserver(...a));
   const woInterval = (...a) => woHold(setInterval(...a));
-  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
-     forwarding `this` keeps them behaving exactly as the host would call them. */
+  /* Preserve the native timer callback’s this binding. */
   const woTimeout = (fn, ms, ...rest) => {
     let id;
     id = setTimeout(function (...a) {
@@ -46,12 +43,7 @@
     woPending.add(id);
     return id;
   };
-  // Chrome's extension events are not DOM events: they are not covered by the abort signal above
-  // and they have no equivalent of removeEventListener-by-signal. Repair reinstalls this script in
-  // every frame, so a listener registered here and never removed accumulates one more copy per
-  // Repair -- and every copy answers, so old and new bridges race on form and media health.
-  //
-  // The exact callback reference has to be kept, because removeListener matches by identity.
+  // Chrome events ignore AbortSignal; retain callback identities for removeListener during disposal.
   const woChromeListeners = [];
   const woOnMessage = (fn) => {
     try {
@@ -783,14 +775,8 @@
     scanQueued = false;
     if (scanFinished || !active || !document.documentElement) return;
 
-    // Consent banners appear early or not at all. Once a page has gone SCAN_GIVE_UP_MS
-    // without one, stop reacting to its DOM changes: otherwise every mutation for the
-    // rest of the 120s observer window buys another full-document scan -- an 1800-node
-    // walk and up to 500 visibility tests -- on a page that has already demonstrated it
-    // has nothing to dismiss. A completed reject/save exits above through scanFinished;
-    // everActed remains useful for the unfinished settings path, which must keep looking
-    // for the switches and final save button. The timed passes in start() still run, so
-    // a genuinely late banner is not abandoned.
+    // Stop mutation-driven scans after the no-banner deadline. Keep timed passes for late banners
+    // and continue unfinished settings flows until their final save.
     if (!firstScanAt) firstScanAt = Date.now();
     if (!everActed && observer && Date.now() - firstScanAt > SCAN_GIVE_UP_MS) {
       try { observer.disconnect(); } catch (_) {}
@@ -870,19 +856,8 @@
     }
   }
 
-  // One scan per animation frame is one full document walk per frame, and every walk
-  // calls getComputedStyle, getBoundingClientRect and innerText -- each of which forces
-  // layout. 'style' is in the attributeFilter below, and a slider rewrites its inline
-  // style on every frame it moves, so dragging one turned into a continuous full-page
-  // scan. Measured on Spotify: 26ms of a 32ms extension budget, three long tasks, and
-  // an input queue that kept draining after the mouse was released -- reported as "if i
-  // let go it keeps going because it has to catch up".
-  //
-  // Only the MUTATION path is throttled. The timed passes in start() are deliberate --
-  // a banner that CSS-fades in emits no mutations at all, which is why that burst
-  // exists -- so they still run at their own cadence. A mutation arriving inside the
-  // window is deferred rather than dropped, so a banner is still caught, at worst
-  // SCAN_MIN_GAP_MS late against passes that already run at 3s, 4.5s, 7s and 11s.
+  // Throttle mutation scans and defer rather than drop work inside the gap.
+  // Timed passes retain their cadence because CSS fade-ins may emit no mutations.
   const SCAN_MIN_GAP_MS = 250;
   // How long a page gets to produce a banner before mutation-driven scanning steps down
   // to the slow poll below. Not a give-up: coverage is preserved, only the cost changes.
@@ -950,18 +925,8 @@
     try { requestAnimationFrame(scan); } catch (_) { woTimeout(scan, 40); }
   }
 
-  // A document-wide observer should wake the document-wide scanner only when the
-  // changed node could plausibly be consent UI. Spotify changes a volume label and
-  // state class for every input step; treating those ordinary mutations as banner
-  // arrivals made each step buy an 1800-node tree walk. The cheap node-local test
-  // preserves late/obfuscated banners: vendor/class/role selectors, consent wording,
-  // and reject/settings controls next to consent wording all wake the full scanner.
-  //
-  // It runs on every node a page adds for two minutes, so it is written for that: a node with
-  // no attributes has no identity to read (id and class reflect attributes), each identity
-  // field is tested on its own rather than joined into a fresh array -- no hint word holds a
-  // space, so a match in the space-joined string always lay inside one field -- and the direct
-  // text is joined while walking siblings. The answers are the ones the joined form gave.
+  // Wake the full scanner only for nodes with plausible consent identity, wording or controls.
+  // Test identity fields separately to avoid allocations on every added node.
   function mutationNodeMayAffectConsent(node, nested, fullText, batch) {
     try {
       if (!node) return false;
@@ -1083,14 +1048,8 @@
       if (mutationsMayAffectConsent(records)) queueScan(true);
     });
     try {
-      // 'style' is deliberately NOT watched. Inline style is what animations and drag
-      // feedback rewrite -- a range slider rewrites it on every frame it moves -- so
-      // watching it meant a full-document consent scan per frame of any drag on any
-      // site. What it bought was banners that reveal via el.style rather than a class,
-      // and those are already covered: start() fires a 24-shot burst over the first
-      // 2.4s plus passes at 3s, 4.5s, 7s and 11s, which exists precisely because a
-      // CSS fade-in emits no mutations at all. Banners appear early; sliders move all
-      // day. class / aria-hidden / inert / open still cover the reveal cases.
+      // Do not watch style: animations and sliders rewrite it every frame.
+      // Timed passes cover style-only/CSS fade-ins; class, aria-hidden, inert and open cover other reveals.
       observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-hidden', 'inert', 'open'] });
     } catch (_) {}
     woTimeout(() => {

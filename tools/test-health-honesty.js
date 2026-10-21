@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Does the health summary ever claim safety it did not verify (M39)?
- *
- * buildProtectionHealthSummary is the extension's own answer to "am I protected?", and it does
- * something genuinely good: rather than trusting the config toggles it asks Chrome which rulesets
- * are really enabled. But the verification was wrapped in a guard that could not tell two very
- * different answers apart:
- *
- *     if (enabledRulesets.length) { ...three checks... }
- *
- * An empty array is produced BOTH by "the call failed" AND by "nothing is enabled". Either way
- * every check was skipped, no issue was added, and the popup rendered
- * "You're safe -- Core shields are active and watching quietly." The single worst state the
- * extension can be in -- master switch on, not one ruleset enabled, no network blocking running --
- * produced the most reassuring line the UI can show.
- *
- * The decision table is lifted out of background.js and driven here, because the whole finding is
- * about which branch runs for which input.
- *
- * Run: node tools/test-health-honesty.js
- */
+/* Health status must distinguish settings, verified operation, unsupported states and failures. (M39)
+   Run: node tools/test-health-honesty.js */
 'use strict';
 
 const fs = require('fs');

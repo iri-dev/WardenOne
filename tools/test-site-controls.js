@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Per-site control: pausing a site, and turning off one protection on one site.
- *
- * Until these existed the only site-level lever was the allowlist, which turns the
- * whole engine off, permanently, until someone remembers to undo it -- so a single
- * guard misreading a single site cost either that guard everywhere or every guard
- * there. Two narrower levers replace that trade:
- *
- *   allowlistUntil[host]        when the pause lapses. Same effect as the
- *                               allowlist, but it expires on its own.
- *   siteOverrides[host][key]    one protection off, on one site, everything else
- *                               still running.
- *
- * Both are resolved in bridge.js before the config reaches any content script, and
- * again in background.js for the decisions the worker makes on its own. This file
- * pins that the two agree, that a site can only ever turn something OFF, and that
- * host matching is on a label boundary so a lookalike cannot inherit a pass.
- *
- * Run: node tools/test-site-controls.js
- */
+/* Apply expiring site pauses and per-feature overrides through the shared config path.
+   Run: node tools/test-site-controls.js */
 'use strict';
 
 const assert = require('assert');

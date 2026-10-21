@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Checking a password without handing it over.
- * Run: node tools/test-pwned-password-check.js
- *
- * The feature is a range query: hash locally, send five characters of the hash,
- * get back every suffix sharing that prefix, match locally. Everything valuable
- * about it lives in the word "five". Send six and the anonymity set shrinks by a
- * factor of sixteen; send the hash and there is no anonymity at all; send the
- * password and it is not a privacy feature, it is a password form.
- *
- * So this suite is about what leaves the machine, and it runs the real lookup
- * against a stub server rather than reading the source for reassuring strings.
- *
- * There is history here. The last password checker was removed because it lived
- * in the worker behind a message kind that nothing in the interface could reach:
- * a documented feature that did not exist, and a channel a page could post hash
- * prefixes into that did. Both halves are checked.
- */
+/* Send only the hash prefix for password range lookup and match full suffixes locally.
+   Run: node tools/test-pwned-password-check.js */
 'use strict';
 
 const assert = require('assert');

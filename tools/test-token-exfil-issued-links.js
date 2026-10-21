@@ -4,22 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * SessionShield (top frame): a link carrying a token goes through only when a server handed
- * that link to the page.
- *
- * Video hosts sign playlist and segment links (master.m3u8?token=...) and players built on
- * hls.js, dash.js or Shaka load them with fetch/XHR. The token check refused the signed
- * playlist as "a token leaving the page" and the player died on its first file (JW Player
- * error 232011, reported on anichi.to). A first fix let any plain GET for a media file through,
- * which also let a script name its collector "x.m3u8" and send a token it held in memory. Now
- * what counts is provenance: the page read a response that contained that exact link. The
- * child-frame guard does the same (tools/test-frame-credential-guard.js).
- *
- * The detection block is lifted from src/content.js and run, not re-implemented.
- *
- * Run: node tools/test-token-exfil-issued-links.js
- */
+/* Allow token-bearing media URLs only when a readable server response issued the matching link.
+   Run: node tools/test-token-exfil-issued-links.js */
 'use strict';
 
 const fs = require('fs');

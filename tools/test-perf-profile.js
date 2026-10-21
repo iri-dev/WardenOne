@@ -4,18 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The release performance profile harness, the parts that need no browser.
- * Run: node tools/test-perf-profile.js
- *
- * tools/perf-profile.js drives Microsoft Edge with the real extension loaded; that takes minutes
- * and a display, so the gate does not run it. What the gate checks here is everything around the
- * browser: the statistics that turn five runs into a median and a tail, the known-regression
- * patch applying to the built engine exactly once (so the "prove it sees a regression" variant
- * can be built), the synthetic pages having the shapes the measurements assume, the report
- * writer, and the fail-closed rules -- an "on" variant without the readiness marker must refuse
- * to measure. Locally retained browser profiles are checked when present; CI does not keep them.
- */
+/* Check the performance harness’s argument handling and report generation without launching a browser.
+   Run: node tools/test-perf-profile.js */
 'use strict';
 
 const fs = require('fs');

@@ -4,20 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Storage pressure relief used to touch exactly three keys -- the blocklist, history and the
- * OpenPhish feed -- and stop. Every rebuildable cache was left alone, including the cosmetic store,
- * whose declared cap is the largest of anything the extension keeps. So relief could finish without
- * freeing enough while megabytes of refetchable data sat untouched, and the write that hit the
- * ceiling stayed failed. chrome.storage.local is 10 MB and unlimitedStorage is deliberately not
- * requested.
- *
- * The ordering is the whole point of the fix, so this drives the real function against a fake
- * storage area and asserts what gets dropped, in what order, and what is left alone.
- *
- * Run with:
- *   node tools/test-storage-prune-ladder.js
- */
+/* Free rebuildable caches before user history, measuring pressure between tiers without immediate refetch.
+   Run: node tools/test-storage-prune-ladder.js */
 'use strict';
 
 const assert = require('assert');

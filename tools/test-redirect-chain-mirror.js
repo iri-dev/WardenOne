@@ -4,31 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The redirect chain a download came through outlives the worker that saw it.
- * Run: node tools/test-redirect-chain-mirror.js
- *
- * Download Shield grades a file partly on how the reader got there: the ten-minute window of
- * recent redirect chains, kept in worker memory and mirrored to storage.session so that a
- * suspension between the chain and the download does not lose it (LIFE-03). The download
- * handler restores the mirror before it looks the chain up -- that half has been wired since
- * M17 -- but the WRITE path had not: a chain is recorded from the synchronous webRequest
- * observer on every top-level redirect hop in any tab, and persisting it snapshotted the
- * in-memory window as it stood. A fresh worker that had not read the stored copy yet held
- * only what it had seen since it woke, so the first redirect hop anywhere in the browser after
- * a suspension replaced the stored window with one entry, and the chain recorded before the
- * suspension was gone before the download that followed it could ask. Redirect hops are
- * constant -- shorteners, login flows, canonical-host bounces -- so in practice the mirror
- * only helped when nothing at all redirected between the wake and the download.
- *
- * Now the mirror restores before it writes. The restore merges, so the snapshot that reaches
- * storage.session is both halves: what earlier lifetimes stored and what this one recorded.
- * This suite is the card's own regression test, run against the real code: a chain is
- * recorded, the worker "dies" (a fresh realm on the same storage), an unrelated redirect
- * happens, and the download still finds its chain -- while an entry past the TTL is not
- * returned, a legacy entry carrying the address is not carried forward, and the window stays
- * capped and deduplicated across any number of lifetimes.
- */
+/* Restore redirect correlation across worker lifetimes without persisting raw destination secrets. (LIFE-03, M17)
+   Run: node tools/test-redirect-chain-mirror.js */
 'use strict';
 
 const assert = require('assert');

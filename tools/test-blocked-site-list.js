@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The blocked-sites list has to show your own blocks, and let you undo them.
- *
- * Sites blocked from the right-click menu land in the same LEARNED map as the
- * ones WardenOne flags by behaviour, and the Activity Centre renders that map.
- * Two things were wrong with it:
- *
- * 1. Remove did nothing for most hand-blocked sites. remove-learned normalised
- *    the domain through normalizeLearnedDomain, which returns '' for every
- *    never-block domain -- twitch.tv, youtube.com, google.com, github.com and
- *    thirty-odd more. That veto is correct when deciding what may be BLOCKED and
- *    wrong when undoing one, and those are exactly the sites people block by
- *    hand. The row appeared in the list and its button silently did nothing.
- *
- * 2. The panel called every entry "Auto-blocked / Learned bad sites", which
- *    presents the reader's own decision back to them as something WardenOne
- *    worked out about the site.
- *
- * Run: node tools/test-blocked-site-list.js
- */
+/* Show manual blocks with their correct reason and verify that undo removes their enforcement.
+   Run: node tools/test-blocked-site-list.js */
 'use strict';
 
 const fs = require('fs');

@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * One listener failing to register does not take the ones after it down.
- * Run: node tools/test-listener-registration.js
- *
- * Five listeners across three Chrome namespaces -- the redirect-hop recorder, the redirect-chain
- * evaluator, the popup tracker, the tab-close cleanups and the forced-redirect guard -- were
- * registered inside one try at the top of the worker. A throw in the first (an invalid filter, an
- * API unavailable at call time, a future API change) would have been swallowed by the shared catch
- * and the other four would never have registered: for the rest of that worker lifetime the
- * forced-redirect interstitial, the redirect-chain warning and both on-leave cleanups would have
- * been absent while every setting reported them on, with no log and no health signal (LIFE-04).
- * Two more blocks -- in the download guard and Memory Shield -- mixed namespaces the same way.
- *
- * Each registration now goes through registerListener, which catches on its own and records the
- * name of what could not register for Protection Health to report; the two other blocks are split
- * by namespace. This suite makes the first registration throw and proves the other four still
- * register and the failure is named, and it is the card's regression assertion: no top-level try in
- * any worker file registers listeners for more than one Chrome API namespace, so the next merge
- * cannot widen a failure domain silently.
- */
+/* A failed listener registration must leave later listeners active and expose the missing capability. (LIFE-04)
+   Run: node tools/test-listener-registration.js */
 'use strict';
 
 const fs = require('fs');
@@ -65,7 +47,7 @@ function check(name, cond, detail) {
 
 /* ---- the block that carried the two navigation guards ------------------------------------- */
 const start = BG.indexOf('const LISTENERS_NOT_REGISTERED = [];');
-const end = BG.indexOf("// There is no tabs.onUpdated fallback for that reset.", start);
+const end = BG.indexOf("registerListener('blocked-notice carry-over'", start);
 check('the redirect block is registered one listener at a time', start >= 0 && end > start, 'registerListener block not found');
 
 function boot(options) {

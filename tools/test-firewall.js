@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The per-site firewall — dynamic filtering, not another blocklist.
- *
- * This is the only tool in WardenOne that can stop a site working outright, on
- * purpose, because the reader asked it to. So the suite is not about whether the
- * rules are permissive enough; it is about three things:
- *
- * 1. A RULE MUST MEAN WHAT THE CELL SAID. The matrix is the reader's mental
- *    model. If "block script on doubleclick.net at bbc.co.uk" generates a rule
- *    that also touches another site or another type, the model is a lie.
- * 2. THE RULES MUST STAY IN THEIR OWN ID RANGE. A rebuild of this matrix that
- *    stepped on another subsystem's ids would break protections nobody touched.
- * 3. UNDO MUST BE REAL AND REACHABLE. A tool this destructive earns its place
- *    only if walking it back is one click, per site and globally.
- *
- * The rule generator is lifted out of background.js and run for real, because a
- * regex over the source cannot tell you whether the emitted condition is right.
- *
- * Run: node tools/test-firewall.js
- */
+/* Compile per-site decisions with correct precedence, capacity reporting and session-only allowances.
+   Run: node tools/test-firewall.js */
 'use strict';
 
 const fs = require('fs');

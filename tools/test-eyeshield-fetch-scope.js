@@ -4,32 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * How far can a page point the EyeShield stylesheet fetch? Nowhere the page cannot go itself.
- * Run: node tools/test-eyeshield-fetch-scope.js
- *
- * EyeShield recolours cross-origin (CDN-hosted) stylesheets, whose text the page -- and so the
- * content script -- cannot read across origins. It used to ask the service worker for that text,
- * and the worker fetched it with the extension's own permissions, which reach addresses no page
- * may: a router, a NAS, a service on the reader's own network. Between a page and that reach
- * stood a check of the hostname STRING (M40 tightened it: real stylesheet Content-Types only,
- * default ports only) -- and a string cannot see what a public-looking name RESOLVES to. A page
- * that listed a stylesheet on such a name could have the extension fetch from inside the
- * reader's network and hand the result back into the page's own DOM (SEC-11). Chrome gives an
- * extension no way to learn where a name resolves before the request is made, so no version of
- * that proxy could be made safe: the only fix that guarantees no privileged request ever reaches
- * a private listener is to make no privileged request.
- *
- * So the worker has no stylesheet fetch any more, and the content script fetches the text itself,
- * from the page's context and on the page's own terms: mode 'cors', no credentials. That request
- * is subject to everything the page's own requests are -- CORS and Chrome's private-network
- * rules -- so a page gains nothing from EyeShield that it did not already have. The cost is
- * honest: a host that does not let pages read its stylesheets keeps its own colours.
- *
- * The content script's fetch is lifted and driven against a fake fetch; the worker is checked for
- * the absence of the proxy, and the custom-list fetch -- an address the READER typed, not a page
- * -- for keeping its guards.
- */
+/* Stylesheet recovery must not fetch addresses the page itself cannot access. (M40, SEC-11)
+   Run: node tools/test-eyeshield-fetch-scope.js */
 'use strict';
 
 const fs = require('fs');

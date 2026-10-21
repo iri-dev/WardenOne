@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Storage Access API guard. Run: node tools/test-storage-access-guard.js
- *
- * requestStorageAccess() is how an embedded third party asks for its
- * unpartitioned cookies back — the sanctioned route around the partitioning the
- * rest of the extension depends on. No extension API can see it: there is no
- * contentSettings type for storage access, declarativeNetRequest cannot observe
- * a JavaScript call, and a grant produces no distinguishable request. The page
- * API is the only lever.
- *
- * Which is what decides where the guard lives, and what most of this suite is
- * about. The caller is by definition inside the cross-origin frame, and
- * permission-chain.js — the obvious home for it — is injected all_frames:false.
- * A hook there could not fire once. That mistake has already shipped three times
- * in this codebase, so it is asserted here rather than remembered.
- *
- * The other half is restraint. This is the mechanism behind embedded sign-in,
- * embedded checkout and comment logins, so refusing everything by default would
- * be a login-compat incident wearing a privacy hat. Known trackers are refused,
- * everything else is recorded, and blanket refusal is a switch someone chooses.
- */
+/* Deny known trackers’ storage-access requests while preserving embedded login and explicit opt-outs.
+   Run: node tools/test-storage-access-guard.js */
 'use strict';
 
 const fs = require('fs');

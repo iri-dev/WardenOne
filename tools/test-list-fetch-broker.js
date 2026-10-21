@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A list refresh fetches each source once, four at a time, and lets go of what it downloaded.
- * Run: node tools/test-list-fetch-broker.js
- *
- * Three pipelines read the remote lists -- the network sets, the cosmetic set and the supplemental
- * buckets -- and each owned its own fetches. A default refresh therefore made 40 requests for 37
- * addresses: EasyList and AdGuard's tracking filter were downloaded once for the network rules and
- * again for the cosmetic rules, Anti-Grabify once for the grabber rules and again for the page-side
- * grabber list; and the ten cosmetic downloads ran all at once beside the four-wide network batch,
- * so up to fourteen multi-megabyte bodies were in flight together (PERF-07).
- *
- * Now one broker sits under all three: one request per address per refresh, a body more than one
- * pipeline has planned to read is kept until the last of them has taken it and released the moment
- * it has, every fetch waits in one queue of LIST_FETCH_CONCURRENCY, and the cosmetic pipeline is
- * started after the network batch instead of beside it. Nothing about what a pipeline may read
- * changed: each still validates the address against its own policy first, and the byte cap is a
- * property of the address. This suite drives the real broker with the real source lists through a
- * fake fetch that counts requests and in-flight bodies, the way the card's verification asks.
- */
+/* Share source downloads under one concurrency/byte budget and release bodies after all readers finish. (PERF-07)
+   Run: node tools/test-list-fetch-broker.js */
 'use strict';
 
 const assert = require('assert');

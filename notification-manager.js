@@ -103,13 +103,8 @@ function wardenNotificationFindGroup(items, ruleId, host, at, settings, outcome)
   return -1;
 }
 
-/* Writes are batched (COST-02). Every recorded event used to read both stores, prune, merge and
-   write the whole array back -- up to ~0.9 MiB at the 300-record cap -- once per event, while the
-   history writer beside it already buffered. Now events wait in memory for a short window and a
-   burst becomes one read and one write, with group merges collapsed inside the batch. A rule
-   switched off is decided from the cached config before anything is buffered or read. The cost
-   of the window: an event recorded in the last quarter-second before the worker is torn down can
-   miss the Notification Centre. The Activity log, which has its own write-ahead copy, still has it. */
+/* Batch notification-store writes (COST-02). The short heap-only window can lose a final event
+   on worker termination; Activity history has a separate write-ahead copy. */
 var WARDEN_NOTIFICATION_FLUSH_MS = 250;
 var __wardenNotificationBuffer = [];
 var __wardenNotificationFlushTimer = null;
@@ -212,12 +207,8 @@ function applyWardenNotificationEntry(items, resolved, entry, type) {
   return { items: items, recorded: recorded, at: at };
 }
 
-/* The Notification Centre's "Mark all read" and "Clear" (M47). The page used to write its own
-   copy of the whole store: a six-field projection that dropped summaries, repeat counts and
-   samples for good, and a stale snapshot that erased any notice recorded after the page loaded.
-   Mutations now run here, behind the same write chain as recording, against the latest store and
-   by record id, and hand back the canonical records. Buffered events are flushed first, so "mark
-   all read" includes a notice that arrived a moment ago. */
+/* Serialize Mark all read/Clear with recording against current records, not the page’s projection.
+   Flush buffered events first so the mutation includes recent arrivals (M47). */
 function mutateWardenNotifications(action, ids) {
   flushWardenNotifications();
   var pick = Array.isArray(ids) ? new Set(ids.map(String)) : null;
@@ -248,15 +239,8 @@ function mutateWardenNotifications(action, ids) {
    winner, which is what it wanted anyway. */
 var wardenOffscreenCreating = null;
 
-/* The document lives for a sound, not for the session (LIFE-05). The first sound of a
-   session created it and nothing closed it: one extension document, its scripts and an open
-   AudioContext stayed resident until the browser closed, in exchange for half a second of
-   tone. Now it is closed once it has been idle for a short grace after the last sound --
-   long enough that a burst of notifications shares one document and no tune is cut (the
-   longest is three notes 0.14 s apart), short enough to matter. A sound in flight holds the
-   close; a sound that arrives while the close is in flight waits for it to finish and
-   creates afresh, so the creation hardening above and the retry below stay exactly as they
-   are -- they matter more once the document can legitimately be absent again. */
+/* Close the offscreen document after a short idle grace (LIFE-05). In-flight sounds hold it open;
+   sounds arriving during close wait and recreate it. Bursts should share one document. */
 var WARDEN_OFFSCREEN_IDLE_MS = 3000;
 var wardenOffscreenIdleTimer = 0;
 var wardenOffscreenBusy = 0;

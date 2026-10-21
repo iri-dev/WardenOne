@@ -6,21 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-/*
- * Chrome's Manifest V3 rules require extension logic to be self-contained, and name "building an
- * interpreter to run complex commands fetched from a remote source, even if those commands are
- * fetched as data" as a violation. WardenOne's cosmetic feeds used to supply exactly that:
- * ##+js(...) scriptlet records and procedural (:remove(), :style(), :xpath()) rules, fetched daily
- * and dispatched by the content engine.
- *
- * Those are compiled at release time now and shipped inside the reviewed package. The daily
- * refresh keeps updating passive selectors only. This file pins that split, because it is the kind
- * of boundary that erodes silently -- one convenient line reintroducing `parsed` where `passive`
- * belongs and the extension is back in violation with nothing failing.
- *
- * Run with:
- *   node tools/test-cosmetic-provenance.js
- */
+/* Keep command-bearing cosmetics compiled into the package; runtime updates accept passive data only.
+   Run: node tools/test-cosmetic-provenance.js */
 
 const assert = require('assert');
 const fs = require('fs');

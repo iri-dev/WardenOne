@@ -119,18 +119,8 @@ else fail('background-memory.js import missing');
 if (bg.includes("importScripts('background-downloads.js')") || bg.includes('importScripts("background-downloads.js")')) ok('Download Guard module is imported');
 else fail('background-downloads.js import missing');
 
-// Every script the extension actually loads, derived rather than typed. The old list was a
-// hand-written allowlist of filenames, which meant a NEWLY ADDED content script was outside the
-// dynamic-code scan by default -- and four already were: twitch-adblock.js (3,667 lines, MAIN
-// world, all frames), twitch-rewind.js (ISOLATED, so it holds chrome.*), and the two lazily
-// registered ones, search-junk.js and cryptominer-detect.js. None of them had a sink, so nothing
-// was broken; but the scan is the control that keeps remotely-influenced data away from anything
-// that executes, and a control with a silent blind spot is the thing worth fixing.
-//
-// content.min.js is deliberately excluded and covered a different way: build-content.js --check
-// proves it rebuilds byte-exactly from src/content.js, which IS scanned, so a sink cannot reach
-// the shipped artifact without first appearing in a file this list covers. Grepping minified text
-// would only produce noise.
+// Discover loaded scripts rather than maintaining a scan allowlist.
+// Scan src/content.js instead of its generated bundle; the byte-exact build check covers that output.
 function declaredScripts() {
   const out = new Set();
 

@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The activity log forgets on a clock, and keeps less of a path.
- * Run: node tools/test-history-retention.js
- *
- * The Activity Centre's history kept its last 200 events for as long as the profile lived: a
- * count cap and no time cap, so a quiet month left a security-event trail from the month before
- * sitting in storage, while the notification copy of the same events expired after 30 days. And
- * its path sanitiser, written to keep route words and blank tokens, kept two shapes that are
- * identifiers as often as they are routes: any run of digits, however long, and short runs that
- * mix letters and digits -- an order number, an account number, a document id (PRIV-08).
- *
- * Now the history store has the same 30-day retention as the notifications, applied on every
- * write, on browser start and on the daily alarm, and the page ignores an entry past it even
- * before the worker has pruned; a digit run of nine or more is blanked, and a segment mixing
- * letters and digits without a separator is blanked unless it is a word with a small number on
- * the end (v2, oauth2). This suite runs the real writer, the real sanitiser and the real pruner
- * against a fake store and clock, with the card's fixtures: numeric ids, short tokens, account
- * names, nested URL objects, and the two copies of one event.
- */
+/* Expire activity on schedule and redact path secrets before persistence. (PRIV-08)
+   Run: node tools/test-history-retention.js */
 'use strict';
 
 const assert = require('assert');
@@ -70,6 +53,7 @@ const constSet = (name) => { const i = BG.indexOf('const ' + name + ' = new Set(
 const LIFTED = [
   line('LOG_URL_MAX'), line('LOG_SEGMENT_MAX'),
   line('LOG_ROUTE_PART', "const LOG_ROUTE_PART = '';"), line('LOG_ROUTE_WORD', 'const LOG_ROUTE_WORD = /^$/;'),
+  line('LOG_SENSITIVE_ROUTE'), line('HISTORY_DETAIL_LIMITS'),
   line('HISTORY_MAX', 'const HISTORY_MAX = 200;'), line('HISTORY_RETENTION_MS', 'const HISTORY_RETENTION_MS = Infinity;'),
   constSet('UNSAFE_DETAIL_KEYS'),
   grabFn('safeLogSegment'), grabFn('safeLogPath'), grabFn('safeUrlForLog'), grabFn('sanitizeHistoryDetail'),
@@ -81,7 +65,7 @@ const LIFTED = [
 ].join('\n');
 
 function realm() {
-  const state = { clock: Date.UTC(2026, 8, 19, 12, 0, 0), local: {}, session: {}, notified: [], timers: [], timerId: 0, sets: 0 };
+  const state = { clock: Date.UTC(2026, 8, 19, 12, 0, 0), local: {}, session: {}, sessionWrites: [], notified: [], timers: [], timerId: 0, sets: 0 };
   const clone = (v) => JSON.parse(JSON.stringify(v));
   class FakeDate extends Date { static now() { return state.clock; } }
   const sandbox = {
@@ -98,7 +82,7 @@ function realm() {
         },
         session: {
           get: (key, cb) => cb({}),
-          set: async (items) => { Object.assign(state.session, clone(items)); },
+          set: async (items) => { state.sessionWrites.push(clone(items)); Object.assign(state.session, clone(items)); },
           remove: async (key) => { delete state.session[key]; },
         },
       },
@@ -173,6 +157,19 @@ const DAY = 24 * 60 * 60 * 1000;
     check('the stored URL is the sanitised one', r.stored()[0].url === 'https://fresh.example/orders/*', r.stored()[0].url);
     check('and the notification copy was handed the same sanitised entry', r.state.notified.length === 1 && r.state.notified[0].url === 'https://fresh.example/orders/*', JSON.stringify(r.state.notified[0]));
   }
+  {
+    const r = realm();
+    const raw = 'https://site.example/verify/abcdefghi?token=super-secret';
+    r.api.queueHistory({ type: 'blocked_x', url: 'https://site.example/reset/123456',
+      detail: { a: { b: { c: { target: raw, list: [raw] } } } }, at: r.state.clock });
+    await r.fire();
+    const persisted = JSON.stringify({ local: r.stored(), session: r.state.sessionWrites, notifications: r.state.notified });
+    check('short codes and nested secrets never enter any persisted history copy',
+      !/123456|abcdefghi|super-secret/.test(persisted), persisted);
+    check('bounded sanitization preserves useful nested evidence through the writer',
+      r.stored()[0].detail.a.b.c.target === 'https://site.example/verify/*');
+  }
+
   /* ---- retention without a new event -------------------------------------------------------------- */
   {
     const r = realm();

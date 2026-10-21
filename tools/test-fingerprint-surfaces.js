@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The four remaining 2026-era fingerprinting surfaces.
- * Run: node tools/test-fingerprint-surfaces.js
- *
- *   window.queryLocalFonts()             every font installed on the machine
- *   window.getScreenDetails()            every attached display, with geometry
- *   screen.isExtended                    multi-monitor, with no permission at all
- *   navigator.keyboard.getLayoutMap()    the keyboard layout, so country and language
- *   speechSynthesis.getVoices()          the OS, its version, and its language packs
- *
- * The rule these all follow is the one WebGPU taught: a new API that re-answers a
- * question an older, already-spoofed API answers must give the SAME answer.
- * Screen details are built from the numbers the Screen spoof reports, the layout
- * map matches the en-US the engine already claims, and devicePixelRatio is
- * deliberately left real because nothing spoofs window.devicePixelRatio and
- * inventing one here would contradict a number the page can read directly. A
- * contradiction is a sharper identifier than the truth it replaced.
- */
+/* Check fingerprint wrappers against native-shaped APIs and consistent reported identities.
+   Run: node tools/test-fingerprint-surfaces.js */
 'use strict';
 
 const assert = require('assert');

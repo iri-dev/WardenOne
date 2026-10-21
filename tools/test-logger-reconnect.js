@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The Logger's port is a session the page can lose and retake, not a permanent link.
- *
- * Capture lives in the service worker, and MV3 evicts a worker after about thirty seconds
- * idle -- holding a port open does not prevent it, because since Chrome 114 only messages
- * on the port reset the timer, and a Logger watching a quiet browser sends none. The page
- * used to answer the resulting disconnect with "Capture stopped. Reload this page to start
- * again." and nothing else: every later request went unrecorded while the table still
- * looked plausible, so someone checking whether a rule had fired would read the silence as
- * "nothing more happened" (MV3-05).
- *
- * This runs the shipped logger.js in a sandbox with a fake runtime, disconnects its port,
- * and asserts the page takes a new one. The things that make that safe rather than merely
- * automatic are asserted too: rows survive the gap, the gap is admitted in the UI, a
- * closed page stops trying, a hidden tab waits instead of burning its attempts, and
- * nothing pings the worker to hold it alive -- which would defeat the point of MV3.
- *
- * Run: node tools/test-logger-reconnect.js
- */
+/* Reconnect logger capture after worker suspension without keeping the worker alive with pings. (MV3-05)
+   Run: node tools/test-logger-reconnect.js */
 'use strict';
 
 const fs = require('fs');

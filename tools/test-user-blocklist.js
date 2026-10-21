@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * "Never let this domain open."
- *
- * Everything else in WardenOne decides for the reader. This is the one list where the
- * reader decides, which puts three obligations on it:
- *
- * 1. IT MUST NOT REINTERPRET WHAT WAS TYPED. A blocklist that quietly widens
- *    example.com/tracker into all of example.com, or narrows it the other way, is
- *    worse than one that refuses the entry. Where it cannot parse something it says
- *    so and blocks nothing.
- * 2. NOTHING OVERRULES IT BUT THE READER. The compatibility allowances exist to stop
- *    WardenOne breaking a site; they were never meant to overrule a decision. If you
- *    block YouTube, YouTube stops loading.
- * 3. IT MUST BLOCK ON EVERY TRANSPORT. Blocking a site on seven of fifteen resource
- *    types is not blocking it -- WebTransport alone is a full channel to the host.
- *
- * The parser and rule builder are lifted out of background.js and run for real.
- *
- * Run: node tools/test-user-blocklist.js
- */
+/* Preserve explicit host/path intent, override compatibility exceptions and cover every transport.
+   Run: node tools/test-user-blocklist.js */
 'use strict';
 
 const assert = require('assert');

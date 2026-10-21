@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Two findings, one shape: state kept on the side stopped matching reality.
- *
- *   M1: the badge counter lived only in the worker, and MV3 suspends the worker after ~30s idle.
- *       Chrome keeps the badge TEXT, our counter came back absent, so the next block on a page
- *       showing 47 set the badge to 1 -- wrong in the direction that undersells the product.
- *   M5: Memory Shield's two veto flags latched. formDirty was set by the first keystroke in any
- *       field, including a site search box, and nothing ever set it false. mediaActive was cleared
- *       only from a track 'ended' listener, and MediaStreamTrack.stop() does not dispatch 'ended'.
- *       On a single-page app one keystroke exempted the tab for the whole session.
- *
- * Both are fixed the same way: ask the authoritative source at query time instead of trusting a
- * cached copy. For M5 the protective direction matters more than the permissive one -- this guard
- * is what stops the extension discarding a tab holding unsaved work -- so the "still protected"
- * cases are tested harder than the "now eligible" ones.
- *
- * Run with:
- *   node tools/test-stale-state.js
- */
+/* Keep side caches and lifecycle markers aligned with current state after updates and teardown. (M1, M5)
+   Run: node tools/test-stale-state.js */
 'use strict';
 
 const assert = require('assert');
@@ -51,21 +34,8 @@ function sourceBetween(src, a, b) {
   return src.slice(start, end);
 }
 
-// ===========================================================================
-// M1: the badge count survives a worker suspension.
-//
-// This used to drive a model that read the count back out of the toolbar with
-// chrome.action.getBadgeText and held in-flight tabs in a `badgeRecovering` map.
-// That model is gone: the counts are now mirrored into chrome.storage.session,
-// which survives a worker sleep and is cleared with the browser session -- the
-// same lifetime as the tab IDs the counts are keyed by. Parsing the visible text
-// was the thing worth removing, because a tab with no block override shows the
-// GLOBAL unread badge, so "7 unread" could come back as "8 blocked".
-//
-// The guarantees below are the ones that model owes, not the old one's markers:
-// nothing is lost while recovery is in flight, what was stored comes back, and
-// counts for tabs that no longer exist do not.
-// ===========================================================================
+// M1: restore session badge counts without losing in-flight updates or reviving closed tabs.
+// Do not recover counts from toolbar text, which may show the unrelated global unread count.
 function loadBadge(options) {
   const opts = options || {};
   const written = [];
@@ -248,7 +218,7 @@ function loadVeto(fields) {
   };
   vm.createContext(sandbox);
   vm.runInContext(
-    sourceBetween(BRIDGE, '  const FORM_SCAN_CAP = 4000;', '  // Streams captured in THIS world')
+    sourceBetween(BRIDGE, '  const FORM_SCAN_CAP = 4000;', '  const liveStreams = new Set();')
     + '\nthis.__ask = pageHasUnsavedInput;',
     sandbox, { filename: 'bridge.js:form-dirty' });
   return () => sandbox.__ask();

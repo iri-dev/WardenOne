@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Keyboard lock and pointer lock, inside the full-screen guard.
- * Run: node tools/test-keyboard-lock-guard.js
- *
- * The full-screen phishing warning ends with "Leave full screen before typing
- * anything." navigator.keyboard.lock(["Escape"]) is a page's answer to that
- * sentence: it takes the one key the advice depends on. Chrome's fallback is to
- * hold Escape, which works and is discoverable only by someone who already knows
- * it exists — not the person being phished. The guard's own comment already
- * allowed that the "press Esc" hint fades and the attack is timed around it;
- * this was the same problem one step on, with the hint gone AND the key taken.
- *
- * So the interesting assertions here are the restrained ones. A game locking W,
- * A, S, D and F11 is the reason this API exists, and the guard's stated rule is
- * warn, never block. Escape is filtered out of a list and everything else in it
- * is granted; a whole-keyboard grab cannot be filtered, so it is only refused
- * once the page has already been caught drawing a fake address bar.
- */
+/* Preserve browser escape paths for keyboard/pointer lock during suspicious fullscreen use.
+   Run: node tools/test-keyboard-lock-guard.js */
 'use strict';
 
 const assert = require('assert');

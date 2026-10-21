@@ -4,21 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * navigator.sendBeacon -- where the tracking pixel went.
- *
- * Checking three ad-heavy pages turned up not one 1x1 image between them; the
- * technique is gone. A single news front page fired fourteen beacons instead, to
- * doubleclick and an Akamai RUM endpoint among others. Those two are on the filter
- * lists and never reach the network, but a beacon to a host on NO list left no
- * trace anywhere -- there was no way to find out it had happened.
- *
- * So this records them. Never blocks: a beacon is also how ordinary sites report
- * crashes and page timings, and fourteen cards for one page view would be
- * unusable. The hook itself had no test at all before this file.
- *
- * Run: node tools/test-beacon-logging.js
- */
+/* Record bounded, deduplicated beacon attempts without blocking requests or producing toast floods.
+   Run: node tools/test-beacon-logging.js */
 'use strict';
 
 const assert = require('assert');

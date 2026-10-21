@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Who owns the engine's config (H10).
- *
- * The engine runs in the MAIN world, which it shares with the page. Its authoritative config used
- * to BE window.__WO_CONFIG__ -- returned by reference on every site except Amazon and YouTube,
- * which take derived copies and were insulated by accident. So a page could run
- * Object.assign(window.__WO_CONFIG__, { enabled: false }) and switch the running engine off.
- *
- * The fix is not a snapshot. The start path has a 1500ms fallback that fires whether or not the
- * config has arrived, so Object.assign({}, cfg) at bind time would freeze the placeholder defaults
- * on exactly the slow tabs least able to report it -- a silent, worse bug. The config is a private
- * object refreshed IN PLACE from the global instead, which keeps both the isolation and the
- * late-arrival recovery. These tests pin both halves, because a fix for one that breaks the other
- * would look correct in isolation.
- *
- * Run: node tools/test-engine-config-ownership.js
- */
+/* Page writes must not mutate the engine’s authoritative closure-owned configuration. (H10)
+   Run: node tools/test-engine-config-ownership.js */
 'use strict';
 
 const fs = require('fs');

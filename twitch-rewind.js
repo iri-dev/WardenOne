@@ -4,37 +4,15 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WardenOne Twitch Local DVR.
- *
- * Twitch removed rewind on live streams, and its own MediaSource history
- * cannot be extended safely (the transmux/playlist state is already gone, so an
- * old seek freezes, turns black, and snaps back to live). Feeding a private
- * MediaSource from MediaRecorder does not work either: Chromium rejects the
- * MediaRecorder WebM byte stream (MEDIA_ERR_SRC_NOT_SUPPORTED).
- *
- * Instead this opt-in feature runs ONE continuous MediaRecorder over the live
- * <video>'s captureStream and keeps its short timeslice chunks in RAM. Those
- * chunks belong to a single continuous recording, so concatenating them yields
- * one seekable WebM that plays back with no per-clip seams. Rewind loads that
- * blob over the Twitch video and seeks; delayed playback follows live by
- * rebuilding the blob and swapping surfaces only when it runs out of buffered
- * material. Memory stays bounded by rotating the recorder and dropping whole
- * aged-out recordings. Nothing is ever fetched, saved, or uploaded.
- */
+/* Opt-in local DVR: capture one continuous MediaRecorder stream and keep bounded chunks in RAM.
+   Replay concatenates chunks from the same recording into a seekable WebM blob. Native player
+   history and a MediaRecorder-fed MediaSource cannot provide this rewind reliably in Chromium. */
 (function () {
   'use strict';
 
   const WO_GUARD_VERSION = '1.0.2';
-  /* A tab keeps the copy it loaded with until it reloads: Chrome does not inject a newer copy into
-     a tab that is already open, and Repair reloads a tab rather than running this script into it
-     again. If a second copy does arrive, a newer one replaces an older one only when the older one
-     can hand back everything it holds, which its disposer says by carrying __woReleases. Copies up
-     to 1.0.1 cannot: their disposer released listeners and timers but left the recorder, its
-     capture and the controls running, so replacing one put a second recorder on the same video.
-     Such a copy is left in charge, still listening to settings, until the tab reloads. A marked
-     disposer that throws is treated the same way: whatever it failed to release is still live, so
-     this copy stays out. The function called is the one checked, not the global read again. */
+  /* Replace an older copy only when its captured disposer advertises __woReleases and succeeds.
+     Legacy disposers leave recorders or controls running; keep them in charge until tab reload. */
   if (window.top !== window) return;
   if (window.__wardenOneTwitchRewindReady === WO_GUARD_VERSION) return;
   if (window.__wardenOneTwitchRewindReady) {
@@ -44,9 +22,7 @@
   }
   window.__wardenOneTwitchRewindReady = WO_GUARD_VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -60,8 +36,7 @@
   };
   const woObserver = (...a) => woHold(new MutationObserver(...a));
   const woInterval = (...a) => woHold(setInterval(...a));
-  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
-     forwarding `this` keeps them behaving exactly as the host would call them. */
+  /* Preserve the native timer callback’s this binding. */
   const woTimeout = (fn, ms, ...rest) => {
     let id;
     id = setTimeout(function (...a) {
@@ -71,12 +46,7 @@
     woPending.add(id);
     return id;
   };
-  // Chrome's extension events are not DOM events: they are not covered by the abort signal above
-  // and they have no equivalent of removeEventListener-by-signal. Repair reinstalls this script in
-  // every frame, so a listener registered here and never removed accumulates one more copy per
-  // Repair -- and every copy answers, so old and new bridges race on form and media health.
-  //
-  // The exact callback reference has to be kept, because removeListener matches by identity.
+  // Chrome events ignore AbortSignal; retain callback identities for removeListener during disposal.
   const woChromeListeners = [];
   const woOnMessage = (fn) => {
     try {
@@ -102,16 +72,9 @@
       try { event.removeListener(fn); } catch (_) {}
     }
   };
-  /* Rewind's real holdings are not in that registry: a running MediaRecorder and its capture
-     tracks, a buffer that can reach hundreds of MB, replay blob URLs, a muted live picture during
-     a rewind, and controls in Twitch's player bar. shutdown() releases all of them, and a disposal
-     that skipped it left the recorder encoding with nothing listening. Stopping the capture does
-     not stop a later copy recording the same <video>: Twitch's player is captured through the
-     element capturer, where each captureStream() is independent (measured in Edge 150). Only a
-     MediaStream-backed element -- the local harness -- cannot be captured again once a capture of
-     it is stopped. `disposed` keeps a late settings reply from starting it again. The disposer is
-     marked __woReleases so a newer copy knows it may take this one's place. Chained rather than
-     folded into the registry, which every guard shares byte for byte. */
+  /* shutdown() must also release the recorder, tracks, buffers, blob URLs and player controls.
+     Each captureStream() on Twitch’s video is independent; the MediaStream-backed test video differs.
+     Keep disposed set so late config replies cannot restart recording; advertise complete disposal. */
   let disposed = false;
   const woRewindResourceDispose = window.__wardenOneTwitchRewindDispose;
   window.__wardenOneTwitchRewindDispose = () => {

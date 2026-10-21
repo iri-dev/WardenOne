@@ -4,48 +4,16 @@
   if("function"==typeof wardenOneEngineLoginUrl&&wardenOneEngineLoginUrl(location.href))return;
   const __WO_RUNTIME_VERSION="1.0.2";
   if("string"==typeof window.__wardenOneReadyVersion&&window.__wardenOneReadyVersion)return;
-  /* Amazon's real storefronts, enumerated. This used to be /(^|\.)amazon\.[a-z.]+$/i, which anchors the
-     label but not the suffix -- so it matched any host the attacker owned, as long as some label
-     was called "amazon" and everything after it was letters and dots. amazon.attacker.com
-     matched. So did amazon.com.evil.tld, which is the shape Amazon credential phishing uses.
-     That mattered far more than a compatibility shim should. The first use below returns out of
-     __woStartRuntime before anything installs, and the second turns every boolean in the config
-     off -- so between them a hostile page could switch the whole engine off by choosing its own
-     hostname, including the phishing blocker whose "subdomain-spoof" kind is precisely what
-     amazon.com.evil.tld is. Both exits also stamp the ready marker, so the tab kept reporting
-     itself protected while nothing was running.
-     One binding rather than six copies, per the house rule: the same mistake was written out six
-     times, and a seventh use should not be able to reintroduce it. Sharing one instance is safe
-     because the regex carries no /g, so it holds no lastIndex between calls. */
-  /* The engine's authoritative config lives here, not on window. The page shares this world, so
-     anything reachable from it is page-writable: window.__WO_CONFIG__ can be replaced wholesale,
-     and wo-config-change is an ordinary DOM event the page can dispatch. Between them a page
-     could hand the engine a config of its choosing and have it adopted -- an all-false object
-     switched every protection off, and an empty one deleted every key, because the refresh
-     drops keys the incoming config no longer carries.
-     Moving the object off window was not enough on its own: the refresh still READ window, so
-     the page only had to write the global and fire the event. The store below is written by the
-     token-checked config handler and by nothing else; window.__WO_CONFIG__ is kept as a copy so
-     twitch-adblock.js (a separate MAIN-world script) and anything debugging can still read it,
-     but writing to that copy no longer reaches the engine. */
+
+  /* Only the authenticated bridge handler may update the closure-owned config.
+     Page globals and DOM events are untrusted in the shared MAIN world. */
   const __woConfigStore={};
   /* Player-safe mode uses these before a page can replace selector methods. */
   const __woNativeMatches=Element.prototype.matches,
   __woNativeQuerySelector=Element.prototype.querySelector;
-  /* SEC-05: what this realm decided about fingerprint noise, for the realms a page can reach
-     from here. A same-origin child frame -- about:blank, srcdoc, a real URL -- is a fresh
-     realm with untouched prototypes, and the page can borrow them. The frame module
-     (fingerprint-realm.js) runs in every child frame at its own document_start and, when it
-     is same-origin with this window, reads this record synchronously -- so the child is
-     patched, with the same shared seed, before the page's appendChild has even returned.
-     Defined here rather than when the config lands, because the accessor has to exist before
-     the first page script: a page that gets there first can pin the name with a var of its
-     own, and then a later definition of ours would fail. Non-configurable, so nothing after
-     this line can redefine or delete it; the getter reads a closure variable the page cannot
-     write. The record itself is frozen. It carries the noise verdict and a shared realm
-     seed; bitmap exports stay native to preserve user-authored work. A page
-     can read it -- everything here is page-readable by construction -- but it cannot forge a
-     "noise off" for the frames it creates. */
+  /* SEC-05: publish the frozen realm verdict through a non-configurable accessor before page scripts run.
+     Same-origin children inherit its seed synchronously, before the page can borrow clean prototypes.
+     The page may read the record but cannot replace it; bitmap exports remain native. */
   let __woRealmRecord=null;
   try{
     Object.defineProperty(window,
@@ -118,12 +86,8 @@
     }
 
   };
-  /* The high-stakes in-page warnings used to ask the page whether they were already showing,
-     with document.getElementById(<our id>). A page that shipped <div id="wo-cmd-warn" hidden>
-     in its own markup answered yes, so the warning silently never rendered -- and the ClickFix
-     pages this exists for are exactly the ones that would bother. Same defect as the full-page
-     blockers (mountBlocker), so the same answer: hold the node we built and ask it, not the
-     document. The page cannot reach this map, and a decoy carrying our id is simply not in it. */
+  /* Hold warning nodes privately. A page can forge matching IDs, so document lookups cannot establish
+     that our warning already exists. */
   const __woWarn={
     seen:new Map(),
     up(id){
@@ -141,14 +105,7 @@
 
       }
     },
-    /* WardenOne's own warnings are appended to the page they are warning about,
-       so anything that reads document.body reads them back. That is not a
-       theoretical problem: the ClickFix panel says "A real CAPTCHA never asks you
-       to open DevTools, Console, PowerShell, Terminal, or the Run dialog and
-       paste something", which matches its own verification-steps AND
-       paste-guidance detectors. The panel therefore keeps its own evidence alive,
-       and re-appears the moment it is dismissed. Every panel registers itself
-       here, so subtracting these strings covers new panels for free. */
+    /* Exclude our own warning text from scans so panels cannot retrigger their detectors. */
     strip(text){
       let out=String(text||"");
       if(!out)return out;
@@ -171,15 +128,8 @@
      an element with our id, but it cannot reach this. */
   let __woLastOverlay=null;
   const __woAmazonHost=/(^|\.)amazon\.(com|com\.au|com\.be|com\.br|com\.co|com\.mx|com\.tr|co\.jp|co\.uk|co\.za|ae|ca|cl|cn|de|eg|es|fr|ie|in|it|nl|ng|pl|sa|se|sg)$/i;
-  /* Release what a previous engine in this page still holds before installing over it.
-     Chrome does not re-inject content scripts into open tabs on update, so a tab that
-     outlives an extension update keeps its old engine; the guard above only stops a
-     SAME-version re-run. Without this, a version bump left both engines live in the same
-     MAIN world, each with its own observers and timers, and every DOM mutation paid for
-     both. Nothing here restores the patched prototypes: unwinding those in the wrong
-     order can hand the page a half-restored API, which is worse than a spare wrapper.
-     What it does release is the expensive, stateful part -- observers that fire on every
-     mutation and intervals that wake forever. */
+  /* Dispose the previous engine’s observers and timers before replacing it in an open tab.
+     Do not unwind prototype wrappers: restoring them out of order can leave partially patched APIs. */
   /* Nothing here calls a previous engine's teardown any more. There is no published one to
      call (SEC-03), and there is no longer a path that injects a second engine into a live
      document: the worker reloads the tab instead, and the guard above refuses to run beside
@@ -222,19 +172,9 @@
     }
 
   };
-  /* Stopping an XHR by calling abort() before send() looks right and does nothing.
-  XMLHttpRequest only fires abort/error/loadend when the send() flag is set, and
-  these blocks run INSTEAD of send -- so the flag is never set, no event is ever
-  dispatched, and the page sits waiting for a callback that cannot arrive. Every
-  upload that keys on onload/onerror/onloadend hangs on "sending" forever, which
-  reads as WardenOne breaking the site rather than blocking one request.
-  fetch rejects and sendBeacon returns false; this gives XHR the same courtesy. A
-  blocked request IS a network error from the page's point of view, so it is given
-  that terminal state: status 0, readyState DONE, then readystatechange, error and
-  loadend. readyState and status are shadowed as own properties because the real
-  accessors live on the prototype and cannot be assigned from outside.
-  Asynchronous on purpose -- a real request does not fail before send() returns,
-  and firing inline would re-enter page code from inside its own call. */
+  /* abort() before send() emits no events because XHR’s send flag is unset.
+     Fail blocked requests asynchronously with status 0, DONE, then readystatechange/error/loadend.
+     Shadow the read-only prototype accessors so callers receive a terminal state. */
   const __woFailXhr=xhr=>{
     try{
       setTimeout(()=>{
@@ -314,11 +254,7 @@
     }
 
   };
-  /* The teardown used to be published on window as __wardenOneDispose, callable by the page it was meant to
-     distrust: one call at document_start switched every listener and observer off for the life
-     of the document, and putting the ready markers back afterwards made the tab report itself
-     protected (SEC-03). It is reachable now only through a signed "dispose" message, which
-     only the holder of the key -- the isolated bridge -- can produce. */
+  /* Keep teardown reachable only through signed bridge disposal, not a page-callable global (SEC-03). */
   const __woTeardown=()=>{
       try{
         __woAbort.abort()
@@ -334,15 +270,8 @@
       catch(_){
 
       }
-      /* Disposing left __wardenOneReadyVersion standing, so the tab kept claiming this exact
-         engine version was healthy while nothing was running. Two things followed from that lie.
-         The install guard at the top returns early on a matching ready version, so a fresh
-         same-version injection could not reinstall over a disposed engine. And Repair read a
-         current marker and concluded there was nothing to repair.
-         This world is shared with the page, which can call this function whenever it likes --
-         clearing the markers does not prevent that and is not meant to. What it prevents is a
-         disposed tab reporting itself as protected, and it lets re-injection actually take, so
-         the bypass has to be repeated rather than done once and left. */
+      /* Clear ready markers on disposal so health checks and same-version reinjection see the stopped engine.
+         This is health bookkeeping, not protection against a page calling the public disposer. */
       try{
         window.__wardenOneReadyVersion=void 0,
         window.__wardenOneInstalled=void 0
@@ -741,14 +670,8 @@
     blockSupercookies:!0,
     gestureWindowMs:2400,
     allowlist:[],
-    /* Turning a protection off used to mean off everywhere, and turning a site off
-    meant off entirely -- so one guard misfiring on one site cost either that guard
-    on every site or every guard on that site. Two narrower escape hatches:
-    allowlistUntil maps a host to the moment its allowlisting lapses, so "not now"
-    does not have to mean "not ever"; siteOverrides maps a host to the individual
-    features switched off there, leaving the rest of the engine running. Both are
-    resolved at the bridge, so everything downstream -- this engine and every
-    other content script -- sees one already-decided config. */
+    /* The bridge resolves expiring allowlist entries and per-feature site overrides into one config
+       shared by this engine and the other content scripts. */
     allowlistUntil:{
 
     },
@@ -923,14 +846,9 @@
   __woConfigStore.__configReady=!1,
   window.__WO_CONFIG__=Object.assign({},__woConfigStore);
   let __woToken=null;
-  /* The token above is a routing nonce and public; the key below is not (SEC-01). It arrives
-     once, in a synchronous "wo-key" event the isolated bridge dispatches at document_start,
-     before the parser has built anything and before any page script exists to listen, and it
-     is never sent again. Everything this engine must trust from the bridge -- config, a
-     reputation verdict, a background reply, the frame relay, dispose -- carries an HMAC over a
-     sequence number and its payload, checked here; and the engine proves it is alive by signing
-     "installed" and every challenge with the same key. A page can see and dispatch everything
-     on this bus; it can no longer make anything on it count. */
+  /* SEC-01: the routing nonce is public. The bridge hands off the private HMAC key once at document_start.
+     Authenticate config, verdicts, replies, frame relays and disposal with a sequence and payload;
+     sign installed/challenge replies too. Page-visible bus traffic alone carries no authority. */
   let __woKey=null,
   __woLastSeq=0;
   /* HMAC-SHA256 over UTF-8 text, in plain JS. crypto.subtle is absent on http: pages and
@@ -943,15 +861,8 @@
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
     const U8=Uint8Array,U32=Uint32Array,D="0123456789abcdef";
-    /* This code runs in the page's own world, where the page can replace any built-in method after
-       load. So nothing that touches the key calls one. The key becomes its two HMAC pad blocks ONCE,
-       in key(), at the document_start hand-off before any page script exists; after that a
-       signature is index reads and arithmetic on typed arrays -- no .set, .subarray, .length,
-       substr, parseInt or toString -- each of which a page could replace to be handed the key: a
-       patched String.prototype.substr, Uint8Array.prototype.set or typed-array length getter each
-       recovered the whole key from one signature (tools/test-main-world-key-isolation.js). The
-       message text is not secret; a page that tampers with how it is read only spoils its own
-       signature, which it could already do by stopping the event. */
+    /* Derive HMAC pads before page scripts run. Signing must not call replaceable built-ins with key data;
+       a patched string/typed-array method could otherwise capture the key. Message data is not secret. */
     function encode(text){
       const s=String(text),out=new U8(3*s.length+3);
       let n=0;
@@ -1117,15 +1028,9 @@
     m.rmac=__woAuth.hmac(__woKey,"bg-request\n"+__woRequestSeq+"\n"+__woAuth.canon(message,0));
     return m
   }
-  /* The engine believes a wo-event only when it is signed: the notice card, the page badge and
-     the risk score all read this bus, and a page can dispatch on it. One number per sender only
-     moves forward; the same event seen again by the next listener is the same event. The
-     WeakMap methods and Reflect.apply are taken now, before the page can replace them.
-     The event, not its detail, is what the next listener sees again. An event the bridge
-     dispatches from its own world hands every listener here a fresh copy of the detail, so
-     keyed on the detail the risk score's listener spent the number and the notice card's
-     listener refused the same event as a replay: no worker notice -- a popup the worker
-     closed, a frame's blocked redirect, a manual check's answer -- ever drew its card. */
+  /* Cache authentication by Event identity, not detail: cross-world detail is copied for each listener.
+     All listeners must accept the same signed event without spending its sequence twice.
+     Capture WeakMap methods and Reflect.apply before page code can replace them. */
   const __woEventLast=Object.create(null),
   __woEventAccepted=new WeakMap,
   __woWeakGet=WeakMap.prototype.get,
@@ -1574,19 +1479,8 @@
       }
 
     }
-    /* The engine's authoritative config. This used to BE window.__WO_CONFIG__ on every site except
-       Amazon and YouTube, which take derived copies and were insulated by accident -- so the page,
-       which shares this world, could switch the running engine off with
-       Object.assign(window.__WO_CONFIG__,{enabled:!1}). It is a private object now, refreshed FROM
-       the global rather than being it.
-
-       Refreshed IN PLACE and never reassigned. WO is a const captured by closures throughout this
-       file; replacing the binding would leave every one of them reading the object they already
-       captured. Copying into the same object preserves identity, and preserves the live-update
-       behaviour the runtime genuinely depends on: the start path has a 1500ms fallback that fires
-       whether or not the config has arrived, so a plain snapshot taken at bind time would freeze
-       the placeholder defaults on exactly the slow tabs least able to report it. That is why the
-       obvious fix -- Object.assign({},cfg) -- would have been worse than the bug. */
+    /* The engine's authoritative config. Refresh in place: runtime closures retain this object.
+       Replacing it would strand listeners on defaults when the fallback starts before config arrives. */
     /* Pause only named protections that can disrupt YouTube playback or UI.
        Keep the popup disclosure in sync; tools/test-youtube-compat.js checks it. */
     const YT_COMPAT_PAUSED=[
@@ -1627,15 +1521,9 @@
        Page-level security checks remain active outside the manifest's login routes. */
     HOSTED_APP_COMPAT_HOST=/^(?:(?:docs|drive)\.google\.com|(?:[a-z0-9-]+\.)*(?:okta|auth0|onelogin|duosecurity|pingone|b2clogin|ciamlogin|amazoncognito|shopify)\.com)$/i,
     HOSTED_APP_COMPAT_PAUSED=["removeOverlays","autoRejectConsent","antiFingerprintNoise","antiFingerprint"],
-    /* University and school sites, by suffix. The manifest used to keep the whole engine off every
-    page under these, which left them without phishing, skimmer, scam-lock and form-trap checks. It
-    now runs there with these named protections paused. Each can break signing in, a class or an
-    exam: sign-in runs through redirects, posted forms and pop-up windows between the university,
-    its identity provider and its course tools; classes, exams and proctoring use the camera,
-    microphone, screen, location and full screen; and course tools sit in frames. The fingerprint
-    realm stays out of these sites in the manifest, because identity providers read browser signals
-    to decide when to ask for a second sign-in step. The reader is told in popup.js
-    (SITE_DASH_EDU_PAUSED), and tools/test-education-compat.js keeps the two lists in step. */
+    /* Pause these guards on education sites for login, exam and proctoring flows; keep the rest running.
+       Fingerprint realms remain excluded in the manifest to avoid identity-provider challenges.
+       Keep this list aligned with SITE_DASH_EDU_PAUSED via test-education-compat.js. */
     EDU_COMPAT_HOST=/(^|\.)(edu|edu\.au|edu\.sg|edu\.hk|ac\.uk|ac\.nz|ac\.za|ac\.in|ucas\.com)$/i,
     EDU_COMPAT_PAUSED=[
       /* Sign-in prompts and course notices look like overlays and banners. */
@@ -1705,11 +1593,8 @@
         __woRealmRecord=Object.freeze(Object.assign({},__woRealmRecord,{webglBlocked:!0===next.webglDisabled})),
         __woRealmSettled()
       }
-      /* No "protection is on" marker on window any more. __wardenOneReadyVersion means "the
-      script ran" and is stamped unconditionally (the watchdog must not loop on a paused
-      site); the marker that once carried masterOn beside it (BUG-01) had no reader left --
-      the bridge's signed challenge is the health authority (SEC-03) -- and a page-visible
-      boolean that nothing consults is only a detection handle (SEC-12). */
+      /* The public ready version means the script ran, including on paused sites.
+         Only the signed bridge challenge establishes health; do not publish an unused protection boolean. */
     },
     __woConfigBound=(()=>{
       __woSyncConfig();
@@ -1734,37 +1619,15 @@
        click bait there. Keep this separate from trustedMediaHost: Discord still
        needs its other protections, including link and request checks. */
     discordAppHost=/^(?:discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)$/i.test(location.hostname),
-    /* Assistant surfaces, where the page text is a conversation the user is
-       having rather than the page talking to them. Asking an assistant about
-       tech-support scams or about ClickFix produces a page whose text contains
-       every trigger phrase, which is how a WardenOne scam-lock ended up over a
-       chat about WardenOne's own scam detection. These are first-party origins:
-       chatgpt.com is never itself running the scam, so the page-text heuristics
-       have nothing to find here. Clipboard writes are still watched, because
-       those are an action rather than something somebody said. */
+    /* Assistant conversations can quote scam instructions, so skip page-text heuristics on exact hosts.
+       Clipboard actions remain checked. */
     conversationHost=/(^|\.)(chatgpt\.com|openai\.com|claude\.ai|anthropic\.com|gemini\.google\.com|bard\.google\.com|aistudio\.google\.com|perplexity\.ai|copilot\.microsoft\.com|poe\.com|grok\.com|deepseek\.com|mistral\.ai|huggingface\.co)$/i.test(location.hostname),
-    /* A search engine's own pages, where the text is excerpts of other pages picked because they
-       match what was typed into the box. Searching how to run sfc /scannow fills the results with
-       "open Command Prompt, type sfc /scannow, press Enter"; searching for a tech-support scam
-       fills them with the scam's own script. The page-text heuristics read that as the page
-       talking to the reader and put ClickFix, scam and fake-update warnings over an ordinary search. Like
-       conversationHost, the engine is never itself the scam, and clipboard writes are still read,
-       because a copy is an action rather than a quotation.
-       Hoisted from the adult gate, which kept its own copy of this list, so there is one. That copy
-       matched google\.[a-z.]+ -- the label anchored, the suffix not -- so google.attacker.com passed,
-       and an exemption is only as narrow as its host test. Only the engines' own hosts count here:
-       sites.google.com and the like serve other people's pages. */
+    /* Search snippets can quote scam instructions, so skip page-text heuristics on exact search hosts.
+       Clipboard actions remain checked. User-content hosts such as sites.google.com are not exempt. */
     searchResultsHost=/^(?:www\.)?(?:google\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})|bing\.com|(?:html\.|lite\.)?duckduckgo\.com|search\.brave\.com|(?:[a-z]{2}\.)?search\.yahoo\.(?:com|co\.jp)|ecosia\.org|startpage\.com|mojeek\.com|qwant\.com|kagi\.com|yandex\.(?:com|[a-z]{2}|com\.[a-z]{2})|baidu\.com|search\.marginalia\.nu)$/i.test(location.hostname),
     regDomain=h=>String(h||"").replace(/^www\./,
     "").toLowerCase(),
-    /* The first `cap` characters of the page's text, in document order.
-       This used to be document.body.textContent.slice(0,cap), which builds the
-       WHOLE page as one string and then throws away everything past the cap. On
-       a YouTube watch page that string is 1.23 MB and costs 2.58ms, and the
-       scanners that want it run about once a second for as long as the page is
-       open -- so it was 1.2 MB of garbage a second to read the first 20 KB.
-       Walking text nodes and stopping once the cap is reached returns a
-       byte-identical string: measured on that same page, 2.581ms -> 0.001ms. */
+    /* Stop walking text nodes at the cap instead of allocating the whole page’s text on every scan. */
     /* Run something when the browser has slack, but never later than `timeout`.
        The periodic cosmetic sweeps are not urgent -- the stylesheet has already
        hidden what they hide -- but a 0.7ms scan landing inside a frame is what
@@ -1803,22 +1666,9 @@
       }
 
     },
-    /* One scheduler for the three page-text detectors -- Scam Lock, ClickFix and Fake Update
-       (PERF-03). Each used to turn every mutation batch into a page-wide pass of its own: debounced,
-       then forced through idle with a timeout, for the life of the document, with no notion of
-       whether the batch carried anything worth reading. A continuously changing page paid about
-       three whole-page passes a second indefinitely, and ClickFix's pass reads body.innerText, which
-       forces layout. Four rules now stand between a mutation and a pass. Relevance: the text a batch
-       actually added -- each added element's text, and the enclosing block of each added text node,
-       capped -- is tested against the detector's own cheap patterns, and a batch that adds nothing
-       the detector could act on schedules nothing. Change: a pass that finds nothing remembers a
-       signature of the page snapshot and of the text that triggered it, and the same signature is
-       not read twice. Backoff: repeated negative passes on the same kind of token double their
-       spacing, up to thirty seconds; a new kind of token, a route change or the tab becoming visible
-       again brings the base cadence straight back. Presence: a hidden tab defers its passes until it
-       is looked at. The clipboard and user-action paths do not come through here and stay immediate,
-       as they must. Each detector's load-time pass still runs at once, through the same bookkeeping,
-       so the first mutation after load does not repeat it. */
+    /* One scheduler for the three page-text detectors: Scam Lock, ClickFix and Fake Update (PERF-03).
+       Filter irrelevant mutations, skip unchanged negatives, back off repeated tokens and defer hidden tabs.
+       New tokens, route changes and visibility restore the base cadence; user actions stay immediate. */
     __woTextScan=(()=>{
       const consumers=[],
       SNAPSHOT_CAP=2e4,
@@ -2806,19 +2656,8 @@
       parent.appendChild(b),
       b
     },
-    /* The focus ring, painted inline rather than declared in a stylesheet.
-
-       buildOverlay resets the host with `all:initial!important` and oBtn resets each button with
-       `all:unset!important`, both in the style attribute, to strip whatever CSS the page has. That
-       takes the focus ring with it, so a keyboard user cannot see which action is selected. The
-       obvious repair -- a `:focus-visible` rule in a stylesheet we inject -- does not work, and it
-       is not a specificity problem to out-specify: an important declaration in a style attribute
-       beats an important rule from any stylesheet. Measured in Chromium, every button still
-       computed to `outline-style:none`, so the ring never drew.
-
-       Setting the property inline puts it in the same declaration block as the reset, where the
-       later declaration wins. An outline in currentColor is what forced-colors mode honours; a
-       coloured box-shadow is discarded there. */
+    /* Apply focus outlines inline: the host/button resets use inline !important declarations.
+       A stylesheet cannot override them. Use currentColor so forced-colors mode keeps the outline. */
     woFocusRing=host=>{
       let painted=null;
       const drop=()=>{
@@ -3005,15 +2844,8 @@
       }
 
     },
-    /* The blocker's stylesheet may only exist while its overlay does.
-       That stylesheet hides every element on the page and paints the body near-black, so on its
-       own it is a black screen with nothing on it and no way back. It could be left that way two
-       ways. The self-heal runs on requestAnimationFrame, and disconnecting the observer does not
-       cancel a frame that is already queued -- so a callback landing just after teardown saw both
-       the overlay and the style missing and put the style back. And ensureOverlay swallows a throw
-       from paint, so a failed repaint left the style standing on its own.
-       Both are closed here: teardown marks the mount gone and cancels the pending frame, and any
-       repaint that does not end with the overlay present takes the style back down with it. */
+    /* The blocker stylesheet must never outlive its overlay, or it leaves an inescapable black page.
+       Cancel queued self-heal frames during teardown and remove the style after a failed repaint. */
     mountBlocker=(id,
     paint)=>{
       let gone=!1,
@@ -3098,11 +2930,7 @@
       catch(_){
 
       }
-      /* There used to be a setTimeout(...,1e4) here that disconnected the observer ten seconds
-         after mount, whatever had happened. A phishing page did not need to race anything: it
-         waited, then removed the overlay once. The guard cannot have a shorter life than the
-         thing it guards, so it now lives exactly as long as the blocker does -- which is what
-         bridge.js's woOwnedOverlay already does through domWatch, with no cap and no timer. */
+      /* Keep self-healing active for the blocker’s full lifetime; a timeout would let hostile pages remove it later. */
       return()=>{
         gone=!0;
         if(scheduled){
@@ -3171,11 +2999,7 @@
            on the search engine, before going anywhere. And "take me back" from a results page
            lands on the engine's home page, which is what that looked like from the outside. */
         const onSearchResults=searchResultsHost;
-        /* The title corroborates the domain; it never decides on its own. It was worth the whole
-           threshold by itself, so ANY page whose title carried one of these words was gated -- a
-           results page, a news article about the industry, a forum thread discussing it. The
-           domain is the signal. A suggestive domain plus an explicit title still reaches the bar
-           together, which is the case this was for. */
+        /* A suggestive title only corroborates domain evidence; search/news titles alone must not reach the gate. */
         score>0&&(score+=checkTitle()),
         onSearchResults||(score>=4?heuristicHit=!0:score>=1&&woOn(document,"DOMContentLoaded",
         ()=>{
@@ -3347,22 +3171,7 @@
       return out
     }
     /* ---- hyperlink auditing --------------------------------------------------
-    <a ping="https://tracker.example/click"> makes the browser send a request to
-    that URL when the link is clicked. The link still goes where it says it goes;
-    the ping is a separate beacon nobody asked for, and there is no way to see it
-    happen from the page.
-
-    It is removed unconditionally, which is safe in a way almost nothing else here
-    is: ping carries no part of the navigation. The click is driven entirely by
-    href, no response is ever read, and the page cannot observe whether the beacon
-    fired. Removing it can therefore lose a site its click analytics and cannot
-    lose the reader anything.
-
-    Filtering it at the network layer was already possible and is already done --
-    resource type "ping" is in TRACKER_RESOURCE_TYPES and SECURITY_RESOURCE_TYPES,
-    so a ping AT A LISTED DESTINATION is dropped. That is the part a blocklist can
-    reach. This closes the rest: a ping to the site's own domain, or to any host no
-    list has ever heard of, which is most of them. */
+       Remove ping independently of destination lists: href drives navigation and ping only sends a beacon. */
     let pingStripCount=0;
     const stripPingAttr=el=>{
       try{
@@ -3423,19 +3232,8 @@
     catch(_){
 
     }
-    /* The sweep above sees ping attributes that are in the markup. It cannot see one
-    ADDED to a link that already exists, because the shared observer's narrow
-    attribute filter excludes ping. Watching all attributes across the document
-    made dragging a volume slider cost a full scan every frame.
-
-    So the other half is caught at the click instead. Two listeners, because the last
-    one to run wins: a page that re-adds ping from its own mousedown handler runs after
-    the capture pass on mousedown, and click capture is the final point before Chrome
-    reads the attribute and sends the beacon.
-
-    Cheap on purpose. closest() is a walk up the tree with no measurement in it, and
-    these fire on real clicks rather than on movement -- this file already learned what
-    a forced layout on a pointer path costs. */
+    /* Catch late ping attributes at mousedown and click capture without observing all attributes.
+       The click pass removes values re-added by page mousedown handlers before Chrome sends the ping. */
     try{
       const stripPingOnClick=e=>{
         try{
@@ -3959,17 +3757,8 @@
         }
 
       }
-      /* sendBeacon is where the tracking pixel went. Checking three ad-heavy pages
-      turned up not one 1x1 image between them -- the technique is gone -- while a
-      single news front page fired fourteen beacons, to doubleclick and to an
-      Akamai RUM endpoint among others.
-      Those two are on the filter lists and never reach the network. This is about
-      the ones that are on NO list: they leave silently and, until now, left no
-      trace anywhere, so there was no way to find out it had happened. Recorded
-      only, never blocked, and deliberately quiet -- fourteen cards for one page
-      view would be unusable, and none of this is a decision the user has to make.
-      One entry per destination per page, capped, so a page that beacons in a loop
-      cannot flood the log. */
+      /* Record beacon attempts without blocking or toasts. Deduplicate per destination per page and cap
+         the log so a beacon loop cannot flood it; listed destinations are handled by network rules. */
       if(navigator.sendBeacon){
         const realBeacon=navigator.sendBeacon.bind(navigator),
         beaconSeen=new Set;
@@ -4195,14 +3984,8 @@
       "trib.al",
       "shor.by"],
       LOGGER_API_PATHS=/\/(log|logs|track|tracker|tracking|visit|capture|collect|hit|beacon|pixel|api\/log|api\/track|api\/collect)(\/|$|\?)/i,
-      /* Analytics endpoints the network rules already block outright. Warning about these is
-         noise of the worst kind: the request never reached them, so the popup describes
-         something that did not happen and teaches the user that WardenOne cries wolf.
-         The detector hooks fetch/XHR in the page, which sees the ATTEMPT -- declarativeNetRequest
-         kills the request itself, and the two never talk to each other. So this list has to say
-         which destinations are already handled. Kept in step with rules-trackers.json.
-         Only skipped while tracker blocking is actually on: with it off nothing stops these, and
-         the warning is the only thing the user would get. */
+      /* Suppress warnings for destinations already covered by enabled tracker rules.
+         Page hooks see attempts before DNR blocks them. Keep this list aligned with rules-trackers.json. */
       ALREADY_BLOCKED_TRACKERS=/(^|\.)(google-analytics|analytics\.google|googletagmanager|doubleclick|g\.doubleclick|heapanalytics|hs-analytics|scorecardresearch|quantserve|mixpanel|amplitude|segment|fullstory|hotjar|mouseflow|crazyegg|luckyorange|inspectlet|chartbeat|matomo|clarity\.ms|bat\.bing|branch\.io|adjust|appsflyer|kochava|clevertap|newrelic|nr-data|bugsnag|sentry|datadoghq|logrocket|smartlook|yandex\.(ru|com)|mc\.yandex)\./i,
       regDom=regDomain,
       u2=s=>{
@@ -5177,15 +4960,8 @@
     if(WO.antiClickjacking)try{
       const warnedClick=new WeakSet,
       SENSITIVE_CLICK=/\b(log\s?in|sign\s?in|password|checkout|pay|buy|transfer|authorize|allow|approve|connect|wallet|seed|download|install|submit|continue|verify)\b/i,
-      /* textContent, never innerText. innerText is layout-dependent: reading it
-      forces a synchronous style and layout flush. This runs on EVERY click on
-      anything button-shaped, and it runs BEFORE the cheap SENSITIVE_CLICK test that
-      rejects almost all of them -- so the expensive half was paid first, every time,
-      to answer a question the next line usually discards. Measured on Spotify as part
-      of a 384ms interaction, 167ms of it inside handlers.
-      textContent needs no layout and carries the same words this pattern looks for.
-      It also sees text that innerText hides, which for a clickjacking check reads the
-      right way round: the covered control is the one worth noticing. */
+      /* Use textContent on this click path to avoid innerText’s synchronous layout flush.
+         Hidden control text is also relevant to clickjacking. */
       clickText=el=>{
         try{
           return((el.textContent||"")+" "+(el.value||"")+" "+(el.getAttribute&&el.getAttribute("aria-label")||"")+" "+(el.id||"")+" "+(el.className||"")).replace(/\s+/g,
@@ -5268,20 +5044,8 @@
         error:String(e)
       })
     }
-    /* The third-party-cookie blocker and the supercookie sweep that used to sit
-       here were both gated on being inside a cross-origin subframe, in an engine
-       the manifest injects with all_frames:false -- so neither could ever run.
-       Both now live in anti-redirect.js, which is the MAIN-world script that
-       does reach every frame, and are covered by tools/test-tracker-frame-guard.js.
-       Removed rather than left annotated: an untested second copy that cannot
-       run is not a reference implementation, it is something to keep in step
-       with for no benefit.
-
-       The flag below outlives them on purpose. SessionShield's storage watcher
-       reads it further down to avoid wrapping document.cookie twice, and with
-       nothing left to set it the answer is simply always "not wrapped" -- which
-       is true. Deleting it would turn that read into a ReferenceError swallowed
-       by a try/catch, taking the watcher down silently. */
+    /* Frame cookie guards live in anti-redirect.js because this engine runs only in the top frame.
+       Retain the wrapper flag for SessionShield’s later cookie check. */
     let cookieBlockerInstalled=!1;
     if(WO.sessionShield)try{
       const mask=v=>(v=String(v||"")).length<=12?"****":v.slice(0,
@@ -5519,14 +5283,8 @@
         "arkoselabs.com",
         "funcaptcha.com",
         "gravatar.com",
-        /* Spotify is a public OAuth API that third-party apps are built on, exactly
-        like YouTube and Google above -- and leaving it out meant those apps were
-        singled out. A page holding a Spotify access token and calling Spotify with it
-        is the token going home, not leaving. Reported twice: Discord never showing
-        "Listening to Spotify", and Exportify hanging forever after login because the
-        playlist fetch was dropped, so there was never anything to build a CSV from.
-        A per-app family entry would have fixed one site and left every other Spotify
-        app broken, which is why this belongs here and not there. */
+        /* Spotify’s public OAuth API accepts third-party apps’ access tokens. Treat those calls as
+           tokens returning to their issuer rather than requiring an exception for each app. */
         "spotify.com",
         "scdn.co",
         "spotifycdn.com"],
@@ -5941,14 +5699,9 @@
         }
 
       },
-      /* LINKS A SERVER HANDED OUT: the top-frame half of credentialFrameNoteIssued in
-         anti-redirect.js, which explains it in full. A streaming player loads its signed
-         playlists and segments (master.m3u8?token=...) with fetch/XHR. Such a link goes
-         through because a server handed that exact link to this page in a response the page
-         read, never because of how it looks: the path must match, and every token-like value
-         in its query must be in the link that was handed out. http(s) responses only, and a
-         same-site response that merely echoes its request hands nothing out. Only responses
-         that mention a token-like parameter are looked at in any detail. */
+      /* LINKS A SERVER HANDED OUT: share anti-redirect.js’s signed-media URL policy.
+         Require the exact issued path and all token-like query values; accept only readable HTTP(S) responses.
+         A same-site response echoing its request does not issue a credential. */
       ISSUED_LIMIT=3000,
       ISSUED_SCAN_MAX=2097152,
       ISSUED_HINT=/(?:[?&#;]|\\u0026|&amp;)[A-Za-z0-9_.-]{0,40}(?:token|auth|sess|jwt|bearer|secret|credential|passw|key)[A-Za-z0-9_.-]{0,40}=|ey[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\./i,
@@ -8039,13 +7792,8 @@
          user messages can otherwise combine into a false browser-lock alert. */
       const SCAM_NEAR=600,
       SCAM_ORDINARY=/windows\s+(defender\s+)?security\s+(alert|center)|critical\s+(security\s+)?(alert|warning)\b|your\s+(data|files|identity)\s+(is|are|may be)\s+at\s+risk|do\s+not\s+(close|restart|shut\s?down|turn\s+off)\s+(this\s+)?(window|computer|pc|browser)|contact\s+(microsoft|apple|windows)\s+support|anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|remote\s+(access|assistance|desktop|support|control|connection)|enter\s+(this\s+|the\s+)?(code|key|pin)\b|(install|download|run)\s+(the\s+)?(support|remote|cleanup)\s+(tool|software|app)/gi,
-      /* The words are not the scam; the scam is what it gets the reader to do. A page that
-         describes the trick -- WardenOne's own feature list says it catches fake "your computer
-         is infected / locked -- call this number" pages -- carries the claim and the call in one
-         line and was locked as the scam it describes. So the claim and the call must come with
-         the means to act on them: a number to dial, a remote-access tool to hand a code to, or a
-         lock already in force. None of these can be had by copying text or markup without
-         giving up the scam itself, which is why no page-authored claim is asked about instead. */
+      /* Require actionable scam evidence with the claim: a dialable number, remote tool or active lock.
+         Descriptions of the scam can quote the same wording without offering a way to carry it out. */
       SCAM_PHONE=/(?:\+?1[-.\s]?)?\(?8(?:00|33|44|55|66|77|88)\)?[-.\s]?\d{3}[-.\s]?\d{4}\b|\+\d{1,3}[-.\s]?\(?\d{1,4}\)?(?:[-.\s]?\d{2,4}){2,4}\b/,
       SCAM_REMOTE_STEP=/(?:anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|screenconnect|rustdesk|(?:support|remote|cleanup)\s+(?:tool|software|app))[\s\S]{0,160}?\b(?:enter|type|give|read|share|tell|send)\b[^.\n]{0,60}?\b(?:code|id|pin|key|password)\b|\b(?:enter|type|give|read|share|tell|send)\b[^.\n]{0,60}?\b(?:code|id|pin|key|password)\b[\s\S]{0,160}?(?:anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|screenconnect|rustdesk)/i,
       /* Behaviour, read when asked: the page opened a dialog in the last minute, holds the
@@ -8166,27 +7914,12 @@
       CLICKFIX_HUMAN_VERIFICATION=/(?:verify|confirm|prove)(?:\s+that)?\s+you(?:'re|\s+are)?\s+(?:a\s+)?human|human\s+verification|complete\s+(?:the\s+)?captcha|(?:verify|confirm|prove)\s+(?:that\s+)?you(?:'re|\s+are)?\s+not\s+(?:a\s+)?robot|i(?:'m|\s+am)\s+not\s+a\s+robot/i,
       CLICKFIX_VERIFICATION_STEPS=/(?:security\s+)?verification\s+(?:step|steps|required)|complete\s+(?:the\s+)?verification/i,
       CLICKFIX_PASTE_GUIDANCE=/(?:copy|paste|type|enter)[^\n.]{0,100}(?:console|devtools|developer\s+tools|powershell|terminal|command\s+prompt|run\s+dialog)|(?:console|devtools|developer\s+tools|powershell|terminal|command\s+prompt|run\s+dialog)[^\n.]{0,100}(?:copy|paste|type|enter)|(?:press\s+)?(?:ctrl|control)\s*\+\s*v/i,
-      /* The step that makes it ClickFix rather than a how-to is the paste. The page has already put
-      the command on the clipboard, so the lure has to get it pasted into the Run box, a shell or the
-      console without the reader ever seeing it. A tutorial shows the command and says type it --
-      "press Win+R, type cmd", "open Command Prompt, type sfc /scannow and press Enter" -- and
-      CLICKFIX_PASTE_GUIDANCE counts "type" and "Enter" as guidance, so every one of those was warned
-      about as a scam. An instruction that is only text now needs this beside it: a paste keystroke,
-      or pasting into a shell or the console. */
+      /* Text-only ClickFix needs a paste instruction into a shell/console, not merely typing a command.
+         Tutorials commonly say to open a shell, type a command and press Enter. */
       CLICKFIX_PASTE_STEP=/\b(?:ctrl|control|cmd|command)\s*\+\s*v\b|⌘\s*\+?\s*v\b|\bpaste\b[^\n.]{0,100}\b(?:console|powershell|terminal|run\s+dialog|cmd|command\s+prompt)\b|\b(?:type|enter|paste)\s+["']?enable\s+pasting\b/i,
-      /* Where an install one-liner is the point of the page. WinUtil, SpotX and
-      every other script project put "run this in PowerShell" next to a
-      download-and-run command, which is the exact shape ClickFix uses -- so on
-      any host missing from this list the guard warned on the copy button of a
-      repo the user had deliberately navigated to.
-      This list is not a way past the guard. Fake human-verification wording
-      overrides it (clickfixDocsMayCorrelate), so the actual ClickFix pattern
-      still fires on every host here, github.com included.
-      Deliberately NOT here: github.io and gitlab.io. Those are public suffixes --
-      anyone gets a subdomain and serves arbitrary HTML from it, so trusting them
-      would hand every attacker a quiet host. The githubusercontent hosts are here
-      instead because they serve file content as plain text: there is no rendered
-      page to build a lure in. */
+      /* Install-command documentation may contain ClickFix-shaped instructions. Fake verification wording
+         still overrides these exceptions. Exclude github.io/gitlab.io: unrelated tenants serve HTML there;
+         raw-content hosts serve plain text and cannot render a lure. */
       CLICKFIX_DOC_HOST=/(^|\.)(developer\.mozilla\.org|developers\.google\.com|web\.dev|stackoverflow\.com|stackexchange\.com|github\.com|githubusercontent\.com|gitlab\.com|bitbucket\.org|codeberg\.org|sr\.ht|codepen\.io|codesandbox\.io|learn\.microsoft\.com|docs\.microsoft\.com|npmjs\.com|pypi\.org|crates\.io|pkg\.go\.dev|rubygems\.org|packagist\.org|nuget\.org|docs\.docker\.com|kubernetes\.io|go\.dev|rust-lang\.org|python\.org|nodejs\.org)$/i,
       normalizeClickfixText=text=>{
         let value=String(text||"");
@@ -8333,14 +8066,8 @@
       clickfixEvidenceNear=(left,
       right,
       limit)=>!!(left&&right&&Math.abs((left.index||0)-(right.index||0))<=limit),
-      /* Prose that describes the trick is not the trick. A lure presents its parts as
-      interface: a short heading or label ("Verify you are human", "I'm not a robot") and
-      short steps ("1. Press Win+R"). A page that explains ClickFix -- a security write-up,
-      a help page, this project's own README rendered on GitHub -- carries the same phrases
-      inside long paragraphs, usually in quotation marks, and was reported as the scam it
-      describes. innerText keeps one line per block, so the line a hit sits on is the block
-      it came from: a text-only warning needs that line short and the phrase unquoted. What
-      the page puts on the clipboard is judged by reading the command and needs no shape. */
+      /* Text-only lures need short, unquoted instructions; long quoted explanations are not lure UI.
+         Clipboard commands are judged directly and do not need this text shape. */
       clickfixLineOf=(text,
       index)=>{
         const value=String(text||""),
@@ -8610,12 +8337,7 @@
           btn.textContent="Got it, I won't paste it",
           btn.addEventListener("click",
           ()=>{
-            /* Dismissing used to remove the node and nothing else, so the next
-               scan -- often the one triggered by this very panel's own text --
-               built it straight back. Reading the warning is an answer; repeating
-               it is nagging. Recorded at the dismissed level so a genuinely worse
-               signal can still get through, because that is new information
-               rather than the same warning again. */
+            /* Remember dismissal at its evidence level so repeated scans stay quiet while stronger findings can warn. */
             clickfixDismissedLevel=Math.max(clickfixDismissedLevel,
             level);
             try{
@@ -8988,15 +8710,8 @@
         error:String(e)
       })
     }
-    /* Insecure sign-in guard.
-       Paste protection already warned about PASTING a secret into an http page,
-       but typing a password got nothing at all -- which is how almost everyone
-       enters one. The browser's own "Not secure" chip is easy to miss and says
-       nothing about what is at stake, so this says it plainly, at the moment the
-       field is focused and before a single character is typed.
-       Two situations, and the second is the nastier one because the padlock is
-       showing: the page itself is http, or the page is https but the form posts
-       to an http URL, so the credential is downgraded on submit. */
+    /* Warn on password focus for HTTP pages and HTTPS forms posting to HTTP.
+       Paste checks alone miss typed credentials. */
     if(WO.insecureLoginGuard!==!1)try{
       const host=String(location.hostname||"").toLowerCase(),
       /* A router, NAS or printer on the LAN is reached over http because there
@@ -9947,11 +9662,8 @@
       },
       initialPw=new Set(document.querySelectorAll('input[type="password"]'));
       initialPw.forEach(notePasswordUi);
-      /* What the reader actually typed into. Only trusted events count -- a script
-      dispatching its own keydown to look like a person is exactly the thing this is
-      here to see through. beforeinput covers paste and dictation, which are typing as
-      far as the reader is concerned. Both fire only while someone is entering text,
-      and do nothing but add to a WeakSet. */
+      /* Count only trusted key/beforeinput events as text entry; synthetic key events prove no user presence.
+         beforeinput also covers paste and dictation. */
       for(const ev of["keydown","beforeinput"])woOn(document,
       ev,
       e=>{
@@ -10593,13 +10305,8 @@
           rem:rem,
           req:req
         });
-        /* The hook goes on once. Every additional filter for this host adds a rule to the
-           list the single wrapper walks -- it used to wrap JSON.parse again, around the
-           previous wrapper, so the cost of parsing multiplied by the number of matching
-           filter rules. Multiple json-prune rules per host are ordinary in real lists.
-           The rule list is its own flag: reaching here with more than one rule means the
-           first call already installed the hook. A separate boolean would have had to live
-           in this const chain, where it could not be reassigned. */
+        /* Install one JSON.parse wrapper and append prune rules to its list. Multiple filters for one host
+           must not stack wrappers or multiply parsing cost. */
         if(scJsonPruneRules.length>1)return;
         const realParse=JSON.parse;
         JSON.parse=function(){
@@ -11191,16 +10898,8 @@
                   if(!structural&&!routeChanged)return void scheduleProcedural();
                   if(scriptletPlayerPage(routeChanged||structural&&!added.length)||structural&&adBatchAddsPlayer(added,
                   roots)){
-                    /* Coalesced, exactly as the ordinary-page branch below already
-                       does it. This called collapseLeftovers(document) directly on
-                       every mutation batch -- a whole-document nine-selector scan,
-                       unthrottled, on the one class of page that churns hardest.
-                       Measured on a live YouTube mix page (7832 elements): 0.71ms
-                       per batch, so ~21ms/s at 30 batches a second and ~71ms/s
-                       while a queue is rebuilding and the scrub tooltip is moving.
-                       The stylesheet injected above already hides these selectors;
-                       this pass only adds an inline style as belt and braces, so
-                       coalescing it to 250ms costs nothing visible. */
+                    /* Coalesce leftover scans to 250ms on churn-heavy video pages. The stylesheet already hides
+                       these selectors, so the inline fallback does not need to run for every mutation batch. */
                     adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):styleEl&&(styleEl.textContent=""),
                     procRules=[],
                     collapsePending||(collapsePending=!0,
@@ -11308,10 +11007,7 @@
       GOOGLE_AI_TARGET_SEL="#m-x-content",
       GOOGLE_CLEANUP_TARGET_SEL=GOOGLE_AI_TARGET_SEL+",[data-wo-google-search-cleaned]",
       GOOGLE_AI_SHELL_SEL=":is(.MjjYud,div[data-hveid],div[jscontroller],div[jsname],g-section-with-header,section,aside):has("+GOOGLE_AI_TARGET_SEL+"):not(:has(#rso,#search,#res,#center_col,"+GOOGLE_PAA_SEL+"))",
-      /* Host only, deliberately: SEARCH_IS_GOOGLE below also tests the PATH and is
-         evaluated once at start-up, so it cannot be used to gate the feature --
-         Google is an SPA and the path changes under it. This decides only "could
-         this site ever be a search results page", which is what the sweep needs. */
+      /* Gate by host, not the initial path: Google can navigate to results within the same SPA document. */
       SEARCH_CLEANUP_HOST=/(^|\.)google\.[a-z.]+$/i.test(location.hostname)||/^search\.brave\.com$/i.test(location.hostname),
       SEARCH_IS_GOOGLE="function"==typeof isGoogleSearchResults&&isGoogleSearchResults(),
       SEARCH_IS_BRAVE="function"==typeof isBraveSearchResults&&isBraveSearchResults(),
@@ -11800,16 +11496,8 @@
       };
       let googleCleanupStarted=!1;
       const maybeStartGoogleCleanup=()=>{
-        /* Nothing here can match anywhere but a Google or Brave results page --
-           the selectors are #tads, .commercial-unit-desktop-top and friends. It
-           was gated on the SETTINGS only, so with search cleanup switched on it
-           ran everywhere: googleCleanupSweep(document) is a whole-document scan
-           that fired every 250ms for its first 80 mutation batches on EVERY site,
-           then stopped for good. On a page that churns while it builds -- a
-           YouTube watch page -- that is a burst of pointless whole-document
-           scanning for the first several seconds after every load, which stops
-           on its own afterwards. Exactly the shape of "choppy right after a
-           reload, fine once it settles". */
+        /* Run this whole-document search cleanup only on Google/Brave results pages.
+           The settings toggle alone must not schedule it on unrelated sites. */
         if(googleCleanupStarted||!SEARCH_CLEANUP_HOST||!SEARCH_AI_ON&&!SEARCH_ADS_ON)return;
         googleCleanupStarted=!0,
         document.documentElement?startGoogleCleanup():woOn(document,"DOMContentLoaded",
@@ -12888,12 +12576,7 @@
       }
       const sweepMedia=root=>{
         try{
-          /* tameMedia returns on its first line once the reader has gestured, so
-             every node walked after that first click did nothing at all. On a
-             video page you gesture immediately and the page then keeps appending
-             nodes -- a mix queue appends them for as long as it plays -- so this
-             ran a four-selector subtree scan per added node, forever, for no
-             effect. Hoisted the way sweepDomLinks already gates itself. */
+          /* Skip subtree media scans after the first gesture, when tameMedia no longer acts. */
           if(userGestured)return;
           (root||document).querySelectorAll("video[autoplay],audio[autoplay],video,audio").forEach(tameMedia)
         }
@@ -13652,14 +13335,8 @@
     if(WO.behavioralScan||WO.xssBehaviorGuard||WO.fingerprintProbeDetection)try{
       const here=regDomain(location.hostname),
       fullHost=location.hostname.toLowerCase(),
-      /* Mainstream sites and the asset/CDN domains they load from. Baseline
-      behavioral scoring never runs ON these pages; XSS Behavior Guard may still
-      observe an exact executable reflection, but URL text alone scores nothing.
-      A request TO one of these domains is never counted as "phoning home". Matched on the registrable domain via
-      SITE_BOUNDARY.site(), NOT as a substring -- the old brand-substring regex
-      both missed the sites people actually use (x.com, reddit, linkedin ... all
-      scored as unknown) and let a lookalike like fake-google.com.evil pass as
-      trusted. */
+      /* Skip baseline scoring on these exact site boundaries and do not score their CDN requests as exfiltration.
+         XSS checks may still observe executable reflections; URL text alone is not evidence. */
       BEHAVE_REPUTABLE_SITES=new Set(["google.com",
       "google.co.uk",
       "googleapis.com",
@@ -14068,17 +13745,8 @@
         xssMessageDataGetterInstalled=!1,
         xssLocationKey="",
         xssWindowNameKey="";
-        /* The hot path is the sink side (PERF-11): every wrapped innerHTML, setAttribute, timer
-           or navigation call correlated its value with the mutable sources after the native call.
-           Three things keep that cheap without changing a verdict. The mutable-source refresh
-           re-registered the URL's parameters, path and window.name on every call, decoding and
-           shape-testing each; it now does so only when the URL or the name changed, or when a
-           static source was pushed out of the 96-entry list by message data (the flag below).
-           The analysis tests containment first -- no source text inside the value means no
-           correlation, whatever its shape -- and decodes the value only when it holds a
-           character that can decode. And a verdict is remembered per value, sink and filter
-           while the source set is unchanged (the generation below moves on every add or
-           remove), so a render loop that assigns one fragment repeatedly analyses it once. */
+        /* Cache sink verdicts by value/sink/filter until the source generation changes (PERF-11).
+           Refresh URL/name sources only when changed or evicted; test containment before decoding. */
         let xssSourceGeneration=0,
         xssStaticSourcesEvicted=!1,
         xssVerdictMemoGeneration=-1,
@@ -14668,10 +14336,7 @@
           }
           return out
         },
-        /* The executable fragments of a value, decoded and comparable, parsed once per sink call
-           and shared by every candidate the call tests: the two tokenisers behind
-           xssHtmlExecutionFragments are the cost of a matching value, and a URL with several
-           reflected parameters used to pay them once per parameter. */
+        /* Parse executable fragments once per sink call and share them across reflected-source candidates. */
         xssExecutableFragmentSamples=(raw,
         includeScriptContent)=>{
           const out=[];
@@ -14700,13 +14365,8 @@
           raw);
           if(memo.has(memoKey))return memo.get(memoKey);
           const verdict=(()=>{
-            /* Containment first. A value that holds no source text correlates with nothing,
-               whatever its shape, and that test is two linear passes and a native search per
-               source; the shape test that used to run first walks every tag. A value with no
-               percent, ampersand or plus cannot decode into anything it is not already, so its
-               variants are itself and the raw comparison is exact; otherwise the decoded
-               variants are consulted before giving up. The full filter below sees the same
-               samples it always did. */
+            /* Test containment before parsing shape. Decode only when percent, ampersand or plus can change
+               the value; otherwise raw comparison is sufficient. */
             const decodable=/[%&+]/.test(raw),
             comparableRaw=xssComparable(raw,
             65536),
@@ -16117,17 +15777,8 @@
         catch(_){
 
         }
-        /* Media capability enumeration.
-        Asking "can this device decode AV1 at 1080p" is an ordinary thing for a player to
-        do, and the answer is genuinely useful to it. Asking it forty times across every
-        codec, profile, resolution and framerate, in a burst, without ever playing
-        anything, is not a player -- it is building a vector out of the answers, because
-        which combinations a machine can decode smoothly says a good deal about its GPU
-        and its decode hardware.
-        So the SHAPE is what is measured, not the call. A burst is the signal: a real
-        player probes a handful and spreads them out, and this window is wide enough that
-        one never reaches the bar. Nothing is blocked and no answer is changed here --
-        normalising the answers is the noise block's job and its own switch. */
+        /* Record bursts of media-capability enumeration, not ordinary player probes.
+           This detector leaves answers unchanged; normalisation belongs to the separate noise setting. */
         try{
           const MEDIA_PROBE_BURST=12,
           MEDIA_PROBE_WINDOW_MS=1e4;
@@ -16175,10 +15826,7 @@
           "decodingInfo"),
           wrapMediaProbe(navigator.mediaCapabilities,
           "encodingInfo"));
-          /* WebCodecs is counted but never altered. isConfigSupported answers exactly one
-          thing -- whether the configuration works -- and that is the single field nothing
-          here may fake: a page told a codec is available will send it, and the video then
-          does not play. Detection is all this surface can honestly offer. */
+          /* Observe WebCodecs probes without changing isConfigSupported; a false capability answer can break playback. */
           for(const ctor of["VideoDecoder",
           "VideoEncoder",
           "AudioDecoder",
@@ -16490,14 +16138,7 @@
       const here=(location.hostname||"").replace(/^www\./,
       "").toLowerCase(),
       parts=here.split("."),
-      /* The registrable label, not "the second one from the right".
-         Counting labels has no idea what a public suffix is, so sony.co.uk
-         read as sld="co" -- and every brand check downstream then compared
-         "sony" against "co", decided the brand was only a SUBDOMAIN, and
-         called Sony's own UK site a Sony spoof. Same for wise.edu.au and
-         anything else under a two-part suffix. SITE_BOUNDARY.site already
-         knows the difference and is used for exactly this elsewhere in the
-         file; the detector was the one place still counting dots. */
+      /* Use the PSL-aware registrable label; counting labels would compare Sony against "co" on sony.co.uk. */
       siteHost=SITE_BOUNDARY.site(here),
       sld=(siteHost.split(".")[0]||here),
       subdomainLabels=parts.slice(0,
@@ -16692,17 +16333,8 @@
         else sld!==brand||isLegit(brand)||COMMON_WORD_BRANDS.has(brand)?parts.includes(brand)&&sld!==brand&&!isLegit(brand)?phishHit={
           brand:brand,
           kind:"subdomain-spoof",
-          /* A brand word somewhere to the left of the registrable domain is
-             the weakest of these signals, and it was the only one rated
-             high. It fires on apple.stackexchange.com, crypto.stanford.edu,
-             target.scene7.com and chase.pgatour.com -- ordinary sites whose
-             subdomain happens to be a word that is also a brand, which is
-             most short words. Nine of fifteen real hostnames tried came back
-             high on this rule alone.
-             It stays a warning, because occasionally it is right. It stops
-             being HIGH unless something corroborates it: a phishing word in
-             the host, or a registrable domain on a throwaway TLD. Real kit
-             like apple.secure-login.tk carries both and is unaffected. */
+          /* A brand-like subdomain alone is weak evidence. Require a phishing token or throwaway TLD
+             for high severity, since legitimate hosts also use common brand words. */
           confidence:hasPhishWord||onThrowawayTld?"high":"medium"
         }
         :sld!==brand&&sld.includes(brand)&&sld.length<=brand.length+20&&hasPhishWord&&(phishHit={
@@ -16847,11 +16479,8 @@
           "brand-in-name":"uses the name of",
           homograph:"uses look-alike characters to imitate"
         },
-        /* The lower-confidence sibling of the blocker above, and deliberately not a dialog: it
-           does not cover the page, does not demand an answer, and stealing focus into a bar the
-           reader did not ask for would be worse than saying nothing. role="alert" is what makes
-           a screen reader announce it as it arrives; the rest is a named close button and a
-           focus ring, because all:unset had stripped one and never replaced it. */
+        /* Use a non-modal alert bar for lower-confidence warnings. Announce it without stealing focus,
+           and restore the close button’s focus ring after all:unset. */
         showPhishBar=()=>{
           if(!document.documentElement||document.getElementById("rg-phish-bar"))return;
           const bar=document.createElement("div");
@@ -17140,15 +16769,8 @@
 
       }
       try{
-        /* getBoundingClientRect is the hottest DOM read on a video page -- a
-           player recomputes the scrub position from it on every mousemove -- and
-           this wrapper sits in front of every one of them. Building a string key
-           and hashing it four separate times cost far more than the noise is
-           worth: four string concatenations, four walks over ~25 characters, and
-           four generator closures per call. Seeding once from the four numbers
-           and drawing four values from that one generator is the same guarantee
-           -- deterministic for a given geometry, unpredictable across sessions,
-           since the session seed still goes in -- without touching a string. */
+        /* Seed once from geometry and draw four values without string allocations on this hot DOM read.
+           Keep results deterministic for a geometry within the session. */
         const rectSeed=(a,b,c,d)=>{
           let h=(_sk^2166136261)>>>0;
           h=Math.imul(h^(0|a*8192),
@@ -17575,17 +17197,8 @@
         defp(Screen.prototype,
         "isExtended",
         !1)),
-        /* The Window Management API answers that same question again in far more
-           detail: every attached display's size, position, label and scaling. A
-           permission sits in front of it, but a page that is granted one is handed
-           a layout close to unique.
-
-           Built from the same rounded numbers the Screen spoof above reports, so
-           the two cannot disagree -- one screen, at the size this browser already
-           claims. devicePixelRatio is deliberately the real one: nothing spoofs
-           window.devicePixelRatio, so inventing a value here would contradict a
-           number the page can read directly, and a contradiction is a sharper
-           identifier than the truth it replaced. */
+        /* Report the same rounded display size as Screen to avoid contradictory fingerprints.
+           Keep the real devicePixelRatio because the engine does not mask window.devicePixelRatio. */
         "function"==typeof window.getScreenDetails&&(window.getScreenDetails=cloak(function getScreenDetails(){
           const one={
             availLeft:0,
@@ -17626,19 +17239,8 @@
       catch(_){
 
       }
-      /* Local Font Access. queryLocalFonts() hands back every font installed on
-         the machine, by family and PostScript name. That list is not a hint, it
-         is close to an identifier on its own: it carries the operating system,
-         the office suite, the design tools, the language packs and whatever the
-         person installed by hand, and unlike a measured-width font probe it is
-         exact and cheap.
-
-         The refusal is a rejection rather than a short list, because the most
-         common real answer to this API is already a rejection -- it sits behind a
-         permission prompt most people decline. Returning a curated set of twenty
-         universal fonts would be a stranger answer than saying no: real machines
-         have hundreds, so a tidy list is itself a signature. The error and its
-         message are the ones Chrome produces when someone clicks Block. */
+      /* Deny Local Font Access with Chrome’s normal Block error. A small curated font list
+         would itself be distinctive and would not match typical installed-font counts. */
       try{
         "function"==typeof window.queryLocalFonts&&(window.queryLocalFonts=cloak(function queryLocalFonts(){
           return Promise.reject(new DOMException("Permission denied.","NotAllowedError"))
@@ -17647,14 +17249,7 @@
       catch(_){
 
       }
-      /* navigator.keyboard.getLayoutMap() reports what each physical key produces,
-         which is a direct read of the keyboard layout and therefore of country and
-         language. It needs no permission.
-
-         The answer is US QWERTY, because that is what the rest of the engine
-         already claims: navigator.language is masked to en-US and Header Shield
-         sends Accept-Language: en-US. A keyboard that disagreed with both would
-         be the contradiction this whole layer exists to avoid producing. */
+      /* Report US QWERTY to stay consistent with the masked en-US language and Accept-Language header. */
       try{
         const kbFp=navigator.keyboard;
         if(kbFp&&"function"==typeof kbFp.getLayoutMap){
@@ -17682,18 +17277,8 @@
       catch(_){
 
       }
-      /* speechSynthesis.getVoices() lists the installed text-to-speech voices.
-         The set is a fingerprint of the operating system, its version and every
-         language pack on the machine -- "Microsoft Hazel Desktop" says Windows
-         and says British English, without asking anything.
-
-         Filtered rather than emptied. An empty list breaks every page that reads
-         aloud, and it is also a conspicuous answer, since almost every real
-         browser has at least one voice. Keeping the ones that match the language
-         this browser already claims removes the language-pack signal while
-         leaving speech working in the locale the page was told about. If the
-         filter would empty the list, the original is returned -- a broken feature
-         is a worse outcome than a narrower one. */
+      /* Filter voices to the reported language, but retain the native list if that would empty it.
+         An empty result breaks speech playback and can itself identify the browser. */
       try{
         const synth=window.speechSynthesis;
         if(synth&&"function"==typeof synth.getVoices){
@@ -18471,19 +18056,9 @@
         error:String(e)
       })
     }
-    /* Media Shield's one decision for every route to the camera and microphone (COMPAT-01).
-       It used to be a hostname test: on any site not on the four-host media list, every
-       getUserMedia call was refused with a made-up NotAllowedError before Chrome's own prompt
-       could appear, so Teams, Discord, Zoom in the browser, voice recorders and document
-       scanners all failed, and blamed the OS permission. The switch's own copy promised
-       something else -- "a site that wants the microphone has to ask when you are actually
-       there" -- and this makes that true. Present (any trusted click or key in the last ten
-       seconds, generous because a call connects before it asks): the browser decides, with its
-       prompt, its indicator and its own denial. Nobody at the page: only a site the reader has
-       already allowed in Chrome may proceed, read through the permissions reference taken at
-       document_start so a page rewriting navigator.permissions.query cannot answer for the
-       browser; anything else is refused as before. Screen capture keeps its own, stricter rule
-       below: Chrome holds no standing grant for it, so presence is the whole test. */
+    /* Apply one Media Shield decision to all camera/mic routes (COMPAT-01). Recent trusted input
+       lets Chrome’s permission prompt decide; unattended calls need an existing browser grant.
+       Use the captured permission query. Screen capture has no standing grant and still requires presence. */
     const MEDIA_PRESENCE_MS=1e4,
     __woRealPermissionQuery=(()=>{
       try{
@@ -18704,11 +18279,8 @@
               "1"),
               "*");
               const tracks=stream.getTracks?stream.getTracks():[];
-              /* Asked, not awaited. stop() does not dispatch "ended", so a page ending its
-                 own capture never fired the listener this used to rely on, and Memory Shield
-                 went on treating the tab as busy for the rest of its life. The poll checks the
-                 tracks and clears itself the moment it reports inactive, so a page that is not
-                 capturing has nothing running. "ended" is still honoured as the fast path. */
+              /* Poll capture tracks until inactive because stop() emits no ended event.
+                 Retain ended as the fast path and clear the poll once recording stops. */
               const woMediaIdle=()=>{
                 try{
                   if(tracks.some(x=>"live"===x.readyState))return!1;
@@ -18921,22 +18493,9 @@
         error:String(e)
       })
     }
-    /* Speech recognition, which reaches the microphone without going through
-    getUserMedia -- so the whole of Media Shield above, which hooks getUserMedia, watched
-    it happen and said nothing. A page could listen while the guard reported silence.
-    That is worse than an uncovered API. "Block camera & microphone" is a promise about
-    the microphone, and there was a way to the microphone it did not cover, so the switch
-    was not telling the truth. This makes it true.
-    The second half is worth saying out loud: Chrome's implementation is not local. Audio
-    from the page's microphone is sent to a speech service to be transcribed, so this is
-    not only listening, it is listening somewhere else.
-    Refusing is done the way the browser refuses. start() returns nothing either way, so
-    a thrown error would break pages that never expected one; what a page DOES handle is
-    the denial it already gets when someone clicks Block -- an error event carrying
-    "not-allowed", then end. That path is already written on every site that uses this,
-    so refusing this way costs them nothing they have not already coded for.
-    Trusted media hosts are exempt exactly as they are for getUserMedia, and with the
-    switch off this only writes a line. */
+    /* Speech recognition, guarded alongside getUserMedia, can access the mic through a separate API.
+       Deny through the native not-allowed error/end events rather than throwing from start().
+       Chrome recognition may send audio to a speech service; trusted-media exemptions still apply. */
     if(WO.mediaShield)try{
       const SR_HOSTS=["SpeechRecognition",
       "webkitSpeechRecognition"];
@@ -19024,18 +18583,8 @@
     catch(_){
 
     }
-    /* Back-button trapping. A page pushes a history entry, then pushes another one
-    every time you press Back, so Back never leaves. Scam and "you have a virus"
-    pages do it to keep you where they put you.
-    Pushing history is not the tell -- every single-page app does it constantly. The
-    tell is pushing the SAME url you are already on, immediately after a popstate,
-    which is the moment Back fired and the only reason to re-arm. One of those could
-    be an app restoring a modal; a run of them is a trap, so the first is allowed and
-    every one after it is refused -- the page simply does not get to re-add the entry,
-    and Back works on the next press. Nothing already in your history is changed or
-    removed; unwinding someone's history from underneath them would be worse than the
-    trap, and is a different thing entirely from declining to add to it. A BFCache
-    restore can also replay the exact link that took the reader away. */
+    /* Back-button trapping. Detect repeated same-URL pushes after popstate; allow one for modal restoration,
+       then refuse re-arming without altering existing history. BFCache restores may also replay a URL. */
     if(WO.backTrapGuard&&WO_TOP)try{
       let btLastPop=0,
       btRearms=0,
@@ -19134,15 +18683,8 @@
           const wrapped=function(state,
           title,
           url){
-            /* Refuse rather than record. The trap is the page re-adding the address you
-            are already on the instant Back fires, so declining exactly that call is the
-            whole fix, and it touches nothing already in your history.
-            The decision has to be made BEFORE the real call, which is why the target is
-            resolved here rather than compared afterwards.
-            The first one is still allowed: a single re-add right after Back can be an app
-            restoring a modal, and that judgement is older than this refusal. From the
-            second onward it is a run, which no ordinary page produces, so Back starts
-            working again on the very next press. */
+            /* Resolve before calling the native method so repeated same-URL re-arming can be refused.
+               Allow the first post-Back push for apps restoring a modal. */
             try{
               const btNow=Date.now();
               /* A restored page may finish a stale AJAX request after Back. Refuse only
@@ -19235,18 +18777,7 @@
     catch(_){
 
     }
-    /* Three capabilities a page can reach for that nothing here could see. None is
-    blocked -- Chrome puts its own confirmation in front of each, and the payment
-    sheet in particular is something people genuinely use. What was missing was the
-    line in the log.
-    Payment sheet: the card guard watches card fields in forms and knew nothing
-    about the native sheet, which is a different path to the same place.
-    Idle detection: reports whether you are at the keyboard and whether the screen
-    is locked. It is presence tracking, and worth knowing about.
-    Install prompt: an installed site opens in its own window with no address bar,
-    which is the same missing-chrome problem as the two spoofing guards above -- so
-    a page that asks to install itself is worth a note, especially one you did not
-    go looking to install. */
+    /* Record payment sheets, idle detection and install prompts without blocking Chrome’s consent flow. */
     if(WO.capabilityGuard)try{
       let capLogged=0;
       const capNote=(type,
@@ -19376,38 +18907,13 @@
 
       },
       !0);
-      /* Registering a service worker. This is the one thing on the page that outlives the
-      page: once registered it stays, and from then on it sits in front of every request
-      the browser makes to this origin, on visits the page itself has nothing to do with.
-      That is also how a site works offline and how push arrives, so it is ordinary and
-      blocking it would break real applications -- but it is a foothold, and a script that
-      was compromised for an afternoon can leave one behind that lasts.
-      It is also the far side of a limit already written down here: a notification raised
-      from a worker's push event is created outside the page, where a content script cannot
-      reach it. The registration IS reachable, so at least the moment one is installed is
-      no longer invisible.
-      Scope is recorded as how much it covers, never as a path. "The whole site" and "part
-      of the site" is the difference worth knowing; the path itself would put a page you
-      visited into the log for nothing. */
+      /* Record service-worker registration without blocking offline apps or push.
+         Log scope breadth, not its path. Notifications created inside workers remain outside this hook. */
       capWrap("undefined"!=typeof navigator&&navigator.serviceWorker,
       "register",
       function(args){
-        /* Calling register() is not the same as installing anything.
-           The documented way to use a service worker is to call register() on
-           every page load; when a registration for that scope already exists the
-           call is a no-op that hands back the existing one. So a site that
-           installed a worker months ago calls register() again on every single
-           visit, and reporting the CALL said "this site installed a service
-           worker" every time -- on twitch, on github, on anything modern.
-           Checked rather than assumed: both of those come back with one
-           registration and the page already controlled, so nothing was being
-           installed on the visit that raised the warning.
-           controller is the synchronous answer to "was there already one":
-           it is non-null exactly when this page is already being served by a
-           worker for this origin, which cannot be true of a first install.
-           A hard reload is the one gap -- it starts the page uncontrolled even
-           though a registration exists -- and it is rare, deliberate, and worth
-           less than the race that reading the registration list would cost. */
+        /* register() can return an existing worker. A current controller distinguishes that from installation
+           without an async registration-list race. Hard reloads can be uncontrolled despite an existing worker. */
         let existing=!1;
         try{
           existing=!!(navigator&&navigator.serviceWorker&&navigator.serviceWorker.controller)
@@ -19427,14 +18933,7 @@
         }
         capNote("warned_service_worker",
         {
-          /* The site's own name. It was deliberately left out before, on the
-             reasoning that the script's address would put a visited page into
-             the log -- which is right about the PATH and wrong about the HOST.
-             Without it the warning reads "this site installed a service worker"
-             with no way to tell which one, and a worker outlives the tab, so by
-             the time anyone reads the entry the tab that caused it is gone. The
-             hostname is already recorded alongside every event as the tab URL;
-             naming it here costs nothing and makes the warning actionable. */
+          /* Include the host so an entry remains identifiable after its tab closes; omit the script path. */
           host:location.hostname,
           matched:whole?"whole site":"part of the site",
           /* The event still goes out when a worker was already there. It has to:
@@ -19457,31 +18956,11 @@
     catch(_){
 
     }
-    /* Push-notification abuse. The permission itself is already watched by
-    permission-chain.js, which records that a prompt happened and how it was
-    answered -- that wrapper is left alone here rather than stacked on. What it
-    cannot say is anything about the two halves that matter:
-    Before: the page coaxing the click. "Click Allow to continue", "Press Allow to
-    verify you are not a robot" -- the same trick as ClickFix, aimed at Chrome's own
-    prompt. That is the moment worth catching, because a permission never granted
-    cannot be abused later.
-    After: what actually arrives. "Your PC is infected", "(1) new message" -- OS-
-    looking alerts leading to scam pages, which is the whole reason the permission
-    is farmed in the first place.
-    Known limit, and it is a real one: a notification shown from a service worker's
-    push event is created in the worker, not the page, and a content script cannot
-    reach it. What is covered is everything the page itself raises. The wording of
-    the notification is never stored -- only which shape it matched. */
+    /* Detect permission bait and page-created scam notifications; permission-chain.js owns prompt tracking.
+       A notification from a service worker's push event is outside this hook; content scripts cannot reach it.
+       Store matched shapes, not notification text. */
     if(WO.notificationAbuseGuard&&!trustedMediaHost)try{
-      /* "Allow" as an INSTRUCTION, not as ordinary English. This scans the whole page
-      body, so a loose pattern accuses a site of being scam-shaped over a sentence its
-      author wrote in good faith -- which is exactly what happened: a creator page
-      reading "Contributions allow me to continue developing" was flagged as
-      notification bait, and "your donations allow us to continue our work" would have
-      flagged nearly every charity on the web. "allow <someone> to <do something>" is
-      prose; the bait form is an imperative aimed at a button. So a person object is
-      excluded, and the "allow us to continue" variant is gone entirely -- it was
-      matching the charity phrasing far more often than any scam. */
+      /* Match imperative Allow-button instructions, not prose such as "allow us to continue". */
       const NOTIF_COAX=/\b(?:click|press|tap|hit|select|choose)\s+(?:on\s+)?(?:the\s+)?["'\u201C\u2018]?allow["'\u201D\u2019]?\b|\ballow\s+(?:the\s+)?notifications?\s+(?:to|and|for)\b|\ballow\s+to\s+continue\b|\ballow\b(?!\s+(?:me|us|you|him|her|them|it|my|our|your|their|people|users|readers|creators|supporters|subscribers|members|visitors|customers|anyone|everyone)\b)[^.\n]{0,40}\b(?:to\s+continue|to\s+watch|to\s+download|to\s+proceed|if\s+you\s+are\s+not\s+a\s+robot)\b/i,
       NOTIF_SCAM=[[/\b(?:virus|malware|trojan|spyware|ransomware)\b[^.\n]{0,60}\b(?:detect|found|infect|remove|clean|scan)/i,
       "fake malware alert"],
@@ -19686,18 +19165,8 @@
     catch(_){
 
     }
-    /* WebUSB, Web Serial, WebHID and Web Bluetooth. These reach past the page and
-    talk to hardware: firmware, serial devices, raw HID -- which includes security
-    keys. The permission chain watched camera, microphone, notifications and
-    clipboard-read and knew nothing about any of them, so a site asking to speak to
-    a USB device left no trace anywhere in WardenOne.
-    Chrome puts a device chooser in front of each one and that chooser is the real
-    gate, so nothing here blocks: a hardware wallet, a board flasher and a stream
-    deck are all ordinary uses and refusing them would be wrong. What was missing
-    was the record. Two things get one: asking, and -- separately -- reading back a
-    device that was granted on some earlier visit, which needs no prompt at all and
-    is therefore the only part of this that can happen while you are not looking.
-    Never records what the device is. The count is the whole payload. */
+    /* Observe hardware chooser requests and previously granted-device results without blocking them.
+       Record counts only, never device identities; existing grants may be read without a new prompt. */
     if(WO.deviceAccessGuard)try{
       const DEV_SURFACES=[["usb",
       "USB",
@@ -19894,18 +19363,8 @@
 
       }
       /* ---- WebXR ------------------------------------------------------------
-      The rest of this family is "a page wants to talk to a thing plugged into your
-      computer". XR is a page wanting the room. An immersive session is handed head and
-      controller pose continuously, and on AR the headset has already mapped the space
-      it is tracking against -- which is a more intimate reading than any of the USB
-      devices above, however ordinary the game asking for it is.
-      Nothing is blocked. Chrome puts its own consent in front of an immersive session
-      and headsets are a legitimate thing people own. What was missing was the line.
-      requestSession is the loud half. isSessionSupported is the quiet half: it needs no
-      prompt, no session and no hardware interaction, and it answers whether there is a
-      headset attached -- so a page can ask it purely to learn something about you. As
-      with getDevices, the ANSWER decides: a false is a page finding nothing and there is
-      no story in it. */
+         Observe immersive requests and positive support results without replacing Chrome’s consent.
+         A false support result reveals no attached headset and needs no entry. */
       try{
         const xr="undefined"!=typeof navigator&&navigator.xr;
         if(xr){
@@ -19915,9 +19374,7 @@
             try{
               const m=String(mode||"inline"),
               api="immersive-ar"===m?"xr-immersive-ar":"immersive-vr"===m?"xr-immersive-vr":"xr-inline",
-              /* Which features, not what they returned. "hand-tracking" and
-              "unbounded" are the ones worth seeing named, and none of them says
-              anything about the room itself. */
+              /* Record requested XR feature names, never pose/room data. */
               feats=[].concat(init&&init.requiredFeatures||[],
               init&&init.optionalFeatures||[]).map(f=>String(f).slice(0,
               24)).slice(0,
@@ -19978,13 +19435,8 @@
 
       }
       /* ---- Web NFC ----------------------------------------------------------
-      Android only, and the tag has to be physically touched to the phone, so the reach
-      is small -- but it is a page reading and, more to the point, WRITING a physical
-      object you are carrying. A rewritten tag stays rewritten after the tab is closed,
-      and some tags can be locked read-only permanently, which is the one thing in this
-      whole family that cannot be undone by revoking a permission.
-      Wrapped on the prototype rather than the constructor: a page makes its own
-      NDEFReader, so there is no single instance to reach. */
+         Wrap NDEFReader.prototype because pages create their own instances. Writes can persist
+         after the tab closes, and making a tag read-only can be permanent. */
       try{
         const ndef="undefined"!=typeof NDEFReader&&NDEFReader.prototype;
         if(ndef){
@@ -20035,17 +19487,8 @@
 
       }
       /* ---- Gamepads ---------------------------------------------------------
-      The odd one out, and deliberately the quietest. Using a controller is not
-      suspicious and this never treats it as such. What is worth a line is that
-      gamepad.id carries the controller's model string, so a page that reads the list
-      learns something about your hardware -- and Chrome hands that over after a single
-      button press, with no prompt anywhere.
-      The COUNT is recorded and the model names never are. Writing the fingerprint into
-      the log to warn about the fingerprint would be a strange thing to do.
-      Noted only when the list actually contains a controller: an empty list is Chrome
-      declining to answer yet, and there is nothing in it to learn. Every real game polls
-      this once a frame, so the shared counter above -- three per api, per page -- is what
-      keeps a running game to a single line instead of thousands. */
+         Record only non-empty controller counts, never model IDs. The shared per-API cap prevents
+         frame-by-frame polling from flooding the log. */
       try{
         const realPads="undefined"!=typeof navigator&&navigator.getGamepads;
         "function"!=typeof realPads||realPads.__wardenoneDeviceGuard||(navigator.getGamepads=Object.assign(function(...args){
@@ -20080,23 +19523,8 @@
     catch(_){
 
     }
-    /* The File System Access API, which is the same story as the four above and was the
-    one thing in this family nothing watched. showDirectoryPicker hands a site read -- or
-    with mode readwrite, write -- over a whole folder tree on this machine, and the handle
-    survives: a site can keep it in IndexedDB and come back to it on a later visit. That is
-    a bigger reach than any of the device APIs already covered here, and "pick your
-    Downloads folder so we can scan it" is a shape scams already use.
-    Nothing is blocked, for the same reason nothing is blocked above: Chrome's own picker
-    is the real gate, and web editors, photo tools and IDEs use these properly every day.
-    Refusing them would break real work to prevent nothing Chrome was not already asking
-    about. What was missing was the line in the log.
-    Two things get one, and the second matters more. Asking is the loud case -- a picker
-    opens and you are looking at it. The quiet case is a site that already holds a granted
-    handle from an earlier visit: queryPermission answers "granted" and it can read or write
-    with no prompt at all, which is the only part of this that happens while you are not
-    looking. So the ANSWER decides there, not the call, exactly as with getDevices above.
-    The folder is never named. Which API, and read versus write, is the whole payload --
-    recording the path would put the thing being protected into the log. */
+    /* Observe file-system pickers and granted handle-permission results without blocking browser consent.
+       Existing handles can be reused without another prompt. Record API and access mode, never paths. */
     if(WO.deviceAccessGuard)try{
       const FS_PICKERS=[["showDirectoryPicker",
       "folder",
@@ -20211,20 +19639,9 @@
     catch(_){
 
     }
-    /* Browser-in-the-Browser. The page draws a window inside itself -- title bar,
-    close button, an address bar reading accounts.google.com -- and puts its own
-    sign-in form in it. No window ever opens, so nothing that watches window.open
-    sees anything; the popup blocker has nothing to block. It is the standard way
-    OAuth sign-in is phished, and WardenOne already guards the real provider pages
-    while having nothing to say about the fake ones.
-    What gives it away is a container drawn as a window whose title strip carries a
-    domain the page does not own. That alone is not enough -- online IDEs frame
-    their preview pane exactly like this, and design tools draw browser mockups --
-    so a place to type a password has to be inside the same container. That is the
-    whole point of the attack, so requiring it costs nothing and removes the two
-    biggest sources of noise outright. An embedded frame counts instead only when
-    the title strip names a real identity provider, which is the one case where the
-    form is out of reach in a child document. */
+    /* Browser-in-the-Browser. Require foreign window-like chrome plus a password field.
+       An embedded frame counts only with a known identity-provider title; its form may be inaccessible.
+       These checks avoid treating IDE previews and browser mockups as sign-in phishing. */
     if(WO.fakeWindowGuard&&WO_TOP&&!trustedMediaHost&&!/(^|\.)(codesandbox\.io|csb\.app|stackblitz\.com|codepen\.io|jsfiddle\.net|glitch\.me|replit\.com|repl\.co|figma\.com|webcontainer\.io)$/i.test(location.hostname))try{
       const FW_CONTROL=/[\u00D7\u2715\u2716\u2A2F]|[\u2212\u2013\u2014]|[\u25A1\u2610\u2B1C]|\u26AB|\u25CF\s*\u25CF/,
       FW_DOMAIN=/(?:https?:\/\/)?((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.){1,6}(?:com|net|org|io|co|dev|app|gov|edu|uk|de|fr|jp|cn|ru|br|in|au|ca|nl|se|no|es|it|pl|ch|be|at|dk|fi|cz|pt|gr|tr|kr|mx|ar|cl|za|nz|ie|il|sg|hk|tw|th|vn|id|my|ph))(?![a-z0-9-])/gi,
@@ -20460,12 +19877,8 @@
         }
 
       },
-      /* One full pass, then only what changed. The observer used to discard mutation
-      locality entirely: any childList change anywhere queued a fresh scan of every
-      div, section, dialog, aside and form in the document, and the 500 cap counted
-      CANDIDATES rather than layout reads -- so a page with ten thousand divs paid
-      ten thousand getBoundingClientRect calls per pass, up to forty passes, exactly
-      while the page was hydrating. */
+      /* Scan once initially, then only changed subtrees. Cap layout reads, not just matched candidates,
+         so a large hydrating page cannot force unbounded geometry checks. */
       fwScan=()=>{
         const roots=fwRoots;
         fwRoots=new Set;
@@ -20546,18 +19959,9 @@
     catch(_){
 
     }
-    /* Fullscreen phishing. The page takes the whole screen, paints its own browser
-    on top -- address bar, padlock, a domain it does not own -- and asks for a
-    password. Chrome's "press Esc" hint fades after a couple of seconds and the
-    attack is simply timed around it; once it is gone the fake chrome is the only
-    chrome on screen and there is nothing left to compare it against.
-    Warned, never blocked. Legitimate fullscreen is video, games, slide decks and
-    maps, and breaking those to catch this would be the worse trade by a distance.
-    The signal that actually separates the attack from a slide is a domain the page
-    does not own, drawn in the top strip of the screen: a real address bar cannot be
-    there, because the browser's is gone. That alone is not enough -- a presentation
-    can put a URL on a title slide -- so it has to arrive with either browser
-    furniture (a padlock, reload or back glyph) or somewhere to type a password. */
+    /* Warn on fullscreen browser impersonation without blocking video, games or presentations.
+       Require a foreign domain in the top strip plus browser controls or a password field; a URL alone
+       can be ordinary slide content. */
     if(WO.fullscreenGuard&&WO_TOP&&!trustedMediaHost)try{
       const FS_TOP_BAND=.18,
       FS_CHROME_GLYPH=/[\u{1F512}\u{1F513}\u{1F510}\u{1F50F}]|[\u2190\u2192\u21BA\u21BB\u27F2\u27F3]|\u2039|\u203A/u,
@@ -20865,9 +20269,7 @@
 
     }
     if(WO.removeOverlays&&!trustedMediaHost&&!discordAppHost&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WO.blockSearchAiAnswers||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup)){
-      /* Mutable on purpose: start() sets it and the observer timeout clears it. It used to sit
-         inside the const chain below, where the first assignment threw TypeError and aborted
-         engine start-up on every ordinary page, because removeOverlays is on by default. */
+      /* Keep this binding mutable: start and observer teardown assign it. */
       let cleanerMonitoring=!1;
       const NUISANCE=/(cookie|consent|gdpr|newsletter|subscribe|sign[\s-]?up for|mailing list|email list|ad ?block|adblock|disable your ad|whitelist|allow ads|notification|paywall|register to (read|continue)|create (a )?free account|allow notifications?|turn on notifications?|enable notifications?|click (the )?bell)/i,
       AD_SIGNAL=/(advertisement|sponsored|ad\s*choices|adchoices|download now|continue to (your )?(download|the site)|no thanks,? (i|continue)|skip ad|your download will (begin|start)|presented by)/i,
@@ -21205,22 +20607,8 @@
           smallBait=baitSignal&&r.width>=48&&r.height>=48,
           positioned="fixed"===pos||"sticky"===pos||"absolute"===pos,
           looksModal=positioned&&(z>=20||coversLots||isCentered||"dialog"===el.getAttribute("role")||"true"===el.getAttribute("aria-modal")),
-          /* Where the evidence came from matters as much as what it said.
-
-             blob is innerText plus the attributes plus class and id, and a word
-             in innerText says what a container is ABOUT, not what it IS. On a
-             site whose actual content is sponsored tournaments, one card reading
-             "Sponsored" made the entire content region match AD_SIGNAL -- and
-             because the header and both sidebars sit outside it, the region was
-             not wide enough to be caught by tooHuge. The page went blank with
-             its furniture still standing.
-
-             So for anything large, only STRUCTURAL evidence counts: a class, an
-             id, an aria-label, a test id. Those are the author naming the thing;
-             body text is the author writing about something. Small floating
-             widgets keep the text signal, because there the text IS the ad --
-             "Download now", "Allow notifications" -- and there is no article
-             underneath to lose. */
+          /* Require structural ad evidence for large containers; article text can merely discuss sponsorship.
+             Small floating widgets may still use text signals. */
           structuralBlob=attrs+" "+(el.className||"")+" "+(el.id||""),
           bigEnoughToMatter=r.width*r.height>=innerWidth*innerHeight*.15||r.height>=innerHeight*.5&&r.width>=160,
           adSignalHere=bigEnoughToMatter?AD_SIGNAL.test(structuralBlob):adSignal,
@@ -21995,14 +21383,7 @@
         },
         warned_service_worker:{
           title:"Installed a service worker",
-          /* Was the longest card on screen by a distance -- 74 words, near
-             eighteen seconds -- and it fires on a lot of ordinary sites, so it
-             was the one people watched sit there. Shortened by saying less
-             rather than by pinning a dwell under it: the pace is reading time,
-             and a pin below reading time is a card that leaves mid-sentence.
-             The two things worth keeping are both still here -- that the worker
-             outlives the tab, and that this is how normal features work, which
-             is what stops it reading as an attack. */
+
           why:"This site installed a service worker: code that outlives the tab and handles its later requests. Offline reading and push notifications work this way.",
           severity:"Medium",
           action:"Clearing the site's data in Chrome removes it."
@@ -22214,15 +21595,8 @@
         toastHostEl=h,
         h
       };
-      /* One toast per distinct thing per page, rather than a time window.
-         The old rule remembered only the LAST key for 1200ms, which meant two things: the same
-         warning came back every 1.2 seconds for as long as a page kept doing whatever it was
-         doing, and an A,B,A sequence showed A twice. On a page beaconing on a timer that is a
-         stream of identical popups, which is how someone learns to dismiss WardenOne without
-         reading it.
-         A Set keyed on type+target instead: each distinct thing gets exactly one toast, several
-         different things still each get theirs, and the set is emptied on navigation so a
-         reload or a move to another page starts fresh. */
+      /* Deduplicate by type/target for the page lifetime, clearing on navigation.
+         Remember every key so alternating A,B,A events cannot repeat A. */
       let lastToastAt=0,
       recentKey="",
       toastSeen=new Set();
@@ -22255,15 +21629,8 @@
       shouldQuietToast=(type,
       detail)=>{
         try{
-          /* Nothing happened. Some events are raised because a capability was
-             USED, not because anything changed -- a site calling register() for
-             the service worker it already has is the case this exists for, and
-             the documented way to use one is to call register() on every page
-             load. The event is still worth sending, because the worker keeps
-             the list of sites that have one, but there is nothing to tell the
-             reader, and telling them anyway is how "twitch, github and
-             challengermode installed a service worker" appeared on every visit
-             to three sites that had installed nothing. */
+          /* Keep capability-use events in activity history, but do not toast unchanged state.
+             Repeated register() calls commonly return an existing service worker. */
           if(detail&&detail.existing)return!0;
           /* Passive warnings stay quiet across reloads; each confirmed popup or
              redirect block is a new action. Explicit mutes still apply below. */
@@ -22307,18 +21674,7 @@
       }
       const showToast=(type,
       detail)=>{
-        /* A manual check is the ANSWER to a question the reader asked from the
-        right-click menu a second ago, not an unsolicited notification. Every
-        gate in this function exists to stop WardenOne interrupting people who
-        did not ask, and none of them should apply to someone who did.
-
-        shouldQuietToast is the one that broke the feature: it remembers each
-        type per host for thirty minutes, so after the first check on a site
-        every later "Check this link", "Check the selected text", "Where is this
-        image from?" and "What is this frame?" was swallowed in silence. From
-        the outside that is a menu of four entries that do nothing. The mute
-        list, the notification preference and the per-page wording dedup below
-        would each have done the same thing on their own. */
+        /* Manual checks are requested replies, so bypass notification mutes and unsolicited-toast deduplication. */
         const asked="detected_manual_check"===type;
         if(!asked&&(!WO.enabled||!WO.showToasts||shouldQuietToast(type,
         detail)))return;
@@ -22335,16 +21691,8 @@
         const detailWhy=detail&&detail.why?String(detail.why):info.why,
         severity=detail&&detail.severity?String(detail.severity):info.severity||(/^blocked_/.test(type)?"Blocked":/^warned_/.test(type)?"Warning":"Notice"),
         action=detail&&detail.action?String(detail.action):info.action||(/^blocked_/.test(type)?"WardenOne stopped it. No action is needed unless you expected this.":/^warned_/.test(type)?"Check the address and only continue if you trust this site.":"Review this page before sharing sensitive information.");
-        /* Identity is the wording, not the thing that triggered it. This used to key on
-        type+matched, so a page loading five trackers produced five cards carrying the same
-        title, the same explanation, the same severity and the same advice, differing only in
-        the small monospace host underneath. To the person reading them that is one warning
-        shown five times, and a warning shown five times is one nobody reads the sixth time.
-        The matched value is deliberately NOT part of the key: it is a detail of the card, not
-        the identity of it. Every occurrence is still recorded in the Activity Center, which is
-        where the full list belongs -- the toast only has to say a thing happened, once.
-        The wording IS in the key, so a guard that explains itself differently for a genuinely
-        different situation still gets its own card. */
+        /* Deduplicate toasts by wording, not matched host. Different targets can produce identical advice.
+           Keep every occurrence in Activity Center. */
         const key=type+"|"+detailWhy+"|"+severity+"|"+action;
         /* Asking the same question twice is a reasonable thing to do, and the
         answer is not less true the second time. */
@@ -22394,28 +21742,9 @@
         "font-family:ui-monospace,monospace!important;font-size:11px!important;color:#7a5f93!important;margin-top:6px!important;word-break:break-all!important;background:#ede1f8!important;border-radius:7px!important;padding:5px 8px!important;",
         String(matched).slice(0,
         80));
-        /* "Stop telling me this." A warning with no way to turn it off is one
-           people learn to close without reading, and a reader who has decided a
-           kind of notice is not for them has given an answer -- the honest thing
-           is to take it. An hour or two for a site being noisy mid-task, the
-           working day for one being noisy all day, and always for a card that
-           is simply not wanted. Nothing shorter than an hour is offered: the
-           shown-recently memory already keeps a repeat quiet for thirty
-           minutes, so a shorter mute would be a button that changes nothing.
-           The last one reads "Always", not "Never", because the row asks how
-           long to HIDE this: every other answer on it is a length of time, and
-           "Never" answers a different question -- it looks like it means "never
-           hide", which is the opposite of what pressing it does.
-           Every one of them is listed and reversible in the popup, so the
-           permanent one is not a trap. */
-        /* Four filled chips under the message made the card look like a dialog
-           with a button bar, and they sat at the same weight as the warning
-           itself -- five things shouting where there had been one. A control
-           nobody is looking for should not compete with the thing they are.
-           So: a hairline above it, which says "this row is about the card, not
-           part of it", and buttons that are plain text until the pointer is on
-           one. Legible at rest, unmistakably a button under the cursor, and
-           quiet the rest of the time. */
+        /* Mute durations start at one hour because recent-notice suppression already lasts thirty minutes.
+           "Always" describes the hide duration; permanent mutes remain reversible in the popup. */
+
         try{
           const muteRow=oDiv(body,
           "display:flex!important;flex-wrap:nowrap!important;gap:1px!important;align-items:center!important;margin-top:9px!important;padding-top:7px!important;border-top:1px solid rgba(157,84,201,.16)!important;");
@@ -22459,14 +21788,7 @@
         catch(_){
 
         }
-        /* A warning that vanishes before it can be read teaches people to ignore
-        warnings. Five flat seconds covered the title but not the explanation,
-        the severity, the advice and the matched value underneath it. Dwell now
-        scales with how much there is to read at an unhurried pace, starting well
-        above the old timeout, and it stops completely while the pointer or the
-        keyboard focus is on the card, so a long explanation can always be
-        finished. The bar along the bottom edge shows the time left and visibly
-        freezes while it is paused. */
+        /* Scale dwell with reading length and pause it on pointer hover or keyboard focus. */
         const readingWords=text=>String(text||"").trim().split(/\s+/).reduce((total,
         token)=>token?total+Math.max(1,
         Math.ceil(token.length/10)):total,
@@ -22706,17 +22028,8 @@
         root.appendChild(badge),
         root.appendChild(panel)
       },
-      /* The badge is 16px from the viewport's CONTENT edge, and a fixed element
-      cannot cross a classic scrollbar. So on a page that scrolls there is a
-      scrollbar's width of chrome beyond the badge, and on a page that does not --
-      or one that draws overlay scrollbars -- there is nothing there and the badge
-      hugs the window. One rule, two different-looking results, and the second one
-      reads as too tight.
-      Pad by whatever a classic scrollbar would have occupied, so the gap to the
-      window edge is the same on both. Where the browser draws overlay scrollbars
-      the reference is zero and nothing moves; where a scrollbar is actually
-      present the gutter cancels the padding and nothing moves there either. Only
-      the scrollbar-less page is corrected, which is the one that looked wrong. */
+      /* Compensate for the classic scrollbar gutter on pages without one so the badge’s window-edge gap
+         stays consistent. Overlay scrollbars have a zero reference width. */
       measureScrollbarWidth=()=>{
         if(null!==badgeScrollbarWidth)return badgeScrollbarWidth;
         badgeScrollbarWidth=0;
@@ -22805,20 +22118,8 @@
         }
 
       },
-      /* Whether an element stays put while the reader scrolls, and if so the box that
-      keeps it there. The badge used to yield to ANY control under it, and on a page
-      with links everywhere something is under it nearly all the time -- so on most
-      pages the badge went inert at load and, taking no pointer events, never got the
-      hover that would have re-checked. It was dead until the window was resized.
-      What the reader is actually reaching for in that corner is the page's own fixed
-      furniture: a player bar, a consent bar, a chat bubble, a fullscreen player's
-      controls. Those are anchored -- fixed or sticky themselves or through an ancestor,
-      inside the fullscreen element, or in the flow of a document that does not scroll
-      -- with no scrolling pane between them and the anchor. A link in ordinary flow
-      scrolls away with a flick of the wheel, as it does under every floating widget on
-      the web; a link in the scrolling pane of a fixed app shell does too, which is why
-      the walk stops at the first scroller it meets rather than at the first fixed
-      ancestor. Returns the anchor's rect, or null. */
+      /* Return the rect anchoring this control, or null for ordinary scrolling content.
+         Stop at intervening scrollers: a fixed app shell does not make every descendant stationary. */
       badgeAnchorOf=el=>{
         try{
           const fsEl=document.fullscreenElement||document.webkitFullscreenElement||null;
@@ -22848,14 +22149,8 @@
         }
         return null
       },
-      /* What sits under a rectangle of the page. A player outranks a plain control and
-      ends the search: it is the case that has to hide rather than merely move. A plain
-      control counts only when it is anchored (above); the control's own box and its
-      anchor's box come back so the badge can decide how far to move.
-      Only the topmost page element at each probe is judged -- a control buried under an
-      opaque div is not what the reader is aiming at. The badge's own host is skipped
-      rather than ending the scan: shadow content retargets to the host, so it is always
-      the first hit over the badge itself. */
+      /* Judge topmost page elements, skipping the badge’s retargeted shadow host.
+         Players require hiding; anchored controls return their own and anchor rects for repositioning. */
       badgeProbe=rect=>{
         const out={
           kind:"",
@@ -22887,15 +22182,8 @@
                 const control=out.kind?null:el.closest(controls);
                 if(control){
                   const box=control.getBoundingClientRect(),
-                  /* A focusable container is not what the reader is aiming at. closest()
-                  climbs from the hit element to ANY matching ancestor, so on a quiet Twitch
-                  chat the empty space above the message field resolved to the whole chat
-                  column -- a [tabindex="0"] wrapper the height of the page -- and the badge
-                  could never clear it, so it went inert instead: visible and dead. A
-                  control taller than the badge could ever lift is a region, and the badge
-                  covering a corner of a region is in nobody's way. An iframe is the
-                  exception: what is inside it cannot be seen from here, and a chat embed
-                  puts its own send button exactly in this corner. */
+                  /* Ignore oversized focusable regions that the badge cannot clear.
+                     Keep iframes eligible because their hidden controls may occupy this corner. */
                   region="iframe"!==String(control.localName||"").toLowerCase()&&box.height>(window.innerHeight||0)*BADGE_LIFT_MAX_RATIO,
                   anchor=region?null:badgeAnchorOf(control);
                   anchor&&(out.kind="control",
@@ -22915,17 +22203,8 @@
 
       },
       badgeCoversPageControl=()=>badgeProbe(badgeHomeRect()).kind,
-      /* Sitting NEXT TO a player control is as bad as sitting on one. The badge lives
-      in the bottom-right corner, which is where music players put the volume slider --
-      on Spotify the player bar spans the badge's whole band. Nothing is underneath the
-      badge there, so the hit test above stays quiet while the reader reaches past a
-      chip that lights up on hover and keeps stealing the pointer on the way to the
-      slider. Reported exactly that way: "it thinks i want to press it".
-      A margin rather than an overlap, because the problem is the approach, not the
-      collision. A player shell counts wherever it is; a bare slider counts only when it
-      is anchored -- a range input in a form that has scrolled into the corner is not a
-      volume control the reader is reaching past the badge for. Only run from the same
-      discrete events as everything else here. */
+      /* Leave an approach margin beside anchored volume sliders, even without overlap.
+         Ordinary form sliders do not need this player-control clearance. */
       badgeNearMediaControl=rect=>{
         try{
           const r=rect||badgeHomeRect();
@@ -23033,16 +22312,8 @@
         try{
           if(!badgeButton||!badgeHost)return;
           const now=Date.now();
-          /* The answer depends only on layout, so asking it again while the layout is
-          unchanged pays for an answer already known. Each check costs three
-          elementsFromPoint plus up to forty getBoundingClientRect calls -- roughly
-          forty-odd forced layout reads -- and crossing the badge five times in a couple
-          of seconds asked five times. That accumulation is what turned repeated
-          crossings into a stall: smooth at first, worse the more it was triggered.
-          Keyed on viewport size and Discord's route/profile state, and every FORCED
-          caller (resize, fullscreenchange, a player starting, the load-time
-          one-shots) recomputes regardless, so a player
-          bar that mounts late is still noticed. Only the hover path is cached. */
+          /* Cache hover checks by viewport and route/profile state to avoid repeated forced layout reads.
+             Resize, fullscreen, playback and load-time checks still force recomputation for late controls. */
           const route=String(location.pathname||""),
           profile=badgeDiscordProfileOpen(),
           sig=(window.innerWidth||0)+"x"+(window.innerHeight||0)+"|"+route+"|"+profile;
@@ -23065,19 +22336,8 @@
           if(hide||!home)away=inert=!0;
           else if("player"===under.kind||near)away=inert=!0;
           else if("control"===under.kind){
-            /* Out of the way rather than dead. The spot it already holds first, when the
-            pointer may be on its way there; then just clear of the control itself -- a
-            chat bubble, a "back to top" button; then clear of the whole anchored block it
-            sits in, for a bar with more than one thing in it. A spot counts only if
-            nothing anchored is under it and no slider is beside it; when nothing fits
-            under the cap the badge stays put and stops taking input, as before.
-            A spot occupied by ANOTHER anchored control is not the end of the search: it
-            names the next candidate, clear of that control. On Twitch the corner is the
-            chat column's input row -- the Chat button under the badge, the chat input
-            directly above it -- on a page whose document never scrolls, so "clear of the
-            block" was the whole viewport and "clear of the control" landed on the input.
-            Nothing fit, and the badge sat there visible and dead from the first play
-            event on. Climbing the stack, bounded, reaches the message list above. */
+            /* Try bounded positions above each anchored obstruction, including stacked controls.
+               If none fits, keep the badge visible but stop taking pointer input. */
             const limit=(window.innerHeight||0)*BADGE_LIFT_MAX_RATIO,
             BADGE_CLIMB_MAX=12,
             ups=[],
@@ -23086,12 +22346,8 @@
               const up=Math.ceil(home.bottom-t+BADGE_LIFT_GAP);
               ups.length<BADGE_CLIMB_MAX&&ups.indexOf(up)<0&&ups.push(up)
             };
-            /* The spot it already holds comes first on EVERY check, forced or not. A forced
-            re-check used to climb again from scratch, and on Twitch the stream's play events
-            force one every few minutes; each recomputation could land a few rows higher or
-            lower as chat notices came and went, so the badge hopped about while the reader
-            was aiming at it. It stays where it is while that spot is still clear, and comes
-            home only when home itself is clear again (the control branch is not entered). */
+            /* Keep the current clear position during forced checks to avoid jumps under the pointer.
+               Return home only when the home position itself is clear. */
             badgeLift>0&&ups.push(badgeLift),
             propose(under.control&&under.control.top),
             propose(under.anchor&&under.anchor.top),
@@ -23180,17 +22436,8 @@
             stale&&stale!==badgeHost&&stale.remove();
             const host=badgeHost=document.createElement("div");
             host.id="rg-badge-host",
-            /* The shadow root protects what is inside it; nothing was protecting the
-            host. A page rule matching div or #rg-badge-host could style it, and a
-            transform, filter, contain, perspective or backdrop-filter on the host
-            makes it the containing block for the fixed-position badge inside its
-            own shadow tree -- which would move the badge to the host's corner
-            instead of the window's, with no way to tell from inside.
-            all:initial takes the host out of reach of page CSS. Fixed and
-            zero-sized on top of that keeps it out of the page's layout entirely,
-            so it cannot affect margins or last-child selectors either. The badge
-            stays anchored to the viewport: position:fixed on an ancestor does not
-            create a containing block, only the properties listed above do. */
+            /* Reset and zero-size the fixed host so page CSS cannot make it a containing block or affect layout.
+               Shadow DOM protects descendants, not the host’s transform/filter/contain properties. */
             host.setAttribute("style",
             "all:initial!important;position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;z-index:2147483646!important;pointer-events:none!important;"),
             host.attachShadow({
@@ -23203,13 +22450,7 @@
             bEl.addEventListener("click",
             ()=>pEl.classList.toggle("open")),
             alignBadge(),
-            /* One settle, shared by both timers.
-            "hot" is set the moment anything is blocked, and it used to be checked
-            here to keep the badge visible -- but nothing ever removed it, so the
-            first block on a page pinned the badge open for the rest of the visit
-            and the fade could never run again. It means "something happened just
-            now", so it decays along with the rest of the highlight. "damaged" is
-            a real fault and deliberately stays until the page is reloaded. */
+            /* Decay the transient hot highlight with the shared settle timer. Keep damaged sticky until reload. */
             settleBadge=()=>{
               bEl.classList.contains("damaged")||(bEl.classList.remove("show"),
               bEl.classList.remove("hot"))
@@ -23393,14 +22634,7 @@
                 capture:!0,
                 passive:!0
               }),
-              /* The moment the pointer actually arrives at the badge, decide again.
-              This is pointerenter on the BADGE ITSELF -- one listener on one small
-              element, dispatched only when the pointer crosses into it, not a
-              per-move handler on the document. It costs nothing while the pointer is
-              anywhere else, and it is the exact instant the answer starts mattering.
-              Reported as "it's smooth up until it goes past that badge": a player bar
-              that mounts after the checks below had already run left the badge sitting
-              on the volume control with nothing scheduled to notice. */
+              /* Recheck on badge pointerenter to catch player bars mounted after the scheduled layout checks. */
               badgeButton&&woOn(badgeButton,
               "pointerenter",
               ()=>updateBadgeYield(),

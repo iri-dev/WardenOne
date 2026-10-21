@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Nothing the page can say may count (SEC-01, SEC-02, SEC-03).
- *
- * The MAIN-world engine shares its world with the page. It used to take three things on the
- * strength of a routing nonce the page could read: configuration ("carries the nonce, so it
- * came from the bridge" -- a page could post {enabled:false} and switch the engine off), a
- * reputation verdict (a page could answer its own link check "clean" before the worker did),
- * and its own teardown (window.__wardenOneDispose, callable by anyone, with the ready markers
- * page-writable afterwards so the watchdog's probe said "present").
- *
- * Now the isolated bridge hands the engine a key once, in a synchronous DOM event at
- * document_start, before the page can run; signs everything the engine must trust with it; and
- * treats the engine as alive only when it answers a signed challenge. This is the two-world
- * harness the findings asked for: the real bridge listeners in one world, the real engine
- * listeners in the other, and a page that can observe every message and dispatch every event.
- * No page-originated sequence may change the config, settle a pending verdict, dispose the
- * engine, or make the bridge believe an engine is there.
- *
- * Run: node tools/test-main-world-authority.js
- */
+/* Require authenticated page/bridge traffic before changing trusted security state. (SEC-01, SEC-02, SEC-03)
+   Run: node tools/test-main-world-authority.js */
 'use strict';
 
 const fs = require('fs');

@@ -12,21 +12,14 @@
 (function () {
   'use strict';
   const WO_GUARD_VERSION = '1.0.2';
-  /* Chrome does not re-inject into tabs that are already open when the extension updates, so a
-     tab that outlives an update keeps this script's old copy. A bare boolean flag made that
-     permanent -- the new copy saw a truthy flag and returned, so Repair could never re-arm the
-     tab, only report honestly that it could not. Comparing versions lets a newer copy replace an
-     older one, and it must release the old one's listeners, observers and timers first or both
-     copies stay live and are charged for the same work. */
+  /* Release the older version’s listeners, observers and timers before replacing it in an open document. */
   /* Any copy at all, of any version: nothing injects a second copy into a live document any more
      (the worker reloads the tab instead), and a published disposer for the old copy to be released
      through was a page-callable kill switch (SEC-03). */
   if (window.__wardenOneMinerWatch) return;
   window.__wardenOneMinerWatch = WO_GUARD_VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -40,8 +33,7 @@
   };
   const woObserver = (...a) => woHold(new MutationObserver(...a));
   const woInterval = (...a) => woHold(setInterval(...a));
-  /* A normal function, not an arrow: three call sites pass function-keyword callbacks, and
-     forwarding `this` keeps them behaving exactly as the host would call them. */
+  /* Preserve the native timer callback’s this binding. */
   const woTimeout = (fn, ms, ...rest) => {
     let id;
     id = setTimeout(function (...a) {
@@ -79,15 +71,8 @@
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
     const U8=Uint8Array,U32=Uint32Array,D="0123456789abcdef";
-    /* This code runs in the page's own world, where the page can replace any built-in method after
-       load. So nothing that touches the key calls one. The key becomes its two HMAC pad blocks ONCE,
-       in key(), at the document_start hand-off before any page script exists; after that a
-       signature is index reads and arithmetic on typed arrays -- no .set, .subarray, .length,
-       substr, parseInt or toString -- each of which a page could replace to be handed the key: a
-       patched String.prototype.substr, Uint8Array.prototype.set or typed-array length getter each
-       recovered the whole key from one signature (tools/test-main-world-key-isolation.js). The
-       message text is not secret; a page that tampers with how it is read only spoils its own
-       signature, which it could already do by stopping the event. */
+    /* Derive HMAC pads before page scripts run. Signing must not call replaceable built-ins with key data;
+       a patched string/typed-array method could otherwise capture the key. Message data is not secret. */
     function encode(text){
       const s=String(text),out=new U8(3*s.length+3);
       let n=0;
@@ -238,18 +223,8 @@
       }
     });
   } catch (_) {}
-  /* The bridge posts the handshake once at document_start; a dynamically registered script can
-     miss it, so ask for a replay.
-
-     Through a DOM event, not a global. This script runs in MAIN and the bridge runs in ISOLATED,
-     so the window each sees is a different object: the `window.__wardenOneBridgeReplay` this used
-     to call is not merely absent, it is unreachable by construction. The test guarding it was
-     false every time, so the request was a no-op and this script simply never recovered from a
-     missed handshake -- no token, so every later config was rejected, so confirmed detections
-     stayed queued behind configReady and nothing was ever acted on or reported.
-
-     `document` is shared between the two worlds, and is already the channel this side uses to
-     reach the bridge. */
+  /* Request missed handshakes through the shared document event. MAIN cannot reach the bridge’s
+     ISOLATED window replay function. */
   function requestBridgeReplay() {
     try { document.dispatchEvent(new CustomEvent('wo-bridge-replay')); } catch (_) {}
   }

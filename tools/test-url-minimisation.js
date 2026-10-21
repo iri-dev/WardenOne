@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * What leaves the device, and what stays on it, must be less than the address (PRIV-03,
- * PRIV-05, PRIV-06, CWS-01).
- *
- * Three places kept or sent more of a URL than they needed. Every reputation provider was
- * handed normalizeSafeBrowsingUrl(url) -- the whole address with only the fragment removed --
- * so enabling Safe Browsing or urlhaus once turned every later navigation into a request
- * carrying its query string, and the answer was cached on disk under that address as the key.
- * A pending download review persisted item.finalUrl in full, signed CDN links included, for
- * two hours in the normal profile. The startup report stored page titles and, in a private
- * window, wrote them to the shared normal profile because its key was missing from the
- * ephemeral registry.
- *
- * This runs the finding's own verification: one address carrying userinfo, an OAuth code, a
- * reset token, an e-mail address and a fragment goes through the shipped provider clients
- * against a recording fetch, in every context the engine uses, and no request and no stored
- * cache key may contain any of it. The same address goes through the shipped download review
- * builder and the shipped startup report store, in a normal and a private worker.
- *
- * Run: node tools/test-url-minimisation.js
- */
+/* Check provider requests and persisted review/report data omit userinfo, query and fragment secrets. (PRIV-03, PRIV-05, PRIV-06, CWS-01)
+   Run: node tools/test-url-minimisation.js */
 'use strict';
 
 const fs = require('fs');

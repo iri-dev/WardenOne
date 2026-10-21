@@ -4,21 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * "Copy clean link", the right-click entry.
- *
- * The engine already cleans copies it can see -- a copy event, or a site's own
- * navigator.clipboard call. The one it cannot see is the browser's own "Copy
- * link address": that is drawn by Chrome, writes to the clipboard from the
- * browser process, and fires nothing in the page. This entry is the only way to
- * clean that, and it reuses the engine's cleaner rather than keeping a second
- * copy of the tracking lists that would drift from it.
- *
- * Reaching into the page for that means the answer is page-reachable, so these
- * run the real background code against a page that lies.
- *
- * Run: node tools/test-copy-clean-link.js
- */
+/* Clean the browser menu’s link URL without relying on a page copy event.
+   Run: node tools/test-copy-clean-link.js */
 'use strict';
 
 const fs = require('fs');

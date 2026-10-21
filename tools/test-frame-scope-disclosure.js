@@ -4,19 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Does the compact credential layer close the embedded-frame gap (M41)?
- *
- * content.min.js deliberately remains top-frame-only. Loading the whole engine in every frame is
- * not proportionate, but leaving a child realm's fetch, XHR, beacon and form APIs untouched is not
- * acceptable either. anti-redirect.js already has the required MAIN/all-frames/about:blank reach,
- * so it now carries a bounded credential-only layer for child frames.
- *
- * This suite pins that architecture and keeps the popup honest about the deliberately lighter
- * frame analysis. Runtime blocking behaviour is exercised by test-frame-credential-guard.js.
- *
- * Run: node tools/test-frame-scope-disclosure.js
- */
+/* Keep frame credential-guard coverage aligned with the exposed feature description. (M41)
+   Run: node tools/test-frame-scope-disclosure.js */
 'use strict';
 
 const fs = require('fs');

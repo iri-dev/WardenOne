@@ -4,28 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Media capability probing: MediaCapabilities and WebCodecs.
- *
- * A site can ask whether this machine decodes AV1 Main 10 at 4K60 smoothly and with
- * hardware. The answers describe the GPU and the decode stack, and a script that asks
- * forty such questions has a vector, not a playback decision.
- *
- * THE ONE RULE THAT CANNOT BEND: `supported` is never faked, in either direction. A page
- * told a codec is available will send it, and then nothing plays -- which is a worse
- * outcome than the fingerprinting this defends against. Only `smooth` and
- * `powerEfficient` are flattened, and WebCodecs -- whose only answer IS supported -- is
- * counted and never altered.
- *
- * Two halves, two switches, and neither may need the other:
- *   antiFingerprintNoise      -> flattens the answers
- *   fingerprintProbeDetection -> notices the enumeration
- *
- * Both are lifted out of content.min.js -- the built runtime, which is what a browser
- * actually loads -- and run for real.
- *
- * Run: node tools/test-media-capability-fp.js
- */
+/* Distinguish capability-enumeration bursts from ordinary player probes without changing detector answers.
+   Run: node tools/test-media-capability-fp.js */
 'use strict';
 
 const assert = require('assert');

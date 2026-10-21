@@ -4,32 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Fake Window Guard used to rediscover every possible fake window in the document every
- * time anything changed.
- *
- * The observer watched childList across the whole subtree and threw the mutation away:
- * any change queued a pass that selected every div, section, dialog, aside and form in
- * the document and called getBoundingClientRect() on each one. The 500 cap counted
- * CANDIDATES -- elements that had already passed the size test -- so it never limited the
- * layout reads at all. A page with ten thousand divs paid ten thousand forced layout
- * reads per pass, up to forty passes, during hydration (PERF-01).
- *
- * Two changes carry the fix, and this asserts both:
- *
- *   - a structural prefilter. The decisive test refuses to warn unless the container holds
- *     a password field or an embedded frame, so asking that first -- a selector match, no
- *     layout -- is exactly conservative. It cannot drop anything that could have warned.
- *   - mutation locality. After the first pass, only changed subtrees and their candidate
- *     ancestors are scanned, which is the same lesson the subtree-scan dedup learned.
- *
- * Detection had to survive both, so the counting here runs the SHIPPED scan against a
- * stub DOM and checks the warning still fires for a window inserted whole, one assembled
- * piece by piece, and one restyled into place after insertion -- the three shapes the
- * finding's regression note called out.
- *
- * Run: node tools/test-fake-window-scan-cost.js
- */
+/* Bound fake-window scans and avoid repeating document-wide work for irrelevant mutations. (PERF-01)
+   Run: node tools/test-fake-window-scan-cost.js */
 'use strict';
 
 const fs = require('fs');

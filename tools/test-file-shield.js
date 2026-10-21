@@ -4,29 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * File Shield — the manual file scanner.
- *
- * Download Shield grades files it watched arrive, and it cannot read the saved
- * bytes: Chrome gives an extension no access to the file on disk, so its hash is
- * a re-fetch of the URL. File Shield is the other half — the reader hands over an
- * actual file, so these are the real bytes, and this is the only place in
- * WardenOne that can state a true hash of a real file.
- *
- * The detectors below are lifted out of file-shield.js and run against fixtures
- * built here byte by byte, so the ZIP, LNK and magic-byte readers are exercised
- * for real rather than asserted about with a regex.
- *
- * Two things this suite exists to hold:
- *
- * 1. IT MUST NEVER SAY A FILE IS SAFE. Structure analysis can prove a file is
- *    disguised. It cannot prove the opposite, and copy that implies otherwise
- *    would be the most harmful thing on the page.
- * 2. NOTHING LEAVES THE MACHINE WITHOUT A PRESS. The only network call is a hash
- *    lookup behind a button that states what it sends.
- *
- * Run: node tools/test-file-shield.js
- */
+/* Inspect selected-file bytes locally; cover structure, capabilities and malformed input without execution.
+   Run: node tools/test-file-shield.js */
 'use strict';
 
 const fs = require('fs');

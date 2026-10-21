@@ -24,9 +24,7 @@
   }
   window.__wardenOneConsentWallVersion = CONSENT_WALL_VERSION;
 
-  /* Everything this copy holds, so the next one can let it go. Listeners ride a single abort
-     signal; observers and intervals are collected; timeouts remove their own id when they fire,
-     so a self-rescheduling loop cannot grow this set without bound. */
+
   const woAbort = new AbortController();
   const woKeep = [];
   const woPending = new Set();
@@ -48,10 +46,7 @@
     woPending.add(id);
     return id;
   };
-  // Chrome's extension events are not DOM events: the abort signal does not cover them and
-  // there is no removeEventListener-by-signal. Repair reinstalls this script, so a listener
-  // registered here and never removed accumulates one more copy per Repair. removeListener
-  // matches by identity, so the exact callback reference has to be kept.
+  // Chrome events ignore AbortSignal; retain callback identities for removeListener during disposal.
   const woChromeListeners = [];
   const woOnMessage = (fn) => {
     try {
@@ -111,15 +106,8 @@
   // leaves a hairline at one edge is still a wall.
   const COVER = 0.98;
 
-  // Two regexes rather than one, because \b is wrong for half of these. Vendor containers
-  // join their words with underscores -- sp_message_container_1426772, CybotCookiebotDialog,
-  // CookieConsent__root -- and an underscore is a word character, so \bsp_message\b matches
-  // none of them. That silently killed the primary signal for the most common manager in the
-  // sweep. Identifiers are matched as substrings; only the generic English words that could
-  // turn up in an unrelated class name keep their boundaries.
-  //
-  // Being generous here is safe: nothing reaches this test until it already covers the whole
-  // viewport at the top of the stacking context, and identity only corroborates that.
+  // Match vendor identifiers as substrings because underscores defeat word boundaries.
+  // Keep boundaries for generic words; viewport coverage and stacking checks already narrow this test.
   const CMP_ID_RE = /(sp_message|sp_choice|sourcepoint|onetrust|optanon|didomi|usercentrics|trustarc|quantcast|qc-cmp|iubenda|cookiebot|cookieyes|cookielaw|cookiehub|cookiescript|cookie[-_]?consent|consent[-_]?manager|privacy[-_]?manager|privacy[-_]?cp[-_]?wall|appconsent|fc-consent|contentpass|crownpeak|axeptio|osano|termly|cmpbox|ketch-|gdpr)/i;
   const CMP_WORD_RE = /\b(cookie|cookies|consent|ccpa|cpra|cmp|truste|civic)\b/i;
   const looksLikeCmp = (blob) => CMP_ID_RE.test(blob) || CMP_WORD_RE.test(blob);

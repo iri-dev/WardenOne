@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WebUSB, Web Serial, WebHID and Web Bluetooth.
- *
- * These reach past the page and talk to hardware -- firmware, serial devices, raw
- * HID, which includes security keys. The permission chain watched camera,
- * microphone, notifications and clipboard-read and knew nothing about any of them.
- *
- * Chrome's device chooser is the real gate, so nothing here blocks: hardware
- * wallets, board flashers and stream decks are ordinary uses. What was missing was
- * the record. Two things get one -- asking, and reading back a device granted on an
- * earlier visit, which needs no prompt and is the only part that can happen while
- * you are not looking.
- *
- * The wrappers sit in front of APIs real sites depend on, so most of this file is
- * about them staying invisible: same return value, same rejection, same promise,
- * and no device details anywhere near the log.
- *
- * Run: node tools/test-device-access-guard.js
- */
+/* Observe hardware chooser requests and granted-device results without recording device identities.
+   Run: node tools/test-device-access-guard.js */
 'use strict';
 
 const assert = require('assert');

@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The tracker learner keeps evidence, not a browsing graph (PRIV-01).
- * Run: node tools/test-tracker-learner-minimisation.js
- *      WARDENONE_BACKGROUND=<older background.js> node tools/test-tracker-learner-minimisation.js
- *
- * The durable store used to hold, per tracker, up to 80 named first-party sites with hit counts
- * and exact times, plus the raw ids of the browser sessions that saw it: at the cap, 48,000 named
- * site-to-tracker edges in chrome.storage.local with no expiry. That is browsing history whatever
- * the key is called, and it was reconstructable by anyone holding the profile.
- *
- * The learner's purpose needs three distinct sites and two sessions per tracker, so that is what
- * the store may say now: a count of sites and a 32-bit keyed sketch that answers only "already
- * counted this site?", gone the moment the tracker leaves 'candidate'; a count of sessions, never
- * an id; times to the day; a thirty-day expiry on observations. The popup's "seen on this site"
- * list and the once-per-session count live in storage.session and die with the browser. Clean
- * browsing data with History ticked now really does clear the observations, as PRIVACY.md said.
- * The real store shape, observation path, pruning, status, decisions and reset are lifted from
- * background.js and driven here with fake storage, a fake clock and both kinds of restart.
- */
+/* Retain bounded counts/sketches, coarse times and expiry without durable site-to-tracker edges. (PRIV-01)
+   Run: node tools/test-tracker-learner-minimisation.js */
 'use strict';
 
 const fs = require('fs');

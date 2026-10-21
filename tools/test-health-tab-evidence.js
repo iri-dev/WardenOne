@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Protection Health says "You're safe" only about a page that answered.
- * Run: node tools/test-health-tab-evidence.js
- *
- * The summary used to count the switches that were on, label the count "Active shields",
- * and say "You're safe. Core shields are active and watching quietly." with no input from
- * any page at all -- after an extension reload, a failed injection or a page the engine
- * cannot run on, the panel showed the full total and the strongest line it has. The count
- * is now labelled as what it is (switches on) and the safety line is reserved for a tab
- * whose bridge answered the engine's signed challenge.
- *
- * Two parts, both the real code: tabProtectionEvidence against a stubbed tab and bridge
- * (healthy, engine missing, bridge missing, stale bridge, restricted URL, paused site,
- * excluded site, sleeping tab, given-up tab, timed-out tab), then the status decision
- * lifted from buildProtectionHealthSummary and driven with every evidence state and every
- * issue level -- including the property the finding is about: with no issue found, the
- * safety line appears for `verified` and for nothing else.
- */
+/* Use signed per-tab evidence; a slow or unreachable page is unknown rather than verified safe.
+   Run: node tools/test-health-tab-evidence.js */
 'use strict';
 
 const assert = require('assert');

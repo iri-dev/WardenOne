@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A Store screenshot is a claim about the package, and it has to be traceable to one (CWS-04).
- *
- * docs/store held seven 1280x800 frames from August: one still said WebWarden in three places,
- * one said "16 browser permissions" against a manifest declaring 19, one showed the popup
- * mid-load with a state the product no longer has. Nothing tied any of them to a capture, a
- * build or a date, so nothing could say they were stale, and Chrome treats a misleading
- * screenshot as removable metadata.
- *
- * Now every frame in that folder is generated from docs/store/candidates.json by
- * tools/build-store-assets.py, from a named capture in docs/screenshots, with its caption
- * drawn in. This suite holds the folder and the manifest to each other: no frame without an
- * entry, no entry without a frame, at most five, every one exactly Store-sized, every one
- * captioned, every controlled threat example saying so on the image, and no old branding
- * anywhere a listing could be built from.
- *
- * Run: node tools/test-store-assets.js
- */
+/* Tie Store screenshots to the package and the capture evidence they represent. (CWS-04)
+   Run: node tools/test-store-assets.js */
 'use strict';
 
 const fs = require('fs');

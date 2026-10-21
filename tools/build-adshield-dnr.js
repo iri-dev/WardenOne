@@ -4,19 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-// Builds rules-adshield.json -- a STATIC declarativeNetRequest ruleset compiled
-// from EasyList network filters. This is what gives "Adblock: General sites"
-// real uBlock-grade network blocking (path patterns, resource types, third-party
-// scoping) without consuming any of the 30k DYNAMIC rule budget the host lists,
-// option rules, learner and allowlist share.
-//
-// Usage:  node tools/build-adshield-dnr.js <easylist.txt> <rules-adshield.json>
-//
-// Conversion philosophy: CONSERVATIVE. A filter is either mapped 1:1 onto DNR
-// semantics or it is skipped and counted -- never approximated. Approximating a
-// blocker rule risks breaking sites; approximating an exception risks hiding
-// real protection gaps. uBlock at runtime will always out-cover this; the goal
-// is the 90% of network ad-blocking that DNR can express natively.
+// Compile supported EasyList network filters into static DNR rules. Skip and count rules whose
+// semantics cannot be preserved; approximation can break sites or broaden exceptions.
+// Usage: node tools/build-adshield-dnr.js <easylist.txt> <rules-adshield.json>
 'use strict';
 
 const fs = require('fs');

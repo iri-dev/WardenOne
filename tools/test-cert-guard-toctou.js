@@ -3,19 +3,8 @@
    Official source: https://github.com/iri-dev/WardenOne
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Certificate Guard must not replace a newer navigation with a stale error page (M24).
- *
- * handleTrustError awaits the config before it badges, logs and calls tabs.update. A tab can move
- * during that await -- the user goes back, the site redirects, the tab is reused -- and everything
- * after it acts on whatever the tab holds NOW. So a handler for a navigation that is no longer
- * happening replaced a page the user had asked for, and logged it as blocked.
- *
- * The config read is deferred on purpose here, because the defect only exists inside that window.
- * A harness that resolves storage immediately cannot see it.
- *
- * Run: node tools/test-cert-guard-toctou.js
- */
+/* A delayed certificate decision must not replace a newer navigation. (M24)
+   Run: node tools/test-cert-guard-toctou.js */
 'use strict';
 
 const fs = require('fs');

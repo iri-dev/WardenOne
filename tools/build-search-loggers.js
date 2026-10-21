@@ -6,24 +6,9 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-/*
- * search-loggers.js is generated from rules.json: the domains the packaged IP-logger
- * ruleset blocks outright. Only a rule that blocks a whole domain -- main_frame included,
- * no path filter -- names a logger; the same file carries ALLOW rules for Google and the
- * login hosts, and reading every rule's domains once labelled Google's own tabs on a
- * Google results page as IP loggers.
- *
- * The search-results page carries this list itself, registered in front of search-junk.js
- * in the same content-script registration, so a logger link is named the moment it is on
- * the page. It cannot get the list any other way in time: a content script cannot fetch a
- * packaged file, it is kept out of extension storage (the worker hands pages a bounded
- * snapshot instead), and asking the worker means waking it -- most of a second, measured,
- * on a search made after a pause. The worker reads rules.json itself and applies the same
- * rule; tools/test-search-result-warnings.js holds the two readings to the same answer.
- *
- *   node tools/build-search-loggers.js          rewrite search-loggers.js
- *   node tools/build-search-loggers.js --check  exit 1 when the shipped file is stale
- */
+/* Generate search-loggers.js from whole-domain block rules in rules.json, excluding allows/path rules.
+   Register before search-junk.js so result warnings need no delayed worker lookup.
+   Run: node tools/build-search-loggers.js [--check] */
 
 const fs = require('fs');
 const path = require('path');

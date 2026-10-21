@@ -4,21 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Who is allowed to make WardenOne assert something (M27).
- *
- * permission-chain.js runs in the MAIN world and reports permission activity to the bridge over a
- * DOM CustomEvent, tagged with a token the bridge broadcast into that same world by postMessage.
- * The page shares the world and the broadcast, so it holds the token too. The token routes
- * messages; it cannot authenticate them, and treating it as a secret was the defect.
- *
- * Forging events is therefore possible and always will be on this architecture. What must not
- * follow is a trusted state change: WardenOne telling the user a site did something, and recording
- * that in history, on nothing but the site's own say-so. The worker reads the real granted
- * permissions from contentSettings, which no page can forge, and that is what these pin.
- *
- * Run: node tools/test-permission-chain-trust.js
- */
+/* Require browser-observed sensitive grants before page claims can produce a permission-chain finding. (M27)
+   Run: node tools/test-permission-chain-trust.js */
 'use strict';
 
 const fs = require('fs');
@@ -111,7 +98,7 @@ function runSignal(options) {
         /const corroborated = \(granted \|\| \[\]\)/.test(BACKGROUND)
           && /&& corroborated/.test(BACKGROUND));
       check('the bridge documents the token as a routing nonce, not a secret',
-        /A ROUTING NONCE, not a secret/.test(BRIDGE));
+        /routing nonce is not a secret/i.test(BRIDGE));
       check('the bridge still checks the token for routing',
         BRIDGE.includes('d.token !== TOKEN'));
 

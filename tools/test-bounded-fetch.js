@@ -3,18 +3,8 @@
    Official source: https://github.com/iri-dev/WardenOne
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Outbound requests stay bounded (L17).
- *
- * Two paths did not use the hardening the rest of the project does. The site-breach lookup had no
- * abort timeout and called res.json() with no ceiling -- and the popup disables its button until
- * that callback arrives, so a server that accepts a connection and never answers left the control
- * dead for as long as the socket lived. The cryptominer worker scanner called r.text() and only
- * then sliced to MAX_SOURCE_BYTES: the declared limit bounded what was MATCHED, never what was
- * held in memory.
- *
- * Run: node tools/test-bounded-fetch.js
- */
+/* Enforce outbound byte/time limits and release response readers after completion or rejection. (L17)
+   Run: node tools/test-bounded-fetch.js */
 'use strict';
 
 const fs = require('fs');

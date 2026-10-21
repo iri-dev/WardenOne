@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The three copies of the defaults have to agree.
- * Run: node tools/test-default-agreement.js
- *
- * A setting's fresh-install value is written down three times, because three
- * contexts need it before storage answers:
- *
- *   background.js DEFAULT_CONFIG  what a fresh install is actually saved with
- *   popup.js      DEFAULTS        what the popup draws before the config arrives
- *   src/content.js DEFAULTS       what the engine assumes before the config arrives
- *
- * Nothing made them agree. forceHttps had drifted to false / true / true: the
- * worker saved it off, and the popup drew the switch ON while the engine assumed
- * on -- so the one visible copy was telling the reader the opposite of what was
- * saved. It went unnoticed because the value is only read for the moment before
- * storage answers, which is exactly the window nobody watches.
- *
- * test-script-popup-shield.js already pins all three for strictPopupShield, and
- * only for that one key. This generalises it: every key that appears in more
- * than one table must carry the same value in all of them.
- */
+/* Compare stored, popup and worker defaults so each shipped switch has one effective default.
+   Run: node tools/test-default-agreement.js */
 'use strict';
 
 const assert = require('assert');

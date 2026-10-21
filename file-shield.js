@@ -4,22 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* File Shield — the manual scanner.
-
-   Download Shield can only judge files it watched arrive, and even then it cannot
-   read the saved bytes: Chrome gives an extension no access to the file on disk,
-   so its hash is a re-fetch of the URL, which differs for anything signed,
-   authenticated, one-time or personalised. A file the reader picks here is the
-   opposite: these are the real bytes. That makes this the only place in WardenOne
-   that can state a true hash of an actual file.
-
-   Everything below runs locally, in this page, with no permission of any kind. The
-   single network step -- looking a hash up at VirusTotal -- is a separate button
-   that says what leaves the machine before it does.
-
-   What it will not do: tell you a file is safe. It can say a file is not what its
-   name claims, or that an archive carries a script, or that a shortcut runs a
-   shell. It cannot say the opposite, and copy here never implies it can. */
+/* Manual scanning reads the selected file’s actual bytes locally; Download Shield hashes a re-fetch.
+   VirusTotal lookup is a separate, explicit network action. Findings describe file structure
+   and capabilities, not a verdict that the file is safe. */
 'use strict';
 
 const $ = (id) => document.getElementById(id);
@@ -178,9 +165,8 @@ function detectFormat(head, size, isoProbe) {
 }
 
 /* ---- ZIP central directory ---------------------------------------------- */
-/* Read from the central directory only. Nothing is decompressed, so a bomb
-   cannot go off while being measured -- the sizes are metadata. That also
-   means an archive can lie about them, and the report says "claims". */
+/* Read ZIP sizes from central-directory metadata without decompressing. Treat sizes as claims:
+   a malformed archive can report false values. */
 async function readZip(file, tail, findings, shouldContinue = () => true) {
   const size = file.size;
   let eocd = -1;
@@ -402,24 +388,10 @@ function readLnk(bytes) {
 }
 
 /* ---- Windows executables ------------------------------------------------ */
-/* "This is a program" is not information. What matters about an executable is
-   whether anyone signed it, what it is able to do, and whether its code is
-   hidden from inspection. All three are readable from the file, and none of it
-   requires running anything.
-
-   Capabilities are reported as what the program CAN do, never as a verdict.
-   Installers legitimately download, elevate and write to the registry; the point
-   is to let someone see the gap between what a file claims to be and what it is
-   equipped for. */
-/* Matched as EXACT names (after dropping the A/W/Ex suffixes), not as prefixes.
-   The prefix version was worse than useless: /^send/ matched SendMessage, so
-   every windowed program "reached the network"; GetTickCount64 made notepad
-   "notice it is being examined"; GetDC made it "capture the screen". A tool that
-   says something alarming about Notepad has taught the reader to ignore it.
-
-   Anything common enough to appear in most programs has been dropped even where
-   it is technically relevant -- OpenProcess, FindFirstFile, RegSetValue. A
-   capability listed here has to mean something when it appears. */
+/* Report signing, capabilities and packing without executing the file.
+   Capabilities describe what a program can do, not whether it is malicious. */
+/* Match exact API names after removing A/W/Ex suffixes. Prefixes misclassify common GUI calls
+   such as SendMessage as network access. Omit ubiquitous APIs that add little useful signal. */
 const PE_CAPABILITIES = [
   ['Reach the network', ['URLDownloadToFile', 'URLDownloadToCacheFile', 'InternetOpenUrl', 'InternetReadFile',
     'InternetConnect', 'HttpSendRequest', 'HttpOpenRequest', 'WinHttpSendRequest', 'WinHttpOpenRequest',
@@ -570,14 +542,8 @@ async function readPE(file, head, findings) {
       const table = new Uint8Array(await file.slice(impAt, impAt + span).arrayBuffer());
       const tv = new DataView(table.buffer);
       const seen = new Set();
-      /* A name outside the pre-read span costs a separate read of the file. In a
-         real binary the import names sit beside the descriptors and land inside
-         the span, so this almost never happens -- but the RVAs are attacker
-         chosen, and a crafted 200 KB executable that points every one of ~16,000
-         thunks somewhere far away made this issue 11,241 reads. In the page each
-         of those is an async Blob read, which is seconds of unresponsiveness.
-         Budgeted rather than unbounded; the analysis is already capped elsewhere
-         and losing the tail of the names costs nothing. */
+      /* Budget out-of-span reads: attacker-chosen RVAs can otherwise force thousands of async Blob reads.
+         Truncating import names is preferable to stalling the scanner. */
       let farReads = 0;
       const FAR_READ_BUDGET = 256;
       const readStringAtRva = async (rva) => {
@@ -694,14 +660,7 @@ async function readPE(file, head, findings) {
 }
 
 /* ---- scripts ------------------------------------------------------------- */
-/* A script is the one file type where the whole thing is readable and says
-   exactly what it will do. Reporting "Plain text" and stopping was the largest
-   gap in the scanner: .bat, .ps1, .vbs and .js are what actually arrives in a
-   chat message, and they need no installer and no exploit -- a double-click is
-   the whole attack.
-
-   Same principle as the shortcut panel: show the reader the actual lines rather
-   than a warning about the extension. */
+/* Show relevant script lines, as with shortcuts, without executing them. */
 const SCRIPT_EXT = {
   ps1: 'PowerShell', psm1: 'PowerShell', bat: 'Batch', cmd: 'Batch', vbs: 'VBScript', vbe: 'VBScript',
   js: 'JavaScript', jse: 'JavaScript', wsf: 'Windows Script', hta: 'HTML Application',
@@ -1054,10 +1013,7 @@ async function analyse(file, onStage, shouldContinue = () => true) {
 function verdictFor(report) {
   const dangers = report.findings.filter((f) => f.level === 'danger');
   if (dangers.length) {
-    /* Two different accusations, and using one headline for both was wrong: an
-       archive named documents.zip that really is a zip, but carries an .exe and a
-       path-traversal entry, was announced as "not what its name says". The name
-       was honest; the contents were not. Say which. */
+    /* Distinguish filename/type mismatch from a correctly named archive with dangerous contents. */
     const disguised = dangers.some((f) => f.kind === 'disguise');
     return {
       level: 'danger',

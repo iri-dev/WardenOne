@@ -4,29 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Routing token = routing only; the key = anything WardenOne believes.
- *
- * 1. THE KEY STAYS SECRET IN THE PAGE'S WORLD. The engine and its sibling MAIN-world scripts sign
- *    with a key the bridge hands over once at document_start -- but they compute the HMAC in the
- *    page's own realm, where the page can replace built-ins after load. The HMAC used to pass the
- *    key through String.prototype.substr and parseInt, and key-derived bytes through
- *    Uint8Array.prototype.set and the typed-array length getter: a page that patched any one of
- *    them was handed the whole key by the next signature (the bridge's liveness challenge asks
- *    for one every 45 seconds). Now the key becomes its HMAC pad blocks once, at the hand-off,
- *    and signing touches nothing a page can replace. Every MAIN-world copy is attacked here.
- *
- * 2. SECURITY SIGNALS ARE SIGNED. blocked_/detected_/gated_/warned_/behavioral_risk events, the
- *    permission-chain signal, the media-active report Memory Shield trusts before sleeping a tab,
- *    and the reload-loop notice were believed on the public token alone -- a page could put fake
- *    findings in the Activity log and on the badges, raise WardenOne's own notices over itself,
- *    or present a live camera as idle. Each sender now signs; the bridge and the engine believe
- *    only what verifies, once.
- *
- * The shipped code is lifted and run; nothing here is a second implementation of what is tested.
- *
- * Run: node tools/test-main-world-key-isolation.js
- */
+/* Page-replaced built-ins must not observe HMAC key material during signing.
+   Run: node tools/test-main-world-key-isolation.js */
 'use strict';
 
 const fs = require('fs');

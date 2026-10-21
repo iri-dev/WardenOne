@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Eye Shield's per-site themes belong to the top frame, and the core has to work without them.
- *
- * eyeshield.js is registered for every frame of every site. 186 KB of it was the ten
- * hand-tuned stylesheets for YouTube, Google, Reddit, Amazon, Twitch, ChatGPT, GitHub,
- * Stack Overflow, Wikipedia and Hacker News -- so an ordinary page compiled Reddit's
- * stylesheet and Google's search-box rules in every one of its iframes and never called
- * them, because themeFooter() picks a builder by hostname and returns '' for anything
- * else (COST-03).
- *
- * They now live in eyeshield-sites.js, registered top-frame-only. Two things have to hold
- * for that to be safe, and both are asserted here:
- *
- *   - the core must never call a moved builder by name. If it does, a child frame throws
- *     a ReferenceError mid-theme instead of quietly theming generically.
- *   - the factory must receive every helper the builders read. A missing one is not a
- *     syntax error; it is a ReferenceError on one site, in one mode, possibly months later.
- *     So every public builder is actually executed here against a stub bag.
- *
- * Run: node tools/test-eyeshield-site-split.js
- */
+/* Load site-specific themes only in top frames; the generic core must work independently.
+   Run: node tools/test-eyeshield-site-split.js */
 'use strict';
 
 const fs = require('fs');

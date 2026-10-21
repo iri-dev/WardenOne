@@ -86,7 +86,7 @@ function makeHarness() {
   const implementation = between(
     BACKGROUND,
     'let __packagedHeaderTrackerDomains = null;',
-    '// Add or remove the rule that appends "DNT: 1"',
+    'let __privacyHeaderRuleEnabled = null;',
   );
   vm.runInContext(constants + implementation + '\nthis.__api = { applyHeaderShieldRules };', sandbox, {
     filename: 'background.js',

@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A page switching the engine off, and WardenOne noticing -- without asking the page.
- *
- * content.min.js runs in the MAIN world, which it shares with the page. The first watchdog
- * noticed when the engine never announced itself and asked the worker to look; the worker
- * read window.__wardenOneReadyVersion in the MAIN world and, if it was there, said "present".
- * That marker is page-writable. A page could call the published dispose and write the markers
- * back, and the probe certified the tab (SEC-03).
- *
- * Now the bridge holds a key the engine received once, at document_start, before the page
- * could run. "installed" counts only when it is signed with that key, and a live engine is one
- * that answers a signed challenge. The worker takes the bridge's word -- it is the isolated
- * world's, which the page cannot reach -- and its answer is a RELOAD, not an injection: no
- * channel into a document the page has already run in is private, so an engine injected there
- * would have to trust a bus the page can write to. A reload is a fresh document_start. It is
- * bounded, recorded, stays out of the way where the engine is meant to be off, and honours the
- * manifest's own exclusions, which the old path did not.
- *
- * Run: node tools/test-engine-watchdog.js
- */
+/* Use signed isolated-bridge health evidence and bounded reloads after page interference. (SEC-03)
+   Run: node tools/test-engine-watchdog.js */
 'use strict';
 
 const assert = require('assert');

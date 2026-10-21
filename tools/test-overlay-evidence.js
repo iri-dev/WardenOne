@@ -4,31 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Where the overlay cleaner's evidence comes from.
- * Run: node tools/test-overlay-evidence.js
- *
- * Reported live: challengermode.com went blank, with its header, left rail and
- * right sidebar still standing and a "Tidied 1 overlay" chip in the corner.
- *
- * The cleaner builds one blob out of innerText + attributes + class + id, and
- * AD_SIGNAL matches the word "sponsored". Challengermode is an esports site
- * whose actual content is sponsored tournaments, so a single card reading
- * "Sponsored" made the whole content region look like an advertisement. It
- * escaped the tooHuge guard because the surrounding furniture sits outside it,
- * so the region is not ≥92% of the viewport in both directions.
- *
- * The distinction the cleaner was missing: a word in innerText says what a
- * container is ABOUT; a word in a class, id or aria-label is the author naming
- * what it IS. For anything large, only the second kind counts now. Small
- * floating widgets keep the text signal, because there the text IS the pitch
- * ("Download now", "Allow notifications") and there is no article underneath to
- * lose.
- *
- * This is the second false positive of this shape in this cleaner -- it has
- * previously removed an entire site sidebar -- so the rule is pinned rather than
- * remembered.
- */
+/* Require structural evidence before removing large containers; quoted ad text alone is insufficient.
+   Run: node tools/test-overlay-evidence.js */
 'use strict';
 
 const assert = require('assert');

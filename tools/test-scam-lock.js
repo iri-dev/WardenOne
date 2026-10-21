@@ -4,19 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Scam Lock's page-text half: a claim or a number to call, not two names -- and the means to
- * act on it, not the words alone.
- *
- * Executes the shipped Scam Lock block from content.min.js against page text. A list of
- * Windows commands ("wscui.cpl: Windows Security Center", "mstsc: Remote Desktop
- * Connection") matched both halves of the pattern and was locked as a scam, and so was a
- * search for the scam itself, and so was WardenOne's own feature list describing the scam
- * (tools/test-feature-page-warnings.js). Real scam pages must still be caught: by the number
- * they give, the remote-access code they ask for, or the lock they put on the browser.
- *
- * Run: node tools/test-scam-lock.js
- */
+/* Require scam claims/contact instructions with actionable evidence; preserve ordinary explanatory text.
+   Run: node tools/test-scam-lock.js */
 'use strict';
 
 const assert = require('assert');

@@ -3,23 +3,8 @@
    Official source: https://github.com/iri-dev/WardenOne
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Nothing WardenOne paused may lose its owner (M25).
- *
- * Three ways it could. The pending and handled stores are whole-object read/modify/writes, so two
- * legitimate scans could both read the same starting state and the second write would drop the
- * first record. runtime.onInstalled stamped a new browser session for every reason including
- * 'update', so a background extension update reclassified a download from minutes earlier as
- * belonging to a previous session and closed its review. And the early pause happens before the
- * review record exists, so a worker death in that gap left a file paused with nothing pointing at
- * it.
- *
- * No file is corrupted by any of this. What is lost is ownership of a paused download -- the
- * review panel that explains it and offers to resume or cancel it -- which is the part that has to
- * be recoverable.
- *
- * Run: node tools/test-download-ownership.js
- */
+/* Recover reviews for every extension-paused download after restart or concurrent storage writes. (M25)
+   Run: node tools/test-download-ownership.js */
 'use strict';
 
 const fs = require('fs');

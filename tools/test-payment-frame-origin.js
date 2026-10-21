@@ -4,32 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Untrusted payment frames on a checkout page.
- * Run: node tools/test-payment-frame-origin.js
- *
- * The payment card guard used to carry this check:
- *
- *     if (window.top !== window && !trustedPaymentHost(location.hostname)) ...
- *         reasons.push("card fields are inside an untrusted embedded frame")
- *
- * inside an engine the manifest injects with all_frames:false. window.top always
- * equalled window, so the branch could not be taken and the reason had never once
- * been raised — a warning that had been shipping, and passing review, while being
- * unreachable.
- *
- * The fix inverts it rather than injecting the engine into every frame. Asked
- * from the top frame it is the better question anyway: the top document can
- * enumerate every embedded payment form at once, including ones whose own script
- * would have kept an injected guard out, and it costs nothing on the frames it
- * does not care about.
- *
- * The restraint is the hard part. Most checkouts render card fields inside a
- * third-party iframe — that is what Stripe and Adyen do, and it is exactly what
- * makes them safe — so flagging third-party frames as a class would flag every
- * real checkout and the advertisement beside it. Only a raw IP address or a host
- * that already looks like a fake payment domain counts.
- */
+/* Check untrusted checkout frames without treating every third-party payment provider as malicious.
+   Run: node tools/test-payment-frame-origin.js */
 'use strict';
 
 const assert = require('assert');

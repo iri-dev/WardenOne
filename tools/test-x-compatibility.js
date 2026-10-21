@@ -4,18 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * X/Twitter compatibility regressions.
- *
- * These tests execute the relevant sections of the shipped content.min.js
- * bundle. They cover the two failure modes that previously made X unusable:
- * essential fixed UI being mistaken for a notification overlay, and
- * authenticated requests between the x.com/twitter.com/twimg.com family being
- * mistaken for token exfiltration.
- *
- * Run with:
- *   node tools/test-x-compatibility.js
- */
+/* Preserve X’s essential fixed UI and authenticated requests across its first-party domain family.
+   Run: node tools/test-x-compatibility.js */
 'use strict';
 
 const assert = require('assert');

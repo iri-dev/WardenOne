@@ -4,31 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A page cannot summon WardenOne's redirect interstitial for a destination of its own.
- * Run: node tools/test-redirect-interstitial-forgery.js
- *
- * The in-page guard (anti-redirect.js, MAIN world) cancels a forced same-tab jump and emits
- * blocked_gestureless_nav. When the jump followed a real click -- the ambiguous case where
- * "Continue" might genuinely be wanted -- the bridge relays a redirect-warning to the worker,
- * which navigates the tab to WardenOne's own warning page with a Continue button pointing at
- * the event's url. The bridge used to relay that on the routing token alone, and the token is
- * public (SEC-01): any script on the page could dispatch
- *   wo-event {type:'blocked_gestureless_nav', detail:{url:<attacker>, why:'...', silent:false}}
- * and put its own landing page behind a genuine, WardenOne-branded Continue button on a real
- * chrome-extension:// page -- eight times a minute, which also trains the reader to click
- * through the interstitial a real hijack would raise (SEC-15).
- *
- * The request is now signed the way the navigation signals are (SEC-13): the guard signs it
- * under the bridge's key -- handed to the MAIN world once at document_start, before any page
- * script existed -- over a number that only moves forward and the destination, the reason and
- * the kind the interstitial will show. The bridge relays an interstitial request for nothing
- * that fails the signature, repeats a number or was altered in flight. The badge count for the
- * same event is unchanged: it was never the worker DOING something. The real emitter and the
- * real relay are lifted and driven here, as the page would attack each of them.
- *
- * Control: WARDENONE_BRIDGE / WARDENONE_ANTI_REDIRECT point at pre-fix copies.
- */
+/* Reject forged, altered and replayed requests for a branded redirect interstitial. (SEC-01, SEC-15, SEC-13)
+   Run: node tools/test-redirect-interstitial-forgery.js */
 'use strict';
 
 const assert = require('assert');

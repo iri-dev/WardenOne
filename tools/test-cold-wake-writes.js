@@ -4,32 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A worker that wakes to unchanged state writes nothing.
- * Run: node tools/test-cold-wake-writes.js
- *
- * A service worker starts on any message, tab event or alarm, and every start used to redo
- * maintenance that nothing had asked for (PERF-05): four dynamic-rule bands removed and
- * re-added in full -- never-block allows, the reader's blocklist, the grabber feed of up to
- * a thousand rules, the miner feed -- the context menu torn down and its thirteen entries
- * created again, and the installed extensions enumerated twice, once by the watcher and once
- * inside the security report. All of it browser-process work, serialised on every wake.
- *
- * Now each band is compared with what Chrome holds and written only when it differs; the
- * menu is rebuilt only when the fingerprint of its definition (the item table, the switch,
- * the version) is not the one this browser session already built; and the worker-start
- * extension scan is one coalesced job, once per browser session. This suite is the card's
- * own verification, modelled: the real appliers, menu installer and scan gate run fifty
- * times against a browser whose rules, menus and storage.session persist between wakes (a
- * wake is a fresh module realm), counting writes. Then every way state can change is
- * exercised to prove the skip is a comparison and not a memory: external loss of a band,
- * a corrupted rule, a list that grew, the switch turning, an install, a browser restart.
- *
- * The reads matter too. Unfiltered, getDynamicRules returns every dynamic rule -- the remote
- * lists alone are ~22,000 -- and Chrome builds that reply on its UI thread, ~200 ms a call,
- * six calls a wake. The modelled browser holds a block of such foreign rules, honours the
- * ruleIds filter the way Chrome does, and counts every foreign rule a wake reads back.
- */
+/* Unchanged worker wakes must not rewrite DNR bands or lose repair of missing rules. (PERF-05)
+   Run: node tools/test-cold-wake-writes.js */
 'use strict';
 
 const assert = require('assert');

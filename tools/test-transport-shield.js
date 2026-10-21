@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Transport Shield — the inventory test. Run: node tools/test-transport-shield.js
- *
- * The bug this exists to prevent. Blocklist rules were written against a
- * hand-maintained list of seven resource types. Chromium supports fifteen. The
- * gap included `webtransport`, which is a full bidirectional channel to the same
- * host over HTTP/3 — so every malware and phishing domain the extension blocked
- * was still reachable, by a page simply choosing a different constructor. The
- * in-page guards had the same shape of hole: fetch, XHR and WebSocket were all
- * wrapped, WebTransport was not, so Intranet Guard could be walked around in one
- * line.
- *
- * Nothing failed, because a partial list does not look partial. It looks like a
- * list. That is the whole problem, and it is why the fix is not "add
- * webtransport" but "stop maintaining partial lists": there is now one canonical
- * inventory, and the checks below compare everything against it.
- *
- * When Chromium adds a resource type, this suite fails. That is intended. Add it
- * to CHROMIUM_DNR_RESOURCE_TYPES, then decide — deliberately, once — which lists
- * should carry it.
- */
+/* Compare security coverage against the complete Chromium transport inventory, including WebTransport.
+   Run: node tools/test-transport-shield.js */
 'use strict';
 
 const assert = require('assert');

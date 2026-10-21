@@ -4,28 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Worker realms, and the layer that survives them.
- * Run: node tools/test-worker-realm-guard.js
- *
- * Intranet Guard was written entirely in the page: fetch, XHR, WebSocket,
- * EventSource, WebTransport, beacons, forms, element sources. That is a complete
- * list of the page's networking and it is worth nothing inside a Worker, which
- * gets its own realm with a pristine fetch on an object the hooks never touched.
- * Two lines in a worker reached the LAN with every guard still sitting there.
- *
- * Instrumenting workers back is the obvious answer and the wrong one. It means
- * re-serving their source from a blob, which breaks any site whose CSP omits
- * worker-src blob:, breaks module workers by moving the base URL their relative
- * imports resolve against, and cannot be done at all for a service worker --
- * registration from a blob URL is forbidden by spec. Chasing realms means
- * breaking pages in order to protect them.
- *
- * So the guarantee moved to declarativeNetRequest, which sees a request whatever
- * realm produced it. This suite pins that: the network rules exist and are shaped
- * correctly, the local-dashboard case still works, and the in-page front door is
- * closed too so the attempt gets a name in the log.
- */
+/* Enforce LAN network restrictions across worker realms without re-serving worker source from blobs.
+   Run: node tools/test-worker-realm-guard.js */
 'use strict';
 
 const assert = require('assert');
@@ -70,7 +50,7 @@ function loadRules() {
   }, resourceTypes.resolveAll(BG));
 
   const from = BG.indexOf('const INTRANET_NET_RULE_BASE');
-  const to = BG.indexOf('// ---------------------------------------------------------------------------\n// DNS rebinding');
+  const to = BG.indexOf('const REBIND_QUARANTINE_RULE_BASE');
   assert(from > 0 && to > from, 'could not delimit the intranet network rules');
 
   vm.createContext(sandbox);

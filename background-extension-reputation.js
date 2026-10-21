@@ -4,18 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WardenOne -- local installed-extension reputation and review engine.
- *
- * Runtime privacy boundary: the bundled database is read from a chrome-extension://
- * URL and extension assessments are stored in chrome.storage.local. No installed
- * extension ID, permission or review decision is sent to a server.
- *
- * Chrome does not expose another extension's source package or signing identity.
- * Reputation therefore uses exact 32-character extension IDs only. Capability
- * reach and inventory changes remain separate signals: powerful does not mean
- * malicious, and no database record does not mean safe.
- */
+/* Local installed-extension reputation. IDs, permissions and review decisions stay in local storage.
+   Chrome exposes no source package or signing identity; exact-ID reputation and capability reach
+   are separate signals, and an unknown ID is not a safety verdict. */
 
 /* global chrome, localGet, localSet, localRemove, getAllExtensions, extPermSet,
    classifyExtensionRisk, reconcileExtensionChanges, EXT_ALERTS_KEY,
@@ -626,25 +617,8 @@ function extensionReviewSnapshot(extension, reputation, access) {
   };
 }
 
-/* What actually invalidates a review.
- *
- * The snapshot records the name and version too, and comparing those was making
- * every routine auto-update re-open a review that had already been done. Chrome
- * updates extensions constantly, so "Needs attention" refilled with REVIEW
- * UPDATE cards for things nobody had touched -- including extensions with no
- * meaningful access at all, which is how a low-risk utility ended up sitting in
- * a warning list.
- *
- * A version bump on its own tells you nothing: the question a review answers is
- * "am I happy with what this can reach", and that answer only changes when what
- * it can reach changes. So the version is kept for display and for the change
- * timeline -- which reports version moves separately and does it better -- and
- * is not compared here.
- *
- * The name stays material, which is not an inconsistency. Versions move on their
- * own, constantly, without anyone deciding anything. A rename is somebody's
- * decision, it is rare, and a quiet one is a known shape of extension hijack, so
- * it is worth asking about exactly once. */
+/* Permission/host reach and renames invalidate a review; version-only updates do not.
+   Keep versions for display and the change timeline. A rename can indicate a hijack. */
 var EXT_REVIEW_MATERIAL_FIELDS = ['id', 'name', 'installType', 'permissions', 'reputationRecord', 'reputationStatus'];
 
 function materialExtensionReviewSnapshot(snapshot) {
@@ -1051,10 +1025,7 @@ async function buildExtensionSecurityReportNow(options) {
     catalogued: assessments.filter((item) => item.reputation.status === 'catalogued_listing').length,
     verifiedIdentities: assessments.filter((item) => item.reputation.status === 'recognized_identity').length,
     reviewed: assessments.filter((item) => item.review.reviewed).length,
-    /* Named separately from "reviewed" because they answer different questions.
-       Reviewed means you looked at it. Recognised means the catalogue knows what
-       it is, and everything it can do is what that kind of extension does -- the
-       reassuring count, and the one worth showing when nothing needs attention. */
+    /* Recognised means catalogue-supported capability fit; reviewed means the user acknowledged the entry. */
     recognized: assessments.filter((item) => item.verdict.code === 'recognized_expected').length,
   };
   return {

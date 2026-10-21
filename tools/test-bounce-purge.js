@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Bounce-tracking storage purge, inside redirect-chain protection.
- *
- * A tracker is briefly a FIRST party during a redirect -- A -> tracker -> B -- and can
- * set cookies and storage in that moment, which is the state third-party cookie blocking
- * does not reach. This clears what such a hop left behind.
- *
- * ALMOST ALL OF THIS SUITE IS ABOUT WHAT MUST NOT BE PURGED. Deleting storage is not
- * recoverable and the flows that legitimately bounce you across domains are the ones
- * where the damage is worst: SSO, OAuth callbacks, 3-D Secure, checkout handoffs. A
- * tracker that keeps its cookies is a miss. A checkout wiped halfway through is a bug
- * report nobody can diagnose, because the evidence was the thing that got deleted.
- *
- * trackingBounceDomains is lifted out of background.js and run for real.
- *
- * Run: node tools/test-bounce-purge.js
- */
+/* Purge bounce-tracker storage without clearing login providers or unrelated navigation data.
+   Run: node tools/test-bounce-purge.js */
 'use strict';
 
 const fs = require('fs');

@@ -16,26 +16,11 @@
  */
 
 /* global chrome, DEFAULT_CONFIG, localGet, regDomainBg, BLOCKED_DOMAINS, reconcileExtensionChanges, refreshExtensionAttentionBadge */
-/* ===========================================================================
- * STARTUP SECURITY CHECK
- * ---------------------------------------------------------------------------
- * When Chrome starts, sweep for things that suggest a problem carried over from
- * last session or happened while you were away:
- *   - Restored/open tabs sitting on a blocklisted or look-alike domain
- *   - Extensions that appeared since our last baseline (recently installed)
- * We summarise findings into a report the popup shows, and badge if anything is
- * notable. HONEST SCOPE: this surfaces things to review -- it doesn't auto-close
- * tabs or delete anything (that stays your decision, or the Recovery actions).
- * ========================================================================== */
+/* Startup security check: review restored tabs and extension changes, then publish a popup report.
+   This check does not close tabs or remove extensions. */
 var STARTUP_REPORT_KEY = 'wardenone_startup_report';
-/* The report names open tabs by host, so in a private window it is private activity. A
-   split-mode worker shares storage.local with the normal profile, and this key was not in
-   the worker's ephemeral registry, so a private window's flagged tabs -- host, reason and
-   80 characters of title -- were written to the durable normal profile and shown there
-   after the window had closed (PRIV-06). The private worker keeps its report in
-   storage.session now, the way the download reviewer does; the normal one in storage.local
-   as before. Titles are not kept at all: a host and a reason are what the popup needs,
-   and a title is where the search term, the document name or the message subject lives. */
+/* Private reports belong in storage.session: split-mode workers share storage.local.
+   Do not retain titles, which can contain search terms, document names or message subjects (PRIV-06). */
 var STARTUP_REPORT_TTL_MS = 24 * 60 * 60 * 1000;
 function startupReportPrivate() {
   try { return typeof INCOGNITO_CONTEXT !== 'undefined' && INCOGNITO_CONTEXT; } catch (_) { return false; }
@@ -168,17 +153,8 @@ function loginBrandTokens(profile) {
   return tokens;
 }
 
-/* Does this host wear a brand's name, and how? Answered by shape, the way the engine's own rule
-   (content.js, the M31 calibration) answers it, because the two used to disagree: this side
-   flagged ANY registrable domain that merely contained a brand token, so a search for "steamrip"
-   marked every steamrip.com result "Looks like Steam, but is not Steam" -- and steamdb, protondb,
-   applebees and blog.google with it -- while the engine let them all through. A name that
-   contains a brand word is not a look-alike. One dressed as a login, verify or secure
-   destination is (brand-in-name); a brand as a label to the left of somebody else's domain is
-   (subdomain); an official brand domain moved to another TLD, or the exact brand on another TLD
-   unless the brand is an ordinary word, is (tld-swap); a typo or digit swap of the brand is
-   (typosquat). A site's own /login path is not evidence that its independent brand is
-   impersonating somebody else; only a sign-in word in the host supports brand-in-name. */
+/* Match the engine’s brand shapes: login-like hostnames, misleading subdomains, TLD swaps and typos.
+   A brand substring or an independent site’s /login path alone is not impersonation evidence. */
 function loginBrandRiskForHost(host, url) {
   const h = String(host || '').replace(/^www\./, '').toLowerCase();
   const rd = regDomainBg(h);

@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Speech recognition -- the way to the microphone that Media Shield could not see.
- *
- * Media Shield hooks getUserMedia. SpeechRecognition does not go through it: a page calls
- * start() and is listening, with the microphone guard reporting nothing at all. That is worse
- * than an API nobody covered, because "Block camera & microphone" is a promise about the
- * microphone, and there was a route to the microphone the switch did not close. The switch was
- * not telling the truth.
- *
- * Chrome's implementation is also not local -- the audio is sent away to be transcribed -- so
- * this is not only listening, it is listening somewhere else.
- *
- * Refusal is the interesting part. start() returns nothing whether it works or not, so throwing
- * would break pages that never expected an exception. What every page using this HAS written is
- * the path for someone clicking Block: an error event carrying "not-allowed", then end. So the
- * refusal takes that path, and costs a well-built page nothing it had not already handled.
- *
- * Run: node tools/test-speech-guard.js
- */
+/* Apply microphone protection to speech recognition with native-shaped denial events.
+   Run: node tools/test-speech-guard.js */
 'use strict';
 
 const assert = require('assert');

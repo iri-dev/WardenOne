@@ -3,22 +3,8 @@
    Official source: https://github.com/iri-dev/WardenOne
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The newest desired state has to be the one that lands (M18).
- *
- * Three shapes of the same defect. The config cache and the cosmetic cache had no shared in-flight
- * load and no generation, so a burst of cold callers fanned out into one storage read each, and a
- * read that started before a newer value landed could publish itself over that value when it
- * finally returned -- leaving a master-off or an allowlist edit reverted for the worker's life.
- * The state appliers had the same ordering flaw with side effects instead of caches: each reads its
- * own "last applied" marker, awaits Chrome, then commits the marker, so two concurrent calls both
- * pass the early-out and whichever settles last wins, older desired state included.
- *
- * Every assertion here needs the storage read to be controllable mid-flight, because that window
- * is the entire finding. A harness that resolves immediately cannot see any of it.
- *
- * Run: node tools/test-state-serialization.js
- */
+/* Serialize each state applier so the newest requested configuration is the final applied state. (M18)
+   Run: node tools/test-state-serialization.js */
 'use strict';
 
 const fs = require('fs');

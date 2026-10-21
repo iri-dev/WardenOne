@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The Network Logger keeps no secret it was not told the name of.
- * Run: node tools/test-logger-redaction.js
- *
- * The logger records every request while it is open and can export the lot as JSON -- the file
- * a reader attaches to a bug report. Its redactor used to be a denylist: a fixed list of query
- * parameter names, plus "any value over 64 characters" and "any fragment over 12". A denylist has
- * to know every secret's name and shape in advance, so it kept https://alice:secret@site/ whole,
- * kept a password-reset token that travelled in the path, and kept ?card=4111111111111111 because
- * "card" was not on the list and sixteen digits are not long -- while the page promised that
- * anything resembling a token, key, password or address was removed (M49, PRIV-09).
- *
- * The direction is reversed now, the way the Activity Centre's own URL sanitiser already works:
- * everything goes unless it is recognisably harmless. Sign-in details always go; the fragment goes
- * whole; a path segment stays only when it reads as route vocabulary, with a known file extension
- * kept so the row still says what kind of resource it was; parameter names stay and a value stays
- * only when it is a flag, a small number or a lowercase word, never under a name that says it is
- * a secret. This suite runs the card's adversarial fixtures through the real redactor and the real
- * capture path, and asserts the raw secret is in neither the ring nor the batch a page receives.
- */
+/* Redact credentials from logger URLs before buffering or export, including unknown secret formats. (M49, PRIV-09)
+   Run: node tools/test-logger-redaction.js */
 'use strict';
 
 const assert = require('assert');
@@ -71,6 +53,7 @@ const LIFTED = [
   line('LOG_URL_MAX'), line('LOG_SEGMENT_MAX'),
   /* The route-word shape the path sanitiser keeps (PRIV-08). */
   line('LOG_ROUTE_PART', "const LOG_ROUTE_PART = '';"), line('LOG_ROUTE_WORD', 'const LOG_ROUTE_WORD = /^$/;'),
+  line('LOG_SENSITIVE_ROUTE'),
   grabFn(BG, 'safeLogSegment'), grabFn(BG, 'safeLogPath'),
   line('LOG_SECRET_PARAM'),
   line('LOG_HARMLESS_VALUE', 'const LOG_HARMLESS_VALUE = /^$/;'),

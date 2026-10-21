@@ -184,11 +184,7 @@ function renderSummary(report) {
     if (database.error) facts.appendChild(makeFact(database.error));
   } else {
     dbCopy.style.color = '';
-    /* The long "what this can and cannot prove" panel at the bottom of the page
-       is gone, but the honest part of it is not: Chrome will not let one
-       extension read another's code or signature, so "no record" means nobody
-       has written one down, not that it is safe. Said once, here, in a sentence,
-       rather than in a block nobody reaches. */
+    /* Chrome exposes no other extension’s source/signature; an unknown catalogue ID is not proof of safety. */
     dbCopy.textContent = 'Exact extension IDs only — names, icons and publisher-looking text never establish identity. '
       + 'Chrome does not let WardenOne read another extension’s code or signature, so "no local record" means '
       + 'nothing is written down about it, not that it is safe.';
@@ -238,13 +234,7 @@ function makeExtensionCard(item) {
   verdict.setAttribute('aria-label', 'Assessment: ' + verdict.textContent);
   card.appendChild(top);
 
-  /* The answer first, in a sentence.
-     This card used to open with three labelled rows -- Reputation, Access,
-     Change -- and then a list of Chrome's permission strings. Every one of them
-     was true and none of them was the point: it made the reader re-derive the
-     conclusion the engine had already reached, and it read as alarming whatever
-     it said, because "Access: CRITICAL" looks the same on a password manager
-     doing its job as on something that should be uninstalled. */
+
   appendText(card, 'p', item.recommendedAction || item.reputation.label, 'ext-answer');
 
   /* Then what it can actually do, said plainly and framed by whether it is
@@ -294,11 +284,7 @@ function makeExtensionCard(item) {
   }
 
   if (item.reputation.exactMatch || (item.access.chromeWarnings && item.access.chromeWarnings.length)) {
-    /* Folded away by default. The source record, the review date and Chrome's
-       own permission strings are worth having and worth checking -- and printing
-       all of them on every card is what turned a list of twelve extensions into
-       a page nobody scrolls to the bottom of. Anyone who wants the evidence is
-       one click from it; everyone else gets a card they can read. */
+
     const evidence = document.createElement('details');
     evidence.className = 'evidence';
     const summary = document.createElement('summary');
@@ -399,13 +385,7 @@ function renderExtensionList() {
     $('result-count').textContent = '0 of ' + installed.length + ' shown';
     return;
   }
-  /* Most of this page is cards nobody needs to read. An extension that is
-     recognised, doing only what its kind does, and unchanged since the last
-     snapshot has nothing in its card worth the scroll -- and burying the two
-     that DO matter under nine that do not is how the page stops being read.
-     They fold into one row instead, still one click from the full card.
-     Only when the reader has not narrowed the list themselves: if they picked a
-     filter or typed a search, they asked for these specifically. */
+  /* Collapse recognised, unchanged entries unless the user explicitly filtered or searched for them. */
   const quiet = (item) => item.verdict && item.verdict.code === 'recognized_expected'
     && !(item.latestChange && !item.latestChange.reviewed);
   const foldable = centreState.filter === 'all' && !centreState.query;

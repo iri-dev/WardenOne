@@ -79,7 +79,7 @@ check('failed downloads retain the last accepted publisher date and state', () =
 
 check('old publisher dates are information, not a setup failure', () => {
   const issueFrom = background.indexOf('  if (list.publisher.stale) {', background.indexOf('async function buildProtectionHealthSummary'));
-  const issueTo = background.indexOf('  // A feed that did not answer', issueFrom);
+  const issueTo = background.indexOf('  if (list.sources && Number(list.sources.failed || 0) > 0)', issueFrom);
   assert(issueFrom >= 0 && issueTo > issueFrom);
   const issues = [];
   new Function('list', 'addIssue', background.slice(issueFrom, issueTo))(

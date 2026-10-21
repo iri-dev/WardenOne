@@ -4,20 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-// Builds rules-easyprivacy.json -- a STATIC declarativeNetRequest ruleset of
-// third-party TRACKER HOSTS derived from EasyPrivacy, to back the "Block trackers"
-// toggle with real coverage (the hand-curated rules-trackers.json was only ~44 hosts).
-//
-// Budget-aware: the adshield EasyList ruleset already consumes ~28k of Chrome's ~30k
-// guaranteed static-rule budget, so we CANNOT ship ~10k individual tracker rules. Instead
-// we BATCH many hostnames into each rule's `requestDomains` array (DNR matches the request
-// domain or any subdomain of it). This is the same technique uBlock Origin Lite uses, and
-// turns thousands of tracker hosts into a few dozen rules -- negligible budget impact.
-//
-// We keep ONLY pure third-party host blocks (||host^ / ||host^$third-party). Path rules,
-// regex, domain-scoped, cosmetic and exception filters are skipped (the adshield ruleset
-// and the cosmetic engine cover those); approximating them risks breaking sites.
-//
+// Batch pure third-party tracker hosts into requestDomains arrays to preserve static-rule headroom.
+// Skip paths, regexes, scoped rules and exceptions rather than approximate them.
 // Usage: node tools/build-easyprivacy-dnr.js <easyprivacy.txt> <rules-trackers.json> <out rules-easyprivacy.json> [maxHosts]
 'use strict';
 

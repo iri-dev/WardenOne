@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The content configuration snapshot is built once per change, not once per frame.
- * Run: node tools/test-content-config-memo.js
- *
- * Every content script that needs its settings asks the worker for content-config-get, and the
- * bridge asks in every frame. The answer is a pure function of four storage keys -- the config,
- * the learned map, the supplemental lists and the search-junk list -- and it changes at most a
- * few times a day. It used to be rebuilt from scratch for every request: a four-key storage read,
- * then the sanitisers over 173 fields, up to 1,000 learned hosts and four list buckets capped at
- * 3,000 + 1,500 + 300 + 5,000, each entry through a URL construction -- 61 ms and 211 KiB per
- * frame, thirty times over on an ad-heavy page, and every frame received the 5,000-entry
- * search-copycat list that only the top-frame search marker can use (COST-01).
- *
- * Now the sanitised snapshot is memoised in the worker and served frozen to every caller, cleared
- * whenever one of its four inputs is written (the storage.onChanged hook that already refreshed
- * the pages, and the worker's own localSet before that event arrives), and a caller says which
- * parts it needs, so a child frame that only wants its switches gets its switches. This suite
- * runs the real sanitisers and builder against a store at the caps and counts reads per request.
- */
+/* Reuse validated content snapshots until their storage inputs change, including concurrent cold requests.
+   Run: node tools/test-content-config-memo.js */
 'use strict';
 
 const assert = require('assert');

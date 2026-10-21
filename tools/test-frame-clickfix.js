@@ -4,30 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A ClickFix scam inside an iframe must not be a ClickFix scam WardenOne cannot see (SEC-06).
- *
- * The command-paste guard lives in content.min.js, which the manifest loads in the top frame
- * only -- its size is why. So a fake CAPTCHA rendered inside a full-viewport frame could copy
- * "powershell -enc ..." to the clipboard with no detector anywhere near it: the reader saw the
- * same scam, and no warning. anti-redirect.js already runs in every frame at document_start,
- * so the smallest piece of the guard that still defeats the attack lives there: the same
- * clipboard hooks, the same twelve command shapes, no page-text scanning. A hit refuses the
- * write and reports it; the worker asks the top frame's engine to show the panel it would have
- * shown for its own document.
- *
- * What is asserted:
- *   - the frame's patterns and documentation-host exception are byte-identical to the top
- *     frame's, so the two cannot drift apart
- *   - the shipped frame guard, run in a stub frame: refuses a command, passes ordinary text,
- *     neutralises copy-event and execCommand routes, makes the documentation exception, stays
- *     out of the top frame, respects the switch, and caps its reports
- *   - the worker keeps the attacker's text out of history and validates the frame host
- *   - the relay reaches the top frame token-carried, and the page cannot fill the slot itself
- *   - the manifest premise (top-only engine, all-frame hardener) and the honest coverage copy
- *
- * Run: node tools/test-frame-clickfix.js
- */
+/* Refuse malicious clipboard commands in frames and relay the warning to the top engine. (SEC-06)
+   Run: node tools/test-frame-clickfix.js */
 'use strict';
 
 const fs = require('fs');

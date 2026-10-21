@@ -840,21 +840,8 @@ async function testNeverSleepIsExactAndHonoured() {
   assert.deepStrictEqual(Array.from(marked.state.discarded), []);
 }
 
-// ---------------------------------------------------------------------------
-// Sleep / close the tab you are looking at.
-//
-// These do NOT use tabKeepReason, and that is the design rather than an omission.
-// Its reasons -- "active tab", "pinned", "allowlisted" -- are guesses about what
-// somebody would have wanted on a tab nobody is looking at. Applied here they
-// would refuse every click, because the tab you can right-click is by definition
-// the active one. What survives is the pair of guards that protect something
-// unrecoverable: unsaved typing, and a live camera or microphone.
-//
-// The two facts these lean on were measured against the shipped extension in
-// Chromium 150, not assumed, and the obvious guess is wrong about both: discard
-// works on the on-screen tab (it just leaves you looking at a blank one), and the
-// discarded tab always comes back under a new id.
-// ---------------------------------------------------------------------------
+// Explicit sleep/close bypasses sweep exemptions but preserves unsaved-input and active-media guards.
+// Use discard’s result rather than assuming the selected tab ID survives.
 function pageTab(id, extra) {
   return Object.assign({
     id, windowId: 1, index: id - 1, url: 'https://ordinary.example/page' + id, active: false,

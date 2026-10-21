@@ -346,20 +346,9 @@ function messageHostFromText(value) {
   }
 }
 
-// Keys that change what an object IS rather than adding data to it.
-//
-// A detail object arrives from a content script and crosses a JSON boundary on the way here, and
-// JSON.parse creates "__proto__" as an own ENUMERABLE property -- so Object.keys lists it, and both
-// a plain out[key] = value and Object.assign go through [[Set]], which invokes the prototype setter
-// on our output object instead of storing a value there. The result is an object with inherited
-// properties that are not own properties: it JSON-stringifies without them while property access
-// still returns them, so what gets stored and what downstream code reads disagree.
-//
-// Global Object.prototype is never touched by this, which is why the earlier global-pollution test
-// can keep passing while per-object manipulation is still possible. They are different bugs.
-//
-// Nothing in a history detail needs a key by any of these names, so they are dropped rather than
-// escaped or renamed -- a log is not a place to preserve hostile structure.
+// Drop prototype-control keys from untrusted JSON details. __proto__ is an enumerable own key
+// after parsing, but assigning it to a normal object invokes the prototype setter and changes
+// what property reads see without appearing in serialized output.
 const UNSAFE_DETAIL_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 function safeDetailAssign(target, source) {
   if (!source || typeof source !== 'object') return target;
@@ -635,12 +624,8 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
     return;
   }
   if (msg && msg.kind === 'rg-block') {
-    // The ceiling comes from TAB_CONTEXT_RATE_LIMITS so there is one number for this
-    // kind rather than two that can drift apart -- this call site used to hardcode a
-    // different, lower one. The bucket is deliberately NOT the same as the router's
-    // generic gate: rg-block is the only kind checked in two places, and while both
-    // charged one shared bucket every message cost two slots, so the real ceiling was
-    // half the documented one and the badge silently stopped counting mid-page.
+    // Use the shared rg-block ceiling with a separate bucket at each gate.
+    // Charging the same bucket twice would halve the effective allowance.
     const rgLimit = TAB_CONTEXT_RATE_LIMITS['rg-block'] || { max: 300, windowMs: 60000 };
     if (!allowTabMessageRate(tabId, 'rg-block', rgLimit.max, rgLimit.windowMs)) return;
     if (msg.type === 'detected_grabber_image_candidate') {
@@ -767,57 +752,46 @@ function persistHistBuffer() {
   if (__histPersistTimer) return;
   __histPersistTimer = setTimeout(persistHistBufferNow, 150);
 }
-// A logged URL must never keep its query string or fragment. That is where
-// access tokens, OAuth codes, password-reset tokens, magic-link secrets and
-// email addresses live, and callers were passing whole tab URLs straight in.
-// The history is local, but it is long-lived and the user can export it, so
-// retaining those is a real risk in a tool people install *for* privacy.
-// Scheme, host and a REDACTED path say what happened without keeping the secret.
-//
-// Keeping the whole path was the remaining leak. Password-reset links, magic links, signed
-// downloads and session-style routes carry their secret in a path segment, not the query --
-// https://site.example/reset-password/SECRET123 survives query-stripping completely intact, and
-// then sits in exportable local history for as long as the user keeps it.
-//
-// Segments are therefore redacted by DEFAULT and kept only when they look like route vocabulary.
-// That direction matters: a token-matching heuristic has to recognise every secret format ever
-// invented to be safe, while a word-matching one only has to recognise English-ish route names to
-// be useful, and anything it fails to recognise is merely redacted. Getting it wrong costs
-// diagnostic detail; getting it wrong the other way costs someone their account.
+// Discard query, fragment and unrecognised path segments before logging. Secrets can occur in paths
+// as well as parameters; retain only route vocabulary so unknown formats lose detail rather than leak.
 const LOG_URL_MAX = 300;
 const LOG_SEGMENT_MAX = 24;
-// What a route word may be made of: lowercase words, small numbers, or a word with a small number
-// on the end (v2, oauth2, h264), joined by the separators routes use. Two shapes this used to keep
-// are identifiers as often as they are routes -- a run of digits of any length (an account, order
-// or phone number) and a short run mixing letters and digits (x7k2p9, ord7f3k2) -- and this log
-// is durable and exportable, so they go (PRIV-08). A plain lowercase word cannot be told from a
-// name and stays; the host and the event category are the context this log exists to keep.
+// Keep lowercase route words, short numbers and common word-number forms (v2/oauth2/h264).
+// Redact long digit runs and arbitrary mixed IDs, which can identify accounts or users (PRIV-08).
 const LOG_ROUTE_PART = '(?:[a-z]+|\\d{1,4}|[a-z]{1,6}\\d{1,3})';
 const LOG_ROUTE_WORD = new RegExp('^' + LOG_ROUTE_PART + '(?:[._~-]' + LOG_ROUTE_PART + ')*$');
+const LOG_SENSITIVE_ROUTE = /(?:^|[/._-])(?:reset|verify|verification|invite|invitation|magic|recover|recovery|otp|token|activate|activation)(?:$|[/;._-])/i;
 function safeLogSegment(segment) {
   if (!segment) return segment;
   let decoded = segment;
   // Percent-encoding would otherwise hide both the length and the shape of a secret.
   try { decoded = decodeURIComponent(segment); } catch (_) {}
   if (decoded.length > LOG_SEGMENT_MAX) return '*';
-  // A record id of up to eight digits is an ordinary route element and stays. Nine or more is a
-  // phone, card or account number far more often than it is a route.
+  // Short numeric route elements survive only outside sensitive-route tails.
   if (/^\d+$/.test(decoded)) return decoded.length <= 8 ? decoded : '*';
-  // Long unbroken alphanumeric runs are what hex, base64 and JWT fragments look like; real route
-  // words are broken up by hyphens, dots or underscores well before this length.
+  // Long unbroken runs can contain hex, base64 or JWT fragments.
   if (/[a-z0-9]{16,}/i.test(decoded)) return '*';
-  // Everything else -- an address, any upper case (route names are lowercase by overwhelming
-  // convention, tokens are not), a token mixing letters and digits, anything outside the
-  // separators routes use -- is blanked. Getting this wrong costs a diagnostic detail; getting it
-  // wrong the other way keeps somebody's identifier for thirty days.
+  // Retain route-like words, but redact mixed identifiers, addresses and unknown shapes.
   return LOG_ROUTE_WORD.test(decoded) ? decoded : '*';
 }
 function safeLogPath(pathname) {
   const path = String(pathname || '');
   if (!path || path === '/') return path;
-  // split('/') on a leading-slash path yields a leading '' that must survive, or the rebuilt
-  // path loses its root.
-  return path.split('/').map((seg, i) => (i === 0 ? seg : safeLogSegment(seg))).join('/');
+  let sensitive = false;
+  return path.split('/').map((segment, i) => {
+    if (i === 0 || !segment) return segment;
+    if (sensitive) return '*';
+    let route = segment;
+    for (let pass = 0; pass < 3; pass++) {
+      try {
+        const decoded = decodeURIComponent(route);
+        if (decoded === route) break;
+        route = decoded;
+      } catch (_) { break; }
+    }
+    sensitive = LOG_SENSITIVE_ROUTE.test(route);
+    return safeLogSegment(segment);
+  }).join('/');
 }
 function safeUrlForLog(value) {
   const raw = String(value || '').trim();
@@ -836,22 +810,54 @@ function safeUrlForLog(value) {
   return '';
 }
 
-// Details carry URLs too -- redirect targets, script sources, OAuth endpoints --
-// so sanitising only the top-level url would leave the same secrets one field
-// over. Only strings that are already absolute URLs are rewritten; everything
-// else is left exactly as the caller built it.
+// Details carry URLs too. Drop unexamined branches and bound the serialized output.
+const HISTORY_DETAIL_LIMITS = { depth: 6, fields: 128, entries: 32, string: 1024, key: 80, chars: 8192 };
 function sanitizeHistoryDetail(value, depth) {
-  if (typeof value === 'string') {
-    return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? safeUrlForLog(value) : value;
+  let fields = 0;
+  let remaining = HISTORY_DETAIL_LIMITS.chars;
+  const ancestors = new Set();
+  const reserve = (size) => {
+    if (size > remaining) return false;
+    remaining -= size;
+    return true;
+  };
+  const cleanString = (text) => /^[a-z][a-z0-9+.-]*:\/\//i.test(text.trim()) ? safeUrlForLog(text) : text;
+  function visit(item, level) {
+    if (level > HISTORY_DETAIL_LIMITS.depth) return undefined;
+    if (typeof item === 'string') {
+      if (item.length > HISTORY_DETAIL_LIMITS.string) return undefined;
+      const text = cleanString(item);
+      return reserve(JSON.stringify(text).length) ? text : undefined;
+    }
+    if (item === null || typeof item === 'boolean' || (typeof item === 'number' && Number.isFinite(item))) {
+      return reserve(JSON.stringify(item).length) ? item : undefined;
+    }
+    if (typeof item !== 'object' || level >= HISTORY_DETAIL_LIMITS.depth || ancestors.has(item) || !reserve(2)) return undefined;
+    const array = Array.isArray(item);
+    const out = array ? [] : {};
+    ancestors.add(item);
+    let examined = 0;
+    for (const key in item) {
+      if (++examined > HISTORY_DETAIL_LIMITS.entries || fields >= HISTORY_DETAIL_LIMITS.fields) break;
+      fields++;
+      const descriptor = Object.getOwnPropertyDescriptor(item, key);
+      if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) continue;
+      if (array && !/^(0|[1-9]\d*)$/.test(key)) continue;
+      if (key.length > HISTORY_DETAIL_LIMITS.key || UNSAFE_DETAIL_KEYS.has(key)) continue;
+      const cleanKey = array ? '' : cleanString(key);
+      if (UNSAFE_DETAIL_KEYS.has(cleanKey)) continue;
+      if (!reserve(array ? 1 : JSON.stringify(cleanKey).length + 2)) break;
+      const next = visit(descriptor.value, level + 1);
+      if (next === undefined) continue;
+      if (array) out.push(next); else out[cleanKey] = next;
+    }
+    ancestors.delete(item);
+    return out;
   }
-  if (!value || typeof value !== 'object' || depth >= 3) return value;
-  if (Array.isArray(value)) return value.map((item) => sanitizeHistoryDetail(item, depth + 1));
-  const out = {};
-  for (const key of Object.keys(value)) {
-    if (UNSAFE_DETAIL_KEYS.has(key)) continue;
-    out[key] = sanitizeHistoryDetail(value[key], depth + 1);
-  }
-  return out;
+  try {
+    const clean = visit(value, Number.isInteger(depth) && depth >= 0 ? depth : 0);
+    return clean === undefined ? null : clean;
+  } catch (_) { return null; }
 }
 
 // The history keeps its last HISTORY_MAX events and, since PRIV-08, only for HISTORY_RETENTION_MS:
@@ -904,20 +910,8 @@ function queueHistory(entry) {
   persistHistBuffer();
   scheduleHistoryFlush();
 }
-// On startup, recover any buffered entries that were never flushed from a prior
-// SW lifecycle.
-//
-// The recovered entries are PREPENDED rather than assigned. storage.session.get is
-// asynchronous and the rg-block listener is registered above this, so a block can
-// already have been queued by the time this callback runs -- and the worker cold
-// starts precisely BECAUSE of that first event. Assigning here dropped it.
-//
-// Nothing may drain the buffer until this has run. The read is asynchronous and the block
-// listener is already live, so a cold start triggered by a block can queue an entry, schedule a
-// flush, and complete the whole write-and-clear cycle while this get() is still in flight -- and
-// that cycle ends by deleting the very session key being read. The recovered entries would then
-// be prepended into memory after the write that was supposed to persist them, and dropped at the
-// next suspension. Waiting is what makes the ordering deterministic rather than lucky.
+// Prepend session recovery to entries received during the async read.
+// Do not flush until recovery finishes: a flush could otherwise delete the session key being restored.
 let __histRecoveryDone = false;
 function markHistRecoveryDone() {
   if (__histRecoveryDone) return;
@@ -972,14 +966,8 @@ function flushHistory() {
   const pending = __histBuffer;
   __histInFlight = pending;
   __histBuffer = [];
-  // The session write-ahead copy is deliberately NOT cleared here. Clearing it at this point left
-  // a window in which these entries existed nowhere durable at all: lifted out of the buffer,
-  // deleted from session storage, and the local write not yet acknowledged. It is dropped after the
-  // write is confirmed instead, and only when nothing new has arrived meanwhile.
-  //
-  // Every exit path from here must unlock. __histWriting is a lock with no timeout and no owner:
-  // if it is left true, scheduleHistoryFlush returns early forever and history stops writing for
-  // the rest of the worker's life, with this batch already gone from memory and from session.
+  // Keep the session write-ahead copy until the local write succeeds and no newer entries exist.
+  // Every exit must release __histWriting or later flushes will remain blocked.
   const giveBack = () => {
     __histBuffer = pending.concat(__histBuffer);
     __histInFlight = [];
@@ -988,9 +976,7 @@ function flushHistory() {
   };
   try {
     chrome.storage.local.get('wardenone_history', (x) => {
-      // This body runs in an asynchronous callback, so it is NOT covered by the try below -- that
-      // one only guards the synchronous get() call. A throw in here used to escape entirely and
-      // wedge the writer permanently. One corrupt stored value was enough to do it.
+      // Catch inside the async callback: the outer try guards only get(), and failures must release the writer.
       try {
         if (chrome.runtime.lastError) {
           giveBack();
@@ -1081,25 +1067,8 @@ chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
 });
 
 // ---- Redirect-chain + tab-under detection ----------------------------------------
-// The real "redirect chains" protection. The in-page heuristic only ever sees the FINAL
-// landing URL; this accumulates the per-tab main_frame redirect HOPS a navigation passes
-// through (HTTP 30x / server redirects) and flags chains that cross many distinct registrable
-// domains or route through a blocklisted / abuse-TLD hop -- the server-side-chain coverage
-// that was missing. webRequest here is OBSERVE-ONLY (no blocking); we react after the chain
-// resolves: log every long chain, and show the existing interstitial only for high-confidence
-// ones, so normal multi-hop ad/SSO flows are not interrupted.
-// Correlation state that survives the worker (M17).
-//
-// The multi-signal checks advertise ten-minute windows: a permission chain, a recent redirect that
-// led to a download. Both lived only in the heap, and an MV3 worker is suspended far more often
-// than every ten minutes -- so the same sequence of user actions produced a correlated High verdict
-// or two unrelated low ones depending on nothing more than whether Chrome had torn the worker down
-// in between. That is not a threshold anyone can reason about.
-//
-// storage.session is the matching lifetime: it outlives suspension and dies with the browser, and
-// these windows are meaningless across a browser restart anyway. Restores merge and never replace,
-// for the same reason the caches in M18 do not: something that arrived while the read was in
-// flight is newer than anything the read can offer.
+// Observe HTTP redirect hops and reserve interstitials for high-confidence chains.
+// Keep correlation windows in storage.session and merge restoration with newer live events (M17).
 function sessionArea() {
   try { return (chrome.storage && chrome.storage.session) || null; } catch (_) { return null; }
 }
@@ -1628,19 +1597,9 @@ async function maybeCloseOverlaySpawnedPopup(tab) {
     return true;
   } catch (_) { return false; }
 }
-// The key a chain is remembered under is a digest of its final URL, not the URL (PRIV-04),
-// and the key a reputation provider's answer is cached under is a digest of what was asked
-// (PRIV-03).
-//
-// Every reader of finalKey compares it for equality with the key of a download URL or a
-// referrer -- nothing ever reads a URL back out of it -- so a digest serves the lookup exactly
-// as well, while the mirror in storage.session stops being a ten-minute list of the last
-// eighty redirect destinations with their query strings. Redirect chains are where OAuth codes
-// and password-reset tokens travel, which made that list the wrong thing to keep in plain
-// text even briefly. The same holds for the provider caches: they are only ever read by the
-// address that fills them. cyrb53 rather than SHA-256 because this runs inside a synchronous
-// webRequest observer; it is not a secret-keeping hash, it is a lossy 53-bit fingerprint that
-// cannot be turned back into an address and only ever confirms an address someone already has.
+// The key a chain is remembered under is an equality digest, as are provider keys (PRIV-03/04).
+// This avoids persisting raw token-bearing addresses. cyrb53 is a lossy synchronous fingerprint,
+// not a cryptographic hash or protection against guessing candidate URLs.
 function urlDigest53(text) {
   const s = String(text || '');
   let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
@@ -1677,9 +1636,7 @@ function pruneRecentRedirectChains(now) {
     RECENT_REDIRECT_CHAINS.splice(REDIRECT_CHAIN_RECENT_MAX);
   }
 }
-// A summary is what the download reviewer needs and nothing else: counts, flags, the domains
-// crossed, the final host, and a digest of the final URL for exact matching. It used to carry
-// finalUrl as well -- the raw address, up to 700 characters -- which nothing ever read (PRIV-04).
+// Keep counts, flags, hop domains, final host and an equality digest, never the raw final URL (PRIV-04).
 function redirectChainSummary(chain, finalUrl, tabId, matchedOn) {
   const c = chain || {};
   const final = String(finalUrl || '').slice(0, 700);
@@ -1933,22 +1890,8 @@ async function purgeTrackingBounces(chain, finalUrl, cfg) {
 }
 
 // ---- Frame-driven top navigation -------------------------------------------
-// The hole yomi.to walked through. Two layers watched redirects and NEITHER could
-// see this one:
-//   - anti-redirect.js hooks Location.assign/replace and the href setter, but only
-//     in the top frame -- and a CROSS-ORIGIN iframe setting top.location goes
-//     through Chrome's cross-origin path, which never runs a JS accessor the top
-//     frame installed. No in-page hook, in any frame, can observe it.
-//   - the redirect-chain detector accumulates HTTP 30x hops. A frame navigating
-//     its parent is client-side, so it never becomes a hop.
-// Chrome only permits it with a user activation, which on a streaming page is the
-// click on "play". So the signature is: the click landed on a player and targeted
-// no URL of its own (the content script says so), then the top frame went
-// cross-site without our own hooks claiming it. An anchor wrapped around a
-// thumbnail sets intentWasExplicit and never raises the gesture signal, which is
-// what keeps ordinary navigation out of this.
-// Ambiguous destinations stay recoverable behind an interstitial. Distinctive
-// ad-click brokers return to the source page so a player control remains usable.
+// Correlate a destinationless player gesture with an unexplained cross-site top navigation.
+// Cross-origin top.location bypasses page hooks and creates no HTTP redirect hop.
 const PLAYER_GESTURE_AT = Object.create(null);
 const POPUP_OVERLAY_AT = Object.create(null);
 const TOP_NAV_OWNED_AT = Object.create(null);
@@ -2020,19 +1963,8 @@ function topNavOwnedFor(tabId, toHost, now, windowMs) {
   return !!toHost && TOP_NAV_OWNED_HOST[tabId] === toHost;
 }
 
-// Ad-auction click trackers. These parameters are the machinery of a real-time
-// auction -- what the click cost, which publisher and zone sold it, which campaign
-// and creative won -- and they belong in server-to-server traffic. A TOP-LEVEL page
-// carrying two or more of them is a click being monetised, not a page anyone asked
-// to see.
-// Matching the TRACKER rather than where it sends you is the whole point. Loading
-// yomi.to twice produced the same tracker with a different campaign, placement and
-// price each time, and a different destination behind it: an install funnel once, a
-// 404 the next. The destination is auctioned per visit, so blocking by destination
-// is chasing a number that is designed to change. The tracker is the fixed part.
-// Whatever drove the navigation -- a 30x, a script, a frame, a synthesised click --
-// the worker sees the top-frame navigation, so this needs no cooperation from the
-// page and works in exactly the places every in-page hook is blind.
+// Identify auction brokers by multiple transaction parameters rather than their rotating destinations.
+// Top-frame observation also covers client-side jumps that in-page hooks cannot see.
 function adAuctionClickUrl(rawUrl) {
   let query = '';
   try { query = new URL(String(rawUrl || '')).search; } catch (_) { return false; }
@@ -2155,22 +2087,9 @@ function forgetNavSignals(tabId) {
   delete PRESSED_LINK_RESTORE_AT[tabId];
 }
 
-// The other half of the engine watchdog. bridge.js runs in the ISOLATED world, which a page
-// cannot reach. It holds the key the engine was handed at document_start and it tells us when
-// the engine never produced a signed "installed", or stopped answering a signed challenge
-// (SEC-03). Its word is the health authority here: the MAIN-world marker this used to read
-// (__wardenOneReadyVersion, and a protection-active marker since removed) is page-writable, so
-// a page could dispose the engine and write it back, and the probe said "present".
-//
-// The response is a reload, not an injection. Injecting into a live document cannot hand the
-// new engine a key the page has not seen, so it would produce an engine that has to trust a
-// bus the page can write to -- which is the finding. A reload is a fresh document_start, where
-// the hand-off is private. Bounded: never twice within thirty seconds, never more than twice
-// in ten minutes per tab, and after that the tab is reported as one this page keeps switching
-// off, rather than reloaded forever. Tabs the engine is meant to skip -- master off, allowlisted,
-// or on the manifest's own exclude_matches for content.min.js -- are left alone; the last of
-// those used to be missing, so a login page the manifest excludes was having the engine
-// injected into it by this path after six seconds.
+// Trust the isolated bridge’s signed health challenge, not page-writable MAIN markers (SEC-03).
+// Recover through a bounded reload: only a fresh document_start permits a private key handoff.
+// Skip disabled, allowlisted and manifest-excluded pages.
 const ENGINE_RELOADS = Object.create(null);
 const ENGINE_GAVE_UP = Object.create(null);
 const ENGINE_RELOAD_MIN_GAP_MS = 30000;
@@ -2378,19 +2297,10 @@ async function evaluateRedirectChain(details) {
   const finalUrl = (chain.hops[chain.hops.length - 1] && chain.hops[chain.hops.length - 1].to) || details.url || '';
   const confirmedThreat = !!(chain.blocklisted || chain.abuseTld || chain.fakeInstall);
   const authChain = redirectChainContainsKnownAuth(chain, finalUrl);
-  /* Before the log thresholds below, because whether a bounce is worth LOGGING and
-     whether its leftovers should be cleared are different questions -- a short, quiet
-     two-hop bounce through a tracker is the ordinary shape of this and would fall under
-     every threshold here. Not awaited: a wipe must never delay the interstitial. */
+  /* Purge bounce leftovers independently of logging thresholds. Do not await cleanup before an interstitial. */
   void purgeTrackingBounces(chain, finalUrl, cfg);
-  // Landing somewhere other than the site actually asked for is worth recording
-  // even when the chain is short and carries nothing known-bad. This is the case
-  // that made a forced redirect impossible to diagnose at all: one 30x hop across
-  // two domains sits under the >= 4 bar, has no blocklisted hop, and was thrown
-  // away without a trace -- so the Activity Center showed nothing whatsoever for a
-  // navigation the user never asked for. Log-only; it decides nothing.
-  // Federated login legitimately ends on a different domain every time, so those
-  // stay out of it or the log fills with the one thing that is always fine.
+  // Log short unexpected cross-site landings for diagnosis without changing the decision.
+  // Exclude federated login, which routinely changes domains.
   const requested = chain.domains[0] || '';
   let landed = '';
   try { landed = registrableDomainBg(new URL(String(finalUrl)).hostname) || ''; } catch (_) { landed = ''; }
@@ -2421,15 +2331,8 @@ async function evaluateRedirectChain(details) {
   }
 }
 // ---- Listener registration, one at a time ----------------------------------------------------
-// A registration that throws must not take the ones after it down with it. The five listeners
-// below -- the redirect-hop recorder, the redirect-chain evaluator, the popup tracker, the
-// tab-close cleanups and the forced-redirect guard, across three Chrome namespaces -- used to
-// share one try, so a throw in the first (an invalid filter, an API unavailable at call time, a
-// future API change) would have silently dropped the other four for the worker's lifetime while
-// every setting reported them on (LIFE-04). Each goes through this helper now: it catches on its
-// own and records the name of what could not register, so Protection Health can say so rather
-// than "You're safe". The list is worker memory on purpose: the next wake registers afresh, and
-// what it holds is exactly what is missing from this lifetime.
+// Isolate registration failures so one unavailable listener cannot suppress the rest (LIFE-04).
+// Keep failures for this worker lifetime so Protection Health can report them.
 const LISTENERS_NOT_REGISTERED = [];
 function registerListener(name, register) {
   try {
@@ -2493,6 +2396,7 @@ registerListener('tab-close cleanup', () => {
     forgetNavSignals(tabId);
     forgetRebindTab(tabId);
     forgetWarningRecordsForTab(tabId);
+    void clearSafeBrowsingBypass(tabId);
     // Which site this tab was on: the heap when the worker is warm, Forget Me's record when it is
     // not (LIFE-01). The heap read inside runs before the first await, and this listener is
     // registered ahead of Forget Me's own tabs.onRemoved listener, which drops the live entry once
@@ -2509,6 +2413,8 @@ registerListener('tab-close cleanup', () => {
 registerListener('forced-redirect guard', () => {
   chrome.webNavigation?.onCommitted?.addListener((details) => {
     if (details.frameId !== 0) return;
+    // Same-process server redirects do not always emit another onBeforeNavigate.
+    if ((details.transitionQualifiers || []).includes('server_redirect')) handleSafeBrowsingNavigation(details);
     // Before LAST_TOP_URL moves on: the guard needs the page being left, and
     // transitionQualifiers only exists on this event. Everything it reads from the
     // old state is read synchronously, ahead of its first await, so the two lines
@@ -2526,11 +2432,7 @@ registerListener('forced-redirect guard', () => {
   });
 });
 
-// There is no tabs.onUpdated fallback for that reset. One used to sit here "in case the
-// webNavigation permission isn't present", but webNavigation is a required permission in
-// the manifest, so onBeforeNavigate above always runs first and the fallback only ever
-// reset a count that was already zero. The census of tabs.onUpdated listeners, and why
-// their number is what it is, is at the Forget-Me listener further down.
+// Required webNavigation handles resets before tabs.onUpdated; do not add a redundant fallback listener.
 
 registerListener('blocked-notice carry-over', () => {
   chrome.webNavigation?.onCommitted?.addListener(carryPageNoticeOnCommit);
@@ -2539,14 +2441,7 @@ registerListener('blocked-notice carry-over', () => {
 
 // Clean up when a tab closes.
 chrome.tabs.onRemoved.addListener((tabId) => {
-  /* Through removeBadge, not a raw delete.
-     badgeRecovering was the old model's in-flight map and no longer exists, so
-     this line threw a ReferenceError on EVERY tab close -- taking the two
-     cleanups below with it, since nothing after a throw in a listener runs.
-     The raw `delete counts[tabId]` went for the same reason the rest of the
-     badge writes go through the queue: before the session counts have been
-     recovered it is a write into a map that is about to be overwritten, and a
-     queued increment for that tab would bring it back. */
+  /* Use the badge queue for removal so hydration or a queued increment cannot restore a closed tab. */
   removeBadge(tabId);
   clearTabMessageRates(tabId);
   forgetPageNotices(tabId);
@@ -2681,9 +2576,7 @@ const DEFAULT_CONFIG = {
   urlHausKey: '',
   abuseIpDb: false,
   abuseIpDbKey: '',
-  // No openPhishKey: the community feed is fetched whole and takes no key. A token field
-  // used to sit here for a paid feed this build never used; the token it stored was a
-  // secret nothing read (BUG-09), and the update migration deletes any still stored.
+  // OpenPhish’s community feed is keyless. Migration removes the unused legacy token (BUG-09).
   openPhish: false,
   phishTank: false,
   phishTankKey: '',
@@ -2832,22 +2725,8 @@ function sanitizeContentConfig(raw) {
   return out;
 }
 
-// The learned map is shipped to the page for exactly one purpose: the bridge
-// turns it into learnedGrabberDomains, which the engine merges into
-// grabberDomains and which raises "Known IP-logger detected -- this domain is a
-// known IP-grabber / logger service".
-//
-// It holds two unrelated kinds of entry. learnDomain() writes the grabber kind,
-// and it has a single caller, which always passes 'known IP-grabber behavior'.
-// The right-click "Block this site" writes the other kind, with userBlocked:true
-// and reason 'you blocked this site'. Shipping both meant blocking any site by
-// hand made the engine accuse it of being an IP logger: block twitch.tv, and a
-// page load would announce twitch.tv as a known IP-grabber service.
-//
-// So user blocks are dropped here. That is a claim about the site, and the user
-// deciding they do not want a site is not evidence of anything about it. A
-// domain that is both -- learned as a grabber and later blocked by hand -- is
-// dropped too, which costs nothing: it is blocked, so no page loads to warn on.
+// Send only learned grabber evidence to the engine. A manual block is a preference,
+// not evidence that the host is an IP logger.
 function sanitizeLearnedForContent(raw) {
   const out = {};
   let count = 0;
@@ -2869,15 +2748,9 @@ function sanitizeSearchJunkForContent(raw) {
   return sanitizeSupplementalBucket(source, 'searchJunkDomainsExtra');
 }
 
-/* The scraper pass's packaged seed list, read where a packaged file can be read (BUG-10). It used
-   to be fetched by search-junk.js itself, a content script, through chrome.runtime.getURL(): since
-   Chrome 85 a content script's fetch runs with the page's privileges, and a packaged file that is
-   not web-accessible is refused -- so the seed never arrived, the pass found no hosts and switched
-   itself off, and the popup toggle went on reading "on", with nothing anywhere to say otherwise.
-   Making the file web-accessible would hand it to every page for no benefit. The worker reads it
-   once instead, and it travels inside the content-config answer beside the runtime lists, which
-   already go that way; a read that fails is remembered as a failure, so Protection Health and the
-   activity record can say so, and is tried again by the next build of the snapshot. */
+/* Read the packaged scraper seed in the worker; content-script fetches use page privileges
+   and cannot read non-web-accessible assets (BUG-10). Expose failures to health checks and retry
+   on the next snapshot build. */
 const SEARCH_JUNK_SEED_FILE = 'search-junk-domains.json';
 let __searchJunkSeed = null;
 function searchJunkSeed() {
@@ -2904,19 +2777,9 @@ function searchJunkStoredHosts(raw) {
   return source.map((h) => String(h || ''));
 }
 
-// The snapshot every content script asks for is a pure function of four storage keys, and it
-// changes at most a few times a day. It used to be rebuilt for every request: the four-key read,
-// then the sanitisers over 173 fields, up to a thousand learned hosts and four list buckets at
-// their caps, each entry through a URL construction -- tens of milliseconds and a couple of
-// hundred kilobytes per frame, thirty times over on an ad-heavy page, for an answer identical to
-// the last one (COST-01). It is built once here and served frozen to every caller until one of
-// its inputs is written: storage.onChanged clears it for those four keys (the same branch that
-// already tells the pages to refresh), and localSet clears it before that event can arrive, so
-// the worker's own writes are never served stale. The sanitisers stay exactly where they were:
-// this changes how often they run, not what they let through. The memo is worker memory, so a
-// split-incognito worker holds its own and neither can serve the other's.
-// A function rather than a constant: SUPPLEMENTAL_LIST_STORAGE_KEY is declared further down the
-// file, and this is read only at call time.
+// Cache the frozen snapshot until one of its four input keys changes (COST-01).
+// Invalidate on localSet before onChanged arrives. Split-incognito workers keep separate caches.
+// Resolve key names at call time because supplemental constants are declared later.
 function contentConfigInputKeys() {
   return ['wardenone_config', 'wardenone_learned', SUPPLEMENTAL_LIST_STORAGE_KEY, 'wardenone_search_junk_domains'];
 }
@@ -2934,13 +2797,7 @@ function deepFreezeSnapshot(value) {
 function sharedContentConfigSnapshot() {
   if (__contentConfigMemo) return __contentConfigMemo;
   const build = (async () => {
-    // The snapshot's revision: the moment its inputs were READ, taken before the read. The memo
-    // is dropped whenever an input key changes, so a newer configuration is a newer build, and a
-    // bridge that receives two answers out of order can tell which one is current (MV3-04). It
-    // used to be stamped after the reads finished, so a build that read the old settings just
-    // before a save, and finished just after the popup pushed the new ones to a tab, carried a
-    // revision newer than the push -- and Eye Shield, which sets aside answers older than its
-    // last push, would have taken it and put the previous mode back.
+    // Stamp revision before reading inputs so an old snapshot finishing late cannot outrank a newer push (MV3-04).
     const rev = Date.now();
     const store = await localGet(contentConfigInputKeys());
     // The packaged seed first, so the cap favours it, then whatever the reader or a list added (BUG-10).
@@ -2958,10 +2815,7 @@ function sharedContentConfigSnapshot() {
   build.catch(() => { if (__contentConfigMemo === build) __contentConfigMemo = null; });
   return build;
 }
-// What a caller may ask for. 'supplemental' is the three buckets the engine reads; 'searchJunk' is
-// the search-copycat list and its supplemental bucket, which only the top-frame search marker
-// can use -- every child frame used to receive both. A request that names nothing gets the
-// whole answer, as before.
+// Limit requested buckets to each consumer’s needs. An unspecified request retains the full snapshot.
 const CONTENT_CONFIG_NEEDS = new Set(['overrides', 'learned', 'supplemental', 'searchJunk', 'hidden']);
 function contentConfigNeeds(raw) {
   if (!Array.isArray(raw)) return null;
@@ -3055,14 +2909,8 @@ function scheduleContentConfigRefresh() {
 try { DEFAULT_CONFIG.notificationSettings = wardenNotificationDefaultSettings(); } catch (_) {}
 
 // ---- Onboarding protection bundles ----------------------------------------
-// "Recommended" = the always-safe security + tracking defenses that don't break
-// normal browsing (what the onboarding button has always applied). "Maximum
-// privacy" is a SUPERSET that also enables the hardened privacy features which
-// CAN affect some sites — surfaced in onboarding as an explicit, clearly
-// labelled opt-in, never forced on. Sharing the recommended object keeps the two
-// from drifting. Deliberately NOT in Maximum privacy: blockAllCookies (breaks
-// every login) and honeytokenMode (advanced, can interfere with forms) — those
-// stay expert-only toggles in the popup.
+// Maximum privacy extends Recommended with explicit compatibility tradeoffs.
+// Keep blockAllCookies and honeytokenMode expert-only; do not include them in either preset.
 const ONBOARDING_RECOMMENDED = {
   enabled: true,
   blockGesturelessNav: true,
@@ -3164,15 +3012,8 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details && details.reason === 'install') {
     try { chrome.tabs.create({ url: chrome.runtime.getURL('onboarding.html') }); } catch (_) {}
   }
-  // Stamp a session boundary so Download Guard reviews are scoped to this session -- on a first
-  // install only (M25).
-  //
-  // This used to run for every onInstalled reason, and 'update' is one of them. Chrome updates
-  // extensions in the background while the browser stays open, so a download the user started
-  // minutes earlier was suddenly classified as belonging to a previous session: the scan removed
-  // its pending record, marked it handled, and closed the review panel -- leaving the file paused
-  // in Chrome with nothing left to explain why or offer to resume it. The user's own browser
-  // never restarted. A real browser start is what onStartup is for, and it already calls this.
+  // Stamp a download session only on first install or browser startup (M25).
+  // An extension update during a live browser session must not orphan pending download reviews.
   if (details && details.reason === 'install') markBrowserSessionStart();
   // kick off a list update on install + schedule daily refreshes
   scheduleUpdates();
@@ -3211,30 +3052,12 @@ importScripts('background-extension-reputation.js');
  * ========================================================================== */
 importScripts('background-startup.js');
 
-/* ===========================================================================
- * AUTO-UPDATING BLOCKLIST
- * ---------------------------------------------------------------------------
- * The packaged rules derived from rules.json are good on day one but go stale as logger services
- * rotate domains. This fetches a remote, maintained domain list and converts it
- * into DYNAMIC declarativeNetRequest rules (which hard-block at the network
- * layer, same as the static ones), refreshed daily.
- *
- * HOW TO POINT IT AT YOUR LIST:
- *   Set REMOTE_LISTS below to one or more list URLs. The parser handles both
- *   plain (one domain per line) and uBlock format (domain.com/* with ! comments),
- *   so you can point it straight at the maintained anti-grabber repos. Lists are
- *   merged + deduped. If a source is unreachable, the others still apply and the
- *   existing rules stay -- it never wipes protection on a failed fetch.
- * =========================================================================== */
+/* AUTO-UPDATING BLOCKLIST
+   Refresh validated remote domains into dynamic DNR rules daily. Merge/deduplicate successful sources
+   and retain existing protection when a fetch fails. */
 
-// Maintained anti-grabber / IP-logger lists. These repos add new logger domains
-// as the services rotate them, so pulling daily keeps the block current without
-// shipping a new extension version. Add/remove sources freely.
-//
-// NOTE: these are community lists -- WardenOne validates every entry (must be a
-// well-formed domain) and caps the total, so a compromised/garbage source can't
-// inject arbitrary rules. Plain-domain and uBlock(`||domain^`, `domain/*`)
-// formats are both parsed.
+// Treat community lists as untrusted input: validate domain-only entries and cap the merged set.
+// Accept plain domains and the supported uBlock host forms.
 const REMOTE_LISTS = [
   // Anti-Grabify (uBlock filter format) -- Grabify + IPLogger front domains
   'https://raw.githubusercontent.com/TMAFE/anti-grabify/master/url_list.txt',
@@ -3406,14 +3229,8 @@ const SUPPLEMENTAL_LIST_SOURCES = [
   },
 ];
 
-// Payment processors relax warnings, so they are NOT pulled from community
-// blocklists. If WardenOne ships an owner-controlled manifest, it can include:
-// { "version": 1, "adultDomains": [], "ipLoggerDomains": [],
-//   "paymentProcessorDomains": [], "scamDomains": [], "phishingDomains": [] }
-// Scam/phishing manifest entries are parsed for future use but the existing DNR
-// updater remains the enforcement path for those categories. Set this to a
-// WardenOne-owned HTTPS JSON endpoint once that endpoint exists; keeping it as a
-// single audited constant avoids adding arbitrary remote config fetches.
+// Payment-processor exceptions require owner-controlled data because they relax warnings.
+// Use only the audited HTTPS endpoint; scam/phishing manifest fields do not replace the DNR updater.
 const SUPPLEMENTAL_BUNDLED_MANIFEST_PATH = 'supplemental-manifest.json';
 const SUPPLEMENTAL_MANIFEST_URL = '';
 const SUPPLEMENTAL_MANIFEST_SOURCES = [
@@ -3423,16 +3240,8 @@ const SUPPLEMENTAL_MANIFEST_SOURCES = [
 const SUPPLEMENTAL_SOURCE_URLS = SUPPLEMENTAL_LIST_SOURCES.concat(SUPPLEMENTAL_MANIFEST_SOURCES).map((s) => s.url);
 
 // ======================= AdShield cosmetic engine =======================
-// Parses uBlock/AdGuard cosmetic filter syntax into a structure the content
-// script applies as CSS. We support the common, safe forms and skip the exotic
-// ones we can't faithfully implement (so we never silently mis-hide content):
-//   example.com##.ad-banner        -> hide .ad-banner on example.com
-//   ##.ad-global                   -> hide .ad-global everywhere (generic)
-//   example.com#@#.foo             -> EXCEPTION: un-hide .foo on example.com
-//   ~example.com##.x / a.com,b.com##.x -> domain include/exclude lists
-// We intentionally SKIP for v1 (documented, not silently dropped):
-//   #?#  (procedural :has/:matches-css etc -- needs a JS engine)
-//   #$#  (cosmetic style injection) and scriptlets are handled separately.
+// Support hide/exception selectors with domain include/exclude lists. Skip unsupported procedural,
+// style-injection and scriptlet forms rather than interpreting them as ordinary CSS.
 const ADSHIELD_COSMETIC_MAX = 50000; // cap parsed selectors to keep memory sane (increased for better coverage)
 
 // Scriptlets we can actually run (the content-script library implements exactly
@@ -3754,16 +3563,8 @@ async function updateAdShieldCosmetics() {
 }
 
 // ======================= Cosmetic serving cache =========================
-// The parsed cosmetic blob is multi-megabyte. The content script asks for the
-// selectors that apply to its page once PER FRAME, and content scripts run in
-// all_frames -- so a page with N iframes used to trigger N full
-// chrome.storage.local reads, each deserialising the whole blob, plus N full
-// per-host recomputations. We cache the blob (+ config + allowlist) in the
-// service-worker heap and memoise the computed result per hostname. Output is
-// byte-for-byte identical to reading storage every time; this only removes
-// redundant disk reads and recomputation. The cache is dropped whenever the
-// underlying data changes (see invalidateCosmeticCache + storage.onChanged), and
-// it evaporates for free whenever the idle service worker is torn down.
+// Cache the parsed blob and per-host results in this worker; invalidate when inputs change.
+// Each frame should not re-read and deserialize the multi-megabyte store.
 let __cosmeticMem = null;             // { data, cfg, allow } once loaded; null = needs (re)load
 let __cosmeticHostCache = new Map();  // host -> serve result (insertion order = LRU recency)
 let __cosmeticGenericSelectors = new WeakMap(); // one generic array per loaded list, shared by ordinary hosts
@@ -4029,15 +3830,9 @@ const TOTAL_SESSION_BUDGET = ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET 
 const TOTAL_UNSAFE_DYNAMIC_BUDGET = FIREWALL_RULES_BUDGET + 1;
 // Keep room for migration cleanup and new protections without shrinking existing lists.
 const DNR_MIN_RULE_HEADROOM = 1000;
-// Chrome 121 introduced the larger safe-dynamic quota; the build also checks the manifest floor.
-// Every resource type Chromium's declarativeNetRequest recognises, in the order
-// the API documents them. This is the inventory the rest of the file measures
-// itself against; tools/test-transport-shield.js fails if it drifts from the set
-// Chrome actually supports, which is how webtransport went missing for a year.
-//
-// A partial list is a silent hole. Blocking a malware domain on six of fifteen
-// transports is not blocking it: WebTransport alone is a full bidirectional
-// channel to the same host over HTTP/3, and nothing in a partial list stops it.
+// Chrome 121 supplies the larger safe-dynamic quota; the build checks the manifest floor.
+// Keep the complete resource-type inventory aligned with test-transport-shield.js so security
+// blocks also cover less common transports such as WebTransport.
 const ALL_DNR_RESOURCE_TYPES = [
   'main_frame', 'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object',
   'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'webtransport',
@@ -4152,21 +3947,8 @@ function validateRemoteListSource(url, includeCosmetic) {
 }
 
 // ---- One request per source per refresh ----------------------------------------------------------
-// Three pipelines read the remote lists -- the network sets, the cosmetic set and the supplemental
-// buckets -- and each owned its own fetches, so a default refresh made 40 requests for 37 addresses:
-// EasyList and AdGuard's tracking filter were downloaded once for the network rules and again for
-// the cosmetic rules, Anti-Grabify once for the grabber rules and again for the page-side grabber
-// list; and the ten cosmetic downloads ran all at once beside the four-wide network batch, so up to
-// fourteen multi-megabyte bodies were in flight together (PERF-07). This broker sits under all
-// three. One request per address: a second reader of an address in flight waits for the same
-// response. A body that more than one pipeline has PLANNED to read is kept until the last of them
-// has taken it, and released the moment it has -- nothing is held for a reader that was never
-// coming, and everything is dropped when the last pipeline lets go of the broker. Every fetch from
-// every pipeline waits in one queue of LIST_FETCH_CONCURRENCY, so the cap is a cap on the refresh
-// and not on each of its parts. Nothing about what a pipeline may read changed: each validates the
-// address against its own policy before it asks (below), and the byte cap is a property of the
-// address, so a shared body is under the strictest cap that applies to it. A failed fetch is
-// handed to whoever was waiting and not kept; the next reader tries again.
+// Share in-flight bodies across pipelines under one concurrency limit and the strictest byte cap.
+// Each caller validates its URL; release shared bodies after planned readers finish and never cache failures.
 const LIST_BROKER = (() => {
   const inflight = new Map();   // url -> the request out for it
   const bodies = new Map();     // url -> a result kept for readers still planned
@@ -4344,16 +4126,8 @@ const ALLOWLIST_RULE_BASE = 800000;
 const NEVER_BLOCK_ALLOW_RULE_BASE = 745000;
 const NEVER_BLOCK_ALLOW_MAX = 200;
 
-// Compare before writing (PERF-05). Four bands -- never-block allows, the reader's blocklist,
-// the grabber feed and the miner feed -- are rebuilt from their sources on every worker start,
-// and a worker starts on any message, tab event or alarm. Each rebuild used to be a remove of
-// every rule in the band and an add of every rule again, up to a thousand at a time, whether
-// or not a single one had changed. Chrome serialises that in the browser process on every
-// wake. The desired set is still built and the installed set is still READ -- external loss of
-// the band is detected and repaired on the next wake, which is the self-healing the worker
-// must keep -- but the write happens only when the two differ. The installed rule may carry
-// fields Chrome adds that this code never set; a desired rule matches when every field it
-// sets is present with the same value, whatever else is there.
+// Compare desired bands before writing, while still reading installed rules to repair external loss (PERF-05).
+// Chrome may add fields: compare the fields we set, not browser-added metadata.
 function dnrValueMatches(desired, installed) {
   if (desired === installed) return true;
   if (Array.isArray(desired)) {
@@ -4409,20 +4183,9 @@ function ownDynamicRuleBands() {
     [HTTPS_UPGRADE_DYNAMIC_RULE_ID, 1],
   ];
 }
-// Read one band, not every dynamic rule. Unfiltered, Chrome answers with all of them -- the
-// remote lists alone are ~22,000 -- and builds that reply on the browser's UI thread, about
-// 200 ms per call. Six appliers read on every wake, so a tab close that woke the worker froze
-// the tab strip for over a second. No unfiltered fallback: the filter is Chrome 111+ and the
-// manifest requires 121, so a rejection is a transient Chrome error, and answering it with the
-// full read would bring the stall back. Every caller catches and leaves its band for the next
-// wake, as it did before.
-//
-// The filter narrows the reply, not the work. Chrome reads and parses the whole dynamic-rule
-// file before it filters: 114 ms of browser CPU per call with the lists in, even for one id,
-// against 1.1 ms without them, and a wake made eight such calls. So the listed bands share one
-// read, filtered to all of them at once and cut per band here: one parse per wake, and a reply
-// that is still only WardenOne's own bands. One unfiltered read would cost 284 ms and hand back
-// the 22,000 list rules on the UI thread, which is the stall above.
+// Read the owned bands together with Chrome’s rule-ID filter. Filtering narrows the reply but still
+// parses the whole rule file, so separate band reads repeat expensive work.
+// On failure retain current rules; never fall back to an unfiltered UI-thread reply.
 async function getDynamicRulesInBand(base, size) {
   if (!ownDynamicBandListed(base, size)) {
     const ruleIds = [];
@@ -4756,14 +4519,8 @@ const TRACKER_LEARN_MIN_SITES = 3;
 const TRACKER_LEARN_MIN_SESSIONS = 2;
 const TRACKER_LEARN_MIN_HITS = 3;
 const TRACKER_LEARN_STORAGE_MAX = 600;
-/* What the store may say about where the reader has been (PRIV-01). It used to keep, per tracker,
-   up to 80 named first-party sites with hit counts and exact times, plus the raw ids of the browser
-   sessions that saw it -- 48,000 named site-to-tracker edges at the cap, which is browsing history
-   whatever the key is called. The evidence the learner actually needs is three distinct sites and
-   two sessions, so that is all it keeps now: a count of sites and a 32-bit keyed sketch that only
-   answers "already counted this one?", dropped the moment the tracker leaves 'candidate'; a count
-   of sessions, never an id; and times to the day. Observations expire. The reader's decisions --
-   an approved rule, a dismissal, a per-site allow or block -- are settings and stay. */
+/* Retain bounded counts/sketches and day-level times, not named site-to-tracker edges or session IDs (PRIV-01).
+   Expire observations and drop the site sketch after candidacy; explicit user decisions remain settings. */
 const TRACKER_LEARN_TTL_MS = 30 * 86400000;
 const TRACKER_LEARN_MAX_SESSIONS = 4;
 const TRACKER_LEARNER_STORE_VERSION = 2;
@@ -4796,18 +4553,8 @@ let __initTrackerLearner = null;
 let __initLearned = null;
 let __initBlockedDomains = null;
 
-/* The same normalisation WITHOUT the never-block veto, for a site the reader named
-   themselves.
-
-   NEVER_BLOCK_DOMAINS holds youtube.com, google.com, twitch.tv, netflix.com,
-   github.com and the rest, and normalizeLearnedDomain returns '' for every one of
-   them. That guard is right for what it was written for: a false positive in the
-   28k-rule EasyList pack must not break a major site. It is wrong as a veto over
-   somebody deliberately choosing to block a site, and it did not merely refuse --
-   it refused SILENTLY, twice over. wardenSiteHostFromTab ran hostnames through it,
-   so "Block this site" reported "not a normal page" while sitting on YouTube; and
-   applyLearnedRules pruned every entry that normalised to '' and PERSISTED the
-   pruned map, so a block written any other way deleted itself on the next apply. */
+/* Explicit user blocks bypass the never-block compatibility veto used for automatic learning.
+   Normalise the host without silently rejecting or pruning the user’s choice. */
 function normalizeUserBlockDomain(value) {
   try {
     const host = normalizeAllowlistHost(value);
@@ -4842,15 +4589,8 @@ function loadLearned() {
     try {
       chrome.storage.local.get('wardenone_learned', (r) => {
         const raw = (r && r.wardenone_learned) || {};
-        // Merged into whatever is already here, not assigned over it (M17).
-        //
-        // Registering a listener is synchronous; hydrating from storage is not, and Chrome
-        // dispatches as soon as the worker is up rather than waiting for a storage read. So an
-        // event could arrive first, learn a domain into an empty LEARNED, and persist a heap
-        // containing only that one -- dropping everything already stored. This read then replaced
-        // the heap wholesale and the newly learned domain was gone too: lost from memory AND
-        // omitted from the write. Nothing may publish over a change that arrived while it was in
-        // flight; the same rule the caches got in M18.
+        // Merge hydration with live changes (M17). Synchronously registered listeners can learn a domain
+        // while the storage read is pending; neither the restore nor a write may discard the other set.
         Object.keys(raw || {}).forEach((domain) => {
           const d = normalizeLearnedDomain(domain);
           if (!d) return;
@@ -4937,18 +4677,8 @@ async function applyLearnedRules() {
   }
 }
 
-/* A blocked site with a service worker never reaches Chrome's error page.
-
-   YouTube registers one, and an installed worker does not need re-fetching to run:
-   the navigation goes to the worker, the worker's own fetch is refused by the
-   block rule, and it serves its cached offline shell -- so a successfully blocked
-   YouTube renders "Connect to the Internet. You're offline." That reads as a
-   broken browser rather than a site you chose to block.
-
-   Dropping the worker and its cache storage sends the next navigation to the
-   network, where the rule refuses it and Chrome shows its own blocked page.
-   Cookies and localStorage are deliberately NOT touched: unblocking should leave
-   you signed in, and clearing them would look like WardenOne logged you out. */
+/* Remove a blocked site’s service worker/cache so it cannot serve a misleading offline shell.
+   Preserve cookies and localStorage so unblocking does not sign the user out. */
 async function wardenDropSiteWorker(host) {
   const clean = String(host || '').replace(/^www\./, '');
   if (!clean) return false;
@@ -4962,10 +4692,8 @@ async function wardenDropSiteWorker(host) {
   } catch (_) { return false; }
 }
 
-/* Read the rule back out of Chrome rather than trusting that writing it worked.
-   updateDynamicRules rejects for reasons that have nothing to do with this site
-   -- the rule budget, an id collision, a malformed neighbour -- and every one of
-   them used to surface as "Blocked." followed by the page loading normally. */
+/* Confirm the installed rule before reporting success; Chrome can reject an otherwise valid site block
+   because of a shared budget, collision or neighbouring malformed rule. */
 async function wardenBlockRuleLive(host) {
   try {
     /* The learned band is where "Block this site" writes; reading every dynamic rule to find it
@@ -5040,17 +4768,8 @@ function loadPackagedGrabberDomains() {
   return __grabberPackagedLoad;
 }
 loadPackagedGrabberDomains();
-/* A feed load that could not read one of its sources must not become a write. The two feeds
-   (this one and the cryptominer feed) are assembled from a packaged file plus a storage key the
-   daily update maintains, and the loaders used to empty their in-memory set first, read what they
-   could inside try/catch, and hand the applier whatever was left -- so a packaged fetch that
-   failed (an extension update replaces the files under a running worker) or a storage read that
-   failed deleted the matching rules from Chrome, on a cold start nothing had asked for, with
-   nothing logged and no retry before the next cold start (LIFE-02). A loader now builds into a
-   local set and replaces the live one only when EVERY source read completed -- a read that
-   completed with nothing stored is an answer; a read that failed is not -- and an incomplete load
-   leaves the set and the band exactly as they are and tries again on a short, bounded schedule.
-   The next worker start is itself a retry, so nothing here needs to outlive this one. */
+/* Publish feed state only after every required source was read successfully (LIFE-02).
+   A failed read is not an empty source: retain the current set/band and retry on a bounded schedule. */
 const FEED_LOAD_RETRY_MS = [5000, 30000, 120000];
 const __feedLoadRetries = new Map();
 function scheduleFeedLoadRetry(name, load) {
@@ -5401,27 +5120,8 @@ chrome.webRequest.onErrorOccurred.addListener((details) => {
 }, { urls: ['<all_urls>'], types: ['image'] });
 
 // ======================= User rules & custom filter lists =======================
-// The two things a bundled list can never cover: a rule only this person wants,
-// and a list only this person subscribes to. Everything below is user-authored
-// content rather than a protection, which is why neither gets a shield toggle --
-// a rule you wrote is on because you wrote it, and a list carries its own
-// enabled flag. Switches here would inflate the protection count with things
-// that protect nobody until somebody types into them.
-//
-// The syntax is the uBlock/AdGuard subset the build-time converter already
-// accepts (tools/build-adshield-dnr.js), so a rule that works in a shipped list
-// works here and means the same thing:
-//     ||ads.example.com^          block requests to a host
-//     @@||example.com^            stop blocking one
-//     example.com##.promo         hide an element on one site
-//     ##.promo                    hide it everywhere
-//     ! anything                  a comment
-// The master switch, for the rule bands a reader writes (BUG-02). My Rules, subscribed lists, the
-// per-site firewall and the hand-written blocked-site list are configuration the reader authored,
-// and their appliers rebuilt them only from their own editors -- so turning WardenOne off left
-// them installed, indefinitely, while the popup read Disabled. "Off" has to mean off: with the
-// switch down each of those appliers installs an empty band, and refreshExtensionState runs them
-// when the switch moves, so what the reader wrote comes back the moment WardenOne does.
+// Use the converter’s supported network/cosmetic subset. Lists keep their own enabled flag.
+// All user-authored bands must still clear and restore with the master switch (BUG-02).
 async function masterSwitchOn() {
   try {
     const store = await localGet('wardenone_config');
@@ -5442,9 +5142,7 @@ function customListTransportOk(list) {
   return /^https:\/\//i.test(String((list && list.url) || ''));
 }
 
-/* One line in, one of three things out: a network rule, a cosmetic rule, or a
-   reason it was refused. The reason matters -- a rule that silently does nothing
-   is worse than no rule, because the writer believes it is working. */
+/* Return a network rule, cosmetic rule or rejection reason for every non-comment line. */
 function parseUserFilterLine(raw) {
   const line = String(raw || '').trim();
   if (!line) return { kind: 'blank' };
@@ -5460,9 +5158,7 @@ function parseUserFilterLine(raw) {
   if (cos >= 0) {
     const selector = line.slice(cos + 2).trim();
     if (!selector) return { kind: 'error', why: 'no selector after ##' };
-    /* Procedural and scriptlet syntax belongs to the shipped engine, which has a
-       parser for it. Refusing them here is honest: accepting the text and then
-       not acting on it is the silent failure this function exists to avoid. */
+    /* Reject unsupported procedural/scriptlet input here rather than accept a rule this path cannot execute. */
     const syntax = selector.replace(/\\.|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\*[\s\S]*?\*\//g, '');
     if (/^\+js\(/i.test(selector) || /:(?:-abp-contains|-abp-has|has-text|contains|matches-css(?:-before|-after)?|matches-attr|matches-path|min-text-length|xpath|upward|nth-ancestor|watch-attr|remove|style)\(/i.test(syntax)) {
       return { kind: 'error', why: 'procedural and scriptlet rules are not supported here yet' };
@@ -5486,11 +5182,8 @@ function parseUserFilterLine(raw) {
     return { kind: 'error', why: 'regular-expression rules are not supported' };
   }
   if (/[^\x00-\x7f]/.test(pattern)) return { kind: 'error', why: 'non-ASCII characters' };
-  /* Chrome's own constraints on urlFilter, checked here so a rule that Chrome would refuse
-     is named back to the writer by line instead of failing the whole update. It used to be
-     that ||*abc parsed as a valid-looking rule, Chrome rejected the atomic update -- which by
-     contract leaves every OLD rule in place -- and a fallback then tried to add the new rules
-     one at a time on top of the old ids, so nothing changed and the editor said saved (H19). */
+  /* Validate Chrome’s urlFilter constraints per line before the atomic update; one rejected rule
+     would otherwise leave the whole old band in place (H19). */
   if (/^\|\|\*/.test(pattern)) return { kind: 'error', why: 'a rule cannot start with ||* -- Chrome refuses it; start with * instead' };
   if (/^\|\|\|/.test(pattern)) return { kind: 'error', why: 'too many | at the start' };
   if (/\|\|$/.test(pattern)) return { kind: 'error', why: '|| only belongs at the start' };
@@ -5800,28 +5493,8 @@ async function refreshCustomList(id) {
 }
 
 // ======================= Network / filtering logger =======================
-// The Activity Centre answers "a security event happened". This answers a
-// different question: "this exact request happened, WardenOne blocked or allowed
-// it, and THIS rule from THIS list is why."
-//
-// It exists because of the features next to it. Once someone can write their own
-// rules, subscribe to someone else's list and zap elements, they can also break a
-// site -- and without a way to see which rule did it, the only debugging move
-// left is turning things off at random.
-//
-// Two decisions shape everything below.
-//
-// 1. CAPTURE ONLY WHILE THE LOGGER IS OPEN. A webRequest listener over <all_urls>
-//    runs on every request on every page, and that is not hypothetical here: the
-//    YouTube scrub lag was a DNS-rebind listener doing exactly this, firing once
-//    per storyboard image. So the listeners are attached when a logger page
-//    connects and detached the moment the last one goes away. Ordinary browsing
-//    pays nothing.
-//
-// 2. NOTHING IS KEPT. The buffer is in memory, bounded, and dies with the worker.
-//    URLs are redacted of anything that looks like a secret BEFORE they are
-//    stored, so the log cannot become the leak. Nothing reaches disk unless the
-//    reader exports it deliberately.
+// Attach capture listeners only while a logger is connected. Keep a bounded, redacted heap buffer;
+// persist nothing unless the user exports it.
 const LOG_MAX = 1000;
 const LOG_RING = [];
 const LOG_PENDING = new Map();     // requestId -> entry, while in flight
@@ -5830,21 +5503,9 @@ let LOG_SEQ = 0;
 let LOG_ATTACHED = false;
 let LOG_FLUSH_TIMER = 0;
 let LOG_DIRTY = [];
-/* getMatchedRules DOES work in a packaged build -- it is onRuleMatchedDebug that is
-   unpacked-only. Chrome's reference is explicit about the split: getMatchedRules is
-   "only available to extensions with the declarativeNetRequestFeedback permission or
-   having the activeTab permission granted for the tabId specified in filter", with no
-   mention of packaging, while onRuleMatchedDebug is "only available for unpacked
-   extensions". The poll below passes no tabId, so activeTab cannot authorise it and the
-   feedback permission is what makes rule attribution work for a Store install at all.
-   That is why it is declared, and why removing it as a "debug-only" permission would
-   silently take this feature away from everyone who installs normally (CWS-02).
-
-   It answers a weaker question than onRuleMatchedDebug: which rules fired in which tab
-   and when, with no request id to join on. So it is polled, and a rule is written
-   onto a row only when that row is the single blocked candidate it can belong to.
-   The quota is 20 calls per 10 minutes; 40s leaves headroom for a session that
-   straddles two intervals. */
+/* Packaged builds can use getMatchedRules with declarativeNetRequestFeedback; only onRuleMatchedDebug
+   is unpacked-only (CWS-02). With no request ID, attribute only a unique blocked candidate.
+   Poll at 40s to leave room under the shared 20-calls-per-10-minutes quota. */
 const LOG_MATCH_POLL_MS = 120000;
 const LOG_MATCH_WINDOW_MS = 1500;
 const LOG_MATCH_TALLY = new Map();  // list name -> matches no single row could claim
@@ -5987,23 +5648,9 @@ function logRuleCanBlock(ruleId, rulesetId, actions) {
   return false;
 }
 
-/* Anything that could be a credential is replaced before the entry is stored, not when it is
-   displayed. A log that holds the token is a log that leaks it.
-
-   This used to be a denylist -- a fixed list of parameter names, plus "any value over 64
-   characters" and "any fragment over 12" -- and a denylist has to know every secret's name and
-   shape in advance. It left https://alice:secret@site/ whole, kept a password-reset token that
-   travelled in the PATH, and kept ?card=4111111111111111 because "card" was not on the list and
-   sixteen digits are not long (M49, PRIV-09). The direction is reversed now, the way the
-   Activity Centre's own URL sanitiser (safeLogSegment) already works: everything goes unless it
-   is recognisably harmless. Sign-in details always go. The fragment goes whole -- that is where
-   OAuth implicit-flow tokens travel. A path segment stays only when it reads as route vocabulary
-   (lowercase words, a short number), with a known file extension kept on a redacted filename so
-   the row still says what kind of resource it was. Parameter NAMES stay, because "which
-   parameters were present" is what a rule needs; a parameter VALUE stays only when it is a flag,
-   a small number or lowercase words, and never under a name that says it is a secret. Getting
-   this wrong in one direction costs a diagnostic detail; in the other it costs someone their
-   account, so the harmless list is short and the rest is replaced. */
+/* Anything that could be a credential is redacted before storage (M49, PRIV-09): keep harmless path
+   and parameter values, and always redact secret-named parameters. Retain parameter names and
+   known file extensions for diagnosis; unknown values lose detail rather than leak credentials. */
 const LOG_SECRET_PARAM = /^(access_?token|id_?token|refresh_?token|token|auth|authorization|api_?key|apikey|key|secret|password|passwd|pwd|session|session_?id|sid|sig|signature|code|jwt|bearer|otp|pin|email|e_?mail|phone|ssn)$/i;
 const LOG_HARMLESS_VALUE = /^(?:true|false|yes|no|on|off|null|undefined|\d{1,6}|[a-z]+(?:[._-][a-z0-9]{1,12})*)$/;
 const LOG_VALUE_MAX = 24;
@@ -6012,9 +5659,7 @@ function logRedactSegment(segment) {
   if (!segment) return segment;
   let decoded = segment;
   try { decoded = decodeURIComponent(segment); } catch (_) {}
-  // Nine or more digits in a row is a phone, card or account number far more often than a route.
-  // The history sanitiser keeps any all-digit segment as a record id; here that is a precision
-  // not worth the risk, because this log can be exported.
+  // Redact long digit runs: phone/card/account numbers are not useful exportable route detail.
   if (/^\d{9,}$/.test(decoded)) return '*';
   const m = /^(.+)\.([A-Za-z0-9]{1,5})$/.exec(decoded);
   if (m && LOG_KEEP_EXTENSION.test(m[2])) {
@@ -6091,13 +5736,8 @@ function logPush(entry) {
   }
   logQueue(entry);
 }
-/* Everything the logger holds in memory, dropped together. A request sits in three places between
-   capture and the page -- the ring, the in-flight joins, and the batch waiting its 160 ms -- and
-   Clear and the last close used to empty the first two and forget the third: a batch queued just
-   before Clear arrived after "cleared" and repopulated the page, and one queued just before the
-   last logger closed was delivered to the next logger to open, against the page's own promise that
-   the buffer goes with the last close (L29). One reset now, from both, with the timer cancelled and
-   a generation stamped so a callback from an earlier session cannot post into a later one. */
+/* Reset the ring, in-flight joins and pending batch together (L29). Cancel its timer and advance
+   the generation so old callbacks cannot repopulate a cleared or newly opened logger. */
 let LOG_GENERATION = 0;
 function logReset() {
   LOG_GENERATION++;
@@ -6191,9 +5831,7 @@ function logMatchedRulesAvailable() {
   catch (_) { return false; }
 }
 
-/* The one blocked row a match can honestly belong to, or nothing. Two rows in the
-   same tab inside the window means neither can be named: a match written onto the
-   wrong request is exactly the invented attribution this page refuses to make. */
+/* Attribute a match only to a unique blocked row in the tab/time window; ambiguity yields no attribution. */
 function logSoleBlockedNear(tabId, at) {
   const when = Number(at) || 0;
   if (!when) return null;
@@ -6326,19 +5964,8 @@ try {
 } catch (_) {}
 
 // ---- Check an extension before installing it -------------------------------
-// Reads the same bundled exact-ID catalogue the Security Centre uses, for an
-// extension that is not installed. Nothing new is downloaded to answer the local
-// half; the store lookup below is a separate, explicit step.
-
-// A Chrome extension id is 32 characters from a-p. Anything else is not an id,
-// and guessing at a near-miss would be worse than refusing: a one-character slip
-// is a DIFFERENT extension, not a typo to be helpfully corrected.
-//
-// EXTENSION_ID_RE itself comes from background-extension-reputation.js, which is
-// importScripts'd into this same worker scope. Declaring a second copy here threw
-// "Identifier has already been declared" at load -- taking the whole service
-// worker down, not just this feature -- so there is deliberately one definition
-// of what an extension ID is.
+// Require an exact ID: a one-character change names a different extension. Reuse EXTENSION_ID_RE
+// from background-extension-reputation.js; redeclaring it breaks the shared worker scope.
 
 function parseExtensionReference(raw) {
   const value = String(raw || '').trim();
@@ -6361,9 +5988,7 @@ function parseExtensionReference(raw) {
   return { id, slugName: slug ? slug.replace(/[-_]+/g, ' ').trim() : '' };
 }
 
-// The installed inventory, when there is one. An extension the reader already has
-// is a different question -- and the honest answer to "should I install this" is
-// "you already did".
+// Check installed inventory before advising installation.
 async function installedExtensionById(id) {
   if (!chrome.management || !chrome.management.getAll) return null;
   try {
@@ -6450,13 +6075,7 @@ async function fetchWebStoreListing(id) {
 }
 
 // ---- The reader's own blocklist -------------------------------------------
-// "Never let this domain open." Everything else here decides for you; this is the
-// one list where you decide, and nothing overrules it but your own allowlist.
-//
-// Deliberately NOT stored in the learned map. That map holds one entry per domain,
-// which cannot express a path or two different expiries for the same site, and it
-// is shipped to content scripts -- where a hand-blocked host once came back as an
-// accusation that the site was an IP logger. This list goes nowhere near the page.
+// Keep manual patterns/expiries separate from learned evidence and out of content-script snapshots.
 const USER_BLOCKLIST_RULE_BASE = 970000;
 const USER_BLOCKLIST_KEY = 'wardenone_blocklist';
 // Session entries live in storage.session, so they are gone when the browser
@@ -6465,15 +6084,8 @@ const USER_BLOCKLIST_KEY = 'wardenone_blocklist';
 // not. "Until tomorrow" is a timestamp in the ordinary store.
 const USER_BLOCKLIST_SESSION_KEY = 'wardenone_blocklist_session';
 
-/* One pattern in, one decision out. Accepts what someone would actually type:
-     example.com                        a site
-     *.example.com                      the same thing, written the other way
-     news.example.com                   that host and anything under it
-     192.0.2.55                         an address
-     https://example.com/tracker/*      one path, not the whole site
-   Anything it cannot make sense of comes back with a reason, never a guess: a
-   blocklist that silently reinterprets what you typed is worse than one that
-   refuses it. */
+/* Accept hosts, wildcard hosts, IPs and explicit URL path patterns.
+   Return a reason for invalid input rather than broadening or guessing a block. */
 function parseBlockPattern(raw) {
   const text = String(raw == null ? '' : raw).trim();
   if (!text) return { ok: false, error: 'Type a site, address or link to block.' };
@@ -6645,22 +6257,8 @@ async function applyUserBlocklistRules() {
 }
 
 // ---- Per-site firewall ----------------------------------------------------
-// A decision matrix for one site: for each third-party domain the page loads,
-// what it is allowed to do there. This is dynamic filtering in the uBlock-advanced
-// sense rather than another blocklist -- the rules come from the reader, apply to
-// one site only, and override everything WardenOne would otherwise decide.
-//
-// It is deliberately reachable only from Advanced, because a matrix that can turn
-// off a site's own CDN is a matrix that can break that site completely. Two things
-// make that survivable rather than merely warned about:
-//
-//   1. EVERY DECISION IS REVERSIBLE IN ONE CLICK, per site and globally, and the
-//      page keeps those buttons in front of the reader rather than in a menu.
-//   2. "ALLOW ONCE" IS A SESSION RULE. It disappears when the browser closes, so
-//      an experiment cannot quietly become permanent configuration.
-//
-// The rule ids sit in their own range so a rebuild of this matrix can never touch
-// a rule any other part of WardenOne owns.
+// Keep decisions in their own rule-ID band. Session allowances expire with the browser;
+// the Advanced UI must keep per-site and global undo available.
 const FIREWALL_RULE_BASE = 950000;
 /* A human sets these one cell at a time; 250 decisions is far past what anyone
    will make, and the rule ceiling is shared with every protection in the
@@ -6669,18 +6267,9 @@ const FIREWALL_RULE_MAX = FIREWALL_RULES_BUDGET;
 const FIREWALL_SESSION_RULE_BASE = 960000;
 const FIREWALL_SESSION_RULE_MAX = FIREWALL_SESSION_RULES_BUDGET;
 const FIREWALL_KEY = 'wardenone_firewall';
-// Above every blocklist, so "always allow here" genuinely wins, and above the
-// compatibility allows too: if someone explicitly blocks a domain on a site, the
-// answer is to do it and make undoing it easy, not to silently ignore them.
-//
-// Four tiers, not one (H17). Every cell used to be emitted at the same priority, and
-// Chrome breaks a tie between rules of one extension by action: allow beats block. So
-// All = allow with Script = block produced two matching rules for a script request and
-// the allow won -- the cell said block, the page said saved, and the script loaded. A
-// header-stripping rule loses to an allow of equal-or-higher priority too, so Cookie =
-// strip beside All = allow stripped nothing. The specific column now outranks All in
-// both directions, the strip outranks any allow in its row, and a session allowance
-// outranks every stored decision, which is what "let it through once" means.
+// Explicit firewall decisions outrank lists and compatibility exceptions. Within a row, specific
+// columns outrank All, cookie stripping outranks allows, and session allowances outrank stored rules.
+// Equal priorities are insufficient because Chrome resolves allow/block ties in favour of allow (H17).
 const FIREWALL_PRIORITY = 97000;         // the All column
 const FIREWALL_PRIORITY_COLUMN = 97001;  // Script, XHR, Frame, Media: specific beats All
 const FIREWALL_PRIORITY_COOKIE = 97002;  // strip beats an allow in the same row
@@ -6717,17 +6306,8 @@ async function readFirewall() {
   } catch (_) { return {}; }
 }
 
-// Rules are rebuilt wholesale from the stored matrix rather than patched, so the
-// live rule set can never drift from what the page shows.
-//
-// The compile says what it left out (M46). The band holds FIREWALL_RULE_MAX rules; a
-// decision past that used to fall off the end of a bare `return rules` -- stored, drawn on
-// the page as a decision of yours, and never a rule -- and which decisions ran depended on
-// the order sites and domains had been written into the matrix. Now every cell that would
-// have made a rule and got no id is named in `omitted`, so the write handler can refuse the
-// decision that would not fit and the page can mark the ones that already do not. The order
-// is the stored order of the matrix, which is the order decisions were made in and the
-// order storage gives back after a restart, so the admitted set is the same across restarts.
+// Rebuild from the stored matrix in stable order. Report every omitted cell when the band is full
+// so writes can be refused and the UI never presents an unenforced decision as active (M46).
 function firewallCompile(matrix) {
   const rules = [];
   const omitted = [];
@@ -6806,12 +6386,8 @@ function firewallOmittedFor(compiled, site) {
   return ((compiled && compiled.omitted) || []).filter((o) => o.site === site).map((o) => ({ domain: o.domain, column: o.column }));
 }
 
-// The applier says what happened (H18). It used to return 0 for both "the matrix is
-// empty" and "Chrome refused the update", and both write handlers answered ok:true
-// either way, so the page printed "Saved" over a rule set Chrome had rejected and the
-// stored matrix kept insisting on rules that were not in effect. Now the handlers apply
-// to Chrome FIRST and store only what Chrome accepted; a refusal is reported with
-// Chrome's reason, and the stored matrix is left exactly as it was.
+// Apply to Chrome before storing the matrix. Report rejection instead of returning an empty-matrix
+// success, and retain the prior stored state on failure (H18).
 function firewallErrorText(e) {
   return String((e && e.message) || e || 'unknown error').slice(0, 200);
 }
@@ -6859,18 +6435,8 @@ function firewallMatrixWith(matrix, site, domain, column, verdict) {
   return next;
 }
 
-// "Allow once" lives in session rules so it dies with the browser. An experiment
-// that outlives the session is how a matrix quietly becomes a configuration
-// nobody remembers making.
-//
-// The rule is keyed on the decision it represents (BUG-06). The id used to be derived
-// from how many session rules existed, so pressing the same cell twice spent a second
-// slot, and once all fifty were spent every new allowance overwrote slot zero -- the
-// oldest allowance quietly revoked, and the function returned true regardless. Now the
-// same decision refreshes its own rule, a new one takes the lowest free id, and a full
-// band is refused with a reason rather than papered over. Until PI-02 this function had
-// no caller a reader could reach; the page has a control for it now, so all of this
-// matters at once.
+// Session allowances expire with the browser. Key by decision so repeats refresh the same rule.
+// Take the lowest free ID for new entries and refuse a full band rather than overwriting another (BUG-06).
 function firewallSessionRuleFor(rule) {
   const c = (rule && rule.condition) || {};
   return {
@@ -6946,22 +6512,8 @@ async function firewallClearSession() {
 }
 
 // ---- Cryptojacking guard (toggle: blockCryptominers) ----
-// Drive-by mining is a network problem before it is a CPU problem: the miner has to
-// fetch its payload and then reach a pool, and both hops are blockable. Two buckets,
-// because they carry different false-positive risk.
-//
-//   MINER_HOSTS  -- mining-as-a-service. The whole product is a script that spends a
-//                   visitor's CPU, so there is nothing legitimate to preserve. Blocked
-//                   on every resource type, first- or third-party.
-//   POOL_HOSTS   -- real mining pools with real websites, dashboards, and customers.
-//                   Blocking these outright would break a user who actually mines, so
-//                   they are blocked only as THIRD-PARTY subresources. Visiting the
-//                   pool works; some other page opening a stratum WebSocket to it does
-//                   not. main_frame is deliberately absent from this bucket.
-//
-// This layer does not see a self-hosted miner that never leaves the origin. That needs
-// a runtime CPU/WASM heuristic, which is a separate and much more false-positive-prone
-// problem -- it is not pretended here.
+// Block mining-as-a-service on all types; block real pools only as third-party subresources
+// so direct visits still work. Self-hosted miners need separate runtime detection.
 const MINER_FEED_RULE_BASE = 742000;
 const MINER_FEED_MAX = 1000;
 const MINER_POOL_RULE_OFFSET = 700; // pool rules occupy the tail of the band
@@ -6970,10 +6522,7 @@ const MINER_POOL_HOSTS = new Set();
 // A domain on a miner list is hostile, not ambiguous, so it gets the same
 // treatment as any other security block: every transport, no exceptions.
 const MINER_RESOURCE_TYPES = SECURITY_RESOURCE_TYPES;
-// Pool rules are third-party only, so main_frame is deliberately absent -- a
-// user typing a pool address into the URL bar is not the attack. WebTransport
-// matters here more than anywhere: a mining pool's whole job is a long-lived
-// bidirectional channel, and it is the obvious successor to their WebSocket.
+// Pool rules cover third-party channels, including WebTransport, but omit main_frame for direct visits.
 const MINER_POOL_RESOURCE_TYPES = SECURITY_RESOURCE_TYPES.filter((type) => type !== 'main_frame');
 function addMinerDomains(arr, target) {
   for (const d of (Array.isArray(arr) ? arr : [])) {
@@ -7213,11 +6762,8 @@ function trackerLearnerSalt() {
   return TRACKER_LEARNER.salt;
 }
 
-/* The site sketch: two bits of a 32-bit word per first-party site, positions from a keyed FNV-1a
-   of the name. It answers one question -- has this site already been counted for this tracker --
-   with no name, no order and no time in it, holds at most three sites' worth of bits, and is
-   dropped when the tracker leaves 'candidate'. A collision costs one more observation, never a
-   name. */
+/* Use two keyed bits per site in a 32-bit sketch, capped at three observed sites and removed after candidacy.
+   Collisions can require another observation but retain no site names, order or precise times. */
 function trackerMarkPositions(salt, site) {
   let h = 0x811c9dc5;
   const text = String(salt) + '\n' + String(site);
@@ -7240,11 +6786,8 @@ function trackerMarkAdd(marks, salt, site) {
   return ((Number(marks) >>> 0) | (1 << a) | (1 << b)) >>> 0;
 }
 
-/* This browser session's half of the learner: which trackers it has already counted a session
-   for, and what each site saw, with a count, for the popup's "on this site" list. Mirrored to
-   storage.session, so it outlives a worker suspension and dies with the browser, and nothing in it
-   reaches the durable store. The session used to be an id copied into every entry it touched, and
-   the durable store used to hold the per-site list itself (PRIV-01). */
+/* Keep per-site tracker counts and counted-session membership in storage.session only (PRIV-01).
+   They survive worker suspension without becoming durable browsing history. */
 let __trackerSession = null;
 function trackerSessionState() {
   if (__trackerSession) return __trackerSession;
@@ -7494,21 +7037,12 @@ async function noteTrackerObservation(tabUrl, detail) {
     // and a proposal the reader declined all stay what they are, however many more events
     // arrive -- otherwise a page could re-raise a dismissed proposal forever.
     const wasCandidate = entry.state === 'candidate';
-    // High-confidence tracker hosts learn on first contact; ambiguous candidates still need
-    // the 3-sites / 3-hits corroboration before any block rule is created.
-    // looksLikeKnownTrackerHost used to drop the thresholds to 1 hit / 1 site. It matches on the
-    // NAME -- anything under analytics., metrics., beacon., adservice. and a brand list -- and the
-    // name arrives in a page-supplied message field. So a single forged event naming
-    // analytics.<any-host-the-attacker-dislikes> reached 'learned' immediately and became a
-    // browser-wide block rule with no corroboration at all. The pattern is still worth recording
-    // as a reason, but it can no longer buy a shortcut past the evidence.
+    // Always require the 3-site/3-hit corroboration before learning a block. Tracker-looking names
+    // can add a reason but cannot lower thresholds: the hostname arrives from a page claim.
     const strongHost = looksLikeKnownTrackerHost(third);
     const distinctSessions = trackerDistinctSessionCount(entry);
-    // Meeting the thresholds makes a PROPOSAL, never a rule (SEC-04). Every input here -- the
-    // domain, the signal, the first-party site -- arrives in a page-supplied event, and the
-    // sites and sessions only make forgery slower; they do not make the evidence trustworthy. A
-    // browser-wide block against a domain the reader never chose is policy, and policy is the
-    // reader's: the proposal waits in the popup until they say block or ignore.
+    // Thresholds create a proposal, never a block (SEC-04). Page-supplied observations remain untrusted
+    // across sites and sessions; only the user’s explicit approval authorizes enforcement.
     if (wasCandidate
       && entry.hits >= TRACKER_LEARN_MIN_HITS
       && trackerDistinctSiteCount(entry) >= TRACKER_LEARN_MIN_SITES
@@ -7722,15 +7256,8 @@ function blockedDomainIndex(domains, securityDomains) {
   });
 }
 let BLOCKED_DOMAINS = new Set();
-/* The malware/scam half of BLOCKED_DOMAINS, kept apart because the merged set also holds
-   ad and tracker domains, and "this is an ad server" is not "this is dangerous". Nothing
-   that has to make that distinction can use the merged set: search-result warnings would
-   otherwise call an analytics host known malicious, which is the kind of wrong that gets
-   a warning feature switched off for good.
-   No second copy is stored. The persisted array is ordered security-first and the count of
-   leading security entries is saved beside it, so this costs one number. It also makes the
-   storage cap truncate the RIGHT end -- before this, an over-cap list dropped whatever
-   happened to be last, malware entries included. */
+/* Keep security domains separate from ads/trackers so reputation never labels every blocked host malicious.
+   Persist security entries first with a leading count; truncation must drop non-security entries first. */
 let SECURITY_DOMAINS = new Set();
 try {
   __initBlockedDomains = new Promise((resolve) => {
@@ -7747,18 +7274,9 @@ try {
   if (!__initBlockedDomains) __initBlockedDomains = Promise.resolve();
 }
 
-// One readiness promise for the persistent security stores, awaited by everything that decides
-// anything from them (M17).
-//
-// What used to be here started the hydration and asserted that the top-level script completing
-// meant these caches were populated by the time listeners fire. That is not what it means. Chrome's
-// own guidance is that synchronous registration lets events arrive as soon as the worker starts --
-// it does not await arbitrary storage reads. On every one of the many suspensions an MV3 worker
-// goes through, the first event ran against empty stores: a download scored as if its host were on
-// no blocklist, a redirect hop through a known-bad domain not marked as such.
-//
-// Non-poisoning by construction: a failed or missing read still resolves, so awaiting this can
-// delay a decision but can never withhold one.
+// One readiness promise gates decisions using persistent security stores (M17).
+// Synchronous listener registration does not wait for storage. Resolve even on failed reads
+// so readiness can delay a decision but never permanently withhold it.
 let __securityStoresReady = null;
 function securityStoresReady() {
   if (!__securityStoresReady) {
@@ -7776,9 +7294,7 @@ securityStoresReady();
 const DOMAIN_AGE_CACHE_KEY = 'wardenone_domain_age_cache';
 const DOMAIN_AGE_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
 const DOMAIN_AGE_TIMEOUT_MS = 4500;
-/* An RDAP answer is a few kilobytes; the largest registries stay well under 100 KiB. The body
-   used to go straight into res.json() with no ceiling at all, the one external path without one
-   (PERF-10), so a misbehaving or hostile RDAP redirect could hand the worker any size it liked. */
+/* Cap RDAP bodies before JSON parsing; an external redirect must not create an unbounded read (PERF-10). */
 const DOMAIN_AGE_MAX_BYTES = 256 * 1024;
 const WHOISXML_CACHE_KEY = 'wardenone_whoisxml_cache';
 const WHOISXML_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -7962,27 +7478,12 @@ function sameStringList(a, b) {
 }
 
 // ---- wardenone_config in-memory cache ----------------------------------------
-// wardenone_config is the single hottest storage key -- it was re-read from
-// chrome.storage.local on ~40 code paths (every navigation, download scan, message,
-// memory sweep), each an async IPC round-trip that also keeps the service worker awake.
-// We cache it in module memory and keep it fresh from storage.onChanged (and from our own
-// localSet writes). The cache is JSON-deep-cloned on every read so no caller can mutate the
-// cached object, and it stores ONLY the raw stored config (callers still merge DEFAULT_CONFIG
-// exactly as before) -- so behaviour is byte-identical, just without the repeated reads.
-// Multi-key reads (localGet([...])) deliberately bypass the cache -- they are rare and the
-// special-case keeps to the single-key fast path.
+// Cache raw single-key config reads, deep-clone results and invalidate on writes/onChanged.
+// Callers still merge defaults; multi-key reads bypass this fast path.
 let __cfgCache = null;
 let __cfgCacheValid = false;
-// Two things a bare cache does not have, and needs (M18).
-//
-// A generation, bumped by every publication and every invalidation. A read that started before a
-// newer config landed must not be allowed to write itself over it when it finally comes back --
-// which it was, so a master-off or an allowlist edit could be reverted by an older read and stay
-// reverted for the rest of the worker's life. The stale read may still answer its own caller; it
-// simply may not publish.
-//
-// And one shared in-flight promise, so a burst of cold callers is one storage read rather than one
-// each. Twelve simultaneous cold calls measured twelve reads.
+// Share cold reads and guard cache publication with a generation (M18).
+// A stale read may answer its caller but must not overwrite a newer published config.
 let __cfgGeneration = 0;
 let __cfgLoad = null;
 function __cfgClone(o) {
@@ -8024,10 +7525,7 @@ function localGet(key) {
   }
   return new Promise((resolve) => chrome.storage.local.get(key, resolve));
 }
-/* The same read, with a failure reported as one. localGet answers a failed storage read with
-   whatever Chrome handed the callback -- nothing -- so a caller that treats "nothing stored" as
-   an answer cannot tell it from "could not read". The feed loaders cannot afford that ambiguity:
-   an empty answer there used to become a destructive write (LIFE-02). */
+/* Distinguish failed storage reads from successfully empty data before applying feeds (LIFE-02). */
 function localGetStrict(keys) {
   return new Promise((resolve, reject) => {
     try {
@@ -8107,16 +7605,9 @@ function localSet(obj) {
   });
 }
 
-/* The one way this worker changes wardenone_config. Under the config lock (config-lock.js) it
-   reads what is stored now, straight from storage rather than the cache above, which can trail a
-   page's write by one onChanged; hands a copy to `mutate`; and writes what that leaves. `mutate`
-   gets the copy and the stored value as it was read (null when there is none or it is not an
-   object), and either edits the copy and returns nothing, returns a whole config to write
-   instead, or returns false to write nothing. It must not wait on anything that may want the lock.
-   A failed read writes nothing and rejects. Resolves with what was written, or null.
-   If a private window's worker or page wrote over it without seeing it, the same mutation runs
-   again on what is stored then (confirmConfigWrite in config-lock.js), so `mutate` may run more
-   than once; each run starts from a fresh read. */
+/* Under the config lock, read storage directly, mutate a copy and write it back; false means no write.
+   The mutation may be replayed on fresh state after a cross-incognito overwrite.
+   Do not await another lock user inside it; failed reads must not write. */
 function storedConfigChangedKeys(before, after) {
   const prior = before && typeof before === 'object' ? before : {};
   const next = after && typeof after === 'object' ? after : {};
@@ -8199,19 +7690,8 @@ async function writeStorageTelemetry(reason, extra) {
   return meta;
 }
 
-// Storage pressure relief, in order of what it costs the user to lose.
-//
-// This used to touch three keys and stop, leaving every rebuildable cache alone -- including the
-// cosmetic store, whose declared cap (ADSHIELD_COSMETIC_MAX) is the largest of anything we keep.
-// So relief could finish without freeing enough while megabytes of refetchable data sat untouched,
-// and the cosmetic or cache write that hit the ceiling stayed failed. chrome.storage.local is 10 MB
-// and we deliberately do not ask for unlimitedStorage.
-//
-// The rungs are ordered cheapest-to-lose first and MEASURED BETWEEN, so pressure caused by one
-// oversized cache does not also cost the user their history. Nothing here is fetched again
-// immediately: refetching what we just dropped would put the bytes straight back. Freshness markers
-// are cleared instead, so the next scheduled check sees the data as absent and rebuilds it once the
-// pressure is gone.
+// Drop rebuildable caches before user history and measure storage after each tier.
+// Clear freshness markers for later recovery; immediate refetch would recreate the pressure.
 function storagePruneLadder() {
   return [
     {
@@ -8561,17 +8041,8 @@ async function lookupDomainAgeOnce(reg, cfg) {
   }
 }
 
-// Every reputation provider answers with a small JSON document, so read the body
-// ONCE under a byte cap and parse it here.
-//
-// The previous version called res.clone() before res.json(). The clone was only
-// ever consumed on the parse-failure path, so on the success path -- nearly every
-// call -- the tee'd stream was never drained and the body sat buffered twice until
-// GC. res.json() also had no size limit, leaving a malformed or hostile provider
-// response bounded by nothing but the abort timeout.
-//
-// 1 MB is roughly ten times the largest legitimate response (a VirusTotal report
-// carrying ~90 engine verdicts); anything past it is not a reputation answer.
+// Read provider JSON once under a 1 MB cap. Avoid an unconsumed response clone, which can
+// keep a second buffered body alive until GC.
 const REPUTATION_MAX_BYTES = 1024 * 1024;
 
 async function fetchJsonWithTimeout(url, options, timeoutMs) {
@@ -8843,22 +8314,9 @@ function normalizeSafeBrowsingUrl(url) {
   }
 }
 
-// What a reputation provider is asked about (PRIV-03).
-//
-// normalizeSafeBrowsingUrl is the engine's idea of "the page": it drops only the fragment, and
-// it is what the warning pages, the navigation cooldown and the history compare against. It was
-// also what every provider was SENT, so switching Safe Browsing or urlhaus on once turned every
-// later navigation into a request carrying the whole address -- and the query is where OAuth
-// codes, password-reset tokens, invitation ids, search terms and document ids travel. Providers
-// match on host and path; a value unique to one person is never on a blocklist, so the query
-// bought no detection and gave away the most.
-//
-// So a provider gets scheme, host and path, and nothing else: no userinfo, no query, no
-// fragment. Paths beyond REPUTATION_QUERY_URL_MAX are refused rather than truncated. The path is kept on purpose. A phishing form on
-// docs.google.com or a page on sites.google.com is identified by its path, and a blocklist entry
-// for it is useless without one; that is a deliberate line, and it means a secret carried in a
-// path segment -- a reset link -- still travels. The policy says so. The same form is sent in
-// every context, the right-click check included: there is no exact-address path.
+// PRIV-03: providers receive scheme/host/path only, with no userinfo, query or fragment.
+// Keep paths for path-specific phishing matches; this still sends secrets embedded in paths.
+// Refuse overlong paths rather than truncating them, including for manual checks.
 const REPUTATION_QUERY_URL_MAX = 1500;
 function reputationQueryUrl(url) {
   try {
@@ -9396,18 +8854,9 @@ function ipv4FromMappedIpv6(value) {
   return [(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255].join('.');
 }
 
-/* THE classifier for IPv6 addresses that are not public. normalizeIpLiteral (public-or-not, for
-   Download Shield's re-fetch, reputation lookups and isLocalOrPrivateHost) and classifyResolvedIp
-   (the DNS-rebinding guard) each used to carry their own prefix list, and one drifted:
-   normalizeIpLiteral tested the text "fe80", but link-local is fe80::/10 -- fe80 through febf --
-   so [fe90::1], [fea0::1] and [febf::1] passed as public addresses. Both now ask this one.
-
-   The address is first put in the URL parser's canonical form (lower case, leading zeros dropped,
-   the longest zero run compressed), so the ranges are tested on the numeric first group rather
-   than on however the text happened to be written: "fe80:0::1", "FE90::1" and "0:0:0:0:0:0:0:1"
-   all classify correctly. The engine's own copy of the link-local and ULA test (localAdminTarget
-   in src/content.js) and the intranet rule's regexFilter (INTRANET_NET_PATTERNS) are separate
-   scripts and a DNR regex; tools/test-ip-classifier-agreement.js holds all of them to this one. */
+/* Share one IPv6 classifier across re-fetch, reputation and DNS-rebinding checks.
+   Canonicalise with URL, then test numeric prefixes: link-local fe80::/10 includes fe90 through febf.
+   Keep page/DNR copies aligned via test-ip-classifier-agreement.js. */
 function canonicalIpv6(value) {
   const ip = String(value || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
   if (!ip || ip.indexOf(':') < 0 || !/^[0-9a-f:.]+$/.test(ip)) return '';
@@ -10629,7 +10078,7 @@ async function showRedirectWarning(sender, detail) {
   return { ok: true };
 }
 
-const safeBrowsingNavigationCooldown = Object.create(null);
+const safeBrowsingNavigationChecks = new Set();
 
 function reputationWarningText(verdict) {
   const provider = String((verdict && verdict.provider) || 'URL reputation');
@@ -10651,8 +10100,6 @@ function reputationWarningText(verdict) {
   return provider + ' reported a suspicious URL';
 }
 
-// Reputation blocks offer an explicit, session-only per-host escape on their
-// evidence screen; the ordinary allowlist cannot waive malware or phishing.
 // contentSettings cannot enumerate grants, so the permission sweep resets
 // supported types to ask. Keep definitions at module scope to avoid TDZ.
 const SWEEPABLE_SITE_PERMISSIONS = [
@@ -10689,45 +10136,97 @@ async function resetSensitiveSitePermissionsGlobally() {
   return out;
 }
 
-const SAFE_BROWSING_BYPASS_KEY = '__wardenone_sb_bypass';
-async function safeBrowsingBypassAllows(host) {
-  try {
-    const clean = trustHostFromUrl('https://' + String(host || '')) || String(host || '');
-    if (!clean) return false;
-    const store = await chrome.storage.session.get(SAFE_BROWSING_BYPASS_KEY);
-    const list = (store && store[SAFE_BROWSING_BYPASS_KEY]) || {};
-    const until = Number(list[clean] || 0);
-    return Number.isFinite(until) && until > Date.now();
-  } catch (_) {
-    return false;
-  }
+const SAFE_BROWSING_BYPASS_KEY = '__wardenone_sb_navigation_grants';
+const SAFE_BROWSING_BYPASS_TTL_MS = 60 * 1000;
+let safeBrowsingBypassQueue = Promise.resolve();
+function withSafeBrowsingBypasses(task) {
+  const pending = safeBrowsingBypassQueue.then(task);
+  safeBrowsingBypassQueue = pending.catch(() => {});
+  return pending;
 }
-async function addSafeBrowsingBypass(host) {
-  const clean = trustHostFromUrl('https://' + String(host || '')) || '';
-  if (!clean) return { ok: false, error: 'Unrecognised site.' };
-  try {
-    const store = await chrome.storage.session.get(SAFE_BROWSING_BYPASS_KEY);
-    const list = (store && store[SAFE_BROWSING_BYPASS_KEY]) || {};
-    const now = Date.now();
-    for (const key of Object.keys(list)) {
-      if (!(Number(list[key]) > now)) delete list[key];
+async function readSafeBrowsingBypasses() {
+  const store = await chrome.storage.session.get(SAFE_BROWSING_BYPASS_KEY);
+  const raw = store && store[SAFE_BROWSING_BYPASS_KEY];
+  const now = Date.now();
+  return Object.fromEntries(Object.entries(raw && typeof raw === 'object' ? raw : {})
+    .filter(([tab, grant]) => /^(0|[1-9]\d*)$/.test(tab) && grant && /^[0-9a-f]{64}$/.test(grant.urlKey)
+      && Number.isFinite(grant.until) && grant.until > now && grant.until <= now + SAFE_BROWSING_BYPASS_TTL_MS)
+    .sort((a, b) => b[1].until - a[1].until).slice(0, WARNING_RECORD_MAX));
+}
+async function writeSafeBrowsingBypasses(grants) {
+  if (Object.keys(grants).length) await chrome.storage.session.set({ [SAFE_BROWSING_BYPASS_KEY]: grants });
+  else await chrome.storage.session.remove(SAFE_BROWSING_BYPASS_KEY);
+}
+async function safeBrowsingBypassUrlKey(raw) {
+  const url = normalizeSafeBrowsingUrl(raw);
+  if (!url) return '';
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+}
+function clearSafeBrowsingBypass(tabId) {
+  return withSafeBrowsingBypasses(async () => {
+    try {
+      const grants = await readSafeBrowsingBypasses();
+      delete grants[tabId];
+      await writeSafeBrowsingBypasses(grants);
+    } catch (_) {}
+  });
+}
+function consumeSafeBrowsingBypass(tabId, url) {
+  return withSafeBrowsingBypasses(async () => {
+    try {
+      const grants = await readSafeBrowsingBypasses();
+      const grant = grants[tabId];
+      delete grants[tabId];
+      // Consume before checking the destination: any next navigation ends this grant.
+      await writeSafeBrowsingBypasses(grants);
+      return !!grant && grant.urlKey === await safeBrowsingBypassUrlKey(url);
+    } catch (_) { return false; }
+  });
+}
+function addSafeBrowsingBypass(handle, sender) {
+  return withSafeBrowsingBypasses(async () => {
+    const tabId = sender && sender.tab && sender.tab.id;
+    if (typeof handle !== 'string' || !/^[0-9a-f]{32}$/.test(handle)
+      || !sender || sender.id !== chrome.runtime.id || sender.frameId !== 0
+      || !Number.isInteger(tabId) || tabId < 0
+      || sender.url !== chrome.runtime.getURL('safe-browsing-block.html') + '?w=' + handle) {
+      return { ok: false, error: 'This warning cannot grant a navigation.' };
     }
-    // Long enough to finish what you were doing, short enough that a mistaken
-    // bypass does not quietly persist all day.
-    list[clean] = now + 30 * 60 * 1000;
-    await chrome.storage.session.set({ [SAFE_BROWSING_BYPASS_KEY]: list });
-    queueHistory({ type: 'warned_reputation_bypassed', detail: { host: clean, minutes: 30 }, url: clean, at: now });
-    return { ok: true, host: clean };
-  } catch (e) {
-    return { ok: false, error: String((e && e.message) || e) };
-  }
+    try {
+      const key = WARNING_RECORD_PREFIX + handle;
+      const store = await chrome.storage.session.get(key);
+      const rec = store && store[key];
+      const now = Date.now();
+      if (!rec || rec.kind !== 'safe-browsing' || rec.tabId !== tabId || rec.context !== 'page'
+        || !Number.isFinite(rec.at) || rec.at > now || now - rec.at >= WARNING_RECORD_TTL_MS) {
+        return { ok: false, error: 'This warning has expired.' };
+      }
+      const urlKey = await safeBrowsingBypassUrlKey(rec.url);
+      if (!urlKey) return { ok: false, error: 'Unrecognised address.' };
+      const grants = await readSafeBrowsingBypasses();
+      // Losing a grant on worker shutdown is safer than leaving a replayable warning.
+      await chrome.storage.session.remove(key);
+      grants[tabId] = { urlKey, until: Date.now() + SAFE_BROWSING_BYPASS_TTL_MS };
+      await writeSafeBrowsingBypasses(grants);
+      const host = trustHostFromUrl(rec.url);
+      queueHistory({ type: 'warned_reputation_bypassed', detail: { host, scope: 'url', uses: 1, expiresInSeconds: 60 }, url: host, at: now });
+      return { ok: true };
+    } catch (_) { return { ok: false, error: 'Could not grant this navigation.' }; }
+  });
 }
 
 async function handleSafeBrowsingNavigation(details) {
+  let activeKey = '';
   try {
     if (!details || details.frameId !== 0 || details.tabId == null || details.tabId < 0) return;
+    if (await consumeSafeBrowsingBypass(details.tabId, details.url)) return;
     const url = normalizeSafeBrowsingUrl(details.url);
     if (!url) return;
+    const key = details.tabId + ':' + url;
+    if (safeBrowsingNavigationChecks.has(key)) return;
+    safeBrowsingNavigationChecks.add(key);
+    activeKey = key;
 
     const state = await urlReputationConfig();
     if (!state.enabled) return;
@@ -10736,8 +10235,6 @@ async function handleSafeBrowsingNavigation(details) {
     // allowlist can quiet normal protections, but it should not bypass malware or
     // phishing reputation checks.
     if (!host || isLocalTrustHost(host)) return;
-    // The user already saw this verdict and chose to continue anyway.
-    if (await safeBrowsingBypassAllows(host)) return;
     const local = await locallyBlockedReputationHost(host);
     if (local === 'user') return;
     const verdict = local === 'security'
@@ -10766,11 +10263,6 @@ async function handleSafeBrowsingNavigation(details) {
     }
     if (!verdict || !verdict.ok || !verdict.hit) return;
 
-    const key = details.tabId + ':' + url;
-    const now = Date.now();
-    if (safeBrowsingNavigationCooldown[key] && now - safeBrowsingNavigationCooldown[key] < 2500) return;
-    safeBrowsingNavigationCooldown[key] = now;
-
     try {
       const tab = await tabsGet(details.tabId);
       const current = String((tab && (tab.pendingUrl || tab.url)) || '');
@@ -10798,6 +10290,8 @@ async function handleSafeBrowsingNavigation(details) {
     });
   } catch (e) {
     console.warn('[WardenOne] URL reputation page check failed', e);
+  } finally {
+    if (activeKey) safeBrowsingNavigationChecks.delete(activeKey);
   }
 }
 
@@ -10862,14 +10356,8 @@ async function testVirusTotalKey(apiKey) {
   }
 }
 
-// Shared key-test for the "flag-style" reputation providers whose probe helper resolves
-// to { ok, rateLimited, status, error, cloudflare }. PhishTank, AbuseIPDB, URLhaus and
-// the three WhoisXML endpoints all map that result to user-facing text identically; only
-// the label, no-key message, probe call, and success/reject strings differ. Two optional
-// hooks cover the one-offs: `cloudflare` (PhishTank's browser-challenge response) and
-// `catchProbe` (URLhaus's secondary GET when the primary probe throws). Keeping the
-// mapping here means an edge-case fix (e.g. "also treat HTTP 451 as rejection") lands in
-// one place instead of six copies.
+// Map flag-provider probe results in one place. cloudflare and catchProbe handle
+// PhishTank’s challenge and URLhaus’s secondary request respectively.
 async function testReputationProviderKey(key, opts) {
   if (!key) return { ok: false, error: opts.noKey };
   const label = opts.label;
@@ -11127,10 +10615,7 @@ function testWhoisXmlThreatIntelKey(apiKey) {
   });
 }
 
-/* OpenPhish is the keyless provider: the test is a fetch of the community feed itself, and
-   there is no token to validate. There used to be one, and this function's result -- a note
-   that the token was kept for a paid feed this build does not use -- was the only place the
-   product admitted the token went unread (BUG-09). */
+/* Test the keyless OpenPhish community feed itself; there is no API token to validate (BUG-09). */
 async function testOpenPhishKey() {
   try {
     const result = await getOpenPhishFeed(true);
@@ -11477,11 +10962,8 @@ const VALID_LOCATION_SETTINGS = new Set(['allow', 'ask', 'block']);
 const LOCATION_SITE_RULES_KEY = 'wardenone_location_site_rules';
 const SITE_PAUSE_EXPIRY_ALARM = 'wardenone-site-pause-expiry';
 
-/* The sites where location falls back to Chrome's own prompt while the block is on (COMPAT-02):
-   every site WardenOne is paused on -- the permanent allowlist and a timed pause alike -- and every
-   site the reader switched Block location requests off for. "Pause on this site" used to pause the
-   page engine and nothing else; the block Chrome was enforcing profile-wide stayed, so a map site
-   the reader had just excused was still denied while the popup said it was excused. */
+/* Restore Chrome’s location prompt for permanent/timed site pauses and explicit location overrides (COMPAT-02).
+   Page-level exceptions must also reach the profile-wide browser setting. */
 function locationExemptHosts(cfg) {
   const out = new Set(activeAllowlist(cfg));
   const rules = cfg && cfg.siteOverrides && typeof cfg.siteOverrides === 'object' ? cfg.siteOverrides : {};
@@ -11544,9 +11026,7 @@ function clearLocationRules() {
   });
 }
 
-/* A timed pause lapses on its own, and nothing used to notice until the next settings write: the
-   site's location exception and its request-level pass outlived the pause. One alarm at the
-   earliest lapse re-runs the reconcile, which derives both from the config as it then is. */
+/* Reconcile at the earliest pause expiry so location and request exceptions do not outlive the pause. */
 function scheduleSitePauseExpiry(cfg) {
   try {
     if (!chrome.alarms) return;
@@ -12092,14 +11572,8 @@ function refreshExtensionState() {
       }
       if (stateKey === __refreshExtensionStateLastKey) return;
       __refreshExtensionStateInFlightKey = stateKey;
-      // The key is a claim that this desired state has been applied. Committing it here, before
-      // any of the work below had run, made the claim up front: a second refresh could then settle
-      // out of order and leave the opposite state applied while the key insisted otherwise, and a
-      // transient failure was never retried because the key already said the state was current.
-      //
-      // Claim a generation instead and commit the key only once the work settles, and only if this
-      // refresh is still the newest. A superseded refresh drops its claim; a failed one leaves the
-      // key alone so the next refresh does the work again.
+      // Commit the applied-state key only after successful work and only for the newest generation.
+      // Superseded or failed refreshes must remain eligible for retry.
       const generation = ++__refreshExtensionStateGeneration;
       // Record intent before any owner reads or writes Chrome's rule state.
       await markReconcilePending();
@@ -12206,13 +11680,8 @@ function refreshExtensionState() {
         }
       });
     }).catch(() => {
-      // An error before or around the list -- the read, the key, a helper -- means the desired
-      // state is unknown, and unknown means leave Chrome's state alone. There used to be a second
-      // list of appliers here and a third in the outer catch, hand-maintained copies of the one
-      // above that had drifted three appliers apart, called six protections with a hard off, and
-      // carried two pasted-twice calls (BUG-08); reached, they would have answered an unknown
-      // configuration by switching protections off. Now the reconcile is recorded as degraded
-      // and the wake-time retry runs the one list again (MV3-01).
+      // Unknown desired state must leave Chrome’s state intact. Record degraded health and retry
+      // the single reconciler inventory rather than applying hard-off fallbacks (MV3-01, BUG-08).
       noteReconcileDegraded(['reconcile'], '');
       __refreshExtensionStateInFlightKey = '';
       if (__refreshExtensionStateQueued) {
@@ -12520,13 +11989,8 @@ async function reconcileMinerDetectInjection(cfgArg) {
   } catch (_) { return false; }
 }
 
-/* The anti-flash backdrop's mode travels as a file: eyeshield-preload-<mode>.js is one line that
-   sets an isolated-world property, registered AHEAD of eyeshield.js in the same registration so
-   the script already knows the mode when it runs at document_start, before the page has painted
-   and before the async config snapshot has answered. The page cannot see that world. The mode
-   used to be cached in each site's own localStorage, which every site could read and which
-   outlived uninstall (PRIV-12). No file while the mode is off: the script is then registered for
-   the brightness and colour filters alone and paints no backdrop. */
+/* Register the isolated preload mode file ahead of EyeShield so first paint need not await config.
+   Do not use site-readable localStorage for the hint (PRIV-12); off mode registers no backdrop file. */
 const EYESHIELD_PRELOAD_MODES = ['dark', 'ultra', 'light'];
 function eyeShieldPreloadFile(cfg) {
   const mode = String((cfg && cfg.eyeShieldMode) || 'off').toLowerCase();
@@ -13102,16 +12566,8 @@ function applyHeaderShieldRules(options) {
   return __headerShieldQueue;
 }
 
-// Add or remove the rule that appends "DNT: 1" and "Sec-GPC: 1" request headers
-// to outgoing requests, matching the navigator.* signals set in content.min.js.
-//
-// Replacing a rule is ONE call carrying both removeRuleIds and addRules. Chrome applies
-// that as a single transaction, so the store never passes through a moment with no rule
-// in it. The old shape -- a remove-only call, an await, then an add-only call -- left a
-// gap a worker can die in (Chrome ends a service worker whenever it likes, an update or
-// reload does too), and a worker that died there left the setting saying "on" with no
-// rule behind it until the next startup refresh. Removing an id that is not installed is
-// not an error, so the same call serves first install, refresh and switch-off alike.
+// Replace DNT/GPC header rules in one remove-and-add transaction.
+// Separate calls leave a gap that can survive worker termination. Missing IDs are safe to remove.
 let __privacyHeaderRuleEnabled = null;
 async function applyPrivacyHeaderRule(enabled) {
   try {
@@ -13224,22 +12680,8 @@ async function applyThirdPartyCookieRule(enabled) {
   }
 }
 
-// The narrow rule above strips Set-Cookie from images and pings only, and that
-// narrowness is correct for third parties as a class: sign-in and federation set
-// their cookies on frames, scripts and XHR, and stripping those signs people out.
-// It is the reason the rule has stayed six types short of the fifteen a browser
-// can issue.
-//
-// That reason does not apply to a request aimed at doubleclick.net. A domain
-// whose only purpose is measurement is never the far side of an SSO handoff, so
-// on those hosts the wide version is safe -- and the wide version is where the
-// cookies actually are, since a tracker that wants to set one reaches for a frame
-// or a script long before it reaches for a pixel.
-//
-// So: everything keeps the narrow rule, and known trackers additionally get the
-// full set. Same list Header Shield already uses, kept at the exact host scope
-// the packaged rules ship, and still carrying the login-compat exclusions in case
-// a name ever lands on both lists.
+// Strip third-party cookies narrowly to preserve federation. Known tracker hosts can use all types,
+// with the same exact host scope and login-compat exclusions as Header Shield.
 const TRACKER_COOKIE_RULE_ID = 900007;
 
 function trackerCookieResourceTypes() {
@@ -13521,15 +12963,8 @@ async function handleTrustError(details) {
     if (Date.now() - last < TRUST_ERROR_COOLDOWN_MS) return;
     recentTrustErrors[cooldownKey] = Date.now();
 
-    // The tab can move while the config read above is pending: the user goes back, the site
-    // redirects, or the tab is reused for something else. Everything below replaces what is in
-    // that tab NOW, so without this the handler for a navigation that is no longer happening
-    // takes down a page the user did ask for -- and reports it in the activity log as blocked.
-    //
-    // The Safe Browsing navigation path already rechecks exactly this, in exactly this place,
-    // after claiming its cooldown; the certificate path never did. Same shape here on purpose,
-    // including failing open on a tab that cannot be read: a tab we cannot see is one we cannot
-    // prove has moved, and tabsUpdate on a tab that has gone away is harmless anyway.
+    // Recheck the tab after async config/cooldown work so a stale navigation cannot replace its successor.
+    // Match Safe Browsing’s check; fail open if the tab cannot be read.
     const expected = normalizeSafeBrowsingUrl(url);
     try {
       const tab = await tabsGet(details.tabId);
@@ -13567,14 +13002,8 @@ try {
   console.warn('[WardenOne] certificate guard listener failed', e);
 }
 
-/* Recently changed settings, for the Settings page. Recorded here rather than by each page,
-   so a switch flipped in the popup, in Settings, by a preset or by an import all land in the
-   same list. Newest first, one entry per setting, the latest 40 for 30 days.
-   Only on/off switches and three named choices are kept. Never an API key, a host map or a
-   timestamp, so the list can say what changed without saying where you have been. Nothing is
-   recorded when there was no config before (a fresh install, or the write after an erase),
-   and a key that was missing and arrives at its default is a default being filled in, not a
-   change anybody made. */
+/* Keep the latest change per setting, capped at 40 for 30 days. Record only switches and named choices,
+   never keys/host maps; initial writes and newly filled defaults are not user changes. */
 const SETTINGS_RECENT_KEY = 'wardenone_settings_recent';
 const SETTINGS_RECENT_MAX = 40;
 const SETTINGS_RECENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -13911,10 +13340,8 @@ function forgetHostFromUrl(u) {
   } catch (_) { return ''; }
 }
 
-// Site to wipe if this host is targeted under the config, else ''. Site identity, not registered
-// domain: forgetting alice.webflow.io used to wipe webflow.io -- every tenant the reader was signed
-// in to on that platform (SEC-07). Nothing is lost by the narrower scope; a tenant cannot set a
-// cookie on its platform's apex, the browser applies the same list to that.
+// Return the PSL-aware site identity selected for erasure, not the platform’s registrable domain.
+// Forgetting one webflow.io tenant must not clear every tenant (SEC-07).
 function forgetDomainFor(host, cfg) {
   const rd = siteIdentityBg(host);
   if (!rd) return '';
@@ -14026,17 +13453,8 @@ async function maybeForgetHost(host, exceptTabId) {
   await wipeSiteData(domain, cfg, takeForgetPendingHosts(domain, host));
 }
 
-// Which host each tab last showed, kept somewhere that survives the worker (M17).
-//
-// This map is how Forget Me knows what to wipe when a tab closes, and tabs.onRemoved carries no
-// URL -- so a miss here is unrecoverable: the tab is gone and there is nothing left to ask. The map
-// lived only in the heap, and MV3 empties the heap constantly, so a tab closed in the window
-// between the worker waking and its asynchronous seed returning left nothing to wipe at all. The
-// seed also assigned unconditionally, so a navigation that happened while the query was out was
-// overwritten by the older answer and the wrong host was wiped instead.
-//
-// storage.session is the right lifetime: it outlives suspension and dies with the browser, which
-// is exactly how long a tab id means anything.
+// Persist tab hosts in storage.session for Forget Me: onRemoved has no URL to recover later (M17).
+// Merge async tab seeding with newer navigations rather than overwriting them.
 const FORGET_TAB_HOSTS_KEY = 'wardenone_forget_tab_hosts';
 const FORGET_TAB_HOSTS_MAX = 400;
 const FORGET_TAB_HOSTS_TTL_MS = 24 * 60 * 60 * 1000;
@@ -14138,16 +13556,8 @@ try {
     if (prevHost && siteIdentityBg(prevHost) !== siteIdentityBg(newHost)) {
       maybeForgetHost(prevHost, tabId).catch(() => {});
     }
-    /* The right-click menu's block/unblock title rides this listener rather than one
-       of its own: a second registration would be one more callback on every tick, not
-       one more wake (see above), and one place is one place to get the navigation
-       filter right. It runs only on a real navigation: change.url for a new address,
-       and change.status === 'complete' for a reload of the SAME address -- which is
-       the case that matters most here, because blocking a site reloads it to the
-       identical URL and lands on Chrome's error page, and without the status arm the
-       entry would still read "Block" there. Both fire a bounded number of times per
-       navigation, never on the per-tick attribute churn. Active tab only, because no
-       other tab's menu can open. */
+    /* Refresh menu state only for active-tab URL changes or completed reloads. A same-URL blocked-page
+       reload still needs its title updated; unrelated tab attribute ticks do not. */
     if (change && (change.url || change.status === 'complete') && tab && tab.active === true) {
       void refreshWardenBlockMenuTitle(tab);
     }
@@ -14240,15 +13650,8 @@ function normalizeScriptShieldMode(mode) {
   return mode === 'smart' || mode === 'lockdown' ? mode : 'normal';
 }
 
-// Script hosts Smart mode never blanket-blocks. Without these, Smart mode breaks
-// most embedded video players -- the player library itself is nearly always
-// third-party to the frame that loads it. This exempts the host from Smart's
-// HEURISTIC only: it adds no allow rule, so the downloaded ad/tracker/EasyPrivacy,
-// learned, grabber and security rules still block any of these hosts normally.
-// The general-purpose CDNs (jsDelivr, unpkg, cdnjs) serve arbitrary third-party
-// packages and are the weakest entries here; they are included deliberately
-// because player libraries overwhelmingly ship through them, and the residual
-// exposure equals what Script Shield's default 'normal' level already allows.
+// Script hosts Smart mode exempts from its heuristic, not from network security rules.
+// General-purpose CDNs also host arbitrary packages; this deliberately retains Normal mode’s exposure.
 const SCRIPT_SHIELD_PLAYER_INFRA_HOSTS = [
   'ajax.googleapis.com', 'code.jquery.com', 'ajax.aspnetcdn.com',
   'cdn.jsdelivr.net', 'cdnjs.cloudflare.com', 'unpkg.com', 'esm.sh', 'cdn.tailwindcss.com',
@@ -14257,17 +13660,8 @@ const SCRIPT_SHIELD_PLAYER_INFRA_HOSTS = [
   'player.vimeo.com', 'f.vimeocdn.com', 'www.youtube.com', 's.ytimg.com',
 ];
 
-// Asset domains that big sites use to serve their OWN application code. These are
-// third-party by registrable domain but first-party in every way that matters, so
-// Smart mode's blanket third-party script block takes the whole site down with it:
-// Pinterest ships every one of its .mjs bundles from pinimg.com, so uk.pinterest.com
-// rendered as a blank page with the React root never hydrating. The blanket rule
-// cannot see that these belong to the page, and Smart's self-healing recovery only
-// engages on video-player pages, so a site broken this way stays broken on reload.
-// Same exemption scope as the list above: this skips Smart's HEURISTIC only, and
-// the ad/tracker/EasyPrivacy, learned, grabber and security rules still apply.
-// Deliberately excludes multi-tenant CDNs (cloudfront, azureedge, akamaized) --
-// those serve arbitrary third parties, so exempting them would gut the feature.
+// Skip Smart’s heuristic for known first-party application asset domains on separate site boundaries.
+// Add no allow rule. Exclude multi-tenant CDNs such as cloudfront/azureedge/akamaized.
 const SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS = [
   'pinimg.com',                                   // Pinterest
   'twimg.com',                                    // X
@@ -14309,19 +13703,9 @@ const SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS = [
   'officeapps.live.com',                          // Word/Excel/PowerPoint editors
 ];
 
-// 'route-blocked' is not like the other three. Those say "a player is here"; it says "a player
-// route rendered nothing, and it may be our own blocking that stopped it" (H13). It grants nothing
-// on its own -- handleSmartScriptPlayerContext acts only where webRequest independently recorded a
-// blocked script in that exact frame, and stage-two entries still exclude hosts known for tracking
-// or fingerprinting. Unlike 'media-embed' it never matches a parent frame's pending error either,
-// so its reach is the narrowest of the four.
-// 'page-blocked' is 'route-blocked' for an ordinary top-level page: the document painted nothing.
-// It is the shape a site takes when its own application code lives on a separate registrable
-// domain and the blanket third-party rule refuses it, and until it existed such a page had no
-// recovery path at all -- it simply stayed blank. It grants no more than the others do:
-// handleSmartScriptPlayerContext still acts only where webRequest independently recorded a blocked
-// script in that exact frame, the exclusion is per-tab and reloads once, and stage-two entries
-// still refuse hosts known for tracking or fingerprinting.
+// route-blocked/page-blocked need worker-observed script blocks in the exact frame, not DOM claims alone.
+// Recovery is per-tab with one reload; page-blocked is top-frame only. Stage two still excludes
+// known tracking/fingerprinting hosts.
 const SMART_SCRIPT_PLAYER_EVIDENCE = new Set(['known-player-root', 'media-embed', 'route-video', 'route-blocked', 'page-blocked']);
 const SMART_SCRIPT_PLAYER_CONTEXTS = new Map();
 const SMART_SCRIPT_PLAYER_INTENTS = new Map();
@@ -14749,19 +14133,9 @@ function smartScriptContextHasRecentIntent(context) {
     && Date.now() - intent.at <= SMART_SCRIPT_PLAYER_INTENT_TTL_MS);
 }
 
-// Requiring a trusted gesture for EVERY stage deadlocks the common case: when the
-// player UI is itself built by the blocked script, no player element ever renders,
-// so no click can qualify and the page sits on a dead spinner forever.
-//
-// Stage 1 therefore auto-recovers on verified player evidence alone. What it can
-// do is deliberately bounded: it drops Smart's heuristic for ONE request host, in
-// ONE tab, and adds no allow rule -- so the downloaded ad/tracker/EasyPrivacy,
-// learned, grabber and security rules still block that host. The worst case for a
-// page that fakes the evidence DOM is therefore the behaviour of Script Shield's
-// default 'normal' level, which ships with no third-party script blocking at all.
-//
-// Stage 2 emits a real allow rule that can outrank other rules, so it still
-// requires a fresh, non-stale, trusted user gesture.
+// Stage one drops only Smart’s heuristic for one host in one tab; it adds no allow rule.
+// Permit verified player evidence without a gesture because the blocked library may build the UI.
+// Stage two adds an allow and still requires a fresh trusted gesture.
 function smartScriptContextRecoveryAllowed(context, stage) {
   if (!context) return false;
   if (smartScriptContextHasRecentIntent(context)) return true;
@@ -15141,20 +14515,8 @@ async function handleSmartScriptPlayerIntent(sender) {
   return { ok: true, recovered: await recoverSmartScriptPlayer(pending, context) };
 }
 
-// M36 -- telling the user when the shield is the reason a page is broken.
-//
-// The shield refuses third-party scripts by design, and on nearly every page that is correct and
-// invisible. When it is wrong the page simply fails: a black player, a splash screen that never
-// advances, a CAPTCHA that never renders. Three separate findings had exactly that shape, and each
-// was diagnosed only because the owner happened to test with the extension off and said so. Fixing
-// hosts one report at a time does not converge -- the shield is deliberately broad, so the set of
-// affected sites is open-ended.
-//
-// Nothing is pushed to the page. A push would fire on almost every page, because almost every page
-// has a third-party script refused and works perfectly well. The page asks, once, and only after it
-// has already decided for itself that it looks broken; this side answers whether we refused
-// anything on that navigation, so the two halves of the condition are evaluated where each one is
-// actually knowable.
+// M36: answer broken-page probes only after the page asks based on its own failure evidence.
+// A script block alone is common on healthy pages and must not trigger a notice.
 function smartScriptRefusedHostsForTab(tabId) {
   const id = Number(tabId);
   if (!Number.isInteger(id) || id < 0) return [];
@@ -15296,14 +14658,8 @@ const FINGERPRINT_LIBRARY_DOMAIN_FILTERS = [
   'clientjs.org',
 ];
 
-/* Fraud and bot-management vendors. These fingerprint too, but the site has
-   handed them an ACCESS DECISION: their verdict is what stands between the
-   reader and a bank sign-in, a completed order, or the page at all. Blocking one
-   does not quietly remove a tracker from a page that still works -- it removes a
-   precondition the site requires, and what the reader sees is a refused login, a
-   declined order or a challenge that never passes, with nothing naming the
-   cause. That is a real choice with a real cost, so it lives on its own switch,
-   it is off by default, and the switch says plainly what it costs. */
+/* Bot-management vendors gate login and checkout as well as fingerprinting.
+   Keep blocking them on a separate, off-by-default switch because refusal can prevent access. */
 const FRAUD_VENDOR_DOMAIN_FILTERS = [
   'online-metrix.net',
   'iesnare.com',
@@ -15325,13 +14681,8 @@ const FRAUD_VENDOR_DOMAIN_FILTERS = [
 const FINGERPRINT_SCRIPT_DOMAIN_FILTERS = FINGERPRINT_LIBRARY_DOMAIN_FILTERS
   .concat(FRAUD_VENDOR_DOMAIN_FILTERS);
 
-/* Path-anchored. Without the leading slash these matched anywhere in the URL
-   including the query, so an unrelated third-party bundle requested with
-   "?module=device-fingerprint" was refused on the strength of its query string.
-   'visitor-id' used to be here and was removed rather than anchored: it is an
-   ordinary name for a session or analytics bundle, no amount of anchoring makes
-   it specific, and the vendors it was aimed at are named by the domain lists
-   above. */
+/* Anchor fingerprint-script paths so query text cannot trigger a block.
+   Generic names such as visitor-id are insufficient; dedicated vendors use the domain lists. */
 const FINGERPRINT_LIBRARY_URL_FILTERS = [
   '/fingerprintjs',
   '/fingerprint2',
@@ -15361,9 +14712,7 @@ async function applyFingerprintScriptRules(enabled, blockFraudVendors, readRules
     const mine = existing
       .filter((r) => r.id >= FINGERPRINT_SCRIPT_RULE_BASE && r.id < FINGERPRINT_SCRIPT_RULE_BASE + FINGERPRINT_SCRIPT_RULE_MAX);
     const oldIds = mine.map((r) => r.id);
-    /* The same exclusion every other blocking rule in this file carries. A
-       federation or sign-in page that legitimately embeds one of these used to be
-       refused with no way back short of allowlisting the whole site. */
+    /* Retain login/federation exclusions so embedded access checks have a compatibility escape. */
     const compatibilityExclusions = { excludedInitiatorDomains: LOGIN_COMPAT_NEVER_BLOCK_DOMAINS };
     const domains = (enabled ? FINGERPRINT_LIBRARY_DOMAIN_FILTERS : [])
       .concat(blockFraudVendors ? FRAUD_VENDOR_DOMAIN_FILTERS : []);
@@ -15446,24 +14795,8 @@ const GOOGLE_SEARCH_SPONSORED_PATH_FILTERS = [
 ];
 
 // ===== SafeSearch enforcement (toggle: safeSearch, OFF by default) =====
-// The adult-site gate fires when you ARRIVE somewhere. Explicit images and video
-// render inside the search results page itself, which the gate never sees --
-// you never leave google.com, so there is no arrival to gate. This closes that
-// path by making the search engine filter its own results.
-//
-// Each engine gets a PAIR of rules:
-//   redirect (priority 12000) -- add the engine's SafeSearch parameter
-//   allow    (priority 12100) -- match the URL once the parameter is present
-//
-// The allow rule is what makes the redirect provably loop-free: after the
-// redirect the request carries the parameter, the higher-priority allow matches,
-// and no further redirect happens. It is scoped to main_frame on that one search
-// host, so it only ever exempts the search navigation itself -- ads, trackers and
-// scripts on the results page are subresources and stay blocked.
-//
-// Honest scope: this asks the engine to filter. It is not a content filter of our
-// own, and a user can still turn SafeSearch off inside their search account -- the
-// parameter wins per-request, but nothing here inspects what comes back.
+// Pair parameter redirects with a higher-priority main-frame allow for the filtered URL to stop loops.
+// Subresource rules still apply; the search engine decides what results its parameter filters.
 const SAFE_SEARCH_RULE_BASE = 743000;
 const SAFE_SEARCH_RULE_MAX = 40;
 // `allow` is written out per engine rather than derived from `match`, because the
@@ -15509,27 +14842,8 @@ const SAFE_SEARCH_ENGINES = [
 const SAFE_SEARCH_YT_DOMAINS = ['youtube.com', 'youtube-nocookie.com'];
 
 // ---- Google "Web results only" (toggle: googleWebResultsOnly) ----
-// udm=14 is Google's own Web filter: ten blue links, no AI overview, no enriched
-// panels. Using Google's own mode beats any selector we could write, because it
-// removes the junk at the source instead of hiding it after paint.
-//
-// The catch that shapes everything below: Google's Images, Videos and News tabs
-// are ALSO udm values (udm=2, udm=7, udm=12...). A rule that blindly replaces udm
-// would bounce the user back to Web every time they clicked Images -- they could
-// never leave. So udm is only ever ADDED when the URL has none, never replaced.
-//
-// DNR cannot express "parameter is absent" in a condition, so absence is handled
-// with priority instead:
-//
-//   safeSearch only        allow: safe=active present     redirect: add safe
-//   web-only only          allow: ANY udm present         redirect: add udm=14
-//   both                   allow: udm present AND safe=active present
-//                          redirect (higher): URL HAS udm -> add safe only
-//                          redirect (lower):  anything    -> add safe + udm=14
-//
-// In the both-on case the higher-priority rule claims every URL that already has
-// a udm, so the lower rule only ever sees URLs without one. That is what keeps the
-// Images tab working while still forcing Web mode on an ordinary search.
+// Add udm=14 only when udm is absent, preserving Images/Videos/News choices. With SafeSearch also on,
+// the higher redirect adds safe alone to existing udm URLs; the lower one adds both parameters.
 const GOOGLE_SEARCH_MATCH = '^https://(www\\.)?google\\.[a-z.]{2,7}/search';
 const GOOGLE_UDM_PRESENT = GOOGLE_SEARCH_MATCH + '.*[?&]udm=';
 const GOOGLE_SAFE_PRESENT = GOOGLE_SEARCH_MATCH + '.*[?&]safe=active';
@@ -15775,23 +15089,8 @@ function isMediaCompatFilter(pattern) {
   return /googlevideo\.com|ytimg\.com|youtubei\.googleapis\.com|ggpht\.com|ttvnw\.net|jtvnw\.net|twitchcdn\.net/.test(p);
 }
 
-// ---------------------------------------------------------------------------
-// Every side-effecting state applier, serialized per subsystem (M18).
-//
-// Each of these reads its own "last applied" marker, awaits Chrome, then commits that marker.
-// Correct alone; wrong concurrently. Two calls both pass the early-out before either has
-// committed, both do the work, and whichever updateSessionRules or registerContentScripts settles
-// last is the one that wins -- even when it carries the older desired state. A deferred-rule
-// harness produced a latest requested state of false and a final rule state of true.
-//
-// A queue per subsystem makes them apply in the order they were requested, so the newest setting
-// is the one that lands. It also makes the read-modify-write inside each one atomic with respect
-// to itself, which is what the "read existing rules, diff, write" shape needs and never had.
-//
-// Wrapped here in one list rather than inside twenty-four function bodies: the invariant is then
-// in one readable place, and tools/test-state-serialization.js fails if an applier is added and
-// not listed, so the next one cannot quietly opt out. Rebinding the global name is what makes the
-// existing unqualified call sites go through the queue without touching any of them.
+// Serialize state appliers per subsystem so newer requests land last and read/diff/write stays ordered (M18).
+// Keep the wrapper list complete; test-state-serialization.js checks new appliers cannot bypass it.
 const __subsystemQueues = new Map();
 function serializeSubsystem(name, task) {
   const previous = __subsystemQueues.get(name) || Promise.resolve();
@@ -16034,27 +15333,8 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
   return rules;
 }
 
-/* Domains where a single security feed's listing disagrees with the other sources checked, so
-   WardenOne doesn't act on that one listing: no block, no malware label on search results. This
-   suppresses the single-feed verdict only. It does not mark the site safe, and unknown still
-   doesn't mean safe. Each entry covers that exact name and its www. host, nothing else: any other
-   subdomain a feed lists stays blockable, and so do look-alike copies, which are different
-   domains. The reader's own lists and rules don't come through this parser, so their choices
-   still apply, and so does every other protection on the page.
-
-     steamrip.com  A well-known game piracy site, risky the way piracy sites are. Listed by one
-                   of the sixteen security feeds (flinteger's malicious aggregate). The other
-                   feeds don't list it, and the other sources checked disagree with that
-                   listing; that is not the same as a clean record. Its fake copies
-                   (steamrip-en.pages.dev, steamrip.us.com, steamripzone.com) are listed by
-                   other feeds and stay blocked. Checked 2026-10-02.
-
-     support.metamask.io  MetaMask's own help centre, published by Consensys under the
-                   metamask.io name. Listed by one of the sixteen security feeds (HaGeZi's threat
-                   intelligence feed, medium). MetaMask's phishing config names metamask.io as
-                   legitimate, and no other feed lists it. Look-alikes that wear the name
-                   (metamask.io-token.vip, app-metamask.io, metamask.io.in) are separate
-                   domains and stay blocked. Checked 2026-10-17. */
+/* Suppress only conflicting single-feed verdicts for exact names and www, never all subdomains.
+   Other protections and user rules still apply. Evidence and review dates: docs/security-feed-exceptions.md. */
 const FEED_FALSE_POSITIVE_DOMAINS = new Set(['steamrip.com', 'support.metamask.io']);
 function isFeedFalsePositiveDomain(host) {
   const d = String(host || '').toLowerCase();
@@ -17196,11 +16476,7 @@ async function updateRemoteListsCore(reason) {
           if (result.alert) integrityAlerts.push(result.alert);
         }
         failedSources++;
-        /* Keep WHICH one and WHY. This used to be a bare counter, so the popup
-           could say "5 unreachable" and neither the reader nor anyone debugging
-           it had any way to find out which five -- three feeds sat refused for
-           months behind that number, one of them a list whose bucket was
-           therefore always empty. A count is not a diagnosis. */
+        /* Keep the failed source and reason, not just an unreachable count. */
         sourceFailures.push({
           url: String(result.url || '').slice(0, 200),
           error: String(result.error || 'failed').slice(0, 160),
@@ -17766,26 +17042,8 @@ function refreshIntranetNetworkRules() {
   } catch (_) {}
 }
 
-// ---------------------------------------------------------------------------
-// DNS rebinding — the second layer the comment above admits is missing.
-//
-// Intranet Guard reads hostnames. That is the right call for what it does and
-// no help at all against rebinding: evil.example resolves to 192.168.1.1 and no
-// string test will ever notice. Chromium gives extensions no synchronous
-// "resolve this name before you allow the request" hook, so the FIRST request to
-// a rebound host cannot be stopped from here by anyone, at any price. What can
-// be stopped is every request after it.
-//
-// chrome.webRequest reports details.ip on a completed response: the address the
-// name actually resolved to, observed after the fact. That answers the one
-// question a hostname cannot — did this public-looking name just hand back a LAN
-// address? — and the name is then quarantined for the rest of the session, both
-// as a network rule and as a local target the page guard already knows how to
-// refuse.
-//
-// So this is detection, and the popup copy says detection. Direct LAN access is
-// prevented; rebinding is caught on the second request, not the first. Claiming
-// otherwise would be a lie a determined attacker gets to collect on.
+// DNS rebinding uses observed response IPs to quarantine later requests for the session.
+// The first request cannot be stopped by this observer; direct LAN-host checks are separate.
 const REBIND_QUARANTINE_RULE_BASE = 932000;
 const REBIND_QUARANTINE_MAX = 128;
 const REBIND_HOST_CLASS = new Map();
@@ -17894,10 +17152,8 @@ async function quarantineReboundHost(host, signal, details) {
 
 // Observe-only: this runs after the response has started, which is exactly why
 // it is a second layer and not a first one.
-/* Bounded (PERF-04). The map only has to remember enough to see a public name turn private, and
-   it used to hold every host the worker had seen until the worker was evicted. Oldest entries go
-   first; one that is evicted and then flips is still caught, as a 'private' signal rather than a
-   'flip'. */
+/* Bound observed hosts with oldest-first eviction (PERF-04). A later private response still
+   triggers quarantine even if its earlier public observation was evicted. */
 const REBIND_HOST_CLASS_MAX = 2048;
 function rememberRebindHostClass(host, cls) {
   const previous = REBIND_HOST_CLASS.get(host);
@@ -17946,13 +17202,8 @@ function noteResolvedAddress(details) {
   } catch (_) {}
 }
 
-/* Restore, clear and new quarantines used to run independently (MV3-09). Every worker start
-   launched a restore from the durable config while a browser start launched a clear, and
-   whichever storage and DNR callbacks settled last won -- so a previous session's quarantine
-   could come back after the clear and block a host all through the next session. Now they run
-   through one queue, and a restore only restores a list written in THIS browser session:
-   storage.session is empty after a browser restart, so a missing mark means the durable list is
-   a leftover, and it is cleared rather than reinstalled, whichever event arrives first. */
+/* Serialize restore, clear and quarantine operations (MV3-09). Restore only records marked
+   for this browser session; an empty session store means durable quarantine leftovers must clear. */
 const REBIND_SESSION_MARK_KEY = 'wardenone_rebind_session';
 let rebindQuarantineChain = Promise.resolve();
 function rebindQuarantineSerial(task) {
@@ -18020,16 +17271,9 @@ function forgetRebindTab(tabId) {
   refreshIntranetNetworkRules();
 }
 
-/* The types a DNS-rebind attack actually travels on: a channel that reaches or
-   reads an internal service (xhr/fetch-as-other/script/sub_frame/websocket) or
-   sets a tab's local context (main_frame). Images, media, fonts, stylesheets,
-   pings and beacons are left out on purpose -- a storyboard sprite or a video
-   segment loading from a rebound host is opaque and gives an attacker nothing
-   this quarantine is looking for, and the host is still seen the moment it is
-   reached on one of the kept channels. Dropping them is not a weakening: it stops
-   the listener firing on the flood of image/media requests a video timeline
-   scrub generates, where it was doing new URL() + an IP classify per storyboard
-   frame in the service worker for no security gain. */
+/* Observe channels that can reach/read internal services and main-frame navigations.
+   Leave opaque image/media/font/style/ping traffic out of this costly listener; an actionable channel
+   to the same host still triggers quarantine. */
 const REBIND_WATCH_TYPES = ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'websocket', 'other'];
 try {
   chrome.webRequest?.onResponseStarted?.addListener(noteResolvedAddress,
@@ -18043,12 +17287,8 @@ try {
 }
 
 
-// There is no stylesheet fetch in the worker any more. EyeShield used to ask for cross-origin
-// stylesheet text here, fetched with the extension's own permissions and handed back into the
-// page's DOM, and the only thing standing between a page and the reader's own network was a
-// check of the hostname string -- which cannot see what a public-looking name resolves to, and
-// Chrome gives an extension no way to find out before the request is made. The content script
-// now fetches the text itself, from the page's context and on the page's own terms (SEC-11).
+// Fetch stylesheet text in the page’s context, never through the worker’s broader network privileges.
+// A hostname check alone cannot constrain public-looking names resolving into a private network (SEC-11).
 
 const HEALTH_SHIELD_KEYS = [
   'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'detectRedirectChains', 'blockMetaRefresh',
@@ -18073,17 +17313,9 @@ const HEALTH_SHIELD_KEYS = [
   'backTrapGuard',
 ];
 
-// Every switch the popup offers is one of four things, and the gate (tools/test-protection-count.js)
-// refuses a switch that is none of them (FEAT-08): a counted protection (HEALTH_SHIELD_KEYS above);
-// a watch-only guard (counted, and without a switch because it records and never blocks or changes
-// a page); a second level of a counted protection (switchable on its own, counted once, under the
-// first); or a control that is not a protection at all, of a named kind. The kinds: presentation is
-// how WardenOne shows itself; a tool does nothing until the reader uses it; comfort makes a page
-// cleaner, lighter or quieter, not safer; compatibility is an exemption that keeps sites working.
-// Every published total -- the README, the site, the popup's denominator -- is derived from these
-// lists and checked against them, both ways: a switch nobody has classified fails the build, and so
-// does a number that stopped matching. The README said 103 in one paragraph and 104 in another for
-// as long as only one of them was checked.
+// Classify each switch as a protection, level, presentation, tool, comfort or compatibility control.
+// Generate published totals from these lists; test-protection-count.js checks both missing
+// classifications and stale totals (FEAT-08).
 const WATCH_ONLY_GUARDS = ['logThirdPartyBeacons', 'deviceAccessGuard', 'capabilityGuard'];
 const SECOND_LEVEL_OF = {
   // A mode of the IP-privacy guard, not a new protection (FEAT-03): the count does not move for it.
@@ -18115,14 +17347,8 @@ function healthCountActiveShields(cfg) {
   return active;
 }
 
-// What can be said about WardenOne on ONE tab from evidence, not from settings. The bridge in
-// a page holds the key the engine was handed at document_start and can challenge the engine
-// over it; Repair has always asked that question (wo-engine-status) before deciding which
-// tabs to reload. The health summary now asks it too, read-only, for the tab the popup is
-// open on -- and reports the answer as one of eight states rather than folding them into a
-// number. `unknown` is kept apart from `failed` on purpose: a page that has not answered yet,
-// or one that loaded before this copy of the extension did, is not a page the engine is
-// missing from, and calling it one would make the panel cry wolf on every slow load.
+// Report signed per-tab engine evidence separately from settings. Unknown is not failed: slow loads
+// and pages from a previous extension lifetime may not answer the bridge challenge yet.
 const TAB_EVIDENCE_TIMEOUT_MS = 700;
 function tabEngineStatus(tabId) {
   return new Promise((resolve) => {
@@ -18241,12 +17467,8 @@ async function buildProtectionHealthSummary(tab) {
     addIssue('info', list.publisher.stale + (list.publisher.stale === 1 ? ' feed has' : ' feeds have')
       + ' a publisher date over 30 days old. Downloaded rules remain active; daily checks continue while Auto-update is on. See Blocklist > Publisher dates for the sources.', false, { fix: 'page:lists' });
   }
-  // A feed that did not answer is not a problem you have. Updates merge sources and never wipe
-  // on a failed fetch, so the copy already downloaded stays active and nothing is unprotected --
-  // the next run usually picks it up. Reporting every transient miss put a permanent-looking
-  // note under "You're safe" that read like damage and asked the reader to do something about
-  // it, when there was nothing to do. So it is only worth saying when it actually cost you
-  // something: every source failed, or the lists have gone stale because they keep failing.
+  // Transient source failures retain prior data. Surface health damage only when all sources fail
+  // or repeated failures leave the lists stale.
   if (list.sources && Number(list.sources.failed || 0) > 0) {
     const failedFeeds = Number(list.sources.failed);
     const totalFeeds = Number(list.sources.total || 0);
@@ -18263,10 +17485,7 @@ async function buildProtectionHealthSummary(tab) {
   const unreadExtensionAlerts = alerts.filter((event) => event && !event.reviewedAt
     && (event.severity === 'medium' || event.severity === 'high' || event.severity === 'critical'));
   const criticalExtensionAlerts = unreadExtensionAlerts.filter((event) => event.severity === 'critical' || event.severity === 'high');
-  /* The note used to be a sentence and nothing else: "1 important extension change needs
-     review." -- with no way to see WHICH extension, or what changed, without leaving the card
-     for the Security Centre. It now carries the changes themselves, so the popup can open the
-     note into them. Only what the card shows is sent, and only the newest few. */
+  /* Include only the newest visible change summaries so the popup can expand the review note in place. */
   if (unreadExtensionAlerts.length) {
     const short = (value, max) => String(value == null ? '' : value).slice(0, max);
     addIssue(criticalExtensionAlerts.length ? 'danger' : 'warn', unreadExtensionAlerts.length
@@ -18593,19 +17812,9 @@ async function buildSiteDashboard(tab) {
   };
 }
 
-/* ---- Site tally ------------------------------------------------------------------------------
-   What WardenOne did, counted per page and per site, for the Site Dashboard. It is not the
-   Activity log, which stays the audit trail (200 events) and is read on its own. Two inputs:
-     - routine page actions the engine signs but the log never takes -- cleaned addresses and
-       copied links, stripped pings, cookie banners rejected, search clutter hidden, script cookie
-       writes stopped -- relayed by the bridge as rg-tally once the signature checks out;
-     - network blocks, read from Chrome's matched-rule feed for every tab at once, only while the
-       worker is already awake for something else and at most once a minute. Chrome allows 20
-       reads in 10 minutes, shared with the dashboard and the network logger, and forgets a
-       closed page's matches after about five minutes, so a quiet worker can miss some.
-   Per page it lives in session storage and goes with the tab. Per site it is kept by the hour
-   for seven days, at most 300 sites, registered in PRIVACY_STORE_POLICY and pruned by site erase.
-   Nothing is recorded from a private window. */
+/* Site Dashboard combines signed page tallies with opportunistic matched-rule reads. Quiet workers
+   can miss matches before Chrome forgets them. Keep per-page counts in session storage, per-site
+   hourly counts for seven days/300 sites, and no private-window tallies. */
 const SITE_TALLY_KEY = 'wardenone_site_tally';
 const TALLY_SESSION_KEY = '__wardenone_tally_state';
 const SITE_TALLY_TYPES = new Set([
@@ -19011,20 +18220,8 @@ async function recordPermissionChainSignal(sender, msg, granted) {
     action: 'Review this site in WardenOne Site permission scanner or reset unused permissions to Ask/Blocked.',
   };
 
-  // The events above are claims from the MAIN world, and the MAIN world is shared with the page.
-  // The handshake token that tags them is broadcast into that world by postMessage, so any page
-  // script listening early enough holds it too -- it routes traffic, it does not authenticate it
-  // (M27). A page could therefore invent a chain it never performed and make WardenOne warn about
-  // that page, and write history saying so.
-  //
-  // `granted` is different: the worker read it from contentSettings itself, and no page can forge
-  // it. So a warning and its history entry now require at least one sensitive permission this
-  // origin ACTUALLY holds. Inventing the events is still possible and still cheap; making the
-  // extension assert something untrue to the user, and record it, is not.
-  //
-  // This does not weaken the real feature. A genuine chain is a site collecting sensitive
-  // capabilities, which means it holds at least one of them by the time the risk is worth raising;
-  // a site that holds none has nothing chained yet.
+  // Page event claims alone cannot authorize a permission-chain warning. Require at least one
+  // sensitive grant independently read from contentSettings before warning or writing history (M27).
   const corroborated = (granted || []).map((g) => cleanPermissionChainKey(g)).filter(Boolean).length > 0;
   const shouldWarn = verdict.risk !== 'Low'
     && corroborated
@@ -19240,9 +18437,7 @@ function loadScriptDriftBaselines() {
     const base = {};
     let pruned = 0;
     for (const k of Object.keys(obj)) {
-      /* Stale, legacy-keyed or carrying the fields that used to make this a browsing
-         graph -- all three are dropped here, so an upgraded install stops holding them
-         at the first scan rather than waiting for the LRU to push them out. */
+      /* Drop expired records, legacy keys and removed browsing-graph fields on the first upgraded scan. */
       const v = obj[k];
       if (scriptDriftLegacyKey(k) || !scriptDriftFresh(v, now)
         || (v && (v.seenOn !== undefined || v.displayUrl !== undefined))) { pruned++; continue; }
@@ -19432,11 +18627,8 @@ async function handleScriptDriftScan(sender, msg) {
      dropped records would sit in storage until something else happened to write. */
   let changed = loaded.pruned > 0;
   for (const info of normalized) {
-    /* Keyed by a digest of the canonical script URL rather than the URL itself. The store
-       used to be a plain list of exact third-party script URLs this browser had fetched,
-       which is a readable record of where the reader had been even with every other field
-       removed. The digest is a lookup key, not a secret -- anyone holding a candidate URL
-       can still check it -- but the file no longer enumerates them. */
+    /* Store an equality digest of the canonical script URL, not an enumerable list of visited URLs.
+       This does not prevent testing a known candidate URL against the digest. */
     const key = await scriptDriftKey(info.href);
     if (!key) continue;
     const prev = base[key];
@@ -19446,13 +18638,8 @@ async function handleScriptDriftScan(sender, msg) {
     const hash = await sha256TextHex(fetched.text);
     if (!hash) continue;
     const scan = scriptDriftScanIndicators(fetched.text, fetched.host);
-    /* Only fields something later reads back. The record used to also carry host,
-       displayUrl, versioned, previousHash, firstSeen and seenOn -- and every one of those
-       was written and never read: the warning builds its text from the CURRENT fetch, not
-       from the stored copy. seenOn was the worst of them, an accumulating list of up to
-       eight first-party sites per script which, across 700 baselines, is 5,600 site-to-
-       script relationships describing where the reader had been. Nothing consulted it.
-       It was a browsing graph kept by accident (PRIV-02). */
+    /* Persist only fields read by comparison; build warning text from the current fetch.
+       Do not retain per-script first-party visit lists (PRIV-02). */
     const current = {
       hash,
       bytes: fetched.bytes,
@@ -19639,13 +18826,7 @@ async function removeHiddenElement(hostname, selector) {
 }
 
 // ---- Right-click: the WardenOne submenu ------------------------------------
-//
-// One entry: zap saves the clicked element immediately and keeps zapping until
-// the reader presses Done.
-//
-// Rebuilt on every start: an evicted-and-restarted service worker has no menus
-// until something makes them, and removeAll has to come first or each restart
-// stacks another copy of every entry.
+// Rebuild idempotently with removeAll before adding entries.
 const WO_MENU_ROOT = 'wardenone-root';
 const WO_MENU_ZAP = 'wardenone-zap';
 const WO_MENU_LINK = 'wardenone-check-link';
@@ -19658,16 +18839,8 @@ const WO_MENU_SLEEP_TAB = 'wardenone-sleep-tab';
 const WO_MENU_NEVER_SLEEP = 'wardenone-never-sleep-site';
 const WO_MENU_CLOSE_TAB = 'wardenone-close-tab';
 const WO_COMMAND_COPY_CLEAN_ADDRESS = 'copy-clean-current-address';
-/* Keyboard shortcuts, through Chrome's own commands API rather than a global key
-   listener in every page. That matters for more than tidiness: a page cannot see these,
-   cannot preventDefault them, and cannot be broken by them -- and the reader can rebind
-   or unbind any of them at chrome://extensions/shortcuts, which no in-page listener could
-   offer.
-   Only three carry a default key. Chrome allows four suggested keys in total and every
-   one is a chance to collide with something the reader already uses, so the rest ship
-   unassigned and are one click away from a binding. Alt+Shift rather than Ctrl+Shift
-   deliberately: Ctrl+Shift+P and Ctrl+Shift+Z are DevTools and redo, and the element tool
-   uses Ctrl+Z itself for undo. */
+/* Use Chrome commands so pages cannot intercept shortcuts and users can rebind them.
+   Keep most unassigned; Alt+Shift defaults avoid common Ctrl+Shift editor/browser bindings. */
 const WO_COMMAND_PALETTE = 'command-palette';
 const WO_COMMAND_ELEMENT_TOOL = 'element-tool';
 const WO_COMMAND_NETWORK_LOGGER = 'open-network-logger';
@@ -19679,32 +18852,16 @@ const WO_COMMAND_SCAN_SITE = 'scan-site';
 const WO_SHORTCUT_PAUSE_MINUTES = 60;
 
 /* ---- the command palette ---------------------------------------------------
-   The overlay is injected into the page, so everything about which commands exist and
-   what they do is kept HERE. The page half sends an id and nothing more; this list is
-   what turns an id into an action, and an id that is not on it reaches nothing.
-   That alone is not enough. A page cannot message an extension directly today, but a
-   compromised content-script world could, and "pause WardenOne on this site" is exactly
-   what a hostile page would reach for. So the palette also has to have been OPENED, by
-   the reader, on that tab, moments ago -- and opening it is something only the keyboard
-   shortcut can do. */
+   Keep command definitions in the worker. A pick must name a known ID and spend a recent
+   keyboard-opened grant for that tab; content-script access alone cannot authorize it. */
 const PALETTE_ALLOWED = new Set([
   'scan-site', 'privacy-test', 'element-tool', 'copy-clean-current-address', 'pause-site',
   'open-network-logger', 'open-firewall', 'open-file-shield', 'open-extension-check',
   'open-activity', 'open-settings',
 ]);
-/* The grant: one opening, one use. It used to be a tab-id -> time map in this worker's
-   memory, which is the wrong lifetime. The two minutes a palette stays valid are two minutes
-   in which Chrome routinely tears the worker down; the pick then woke a NEW worker with an
-   empty map, which refused it, and the callback threw the refusal away -- so a palette that
-   was visibly open, inside its window, did nothing (MV3-06). Opening now mints a random
-   nonce, keeps its SHA-256 with the tab and the time in storage.session -- the lifetime that
-   outlives suspension and dies with the browser -- and hands the nonce itself to the injected
-   palette's isolated world, where the page cannot read it. A pick carries the nonce back; the
-   claim checks the tab, the hash and the age, and removes the grant before the command runs,
-   so the second use of one opening finds nothing whichever worker answers it. Nothing was
-   loosened to make it survive: a pick without the nonce, from another tab, after two minutes
-   or a second time is refused as before -- and the nonce is a requirement the old gate did
-   not have. Claims are serialized, so two picks racing inside one worker spend one grant once. */
+/* Persist the palette grant’s nonce hash, tab and expiry in storage.session (MV3-06).
+   Return the nonce only to ISOLATED. Serialize claims and consume before executing,
+   so worker suspension cannot invalidate the opening or allow a second pick. */
 const PALETTE_GRANT_KEY = 'wardenone_palette_grant';
 /* Long enough to read eleven lines and type a few letters, short enough that a stolen
    moment is not a standing invitation. */
@@ -19930,22 +19087,9 @@ function wardenIndicatorKind(raw) {
   return null;
 }
 
-/* The menu, as data. Every entry, every right-click: scoping them to link/selection/frame
-   made the menu shorter but also made it unpredictable -- the thing you wanted was missing
-   depending on the pixel you happened to be over, and you cannot learn a menu whose contents
-   move. They are all here, and each one says plainly when there was nothing for it to work on.
-
-   Ruled into groups rather than left as seven lines of text. They are not seven of the same
-   thing: two do something to what you clicked, four ask a question about it, three act on the
-   tab, one decides about the site. A flat list makes the reader sort that out every time
-   they open it; the rules do it once. The tab group is away from the checks above it because
-   those are the only entries that change what is on your screen, and away from the site
-   decision below because they are about one tab rather than the site everywhere. Closing is
-   last in its own group, under the two reversible ones: a tab you slept comes back when you
-   click it and a never-sleep mark comes off with the same entry that put it on; a closed tab
-   does not, so it does not sit directly under the pointer's resting place. "Copy clean link"
-   is here because the browser draws its own "Copy link address", and that one never reaches
-   the page -- no copy event, no clipboard call -- so the engine's cleaner cannot see it. */
+/* Keep entries available regardless of clicked context; handlers explain missing targets.
+   Group destructive tab actions away from checks, with Close last. Native Copy link address
+   emits no page copy event, so Copy clean link needs its own command. */
 const WO_MENU_ITEMS = [
   { id: WO_MENU_ZAP, title: 'Zap this element' },
   { id: WO_MENU_COPY_LINK, title: 'Copy clean link' },
@@ -20051,26 +19195,11 @@ try {
   });
 } catch (_) {}
 
-/* ---- checks the reader asks for ------------------------------------------ *
- * Every lookup below already existed and was only reachable when WardenOne
- * decided to run it -- on the page you were already on, about a link you had
- * already clicked. This routes the same engines to a question you asked, about
- * something you have not visited yet. That is the whole feature: no new
- * intelligence, a new moment to use it.
- *
- * The answer always arrives, including "nothing known". A check that stays
- * silent when it finds nothing is indistinguishable from one that did not run. */
+/* ---- checks the reader asks for ------------------------------------------
+   Reuse existing checks before navigation, always replying even when nothing is known. */
 
-/* The answer goes where the reader already looks: WardenOne's own toast, on the
-   page they are on. A Chrome system notification was the first attempt and it is
-   the wrong channel -- on Windows those are routinely swallowed by focus assist
-   or by notification settings nobody remembers changing, so the check appeared to
-   do nothing at all. The toast goes through the same wo-event the engine uses for
-   every other notice, which means the Notification Centre governs its timing and
-   it lands in history like everything else.
-
-   The system notification stays as the fallback for the case the toast genuinely
-   cannot reach: a tab that refuses injection, or no tab at all. */
+/* Prefer the page toast for requested replies; system notifications can be hidden by OS settings.
+   Fall back to the system notification if injection is unavailable or there is no tab. */
 async function wardenManualNotice(title, message, tab, id, documentId) {
   const text = String(message || '').slice(0, 400);
   const tabId = tab && typeof tab.id === 'number' ? tab.id : null;
@@ -20108,20 +19237,8 @@ async function wardenManualNotice(title, message, tab, id, documentId) {
    phrase the answers the same way -- two copies would drift the moment one of
    them gained a provider. */
 // ---- Search-result warnings --------------------------------------------------------
-//
-// What WardenOne already knows about a host, answered entirely from data already on this
-// machine. Nothing is looked up to produce these. Painting a badge beside ten results
-// would otherwise mean ten reputation queries per search, which hands a third party the
-// thing the reader typed -- and doing that in the name of privacy protection would be
-// absurd. The deliberate consequence is that a dangerous site nobody has listed yet gets
-// no badge. That is the right way round: the alternative buys coverage with the reader's
-// search history. Where they want a deeper answer about one link, right-click ->
-// Check this link is the place that is allowed to ask the network.
-//
-// THERE IS NO POSITIVE VERDICT, and there must never be one. "Not on a list" is not
-// "safe": these lists cover a rounding error of the web, and a green tick beside a result
-// nobody has examined spends trust the extension has not earned. Every level below says
-// "I know something bad about this", or says nothing at all.
+// Use local evidence only: automatic network lookups would expose searches.
+// No positive safety verdict; absence from a list proves nothing. Manual link checks may use providers.
 const SEARCH_WARN_MAX_HOSTS = 60;
 const SEARCH_WARN_NEW_DOMAIN_DAYS = 60;
 /* Only the engines search-junk.js can find a result block on. The handler refuses every
@@ -20493,24 +19610,10 @@ async function describeWardenFrame(info, tab) {
     'This content is embedded from ' + frameHost + ', not from ' + (pageHost || 'this page') + '.', tab);
 }
 
-/* ---- block or unblock the site you are on -------------------------------- *
- * One entry rather than two. "Block this site" and "Unblock this site" side by
- * side means one of them is always wrong for the page you are looking at, and
- * neither says which -- so the title is rewritten from the real state each time
- * the menu opens, and the single click does whichever the title promised.
- *
- * It writes to the same learned-block store the engine's own detections use, so
- * a site blocked from here shows up in Activity beside them, is undone by the
- * same Forget button, and is enforced by the same declarativeNetRequest rules.
- * A parallel "sites the user blocked" list would be a second thing to keep in
- * step and a second place to look. */
+/* ---- block or unblock the site you are on --------------------------------
+   Derive the menu action/title from stored state and use the shared manual-block enforcement path. */
 
-/* Whether a block on this host would actually do anything.
-   applyLearnedRules drops a learned domain when the site is allowlisted, and
-   writes no rules at all when WardenOne is switched off -- silently, in both
-   cases. So the menu used to say "Blocked." and nothing was blocked, which is
-   the worst possible answer: it is wrong AND it stops you looking further. This
-   is checked before the claim is made, not after. */
+/* Check master/allowlist state before reporting a manual block as effective. */
 async function wardenBlockObstacle(host) {
   try {
     const store = await localGet('wardenone_config');
@@ -20576,15 +19679,8 @@ async function wardenReadBlockOffer() {
   return WARDEN_BLOCK_MENU_OFFER;
 }
 
-/* The FULL hostname of the page a menu was opened on, where wardenSiteHostFromTab
-   gives the registrable domain.
-
-   The two are deliberately different answers to different questions. Blocking is
-   about a site, so mail.google.com collapsing to google.com is correct there.
-   Never-sleep is about the tab in front of you -- somebody keeping their mail
-   awake has said nothing at all about maps or search -- so it keeps the host it
-   was given. Passing the block entry's answer to the sleep entry would silently
-   widen every mark to the whole registrable domain. */
+/* Never-sleep uses the full host; blocking uses the site boundary.
+   Keeping mail.google.com awake must not implicitly keep every Google subdomain awake. */
 function wardenTabHostname(tab, info) {
   const candidates = [info && info.pageUrl, tab && tab.url, tab && tab.pendingUrl];
   for (const raw of candidates) {
@@ -20599,15 +19695,7 @@ function wardenTabHostname(tab, info) {
   return '';
 }
 
-/* Rewritten from the stored list before the menu paints, so the entry names the
-   site and says which way it is about to go.
-
-   Unlike the block entry next to it, this one keeps no durable record of what it
-   last offered. It does not need one: the list in storage is the only state, the
-   click re-reads it and toggles from what it finds, and the message afterwards
-   names the result. The worst a stale title can do here is name the previous
-   tab's host -- the action still lands on the right one, because the click works
-   the host out from the page rather than from the label. */
+/* Re-read the never-sleep list on click. The title is presentation, not the authority for target or state. */
 async function refreshWardenNeverSleepMenuTitle(host) {
   if (!MODULE_LOADED.memory) return;
   let title = 'Never sleep this site';
@@ -20685,16 +19773,8 @@ function wardenReloadAfterSiteChange(tab) {
   if (tabId === null) return;
   try {
     setTimeout(() => {
-      /* bypassCache, not a plain reload. A plain reload can serve the document
-         straight from the HTTP or back-forward cache, so the main_frame request
-         never touches the network -- and the block lives in the network layer.
-         That is the "loads but not really" skeleton: the cached shell renders,
-         then its runtime data calls hit the network and are refused, leaving the
-         page half-built forever. Forcing past the cache makes the main_frame a
-         real network request, which the rule blocks outright -> Chrome's own
-         "can't reach this site" page. The service worker was already dropped
-         above, so nothing else can answer for the site either. Unblocking wants
-         the fresh copy too, so the same flag is right in both directions. */
+      /* Bypass cache after block/unblock so the main-frame request reaches DNR instead of a cached shell.
+         The site’s service worker was already cleared above. */
       try { chrome.tabs.reload(tabId, { bypassCache: true }, () => { void chrome.runtime.lastError; }); } catch (_) {}
     }, 1200);
   } catch (_) {}
@@ -21016,16 +20096,8 @@ async function toggleWardenSiteBlock(tab, info) {
   }
 }
 
-/* ---- who is actually serving this picture? ------------------------------- *
- * The question a page cannot answer for you. An image, video or audio element
- * carries its own source, and on a modern page that is very often a domain you
- * have never heard of sitting inside one you trust -- a CDN, an ad network, a
- * tracking pixel wearing a logo. Chrome hands the real srcUrl to the menu, so
- * this says whose it is and then asks the same questions the link check asks.
- *
- * The third-party line comes FIRST and is always present, because it is the part
- * you cannot get any other way. Reputation may have nothing to say; "this is
- * served from somewhere else" always does. */
+/* ---- who is actually serving this picture? -------------------------------
+   Use Chrome’s srcUrl to show the serving host and run the existing link checks. */
 async function checkWardenMedia(info, tab) {
   const src = String((info && info.srcUrl) || '');
   const kind = String((info && info.mediaType) || 'image');
@@ -21084,18 +20156,8 @@ function startElementTool(tab, frameId) {
   } catch (_) {}
 }
 
-/* Chrome has no "menu about to open" event, so the moment that matters is the
-   right-click itself: the content script reports it and the title is rewritten
-   before the menu paints. A tab switch refreshes it too, so the entry is right
-   for the page you are on even without the page's help.
-
-   There is deliberately no tabs.onUpdated listener here. The refresh after a
-   same-tab navigation rides the Forget-Me listener instead (see the census note
-   there), which already receives every tick of every tab and discards the ones
-   that are not a navigation. A listener of its own would not have cost a worker
-   wake -- one event wakes the worker once for all its listeners -- but it would
-   have been a second copy of the navigation filter to keep right, for a refresh
-   the right-click report already covers. */
+/* Refresh titles on right-click reports and tab switches; Chrome has no menu-opening event.
+   Same-tab navigation refresh rides the existing Forget-Me listener to share its navigation filter. */
 try {
   chrome.tabs.onActivated.addListener((info) => {
     try {
@@ -21111,9 +20173,7 @@ try {
   chrome.contextMenus.onClicked.addListener((info, tab) => {
     if (!info) return;
     if (info.menuItemId === WO_MENU_ZAP) { startElementTool(tab, info.frameId); return; }
-    /* Always offered, so each falls back to the next most useful thing rather
-       than doing nothing: a right-click that was not on a link still has a page
-       worth checking. */
+    /* Fall back to the page when the clicked context has no more specific check target. */
     if (info.menuItemId === WO_MENU_LINK) {
       void runWardenManualCheck(info.linkUrl || info.pageUrl || (tab && tab.url), tab);
       return;
@@ -21145,24 +20205,9 @@ try {
   }
 } catch (_) {}
 
-// These live out here on purpose. Declared inside the onMessage listener
-// below -- which is where they were first written -- a function declaration is
-// scoped to that block, so the navigation listeners that call maybeClearOnLeave
-// and noteServiceWorkerRegistration threw ReferenceError instead, and every
-// const above was rebuilt empty on each message, so SW_REGISTERED_AT could
-// never remember anything long enough to be used.
-
 // ---- Consent-banner and tracking cookies, without signing anyone out ----------------------------
-//
-// "Accept all" leaves a cookie behind on every site that asked, and the ad and analytics networks
-// leave several more. They pile up for years. Clearing cookies wholesale gets rid of them, but it
-// also throws away every session cookie, so the price of tidying up is signing out of everything.
-//
-// This is deliberately built the safe way round: an ALLOWLIST of names to delete, not a blocklist
-// of names to keep. A cookie WardenOne does not recognise is left exactly where it is. That means
-// the worst case is a consent banner this list has never heard of surviving the clean -- never a
-// login being destroyed. A blocklist would have the opposite worst case, which is unacceptable for
-// a feature whose whole promise is "this will not sign you out".
+// Delete only recognised consent/tracking names; unknown cookies must survive.
+// Keep helpers in worker scope so navigation listeners and messages share their state.
 const CONSENT_COOKIE_EXACT = new Set([
 // IAB TCF / generic consent strings
 'euconsent', 'euconsent-v2', 'eupubconsent', 'eupubconsent-v2', 'addtl_consent',
@@ -21262,31 +20307,12 @@ if (!domain) return '';
 return (cookie.secure ? 'https://' : 'http://') + domain + (cookie.path || '/');
 }
 
-// Tidy up after a banner the user had to accept.
-//
-// Auto-reject handles a banner that offers a way to say no. This is for the ones
-// that do not: the user clicks Accept to get at the page, and the cookies that
-// bought them entry sit there afterwards. When the last tab for that site closes,
-// its consent and tracking cookies go with it.
-//
-// It uses the same classifier as the manual cleaner, so it cannot sign anyone out:
-// only names on the consent/tracking lists are touched, a prefix match still has to
-// clear the session guard, and generic names count only on adtech hosts. What it
-// deliberately does NOT do is clear the whole domain -- that would take the login
-// with it, and a feature that logs you out of everything you visited is not a
-// feature anybody keeps switched on.
-//
-// Off by default. Clearing data the user did not ask to lose is not a default.
+// On last-tab close, remove only consent/tracking cookies using the manual cleaner’s classifier.
+// Preserve session guards and restrict generic names to adtech hosts. This cleanup is opt-in.
 const CONSENT_ACCEPTED_AT = Object.create(null);
 
-/* Both on-leave records now outlive the worker (LIFE-01). The window they have to cover is a visit,
-   and a loaded page produces no worker events, so Chrome ended the worker inside most visits and
-   the heap maps went with it: the reader closed the tab, a fresh worker woke to find no record, and
-   both cleanups returned at their first line -- silently, since each logs only on success. The two
-   opt-in controls were switched off for the rest of most visits by nothing more than an idle timer.
-   storage.session is the right lifetime: the records outlive a suspension and die with the browser,
-   and neither belongs in durable storage, where it would be a list of sites visited. Bounded and
-   dated, newest wins on restore, expired entries dropped either way. */
+/* Persist bounded, dated on-leave records in storage.session (LIFE-01).
+   They must survive worker suspension but not become durable browsing history; newest wins on restore. */
 const ON_LEAVE_RECORD_TTL_MS = 24 * 60 * 60 * 1000;
 const ON_LEAVE_RECORD_MAX = 200;
 function onLeaveRecordSnapshot(map) {
@@ -21411,20 +20437,8 @@ for (const cookie of all || []) {
 return removed;
 }
 
-// ---------------------------------------------------------------------------
-// Service workers, cleared when you leave.
-//
-// A service worker is the one thing a site leaves behind that keeps running.
-// Cookies sit there until something reads them; a worker sits in front of every
-// later request to that site and can wake up without a tab open. So "clear the
-// site's data when I go" that stops at cookies leaves the most persistent part
-// of the visit in place.
-//
-// Deliberately narrow, and off by default. It only touches sites that actually
-// registered a worker while you were there -- which WardenOne knows, because
-// the page guard reports the registration -- and only once no tab of that site
-// is left open. A blanket sweep would break every site that legitimately uses
-// one for offline reading or push, and those are the sites people notice.
+// Opt-in service-worker cleanup applies only to sites observed registering one during the visit,
+// and only after their last tab closes. Avoid a blanket sweep of offline apps and push workers.
 const SW_REGISTERED_AT = Object.create(null);
 const SW_REGISTERED_MAX = 200;
 // Outlives the worker, like the consent record above (LIFE-01).
@@ -21493,27 +20507,9 @@ queueHistory({
 });
 }
 
-/* Silencing a kind of notice, for a while or for good.
-
-   Kept in the config rather than a private store for one reason: the config is
-   already pushed to every content script, so the engine can check a mute
-   without asking anything. It also means the popup can list and undo them with
-   the code it already has for settings, and that a mute survives the worker
-   being evicted -- a notice you silenced coming back in ten minutes because
-   Chrome recycled a service worker would be its own small betrayal. */
-/* A short memory of what has already been said, so reloading a page does not
-   re-say it.
-
-   A notice is a statement about a thing that happened, not about a page load,
-   and the same statement repeated on every refresh stops being information and
-   becomes weather. An hour is the window: long enough that reading a page,
-   reloading it, and coming back after a coffee stays quiet; short enough that
-   tomorrow it can tell you again, because a site quietly installing a worker
-   every day IS worth hearing again.
-
-   Keyed on type AND host: the same kind of notice about a different site is a
-   different statement, and suppressing it would hide the thing worth knowing.
-   The host comes from the sending tab, never from the page. */
+/* Store notice mutes in config so content scripts can enforce them locally and popup can undo them. */
+/* Deduplicate recent notices by type and sender-tab host across reloads.
+   The page cannot supply the host used for suppression. */
 const TOAST_MEMORY_WINDOW_MS = 30 * 60 * 1000;
 const TOAST_MEMORY_MAX = 250;
 
@@ -21691,7 +20687,7 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   ] },
   { owner: 'Temporary operation state', sensitivity: 'session state', area: 'session', maxAgeDays: null, maxItems: null, retention: 'Browser or extension session', siteErase: 'prune', keys: [
     '__wardenone_badge_counts', '__wardenone_ext_scan_done', '__wardenone_hist_buffer',
-    '__wardenone_menu_built', '__wardenone_sb_bypass', '__wardenone_tally_state',
+    '__wardenone_menu_built', '__wardenone_sb_bypass', '__wardenone_sb_navigation_grants', '__wardenone_tally_state',
     'wardenone_block_offer', 'wardenone_blocklist_session', 'wardenone_download_handled',
     'wardenone_erase_rebuild', 'wardenone_manual_check_jobs', 'wardenone_palette_grant', 'wardenone_build_update_v1',
     'wardenone_rebind_session', 'wardenone_tracker_session', 'wardenone_sw_registered',
@@ -22074,15 +21070,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     })(), sendResponse);
     return true;
   }
-  /* Privacy self-test. Runs privacy-probe.js twice in the SAME page -- once in the MAIN
-     world where the shields have patched the globals, once in the ISOLATED world which
-     shares the DOM but has its own untouched prototypes -- and hands both sets of
-     readings back. The comparison is what makes this a measurement rather than a
-     restatement of the settings: "protected" means the value the page received is
-     demonstrably not the value the browser would have given it.
-     It has to run on a real web page. This is an extension page asking about a tab,
-     because content scripts do not run on chrome-extension:// and a test that measured
-     THIS page would report every shield as absent -- truthfully, and uselessly. */
+  /* Run the privacy probe in MAIN and ISOLATED on a real web tab, then return both measurements.
+     Extension pages have no content guards and cannot provide a useful test target. */
   if (msg && msg.kind === 'privacy-test-run') {
     if (!messageSenderIsExtensionPage(sender)) {
       try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
@@ -22510,11 +21499,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (t.serviceWorkers) dataTypes.serviceWorkers = true;
         if (t.formData) dataTypes.formData = true;
         let consent = null;
-        // Both boxes ticked is the one combination where the consent sweep must not run. It is
-        // subsumed -- browsingData.remove is about to delete every cookie anyway -- and its
-        // result sentence ends "so you are still signed in", which would be a lie printed
-        // directly above a wholesale sign-out. It also saves thousands of individual
-        // cookies.remove calls issued moments before the same cookies are wiped wholesale.
+        // Skip the consent-only sweep when all cookies will be deleted. Its preserved-login summary
+        // would contradict the broader action, and the individual removals would be redundant.
         if (t.consentCookies && !t.cookies) consent = await cleanConsentAndTrackingCookies();
         let perms = null;
         if (t.sitePermissions) perms = await resetSensitiveSitePermissionsGlobally();
@@ -22542,15 +21528,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // ---- Local Extension Security Centre ----
-  // Reputation is an exact-ID lookup in a bundled local database. Access risk and
-  // inventory changes are separate facts: broad permissions are not a malware
-  // verdict, while a missing database record is never presented as proof of safety.
-  //
-  // One entry point. list-extensions and get-extension-alerts used to sit beside this one,
-  // answering with subsets of the same report -- the inventory without the assessments, the
-  // change alerts without the inventory -- and nothing had sent either for several rewrites of
-  // the Security Centre. The report folds the alerts into each extension's assessment, and
-  // tools/test-message-reachability.js now refuses a handler nothing sends (PI-07).
+  // Exact-ID reputation, access reach and inventory changes are separate signals.
+  // Unknown catalogue entries never imply safety.
   if (msg && msg.kind === 'extension-security-report') {
     (async () => {
       try {
@@ -22670,10 +21649,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => { try { const report = await runStartupCheck('manual', { force: true }); sendResponse({ ok: true, report }); } catch (e) { sendResponse({ ok: false, error: String(e) }); } })();
     return true;
   }
-  // Only reachable from the block screen, which is an extension page. It is not in
-  // TAB_CONTEXT_ALLOWED_MESSAGES, so a web page cannot grant itself a bypass.
   if (msg && msg.kind === 'safe-browsing-allow-once') {
-    respond(addSafeBrowsingBypass(msg.host), sendResponse);
+    respond(addSafeBrowsingBypass(msg.handle, sender), sendResponse);
     return true;
   }
 
@@ -22725,15 +21702,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     javascript: ['allow', 'block'],
     sound: ['allow', 'block'],
   };
-  // Patterns for a per-site content setting. Most permissions are scoped to the
-  // exact host. COOKIES ARE SPECIAL: a site's session/auth cookies are usually set
-  // on the registrable domain and shared across subdomains (youtube.com sets on
-  // .youtube.com, auth on .google.com). If we block cookies only on the exact host
-  // (www.youtube.com), the page can read SOME cookies but not its session cookie,
-  // so its JS keeps reloading trying to re-establish a session -> infinite reload
-  // loop. Blocking the WHOLE registrable domain (and its subdomains) makes the
-  // "no cookies" state CONSISTENT, so the site settles as logged-out instead of
-  // looping. We also include the auth domains that the big providers bounce through.
+  // Scope cookies to the registrable domain and related auth hosts so subdomains see a consistent
+  // logged-out state rather than partial session access and reload loops. Other permissions stay exact-host.
   const siteUrlPatterns = siteContentSettingPatterns;
   const cookieUrlPatterns = cookieContentSettingPatterns;
   const contentSettingApi = (key, method) => {
@@ -23284,16 +22254,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // The site-permission sweep is reached through the Privacy cleaner (clean-browser with
-  // sitePermissions), and the per-site view through scan-site-permissions. Two older names for
-  // the same jobs -- reset-all-site-permissions and list-site-permissions, the second of which
-  // only ever answered with a note that Chrome cannot enumerate grants -- had no sender left and
-  // are gone (PI-07). The per-type "open settings" buttons never came here: the popup opens
-  // chrome://settings/content/<type> itself.
-
   // ---- Memory Shield: popup actions ----
-  // A package that does not carry the module answers every one of these the same way, before any
-  // handler can reach for a function that was never loaded (CWS-03).
+  // Check build availability before any handler reaches an omitted module (CWS-03).
   if (msg && msg.kind && (woOmittedMessage(msg.kind) || (String(msg.kind).indexOf('memory-') === 0 && !MODULE_LOADED.memory))) {
     try { sendResponse({ ok: false, error: 'Not included in this build.', omitted: true }); } catch (_) {}
     return true;
@@ -23471,14 +22433,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   // ---- Check an extension before installing it ----
-  /* The Security Centre answers "what is installed and did it change". This
-     answers the question that comes first: should I install this at all.
-     Everything the answer needs already exists -- the bundled exact-ID catalogue,
-     the version-aware lookup, and the installed inventory. What was missing was a
-     way in that does not require installing the thing first.
-
-     Both kinds are privileged. A page able to reach them could ask WardenOne
-     which extensions the reader has installed, one id at a time. */
+  /* Pre-install extension checks are privileged too: their inventory answers could otherwise
+     let a page enumerate installed extensions one ID at a time. */
   if (msg && msg.kind === 'extension-check') {
     (async () => {
       const parsed = parseExtensionReference(msg.reference);
@@ -24163,17 +23119,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // async
   }
 
-  // Re-set a site's readable session cookies with HttpOnly, which is the ONLY
-  // real way to hide a credential from page scripts: the browser stops exposing
-  // it to document.cookie but still sends it on requests, so the site keeps
-  // working while injected script can no longer read it.
-  //
-  // Two things this deliberately will not do:
-  //   - touch CSRF cookies. The double-submit pattern REQUIRES the page to read
-  //     them (Angular's XSRF-TOKEN, Django's csrftoken). Hardening those breaks
-  //     the site outright.
-  //   - claim to be permanent. The server can re-issue the cookie without
-  //     HttpOnly on its very next response and undo this.
+  // HttpOnly hides readable session cookies from scripts while preserving browser requests.
+  // Do not harden CSRF cookies: double-submit schemes need them readable. Servers can undo
+  // the change on their next response, so this is not permanent.
   if (msg && msg.kind === 'harden-site-cookies' && msg.url) {
     (async () => {
       try {
@@ -24394,18 +23342,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         report.ok = false;
       }
 
-      // 5. Put the page engine back where it is missing. This used to re-inject every content
-      //    script into the live documents -- marking the old copies stale, calling their published
-      //    disposers, and reading a MAIN-world version marker back to decide it had worked. None of
-      //    that survives SEC-01/SEC-03: the engine now trusts only a key handed over at
-      //    document_start, before the page can run, and no channel into a document the page has
-      //    already run in is private, so an engine injected there would have to trust a bus the
-      //    page can write to. Repair therefore asks each tab's isolated bridge, which holds the
-      //    key, whether the engine answers a signed challenge, and reloads the tabs that fail --
-      //    a reload is a fresh document_start hand-off. Tabs that answer are left exactly as they
-      //    are. A tab whose bridge does not answer at all belongs to a previous extension lifetime
-      //    and is reloaded too. Sleeping tabs reload when they are next shown; tabs the engine is
-      //    meant to skip -- master off, allowlisted, excluded by the manifest -- are left alone.
+      // 5. Put the page engine back where it is missing: reload after a signed bridge challenge.
+      // A fresh document_start permits the private key handoff (SEC-01/03). Sleeping tabs reload when shown.
+      // Skip disabled, allowlisted and manifest-excluded pages.
       try {
         const repairCfg = await new Promise((r) => chrome.storage.local.get('wardenone_config', (x) => r((x && x.wardenone_config) || {})));
         const merged = Object.assign({}, DEFAULT_CONFIG, repairCfg);

@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Blocking a site by hand must not make the engine call it an IP logger.
- *
- * The learned map is shipped to the page for one purpose: the bridge turns it
- * into learnedGrabberDomains, the engine merges that into grabberDomains, and a
- * match raises a full-screen "Known IP-logger detected -- this domain (x) is a
- * known IP-grabber / logger service".
- *
- * Two unrelated kinds of entry live in that map:
- *   - learnDomain() writes the grabber kind. It has ONE caller, which always
- *     passes 'known IP-grabber behavior'.
- *   - the right-click "Block this site" writes { userBlocked: true, reason:
- *     'you blocked this site' }.
- *
- * Both were shipped, so blocking twitch.tv by hand and then loading it produced
- * "twitch.tv is a known IP-grabber / logger service" -- an accusation invented
- * out of the reader's own decision. Reported from a real block/unblock cycle.
- *
- * Run: node tools/test-learned-grabber-scope.js
- */
+/* A manually blocked site must not become an IP-logger reputation claim in content snapshots.
+   Run: node tools/test-learned-grabber-scope.js */
 'use strict';
 
 const fs = require('fs');

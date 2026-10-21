@@ -4,19 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WardenOne Memory Shield runtime
- * =================================
- * Owns tab sleeping, RAM scoring, duplicate/zombie tab helpers, tab-limit
- * enforcement, and popup-facing memory actions. Loaded by background.js with
- * importScripts() so the MV3 worker keeps a smaller main file.
- */
+/* Memory Shield runtime, imported synchronously by background.js. */
 
-// ======================= Memory Shield =======================
-// Saves RAM by DISCARDING (sleeping) inactive tabs via chrome.tabs.discard().
-// A discarded tab stays in the tab strip and reloads when clicked -- nothing is
-// closed or lost. We track per-tab last-active time and, on a periodic sweep,
-// discard tabs that are safe AND have been inactive past the mode's threshold.
+// Discard eligible idle tabs without removing them from the tab strip. They reload when activated.
 const MEMORY_MODES = {
   gentle:     { minutes: 120 },
   balanced:   { minutes: 30 },
@@ -46,19 +36,8 @@ const MEMORY_DEFAULTS = {
 const tabActivity = Object.create(null);
 const markTabActive = (tabId) => { if (tabId != null) tabActivity[tabId] = Date.now(); };
 
-// The single definition of "when was this tab last used", for every path that measures idle time.
-//
-// tabActivity is heap-only, and MV3 tears the worker down constantly -- the five-minute sweep alarm
-// is itself what wakes a fresh one. Reading only that map meant a cold sweep saw no timestamps at
-// all, fell back to "now", and concluded every tab had just been used. A 30-minute threshold was
-// never reached, so automatic sleeping did essentially nothing while reporting success. Chrome's
-// tab.lastAccessed survives restarts and is available from Chrome 121, which is the manifest
-// minimum, so it is the durable half of the answer.
-//
-// The NEWER of the two, not "lastAccessed if it is set": the map also records navigations and audio
-// in background tabs, which Chrome does not count as an access. Preferring lastAccessed outright
-// would report such a tab as staler than it is, and that error runs in the direction that sleeps a
-// tab someone is still using.
+// Use the newer of Chrome’s persistent lastAccessed and local navigation/audio activity.
+// The heap-only activity map is empty after a worker restart.
 function tabLastUsedOrNull(tab) {
   let best = null;
   const persisted = Number(tab && tab.lastAccessed);
@@ -79,12 +58,7 @@ function tabLastUsed(tab, now) {
 try {
   chrome.tabs.onActivated.addListener((info) => markTabActive(info.tabId));
   chrome.tabs.onUpdated.addListener((tabId, change) => {
-    // A navigation, load or audio start is activity. Nothing else is.
-    //
-    // This used to also seed any tab it had never seen with "now", which mattered when the map was
-    // the only source of recency. With tab.lastAccessed in the picture it became harmful: the seed
-    // is the NEWER value, so a background tab that merely changed its title -- and plenty do, on a
-    // timer -- had its real idle age erased, once per service-worker restart.
+    // Only navigation, load and audio starts refresh activity; title-only updates must not erase idle age.
     if (change.status === 'loading' || change.url || change.audible) markTabActive(tabId);
   });
   chrome.tabs.onCreated.addListener((tab) => markTabActive(tab.id));
@@ -116,24 +90,12 @@ async function getMemoryConfig() {
 }
 
 // ---- "Never sleep this site" ------------------------------------------------------
-//
-// The reader's own keep-awake list, added and removed from the right-click menu.
-//
-// EXACT hosts, deliberately -- this is the one host list in the extension that does not
-// match subdomains. Everywhere else a wildcard is a convenience; here it would make the
-// menu lie. The entry has to say what removing it does, and with subdomain matching a
-// right-click on mail.google.com could read "Never sleep mail.google.com" while it was
-// already being kept awake by a google.com entry, and taking that entry away would
-// silently change every other Google tab too. One host, one entry, one thing removed.
-//
-// Capped because it is written from a menu click, which is cheap to repeat, and this list
-// is consulted on every sweep of every tab.
+// Match exact hosts so removing a menu entry affects only the host it names.
+// Cap the list because menu clicks can add entries and every sweep reads it.
 const MEMORY_NEVER_SLEEP_MAX = 300;
 
 function memoryNeverSleepHas(list, host) {
-  // The empty case first. This runs per tab on every sweep, and for nearly every reader
-  // the list is empty forever -- there is no reason to normalise a hostname to compare it
-  // against nothing.
+
   if (!Array.isArray(list) || !list.length) return false;
   const h = normalizeAllowlistHost(host);
   return !!h && list.indexOf(h) >= 0;
@@ -203,18 +165,8 @@ function tabKeepReason(tab, cfg) {
   return null; // Audio follows its switch; camera/mic and forms use the live check below.
 }
 
-// Ask a tab's bridge whether it has unsaved form input or active camera/mic.
-//
-// `ok` answers a different question from the other two: did we actually get an answer at all. It
-// used not to exist, and every way of failing -- the 400ms timeout, runtime.lastError, a thrown
-// send, a missing or malformed reply -- resolved to {formDirty:false, mediaActive:false}, which
-// every caller then read as "checked it, the tab is clean". So a tab whose bridge was merely
-// unreachable, because the extension had just reloaded or injection had not landed yet, was
-// discarded as verified-safe. Discarding reloads the tab, so whatever was typed into it is gone,
-// and the popup promises without qualification that unsaved-form tabs are never touched.
-//
-// Unknown is now unknown. Destructive callers must keep the tab; a caller that only throttles may
-// still fail open, because the cost of being wrong there is a paused video.
+// An unreachable bridge is not a clean tab. Destructive callers must keep tabs with unknown state;
+// callers that only throttle may fail open.
 const MEMORY_LIVE_CHECK_TIMEOUT_MS = 1000;
 function tabLiveState(tabId) {
   return new Promise((resolve) => {
@@ -244,12 +196,8 @@ function tabLiveState(tabId) {
   });
 }
 
-// The live check above can take a second, and the tab can change inside it -- most simply, the
-// reader switches to it, and Chrome discards an active tab when asked (measured; see
-// memorySleepTabByHand). So every automatic path reads the tab again right before acting and acts
-// only on the tab it chose: still unprotected, on the same address, not used since it was chosen,
-// and past `minIdleMs` where the path has a threshold. The same final check Tab Limit makes.
-// `selected` is what was captured at selection time: { id, url, lastUsed } (lastUsed may be null).
+// Re-read the selected tab immediately before automatic action: it may have become active or navigated
+// during the live-state check. Require the same address, activity time and idle threshold.
 async function tabStillSleepable(selected, cfg, minIdleMs) {
   const fresh = await tabsGet(selected.id);
   if (!fresh) return { ok: false, reason: 'tab closed' };
@@ -525,13 +473,8 @@ async function reconcileMemorySweepAlarm(cfgArg) {
 reconcileMemorySweepAlarm();
 
 // ---- Tab Limit --------------------------------------------------------------
-// When a newly-opened tab pushes a window past the user's limit, act on the
-// oldest tab that has been inactive past the minimum idle time: sleep it
-// (default, reversible) or close it (aggressive, opt-in). Every Memory Shield
-// protection still applies via tabKeepReason() + tabLiveState(), so active,
-// pinned, audio, unsaved-form, login/payment, allowlisted, and internal tabs are
-// never touched. Sleeping doesn't reduce the tab count, so we only relieve the
-// single stalest tab per trigger; closing brings the count back down to the cap.
+// Apply the usual idle-tab guards. Sleep only the stalest eligible tab per trigger,
+// since discarding does not reduce the tab count; closing can bring it back to the cap.
 const TAB_LIMIT_ENFORCE_TIMERS = Object.create(null);
 const TAB_LIMIT_MAX_ACTIONS_PER_RUN = 5;
 
@@ -593,13 +536,8 @@ async function enforceTabLimit(windowId) {
   try { tabs = await chrome.tabs.query({ windowId }); } catch (_) { return; }
   if (!tabs || tabs.length <= max) return;
 
-  // Safe-to-act tabs (never active/pinned/audio/login/internal/allowlisted). Idle time
-  // comes from Chrome's PERSISTENT tab.lastAccessed -- the in-memory tabActivity map is
-  // wiped whenever the service worker restarts, which made every tab look "just active"
-  // (idle 0) so nothing ever qualified. Sorted most-stale (least-recently-used) first.
-  // Empty "New tab" / blank placeholder pages are disposable -- in CLOSE mode they are
-  // fair game for the cap even though they're internal pages (so a window full of New
-  // tabs actually gets trimmed). Never the active or pinned one.
+  // Sort eligible tabs by persistent last-use time. Close mode may trim empty new-tab placeholders,
+  // but never the active or pinned tab.
   const isDisposableTab = (tab) => {
     const u = tab.url || tab.pendingUrl || '';
     return u === '' || u === 'about:blank'
@@ -839,29 +777,8 @@ async function memoryActOnTab(tabId, action, opts) {
 }
 
 // ---- Right-click actions on the tab you are looking at -----------------------------
-//
-// Sleep it, close it, or mark its site never-sleep. These are the same two verbs the
-// automatic shield uses, aimed by hand at one named tab.
-//
-// The safety rules are NOT the sweep's rules, and that difference is the whole design.
-// tabKeepReason exists because the sweep acts on tabs nobody is looking at: "active
-// tab", "pinned", "allowlisted" and the rest are all guesses about what the reader would
-// have wanted, and a sweep that guesses wrong should keep the tab. None of that applies
-// to a menu entry opened on the tab in front of them -- refusing to sleep the active tab
-// because it is the active tab would refuse every single click, since that is the only
-// tab you can right-click. So this path ignores tabKeepReason entirely and keeps exactly
-// the two guards that protect something unrecoverable: unsaved typing, and a live
-// camera or microphone.
-
-// Definite answers only.
-//
-// The sweep treats "could not ask" as a refusal, and must: an unanswered tab is not a
-// verified-clean one, and the cost of being wrong is a draft someone had forgotten
-// about. Here the same rule would break the entry far more often than it would save
-// anything -- the bridge is unreachable on a paused site, on a page loaded before the
-// extension was installed, and on every chrome:// and PDF page, none of which are
-// evidence of unsaved work. So a definite "there is something here" stops the action;
-// silence does not.
+// Explicit actions bypass sweep exemptions, including active and pinned tabs.
+// Only confirmed unsaved input or camera/mic use blocks them; an unreachable bridge does not.
 async function tabWorkInProgressReason(tab, cfg) {
   if (!tab || typeof tab.id !== 'number') return '';
   // Nothing of ours runs outside http(s), so there is nobody to ask and nothing it
@@ -905,39 +822,20 @@ async function memorySleepTabByHand(tabArg) {
       + '. Sleeping reloads the tab, so that would be gone.' };
   }
 
-  // Move off it first, when there is somewhere to move to.
-  //
-  // Measured in Chromium 150 rather than assumed, because the obvious guess is wrong
-  // in both directions. chrome.tabs.discard DOES work on the tab you are looking at,
-  // and it stays unloaded afterwards -- what it does not do is look like anything. The
-  // page you were reading goes blank where it stands and comes back only when you click
-  // it, which is indistinguishable from having broken the tab. Activating the
-  // neighbour first turns that into the outcome people mean by "sleep this tab": you
-  // are on the next tab along, and the one you slept is greyed out in the strip behind
-  // you.
-  //
-  // With no neighbour to move to it is still done. It works there too -- refusing
-  // would be refusing something the browser is perfectly willing to do, and "it did
-  // nothing" is the worse answer.
+  // Activate a neighbour before discarding so the current page does not turn blank in place.
+  // Chrome also permits discarding the sole tab, so a missing neighbour is not a refusal.
   if (tab.active) {
     const neighbour = await neighbourTabOf(tab);
     if (neighbour) { try { await chrome.tabs.update(neighbour.id, { active: true }); } catch (_) {} }
   }
 
-  // The return value decides it, and it is also where the tab now lives.
-  //
-  // Measured alongside the above: a discarded tab comes back with a DIFFERENT id, every
-  // time, and the id we asked about is gone from chrome.tabs.get by the time discard
-  // resolves. Confirming the sleep by re-reading that id would therefore report a
-  // failure on every single success.
+  // Use discard’s returned tab to confirm success; the original ID may no longer resolve.
   let discarded = null;
   try { discarded = await chrome.tabs.discard(tab.id); } catch (_) { discarded = null; }
   if (!discarded) return { ok: false, error: 'Chrome refused to sleep this tab.' };
   // Read from the tab as it was before the discard, which is the copy already in hand.
   const host = (() => { try { return new URL(tab.url).hostname.replace(/^www\./, ''); } catch (_) { return ''; } })();
-  // Its own row type, not the sweep's. The sweep's reads "Slept an inactive tab", which
-  // would be a plain lie about a tab the reader was looking at a second earlier -- and
-  // Activity must not present someone's own decision as something WardenOne worked out.
+  // Distinguish a requested sleep from an automatic idle-tab action in activity history.
   queueHistory({ type: 'memory_tab_slept_by_hand', detail: { host }, url: host, at: Date.now() });
   return { ok: true, host };
 }
@@ -949,10 +847,7 @@ async function memoryCloseTabByHand(tabArg) {
   const cfg = await getMemoryConfig();
   const busy = await tabWorkInProgressReason(tab, cfg);
   if (busy) {
-    // chrome.tabs.remove does not run the page's beforeunload, so this entry would close
-    // harder than Chrome's own close does -- no "Leave site?", no way back. That is the
-    // reason the guard is here at all, and the reason it points at Ctrl+W: the reader
-    // keeps the ability to close it, they just get the browser's warning with it.
+    // tabs.remove bypasses beforeunload. Send users to Ctrl+W when a native unsaved-work prompt is needed.
     return { ok: false, error: 'Not closed, because ' + busy + '. Ctrl+W still closes it.' };
   }
   try { await chrome.tabs.remove(tab.id); } catch (_) { return { ok: false, error: 'Chrome refused to close this tab.' }; }
@@ -962,13 +857,8 @@ async function memoryCloseTabByHand(tabArg) {
 // ---- Tab-group sleeping: discard all safe tabs in groups idle past threshold ----
 async function sleepIdleGroups(cfgArg, snapshot) {
   try {
-    // No chrome.tabGroups guard here, because nothing below calls chrome.tabGroups. The grouping
-    // is read from tab.groupId, which belongs to chrome.tabs and is present whether or not that
-    // namespace is -- so the old check tested one capability and used a different one, and would
-    // have answered wrong in both directions had they ever come apart.
-    // A browser with no grouped tabs now falls through the groupId filter and reports
-    // { ok: true, sleptGroups: 0, sleptTabs: 0 }, which is true, rather than claiming the whole
-    // feature is unsupported.
+    // Read groupId through chrome.tabs; no chrome.tabGroups API is used here.
+    // No grouped tabs is a successful zero-result action, not an unsupported feature.
     const cfg = cfgArg || await getMemoryConfig();
     if (!cfg.memoryShield) return { ok: false, disabled: true };
     const tabs = snapshot ? snapshot.tabs : await chrome.tabs.query({});
@@ -1021,10 +911,7 @@ async function sleepIdleGroups(cfgArg, snapshot) {
   } catch (e) { return { ok: false, error: String(e) }; }
 }
 
-// ---- Background throttle: pause autoplay media in inactive tabs (the honest,
-// achievable part of "reduce background activity before discard"). We can't flush
-// a tab's RAM cache or strip already-loaded scripts -- no extension can -- but we
-// CAN tell an inactive tab to pause autoplaying audio/video, which cuts real CPU.
+// Background throttle pauses autoplay media in inactive tabs; it cannot unload scripts or flush tab RAM.
 async function throttleInactiveTabs(cfgArg, snapshot) {
   try {
     const cfg = cfgArg || await getMemoryConfig();

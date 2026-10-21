@@ -4,11 +4,8 @@
 
 (() => {
   const STORAGE_KEY = 'wardenone_theme';
-  /* Three values. Light is the default: WardenOne was designed light-first and that is the
-     design a reader meets until they choose otherwise. "system" is offered beside Light and Dark
-     (BUG-11 -- the controller used to know only the two) for readers who want the pages to
-     follow their operating system; it resolves through prefers-color-scheme and follows a
-     mid-session switch. An explicit Light or Dark wins in both directions. */
+  /* Resolve System through prefers-color-scheme and follow changes; explicit Light/Dark wins.
+     Default to Light when no choice exists. */
   const THEMES = new Set(['light', 'dark', 'system']);
   const DEFAULT_THEME = 'light';
   const root = document.documentElement;
@@ -63,11 +60,8 @@
     syncControls();
   }
 
-  /* A same-origin mirror of the stored choice, read synchronously before the first paint. The
-     authoritative copy is chrome.storage.local, but that read is asynchronous, and a reader who
-     chose Dark (or System on a dark machine) would otherwise see a light flash on every page
-     until it lands. Missing or blocked storage means no mirror, which means the Light default
-     -- never a wrong theme. */
+  /* Mirror the stored theme synchronously for first paint; chrome.storage.local remains authoritative.
+     Missing or blocked mirror storage falls back to Light. */
   function readMirror() {
     try { return typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null; } catch (_) { return null; }
   }

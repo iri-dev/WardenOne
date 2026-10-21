@@ -38,8 +38,8 @@ function lift(name) {
 // registry is lifted in alongside it. Shimming woObserver would work, but a shim can agree with a
 // broken implementation -- and the registry is small and self-contained enough to just include.
 const REGISTRY_SRC = (function () {
-  const from = BRIDGE.indexOf('  /* Everything this copy holds');
-  const to = BRIDGE.indexOf('  // A per-page-load routing token.');
+  const from = BRIDGE.indexOf('  const woAbort = new AbortController();');
+  const to = BRIDGE.indexOf('  const TOKEN = (function () {');
   if (from < 0 || to <= from) throw new Error('could not lift the bridge teardown registry');
   return BRIDGE.slice(from, to);
 }());

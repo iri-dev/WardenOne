@@ -4,15 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WardenOne -- installed-extension change watch (MV3 service worker)
- *
- * Chrome does not let one extension inspect another extension's source code or
- * decide whether it is malware. This module therefore watches facts Chrome does
- * expose: version, enabled state, install source, host reach and API permissions.
- * It records every meaningful change, but only interrupts the user when a change
- * adds a genuinely powerful capability.
- */
+/* Watch the extension metadata Chrome exposes, not source code or malware status.
+   Record meaningful changes; interrupt only for newly added powerful capabilities. */
 
 /* global chrome, localGet, localSet, queueHistory */
 'use strict';
@@ -173,11 +166,7 @@ function normalizeExtensionBaseline(raw) {
     ? raw.extensions
     : raw;
   normalized.capturedAt = Number(raw.capturedAt) || 0;
-  /* WardenOne is skipped when the current inventory is taken, so it must be
-     skipped here too. A baseline captured before that exclusion existed still
-     carries our own id; the removal pass below walks the BASELINE, finds the id
-     missing from the current scan, and reports that WardenOne was uninstalled --
-     to the reader, WardenOne flagging itself, in its own Security Centre. */
+  /* Ignore our own ID in old baselines too, or reconciliation reports the excluded current entry as removed. */
   var selfId = '';
   try { selfId = (chrome && chrome.runtime && chrome.runtime.id) || ''; } catch (_) { selfId = ''; }
   for (const id of Object.keys(source)) {
@@ -609,10 +598,7 @@ async function reconcileExtensionChangesNow(trigger, options) {
       if (!Object.prototype.hasOwnProperty.call(current, id)) events.push(extensionRemovalEvent(baseline.extensions[id], now));
     }
 
-    /* Sweep any alert about ourselves that a previous version already wrote.
-       Fixing the cause stops new ones; it does not retract the one already
-       sitting in the reader's Security Centre, and "WardenOne was removed" is
-       not something they should have to dismiss by hand. */
+    /* Remove historical self-alerts left by older baselines. */
     var ownId = '';
     try { ownId = (chrome && chrome.runtime && chrome.runtime.id) || ''; } catch (_) { ownId = ''; }
     const storedAlerts = Array.isArray(stored && stored[EXT_ALERTS_KEY]) ? stored[EXT_ALERTS_KEY] : [];
@@ -710,20 +696,9 @@ try {
   });
 } catch (_) {}
 
-/* The scan a worker start owes, once per browser session (PERF-05).
-
-   A change to another extension while this worker is alive arrives as a management event, and
-   a change while it is asleep wakes it with that event -- so within one browser session no
-   change is ever missed by not scanning. The only changes a scan can find that no event
-   announced are the ones made while the BROWSER was closed, and one scan per browser session
-   finds those. Every worker start used to run the inventory (here, at 750 ms) and then the
-   security report (in the reputation module, at 1,250 ms), which reconciles the inventory
-   AGAIN inside itself: two enumerations of every installed extension and their storage
-   writes on every wake, and a worker wakes for any message, tab event or alarm. Now it is one
-   job: the inventory, then the report told not to repeat it, both behind a storage.session
-   marker that Chrome clears at browser start. The fifteen-minute alarm stays as the bounded
-   check that something a scan would catch is never missed for long, and every event trigger
-   is untouched. */
+/* Scan once per browser session for changes made while Chrome was closed (PERF-05).
+   Management events cover worker suspension; the session marker avoids duplicate wake-time scans.
+   Run inventory before reputation, and retain the fifteen-minute fallback alarm. */
 var EXT_SCAN_SESSION_KEY = '__wardenone_ext_scan_done';
 function extensionScanDoneThisSession() {
   return new Promise((resolve) => {

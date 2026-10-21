@@ -4,30 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The network / filtering logger.
- *
- * It answers a different question from the Activity Centre: not "a security event
- * happened" but "this exact request happened, WardenOne blocked or allowed it,
- * and THIS rule from THIS list is why". It exists because My Rules, Custom Lists
- * and the Element Zapper let someone break their own browsing, and without this
- * the only way to debug that is switching things off at random.
- *
- * Two invariants matter more than any feature here, and both are pinned below.
- *
- * 1. IT MUST NOT COST ANYTHING WHEN CLOSED. A webRequest listener over <all_urls>
- *    fires on every request on every page. That is not hypothetical in this
- *    codebase: the YouTube scrub lag was a DNS-rebind listener doing exactly
- *    that, once per storyboard image. So capture is attached when a logger page
- *    connects a port and detached when the last one disconnects.
- *
- * 2. THE LOG MUST NOT BECOME THE LEAK. A record of every URL is a record of every
- *    token in every URL. Redaction happens BEFORE the entry is stored, the buffer
- *    is bounded and in memory, and nothing reaches disk unless the reader exports
- *    it on purpose.
- *
- * Run: node tools/test-network-logger.js
- */
+/* Capture real request/rule attribution only while connected; keep buffering bounded and ephemeral.
+   Run: node tools/test-network-logger.js */
 'use strict';
 
 const fs = require('fs');

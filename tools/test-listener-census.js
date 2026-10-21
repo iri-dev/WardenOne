@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The tabs.onUpdated census, and the model it is reasoned from.
- * Run: node tools/test-listener-census.js
- *
- * tabs.onUpdated cannot be filtered, so every registration receives every title, favicon,
- * audible and status tick of every tab. One such event wakes a stopped worker once and is
- * delivered to every listener; a second listener adds a callback, not a wake. A comment in
- * the worker once said the opposite ("every extra listener is another wake") and a design
- * choice was measured against it. This suite pins three things so that neither the count
- * nor the model drifts again:
- *
- *   1. the number of tabs.onUpdated registrations per worker file -- a new one is a
- *      decision, made in the census note, not a side effect of a feature;
- *   2. that every listener discards, before doing any work, an event that carries nothing
- *      it reads -- the resident worker must not work on the ticks it cannot avoid;
- *   3. that the wrong model is gone from the source and from the tests, and the decided
- *      lifetime is written down where the listeners are.
- *
- * It also holds the reason the badge-reset fallback could go: webNavigation is a required
- * permission, and onBeforeNavigate resets the count before any tabs.onUpdated could.
- */
+/* Check tabs.onUpdated listeners and their navigation filters against the worker event model.
+   Run: node tools/test-listener-census.js */
 'use strict';
 
 const fs = require('fs');
@@ -104,8 +85,8 @@ check('the decided lifetime is written down at the census note',
   /tabs\.onUpdated wakes the worker once per event, then calls every listener/.test(bg)
     && /Memory Shield needs its audible signal/.test(bg)
     && /tools\/test-listener-census\.js pins the intentional listener count/.test(bg));
-check('the context-menu note no longer claims its own listener would have cost a wake',
-  /A listener of its own would not have cost a worker\s+wake/.test(bg));
+check('context-menu navigation refresh shares the existing listener',
+  /void refreshWardenBlockMenuTitle\(tab\)/.test(bodies['background.js']));
 
 /* ---- the fallback that could go ---------------------------------------------------- */
 check('webNavigation is a required permission, so its events are never absent',

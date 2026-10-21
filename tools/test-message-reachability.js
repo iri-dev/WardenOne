@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Every message the worker answers is one some surface actually sends.
- * Run: node tools/test-message-reachability.js
- *
- * Successive rewrites of the extension, permission and memory surfaces added new message names
- * without retiring the old ones, so the worker kept answering seven kinds that nothing sent:
- * list-extensions and get-extension-alerts (superseded by extension-security-report),
- * list-site-permissions (a note nobody read), reset-all-site-permissions (the sitePermissions
- * branch of clean-browser), memory-sweep-now (memory-free-ram), memory-sleep-groups (the group
- * sleeper runs from the Memory Shield alarm and never had a control), and adshield-status (a
- * popup panel that no longer exists). Each was a second place where a behaviour could be changed,
- * and a reader of the worker could not tell which of two handlers was the live one without
- * checking every sender (PI-07). Nothing noticed, because no gate asked.
- *
- * This one asks. Every `msg.kind === '...'` the worker handles must have a literal emitter in a
- * shipped surface -- a page, a content script, the bridge -- or sit on the short reviewed list of
- * kinds that are sent under a computed name. A handler with neither fails the build by name, and
- * so does a reviewed entry that turns out to have an emitter after all, so the list cannot rot.
- */
+/* Require a reachable sender for each worker message handler and reject obsolete handler surfaces. (PI-07)
+   Run: node tools/test-message-reachability.js */
 'use strict';
 
 const fs = require('fs');

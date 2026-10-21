@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A rule past the cap is named, never counted as something else.
- * Run: node tools/test-rule-cap-honesty.js
- *
- * Two compilers share one bug shape (M46). The user-filter parser kept counting network
- * lines past its 500-rule band while skipping them, and the UI derived "hiding rules" as
- * total minus network -- so 550 blocking lines read as 500 blocking and 50 hiding, and the
- * fifty that did nothing were reported as doing something else. The firewall compiler
- * returned at 250 rules from the middle of a loop, so a decision past that was stored,
- * drawn as a decision of yours, and never a rule; which ones ran depended on the order the
- * matrix had been written in.
- *
- * Both now say what they left out, by line or by cell. The parser reports `cosmetic` and
- * `overflow` as their own numbers; the band is shared out own-text-first then list by list
- * in stored order, and that allocation is what each list row shows. The firewall compile
- * returns `omitted`, a decision that would not fit is refused at the write, and a stored
- * cell without a rule is drawn as not in effect. This suite runs the real code at exactly
- * the cap, one past it, across several lists, and again from the same stored text as a
- * restart would, and reads the UI copy for the words that must not be said.
- */
+/* Report rules omitted by capacity limits rather than counting them as enforced. (M46)
+   Run: node tools/test-rule-cap-honesty.js */
 'use strict';
 
 const fs = require('fs');

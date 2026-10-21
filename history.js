@@ -115,9 +115,7 @@ const LABELS = {
   behavioral_risk: 'Site reputation warning',
   reload_loop_broken: 'Stopped a reload loop',
   memory_tab_slept: 'Slept an inactive tab (saved RAM)',
-  // Named as yours, like the blocked-site rows, so Activity does not present your own
-  // decision as something WardenOne worked out -- and because "inactive" would be a
-  // plain lie about a tab you were reading a second earlier.
+  // Label requested tab actions separately from automatic idle-tab decisions.
   memory_tab_slept_by_hand: 'You slept a tab',
   memory_free_ram: 'Freed RAM on demand',
   memory_dupes_closed: 'Closed duplicate tabs',

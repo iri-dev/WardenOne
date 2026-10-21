@@ -4,31 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The reconciler may not certify a failure it never saw (MV3-01).
- *
- * refreshExtensionState() is the one place desired state (wardenone_config) meets actual state
- * (Chrome's DNR rules, registrations and content settings). It ran two dozen appliers under
- * Promise.allSettled and committed its "this state is applied" key unless one REJECTED. None of
- * them ever rejects: each catches its own Chrome error, logs it, and resolves undefined. So a
- * session rule that never reached Chrome was certified as applied for the rest of the worker's
- * life -- and since no ordinary wake calls the reconciler, for the rest of the browser's.
- *
- * Separately, a config read that failed with runtime.lastError resolved as {} -- which, run
- * through the key, turns every default-off protection off and every default-on one on, applies
- * that, and certifies it.
- *
- * What is driven here, with the shipped orchestrator and stubbed appliers:
- *   - a resolved false is a failure: the key is not committed and a marker names the component
- *   - the marker counts attempts per desired state and starts over for a new one
- *   - a cold worker that finds the marker schedules a retry, within a bounded budget
- *   - an unreadable config runs no applier at all and is recorded as such
- *   - Protection Health turns the marker into a top-level issue
- * and, statically, that every applier the orchestrator runs returns false from the catch that
- * would otherwise have swallowed the failure.
- *
- * Run: node tools/test-reconcile-honesty.js
- */
+/* Failed reconciliation must remain visible and retryable instead of committing an applied-state marker. (MV3-01)
+   Run: node tools/test-reconcile-honesty.js */
 'use strict';
 
 const fs = require('fs');

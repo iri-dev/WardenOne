@@ -41,11 +41,7 @@
   --rose-deep: var(--guide-danger);
 }
 
-/* Every one of these needs its own trailing ` *` / ` body`. Two entries here
-   used to end at the attribute, which selects <html> instead of what was meant,
-   so history.html and hidden-elements.html got neither the border-box reset nor
-   the body reset: they shipped inset by the browser's default 8px body margin,
-   with content-box sizing making every padded control larger than drawn. */
+/* Keep the trailing descendant selectors: selecting html alone would miss the body/reset targets. */
 :root[data-wardenone-page="notifications"] *,
 :root[data-wardenone-page="history"] *,
 :root[data-wardenone-page="hidden-elements"] *,
@@ -72,14 +68,7 @@
   font: 14px/1.5 var(--body);
 }
 
-/* ---- the shell, as the DNS / permissions / API-key guides draw it ---------
-   These rules are the ones from those pages, not an approximation of them. The
-   earlier version of this file was a reasonable-looking guess and the difference
-   showed: a flat dark topbar instead of the purple-to-pink one, a short underline
-   under the active link instead of a tab indicator on the bar's edge, a stacked
-   grey DEVELOPER credit instead of the inline one with a live dot, an eyebrow
-   with no dot, no buttons in the hero at all, and a hard edge where the hero met
-   the page instead of a fade into it. */
+/* Shared shell for the DNS, permissions and API-key guides. */
 
 .guide-wrap { width: min(1180px, calc(100% - 44px)); margin: 0 auto; }
 

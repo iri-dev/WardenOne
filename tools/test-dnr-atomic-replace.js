@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * A DNR rule is replaced in one call, never removed in one and added in the next.
- * Run: node tools/test-dnr-atomic-replace.js
- *
- * Chrome ends a service worker whenever it likes; an update or a reload ends it too.
- * An applier that clears a rule with one updateSessionRules call and installs the
- * replacement with a second has a gap between the two awaits, and a worker that dies
- * in that gap leaves the durable setting saying "on" with no rule behind it -- DNT/GPC
- * headers, location-header minimisation, tracking-cookie stripping or Force HTTPS
- * silently off until the next startup refresh. Chrome applies one call carrying both
- * removeRuleIds and addRules as a single transaction, so the shape is the fix.
- *
- * Two readings. The first walks every updateSessionRules / updateDynamicRules call in
- * background.js, and every writeDynamicRules call that wraps the latter, and requires the argument to carry both keys (a helper whose whole job
- * is removal is named). The second runs the four appliers the audit named against a
- * modelled rule store that snapshots itself after every call resolves -- each snapshot is
- * a place the worker could have died -- and asserts the rule is there in every one of
- * them while the setting is on.
- */
+/* Replace DNR rules in one remove/add transaction so worker termination cannot leave an empty band.
+   Run: node tools/test-dnr-atomic-replace.js */
 'use strict';
 
 const assert = require('assert');

@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The detectability budget: every page-visible marker is listed, with its reason.
- * Run: node tools/test-detectability-budget.js
- *
- * WardenOne does not promise stealth. Its MAIN-world modules share the page's realm, so a page
- * can see the globals they publish, the elements they draw, the events they dispatch and the
- * messages the bridge posts (SEC-12). Hiding that is not a security fix -- renamed markers are
- * still markers, and the protections that matter are enforced where the page cannot reach:
- * the isolated bridge, the worker, declarativeNetRequest. What CAN be kept small is the surface
- * that exists for no reason. This suite is the budget: every marker the MAIN scripts and the
- * bridge expose is enumerated from the source and must appear below with a reason, so a new
- * global, element id, event name or page-visible message fails the gate until someone writes
- * down why the page needs to see it; and a reason for a marker that no longer exists fails too.
- *
- * The second half is the part that matters: knowing WardenOne is present buys the page no
- * authority. Every path from the page's world into a privileged decision is signed, the health
- * authority is the bridge's challenge and not a page-writable marker, and the two records a page
- * would most like to replace are non-configurable.
- */
+/* Inventory page-visible markers with their purpose and reject undocumented additions. (SEC-12)
+   Run: node tools/test-detectability-budget.js */
 'use strict';
 
 const fs = require('fs');

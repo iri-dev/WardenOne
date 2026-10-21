@@ -39,11 +39,8 @@ const TYPE_LABEL = {
    filters by. "Other" means everything not given its own chip. */
 const NAMED_TYPES = new Set(['script', 'xmlhttprequest', 'sub_frame', 'image', 'media', 'websocket']);
 
-/* Three different things this build can honestly say about a rule, and they are
-   not interchangeable. Exact: Chrome joined the rule to this request by id.
-   Near: Chrome named the rule but only by tab and time, so it is written on a row
-   only where one blocked request lines up and the rest are counted instead.
-   Neither: no attribution at all, and the page says that rather than inventing one. */
+/* Exact attribution joins a request ID; near attribution needs a unique tab/time candidate.
+   Otherwise show no attribution rather than assign a guessed rule. */
 let exactRules = false;
 let nearRules = false;
 let matchedLists = [];
@@ -69,20 +66,8 @@ function paintExactNote() {
   $('exact-note').textContent = note;
 }
 
-/* The port is a session, not a permanent connection.
- *
- * Capture lives in the worker, and an MV3 worker is evicted after about thirty seconds
- * idle. Holding a port open does not stop that -- since Chrome 114 only messages on the
- * port reset the timer, and a Logger window watching a quiet browser sends none. So the
- * worker goes away, the port disconnects, and this page used to write "Capture stopped.
- * Reload this page to start again." and mean it: every later request went unrecorded
- * while the page still showed a plausible table. Someone reading it to decide whether a
- * rule fired would conclude nothing more had happened (MV3-05).
- *
- * The page outlives the worker, so the page owns the reconnect. Deliberately NOT a
- * keepalive ping: pinging to hold a worker up is the thing MV3 is built to stop, and it
- * would burn a service worker for the life of an open tab.
- */
+/* Idle MV3 workers can terminate despite an open port; only port messages reset the idle timer.
+   This page owns reconnection so capture resumes after suspension, without a keepalive loop (MV3-05). */
 let port = null;
 let reconnectTimer = 0;
 let reconnectAttempts = 0;

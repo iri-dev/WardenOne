@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Pausing WardenOne on a site hands location back to Chrome's own prompt (COMPAT-02).
- * Run: node tools/test-location-site-exceptions.js
- *      WARDENONE_BACKGROUND=<older background.js> node tools/test-location-site-exceptions.js
- *
- * With Block location requests on, the worker writes 'block' for every web URL into Chrome's
- * location content setting. Pausing WardenOne on a map or store-finder site paused the page engine
- * and nothing else: the profile-wide block stayed, the site was still denied, and the popup said the
- * site was excused. The only escape was to weaken Location Privacy everywhere.
- *
- * The one applier that owns Chrome's location rules now also writes an 'ask' -- never an 'allow' --
- * on a more specific pattern for every site WardenOne is paused on and every site the reader switched
- * the block off for; Chrome applies the more specific rule, so the site gets the browser's own prompt.
- * A site that stops being excused is written back to 'block'; a lapsed timed pause is noticed by an
- * alarm at the moment it lapses; turning the block off clears every rule of ours instead of writing a
- * backed-up value over the reader's own choices. Driven here against a fake content-setting store
- * that resolves the effective setting the way Chrome does: the most specific matching pattern wins.
- */
+/* Site pauses must restore Chrome’s native location permission behaviour. (COMPAT-02)
+   Run: node tools/test-location-site-exceptions.js */
 'use strict';
 
 const fs = require('fs');

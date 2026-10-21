@@ -6,20 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-// Cryptojacking guard (toggle: blockCryptominers).
-//
-// The guard splits its seed list into two buckets that are deliberately NOT
-// treated the same, and the split is the whole reason it can be on by default:
-//
-//   minerHosts -- mining-as-a-service. Blocked on every resource type.
-//   poolHosts  -- real mining pools with real websites. Blocked only as
-//                 third-party subresources, never main_frame, so a user who
-//                 actually mines can still reach the pool they use.
-//
-// If a later edit lets main_frame into the pool bucket, or drops the
-// third-party condition, the guard silently starts blocking legitimate sites
-// outright. That is a compatibility bug under the house rules, so it is asserted
-// here rather than left to a bug report.
+// Block mining services and third-party pool connections while allowing direct pool visits.
+// Run: node tools/test-cryptominer-guard.js
 
 const assert = require('assert');
 const fs = require('fs');

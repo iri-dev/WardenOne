@@ -4,24 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * What WardenOne does on university and school sites, and whether it says so.
- *
- * The manifest used to keep the whole page engine off every page under eight education suffixes
- * (and UCAS), so a course page or a library catalogue got no phishing, skimmer, scam-lock or
- * form-trap checks at all. The engine now runs there and pauses a named list, EDU_COMPAT_PAUSED:
- * the protections that can break signing in, a class or an exam. The rule is the YouTube one --
- * name what is paused, never what survives -- and one more: only names the engine itself reads,
- * so the list never claims to pause something another script still does.
- *
- * The fingerprint realm stays out of these sites in the manifest, since identity providers read
- * browser signals to decide when to ask for a second sign-in step.
- *
- * tools/test-engine-config-ownership.js boots the real config chain for university hosts and
- * look-alikes; this file pins the list, the popup's copy of it and the manifest.
- *
- * Run: node tools/test-education-compat.js
- */
+/* Keep education-site compatibility exceptions explicit and aligned with the popup disclosure.
+   Run: node tools/test-education-compat.js */
 'use strict';
 
 const fs = require('fs');

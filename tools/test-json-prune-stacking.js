@@ -4,21 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * json-prune scriptlets used to stack. runScriptlets dedupes on name + args, so the same filter
- * runs once -- but two DIFFERENT json-prune filters for one host are two keys and two calls, and
- * each call replaced JSON.parse and Response.prototype.json around the previous wrapper. Four
- * filters meant four nested wrappers, each running its own 20,000-node walk on every parse, and
- * JSON.parse is on the critical path of essentially every modern web app. Multiple json-prune
- * rules per host are ordinary in real filter lists, so this was a silent, list-driven cliff.
- *
- * The hook is installed once now and the rules accumulate into a list the single wrapper walks.
- * This file drives the real lifted code: it counts how many times JSON.parse is replaced, and
- * checks every rule still applies.
- *
- * Run with:
- *   node tools/test-json-prune-stacking.js
- */
+/* Merge JSON-prune work without stacking wrappers when scriptlets are reapplied.
+   Run: node tools/test-json-prune-stacking.js */
 'use strict';
 
 const assert = require('assert');

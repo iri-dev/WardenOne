@@ -4,27 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Full-screen consent walls.
- *
- * Every case below came out of a 101-site live sweep, and most of them are here because
- * the obvious implementation got them wrong first:
- *
- *  - Matching on "covers the viewport" ate a site's own hero carousel. The z-index floor
- *    is what separates a consent sheet from full-bleed page furniture, so a carousel at
- *    z-index auto has to survive.
- *  - Releasing the scroll lock unconditionally unlocked etsy.com, which runs no consent
- *    manager at all, by stripping the site's own wt-html-no-scroll. The release has to be
- *    a consequence of a removal, never an independent step.
- *  - The lock is normally a CLASS on <html>, so clearing an inline overflow does nothing.
- *  - On some sites the article was never sent, and lifting the wall hands someone a blank
- *    page. The wall has to go back.
- *  - Six real walls carried no id or class worth matching, so identity is read from the
- *    whole element -- and an element that is still anonymous is only accepted when a
- *    consent manager is demonstrably running on the page.
- *
- * Run: node tools/test-consent-wall.js
- */
+/* Remove confirmed full-screen consent walls while preserving real page controls and restoring scrolling.
+   Run: node tools/test-consent-wall.js */
 'use strict';
 
 const assert = require('assert');

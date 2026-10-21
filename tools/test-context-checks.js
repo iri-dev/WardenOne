@@ -4,18 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The right-click checks: "Check where this link goes", "Check <selection>" and
- * "What is this embedded frame?".
- *
- * These route existing engines to a question the reader asked, about something
- * they have not visited yet. The suite runs the SHIPPED routing against stubbed
- * lookups, so it tests what the worker actually does rather than a description
- * of it, and it asserts the two properties that make the feature trustworthy:
- * the classifier does not guess, and an answer always comes back.
- *
- * Run: node tools/test-context-checks.js
- */
+/* Requested link, selection, image and frame checks must return a result, including unknown verdicts.
+   Run: node tools/test-context-checks.js */
 'use strict';
 
 const fs = require('fs');

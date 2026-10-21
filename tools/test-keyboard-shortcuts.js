@@ -4,23 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Keyboard shortcuts.
- *
- * These add no protection -- every one of them is a faster route to something the popup
- * or the right-click menu already does -- so what this suite is actually for is the two
- * ways a shortcut goes wrong:
- *
- *   1. It collides. Chrome allows four suggested keys and each one is a chance to take a
- *      combination the reader already uses, so additional commands ship unassigned.
- *   2. It claims something it does not do. A shortcut listed beside an action it no
- *      longer runs is worse than no list at all, which is why the popup reads the list
- *      from Chrome rather than restating it.
- *
- * runWardenCommandOnActiveTab is lifted out of background.js and run for real.
- *
- * Run: node tools/test-keyboard-shortcuts.js
- */
+/* Route commands through Chrome’s shortcut API and keep default bindings within browser limits.
+   Run: node tools/test-keyboard-shortcuts.js */
 'use strict';
 
 const fs = require('fs');

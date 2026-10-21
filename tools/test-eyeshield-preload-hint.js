@@ -4,25 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * The Eye Shield anti-flash backdrop learns its mode without touching the site's storage.
- * Run: node tools/test-eyeshield-preload-hint.js
- *
- * eyeshield.js paints a dark or light backdrop at document_start, before the async config
- * snapshot answers, so a themed page does not flash its native colours first. It used to learn
- * the mode from a key it kept in each site's own localStorage (__woEyeShieldMode, including the
- * value "off"): readable by every site it ran on, and left behind after uninstall (PRIV-12).
- *
- * Now the worker registers a one-line eyeshield-preload-<mode>.js AHEAD of eyeshield.js in the
- * same registration. It sets a property in the extension's isolated world, which the page
- * cannot see, and the script reads that. Nothing is written to site storage any more; the old
- * key is removed wherever the script still runs, and from open tabs when theming is switched off.
- *
- * This suite pins: the script never writes site storage; the three hint files say what their
- * names say; the worker registers the hint first, swaps it when the mode changes, drops it for
- * a mode of "off", and erases the legacy key on the way out; and the page-side block paints from
- * the hint, skips the hosts it always skipped, and survives a frame whose storage throws.
- */
+/* Apply the isolated preload mode before config arrives, without storing preferences on the site. (PRIV-12)
+   Run: node tools/test-eyeshield-preload-hint.js */
 'use strict';
 
 const assert = require('assert');

@@ -658,26 +658,8 @@ check('the sweep will not start off a search host',
   'this is what stopped it running 80 whole-document scans on every YouTube load');
 check('the shipped engine carries the gate', /SEARCH_CLEANUP_HOST/.test(MIN));
 
-/* ---- 6. scan each added subtree once, not once per added ancestor -------- *
- * A page that builds itself appends a container and then appends children into
- * it; each child arrives as its own mutation record. Every consumer scanned
- * each added node's subtree, so a container's scan and each descendant's scan
- * returned overlapping sets. Measured over a real page load with the engine's
- * own six selectors:
- *
- *   Wikipedia article  6994 added elements  6762 nested (96.7%)  74.4% less time
- *   github.com/repo    2095 added elements  1794 nested (85.6%)  85.3% less time
- *   bbc.co.uk/news     1356 added elements  1205 nested (88.9%)  62.8% less time
- *
- * On Wikipedia that was 34,489 duplicate matches out of 45,517 -- the same
- * elements found again once per added ancestor. Scanning only the outermost
- * added nodes returns the identical set, because any node with an added
- * ancestor lies inside that ancestor's subtree.
- *
- * The narrowing applies ONLY to the subtree scans. Node-level guards still run
- * on every added node: several test a node in a way the ancestor's selector
- * would not repeat -- the grabber check reads src off any tag, not just
- * img/script/iframe -- so narrowing those would drop checks, not duplicates. */
+/* Scan only outermost added subtrees to eliminate duplicate matches.
+   Node-level guards still need every added node because their checks are not equivalent to subtree selectors. */
 check('the batch splitter exists', /function __woBatchNodes\(muts\)\{/.test(SRC));
 check('the dispatcher computes it once and shares it with every consumer',
   /const batch=__woBatchNodes\(muts\);const consumers=batch\.sourceOnly\?__woMoSourceConsumers:__woMoConsumers;for\(let i=0;i<consumers\.length;i\+\+\)try\{consumers\[i\]\(muts,batch\.added,batch\.roots,batch\.structural\)\}/.test(MIN),
@@ -815,18 +797,7 @@ check('no consumer still walks addedNodes itself',
       && split([{ addedNodes: [], removedNodes: [] }]).structural === false);
 })();
 
-/* ---- 7. the rect noise sits in front of the hottest read on a video page - *
- * With anti-fingerprint noise on, Element.prototype.getBoundingClientRect is
- * wrapped, and a video player recomputes the scrub position from it on every
- * mousemove. The wrapper built a string key from the four numbers and then
- * hashed it four separate times -- four concatenations, four walks over ~25
- * characters, four generator closures per call. Seeding once from the numbers
- * and drawing four values from that generator measured 1.052us -> 0.044us per
- * call, 24x cheaper, with the same guarantees: same geometry gives the same
- * noise, a different session seed gives different noise, and the offsets stay
- * inside the same bounds. The checks below are those guarantees, run against
- * the shipped code -- a faster wrapper that stopped varying per session, or
- * per geometry, would be a weaker defence, not a saving. */
+/* Rect noise must stay bounded and deterministic per geometry/session without repeated string hashing. */
 check('the rect noise no longer builds a string key per call',
   !/const k=\(r\.x\|\|r\.left\|\|0\)\+","\+/.test(MIN),
   'that string plus four hashes of it was the whole cost');

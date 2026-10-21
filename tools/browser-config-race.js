@@ -4,22 +4,9 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* Three writers of wardenone_config at the same moment, in Edge: Settings turns a switch, the
-   popup turns another, and the worker mutes a notification type. Before the config lock
-   (config-lock.js) the Settings change was lost in 20 of 40 tries, the popup's in 3 and the
-   worker's in 34. Every change must now survive every try.
-   Then the same with a private window: split incognito mode gives it its own worker and pages, with
-   their own Web Locks, over the same storage. There the save record and its check (config-lock.js)
-   are what keep a change: without them a regular Settings change was lost in 19 of 40 tries.
-   The final case pauses a private Settings save through Erase All and checks storage after reload.
-   A deterministic same-key case also holds an older private write until a later regular edit has
-   completed, then proves the later user edit is recovered after the stale write lands. Another
-   lands a private write 2.1 s late, after the regular write's own checks are over, and requires
-   the final stored config to keep both changes.
-   Run: node tools/browser-config-race.js
-   It drives the unpacked extension in Edge (tools/perf-profile.js), so it runs in CI's
-   real-settings-regression job rather than the local gate; tools/test-config-write-lock.js,
-   which checks every write holds the lock, is in the gate. */
+/* Exercise concurrent Settings/popup/worker writes, split-incognito overwrites and erase races in Edge.
+   Include late writes beyond confirmation reads. Runs in real-settings-regression, not the local gate.
+   Run: node tools/browser-config-race.js */
 'use strict';
 
 const assert = require('assert/strict');

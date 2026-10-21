@@ -4,26 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * Does Download Guard scare people away from safe files?
- *
- * INSTALLER_HINT used to be one regex covering `setup`, `install` and `update` alongside `crack`,
- * `keygen`, `warez` and `nulled`, and every match added the same +3. So on any site not in the
- * publisher list, an ordinary installer scored executable(+3) + installer(+3) = 6, which is
- * grade E -- "Dangerous". `setup.exe` is the most common legitimate installer filename on
- * Windows. Both rebates that would have softened it were also withheld from anything
- * installer-named, so nothing could rescue it.
- *
- * That is a false-positive engine pointed at exactly the user who can least afford to be
- * frightened: someone installing their first program from a small vendor's own site. And it cut
- * both ways, because the words that genuinely mean trouble were diluted by sharing a bucket with
- * the word every honest installer uses.
- *
- * This suite pins BOTH directions. A tuning change that only proves the scary cases got quieter
- * is how a security feature gets hollowed out one reasonable-sounding step at a time.
- *
- * Run: node tools/test-download-false-positives.js
- */
+/* Keep ordinary vendor downloads quiet without suppressing risky file-name, archive and host signals.
+   Run: node tools/test-download-false-positives.js */
 'use strict';
 
 const fs = require('fs');
