@@ -244,7 +244,33 @@ async function checkNavigationCounters() {
   check('warm measurement retains the browser cache', !calls.some(([method]) => method === 'Network.clearBrowserCache'));
 }
 
-Promise.all([checkLaunchScheduling(), checkNavigationCounters()]).then(() => {
+async function checkExtensionReadinessContexts() {
+  const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
+  const id = 'a'.repeat(32);
+  const workers = ['private', 'regular'].map((context) => ({
+    type: 'service_worker', targetId: context + '-worker', browserContextId: context,
+    url: 'chrome-extension://' + id + '/background.js',
+  }));
+  for (const [context, expected] of [[undefined, 'private-worker'], ['regular', 'regular-worker'], ['private', 'private-worker']]) {
+    const attached = [];
+    const cdp = { send: async (method, params) => {
+      if (method === 'Target.getTargets') return { targetInfos: workers };
+      if (method === 'Target.attachToTarget') {
+        attached.push(params.targetId);
+        return { sessionId: params.targetId };
+      }
+      if (method === 'Runtime.evaluate') return {
+        result: { value: JSON.stringify({ name: 'WardenOne', version, id }) },
+      };
+      return {};
+    } };
+    const ready = await harness.extensionReady(cdp, 0, version, context);
+    check('extension readiness selects ' + (context || 'the first available context'),
+      ready.workerTargetId === expected && attached.length === 1 && attached[0] === expected);
+  }
+}
+
+Promise.all([checkLaunchScheduling(), checkNavigationCounters(), checkExtensionReadinessContexts()]).then(() => {
   if (failed) { console.error('\n' + failed + ' failed, ' + passed + ' passed'); process.exitCode = 1; }
   else console.log('\nperf profile harness: ' + passed + ' checks passed');
 }).catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

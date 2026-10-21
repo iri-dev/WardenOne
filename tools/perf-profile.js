@@ -326,7 +326,7 @@ async function killBrowser(cdp, port) {
 /* The long-task observer, installed before any page script so buffered entries are ours. */
 const LONGTASK_SCRIPT = '(() => { try { window.__wo_perf = { longTasks: [] }; const o = new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__wo_perf.longTasks.push(Math.round(e.duration)); }); o.observe({ type: "longtask", buffered: true }); } catch (_) {} })();';
 
-async function extensionReady(cdp, port, expectedVersion) {
+async function extensionReady(cdp, port, expectedVersion, browserContextId) {
   /* Edge ships component extensions of its own (background pages and a worker or two), so the
      extension under test is found by asking each MV3 worker for its manifest, never by taking
      the first chrome-extension:// target. The worker may start a moment after the endpoint is
@@ -335,7 +335,8 @@ async function extensionReady(cdp, port, expectedVersion) {
   let wakeTarget = null;
   for (;;) {
     const { targetInfos } = await cdp.send('Target.getTargets');
-    const workers = targetInfos.filter((t) => t.type === 'service_worker' && /^chrome-extension:\/\/[a-p]{32}\/background\.js$/.test(t.url));
+    const inContext = (target) => browserContextId === undefined || target.browserContextId === browserContextId;
+    const workers = targetInfos.filter((t) => inContext(t) && t.type === 'service_worker' && /^chrome-extension:\/\/[a-p]{32}\/background\.js$/.test(t.url));
     for (const w of workers) {
       const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: w.targetId, flatten: true });
       let manifest = null;
@@ -362,10 +363,11 @@ async function extensionReady(cdp, port, expectedVersion) {
     if (!wakeTarget && Date.now() > deadline - 12000) {
       /* Past the first several seconds with no worker: it may be idle. WardenOne opens its
          onboarding page on install, which names the id; opening a page of it wakes the worker. */
-      const page = targetInfos.find((t) => t.type === 'page' && /^chrome-extension:\/\/[a-p]{32}\/onboarding\.html/.test(t.url));
+      const page = targetInfos.find((t) => inContext(t) && t.type === 'page' && /^chrome-extension:\/\/[a-p]{32}\/onboarding\.html/.test(t.url));
       if (page) {
         const id = page.url.slice('chrome-extension://'.length, 'chrome-extension://'.length + 32);
-        const created = await cdp.send('Target.createTarget', { url: 'chrome-extension://' + id + '/popup.html' });
+        const created = await cdp.send('Target.createTarget', { url: 'chrome-extension://' + id + '/popup.html',
+          ...(browserContextId === undefined ? {} : { browserContextId }) });
         wakeTarget = created.targetId;
       }
     }
