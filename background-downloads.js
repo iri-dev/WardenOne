@@ -570,7 +570,8 @@ function downloadHashObservation(details) {
 try {
   chrome.webRequest.onBeforeRequest.addListener((details) => {
     const job = downloadHashObservation(details);
-    if (job && details.timeStamp >= job.startedAt) job.requests.add(details.requestId);
+    /* webRequest has sub-millisecond precision; Date.now() does not. */
+    if (job && Math.ceil(details.timeStamp) >= job.startedAt) job.requests.add(details.requestId);
   }, { urls: ['http://*/*', 'https://*/*'], types: ['xmlhttprequest'], tabId: -1 });
   downloadHashStartObserverReady = true;
 } catch (_) {}

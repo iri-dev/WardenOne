@@ -23,16 +23,17 @@ const START = 'https://download.example.com/start';
 const FILE = 'https://cdn.example.com/file.bin';
 function world(routes, options = {}) {
   const before = event(), redirect = event(), calls = [], controllers = [];
+  const now = Date.now();
   let nextId = 0;
   const box = {
-    URL, Uint8Array, ArrayBuffer, AbortController, setTimeout, clearTimeout, crypto: webcrypto,
+    URL, Uint8Array, ArrayBuffer, AbortController, setTimeout, clearTimeout, crypto: webcrypto, Date: { now: () => now },
     DOWNLOAD_HASH_TIMEOUT_MS: options.timeout || 1000, DOWNLOAD_HASH_SOURCE_KIND: 'url_refetch',
     formatBytesShort: (n) => n + ' B',
     chrome: { runtime: { getURL: (p) => ORIGIN + '/' + p }, webRequest: { onBeforeRequest: before, onBeforeRedirect: redirect } },
     async fetch(url, init) {
       calls.push(url); controllers.push(init.signal);
       assert.equal(init.redirect, 'manual'); assert.equal(init.credentials, 'omit'); assert.equal(init.cache, 'no-store');
-      const details = { url, initiator: ORIGIN, method: 'GET', type: 'xmlhttprequest', tabId: -1, requestId: String(++nextId), timeStamp: Date.now() };
+      const details = { url, initiator: ORIGIN, method: 'GET', type: 'xmlhttprequest', tabId: -1, requestId: String(++nextId), timeStamp: now + (options.timeStampOffset || 0) };
       before.emit(details);
       const route = routes[url]; assert(route, 'unexpected request ' + url);
       if (route.error) throw new Error(route.error);
@@ -63,6 +64,15 @@ async function run() {
   assert.equal(result.requestedUrl, START); assert.equal(result.exactFile, false);
   assert.equal(await w.api.sha256Hex(result.bytes), createHash('sha256').update('redirected file bytes').digest('hex'));
   assert.deepEqual(w.calls, [START, FILE]); released(w);
+
+  for (const timeStampOffset of [-0.375, 0, 1]) {
+    const t = world(routes, { timeStampOffset });
+    assert.equal((await t.api.fetchBytesForHash(START, 100)).ok, true, 'browser timestamp offset ' + timeStampOffset);
+    released(t);
+  }
+  const earlier = world(routes, { timeStampOffset: -1, timeout: 20 });
+  assert.equal((await earlier.api.fetchBytesForHash(START, 100)).ok, false, 'an earlier millisecond cannot register a request');
+  assert.deepEqual(earlier.calls, [START]); released(earlier);
 
   for (const target of ['http://127.0.0.1/file', 'http://2130706433/file', 'http://10.0.0.1/file',
     'http://192.168.0.1/file', 'http://169.254.169.254/file', 'http://localhost/file', 'http://host.local/file',

@@ -47,9 +47,13 @@ for (const file of browserTests) {
 
 async function checkCdpLifecycle() {
   const originalWebSocket = globalThis.WebSocket;
+  const originalFetch = globalThis.fetch;
   class MockWebSocket {
     static OPEN = 1;
-    constructor() { MockWebSocket.last = this; this.readyState = 0; this.listeners = new Map(); this.sent = []; }
+    constructor() {
+      MockWebSocket.last = this; this.readyState = 0; this.listeners = new Map(); this.sent = [];
+      if (MockWebSocket.autoOpen) queueMicrotask(() => this.open());
+    }
     addEventListener(type, fn) {
       if (!this.listeners.has(type)) this.listeners.set(type, []);
       this.listeners.get(type).push(fn);
@@ -121,6 +125,27 @@ async function checkCdpLifecycle() {
     }
     {
       const { cdp, ws } = await connected();
+      await rejects('a working connection cannot be replaced', cdp.reconnect(9222), /refusing to replace a working devtools socket/);
+      ws.emit('error', { error: new Error('invalid frame') });
+      check('native WebSocket errors retain their underlying diagnostic', cdp.failure.includes('invalid frame'));
+      globalThis.fetch = async url => {
+        check('reconnect probes only its original local browser port', url === 'http://127.0.0.1:9222/json/version');
+        return { json: async () => ({ webSocketDebuggerUrl: 'ws://fixture' }) };
+      };
+      MockWebSocket.autoOpen = true;
+      const replacement = await cdp.reconnect(9222);
+      check('explicit reconnect opens a fresh transport without carrying old sessions or commands',
+        replacement !== cdp && replacement.wsUrl === cdp.wsUrl && replacement.pending.size === 0
+          && replacement.listeners.length === 0 && replacement.failure === '' && ws.readyState === 3);
+      replacement.close();
+      globalThis.fetch = async () => ({ json: async () => ({ webSocketDebuggerUrl: 'ws://different-browser' }) });
+      await rejects('a restarted browser cannot replace the original test instance', cdp.reconnect(9222), /original browser is no longer running/);
+      globalThis.fetch = async () => { throw new Error('connection refused'); };
+      await rejects('a crashed browser still fails reconnection', cdp.reconnect(9222), /connection refused/);
+      MockWebSocket.autoOpen = false;
+    }
+    {
+      const { cdp, ws } = await connected();
       const failed = rejects('socket close identifies the interrupted page call', cdp.send('Runtime.evaluate', {}, 'page'), /Runtime\.evaluate \(session page\): devtools socket closed \(1000\): browser stopped/);
       const closing = cdp.send('Browser.close');
       ws.close();
@@ -148,7 +173,7 @@ async function checkCdpLifecycle() {
       assert.deepEqual(await unaffected, { value: 'still attached' });
       checks++;
     }
-  } finally { globalThis.WebSocket = originalWebSocket; }
+  } finally { globalThis.WebSocket = originalWebSocket; globalThis.fetch = originalFetch; }
 }
 
 profile.mustFinish(checkCdpLifecycle, 'CDP transport tests').then(() => {
