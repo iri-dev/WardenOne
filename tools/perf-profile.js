@@ -306,7 +306,7 @@ async function launch(edge, variant, extensionDir, port, profileDir, extraArgs) 
   else args.push('--disable-extensions-except=' + extensionDir, '--load-extension=' + extensionDir);
   if (Array.isArray(extraArgs)) args.push(...extraArgs);
   args.push('about:blank');
-  const child = spawn(edge, args, { detached: true, stdio: 'ignore' });
+  const child = spawn(edge, args, { detached: true, stdio: process.env.CI ? ['ignore', 'ignore', 'inherit'] : 'ignore' });
   child.unref();
   /* Edge forks and the spawned process exits at once; the browser is alive when the endpoint is. */
   for (let i = 0; i < 100; i++) {
