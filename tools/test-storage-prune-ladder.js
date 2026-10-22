@@ -80,6 +80,8 @@ function load(present) {
     DOMAIN_AGE_CACHE_KEY: 'wardenone_domain_age_cache',
     SCRIPT_DRIFT_BASELINE_KEY: 'wardenone_script_drift_baselines',
     OPENPHISH_CACHE_KEY: 'wardenone_openphish_feed_cache',
+    DOWNLOAD_THREAT_FEED_KEY: 'wardenone_download_threat_feeds',
+    DOWNLOAD_THREAT_META_KEY: 'wardenone_download_threat_meta',
     STORAGE_SOFT_LIMIT_BYTES: SOFT_LIMIT,
     BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX: 500,
     HISTORY_STORAGE_PRESSURE_MAX: 400,

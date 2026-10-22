@@ -174,6 +174,7 @@ function makeBrowserSandbox(rawPageUrl) {
     (listeners[type] = listeners[type] || []).push(fn);
   };
   sandbox.document = {
+    readyState: 'loading',
     activeElement: null,
     dispatchEvent(event) { if (event && event.type === 'wo-event') state.emitted.push(event.detail); },
     getElementsByTagName() { return []; },

@@ -207,6 +207,7 @@ function main() {
     condition: r.condition,
   }));
 
+  require('./lib/network-policy.js').validate({ addRules: rules }, 'static');
   fs.writeFileSync(outPath, JSON.stringify(rules));
   const skipped = Object.entries(stats).map(([k, v]) => k + '=' + v).join(' ');
   console.log('rules: ' + rules.length + ' (allow/allowAll=' + allows.length + ', block=' + trimmedBlocks.length + (blocks.length > trimmedBlocks.length ? ', dropped=' + (blocks.length - trimmedBlocks.length) : '') + ')');

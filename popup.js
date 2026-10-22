@@ -832,12 +832,14 @@ function sanitizeSiteOverrides(raw) {
   Object.keys(raw).slice(0, 500).forEach((host) => {
     const entry = raw[host];
     if (typeof host !== 'string' || !host || host.length > 260 || !entry || typeof entry !== 'object' || Array.isArray(entry)) { dropped++; return; }
+    const target = normalizeSiteHost(host);
+    if (!target) { dropped++; return; }
     const kept = {};
     Object.keys(entry).forEach((key) => {
       if (entry[key] === false && Object.prototype.hasOwnProperty.call(DEFAULTS, key) && typeof DEFAULTS[key] === 'boolean') kept[key] = false;
       else dropped++;
     });
-    if (Object.keys(kept).length) out[host] = kept;
+    if (Object.keys(kept).length) out[target] = Object.assign(out[target] || {}, kept);
   });
   return { map: out, dropped };
 }
@@ -2859,7 +2861,7 @@ $('update-now').addEventListener('click', () => {
 chrome.storage.onChanged.addListener((changes, area) => {
   // Adopt changes from other surfaces while this popup remains open.
   if (area === 'local' && changes.wardenone_config) adoptExternalConfigChange(changes.wardenone_config.newValue);
-  if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_adshield_cosmetic_publishers)) renderListMeta();
+  if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_adshield_cosmetic_publishers || changes.wardenone_download_threat_meta)) renderListMeta();
   if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_adshield_cosmetic_publishers || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
   if (area === 'local' && (changes.wardenone_ext_alerts || changes.wardenone_ext_reviews
       || changes.wardenone_ext_reputation_custom)) loadExtensionAlerts();

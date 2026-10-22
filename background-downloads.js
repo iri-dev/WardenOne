@@ -797,10 +797,10 @@ function downloadHashSourceMeta(fetched, kind, extra) {
 /* The bundled EICAR entry is diagnostic. Only additional signatures justify an
    automatic URL re-fetch; that response still cannot verify the saved file. */
 const EICAR_SHA256 = '275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f';
-const MALWARE_HASHES = new Set();
+let MALWARE_HASHES = new Set();
 const MALWARE_HASH_SOURCES = { bundled: new Set(), stored: new Set() };
 let malwareHashesReady = Promise.resolve();
-function addMalwareHashes(arr, target = MALWARE_HASHES) {
+function addMalwareHashes(arr, target) {
   for (const h of (Array.isArray(arr) ? arr : [])) {
     const v = String(h || '').trim().toLowerCase();
     if (/^[a-f0-9]{64}$/.test(v)) target.add(v);
@@ -813,30 +813,274 @@ function localMalwareHashCoverage() {
 }
 function loadMalwareHashes() {
   malwareHashesReady = malwareHashesReady.then(async () => {
+    const sources = { ...MALWARE_HASH_SOURCES };
     try {
       const res = await fetch(chrome.runtime.getURL('malware-hashes.json'), { cache: 'no-store' });
       if (res && res.ok) {
         const data = await res.json();
         const next = new Set();
         addMalwareHashes(Array.isArray(data) ? data : (data && data.sha256), next);
-        MALWARE_HASH_SOURCES.bundled = next;
+        sources.bundled = next;
       }
     } catch (_) {}
     try {
-      const x = await localGet('wardenone_malware_hashes');
+      const x = await localGetStrict('wardenone_malware_hashes');
       const stored = x && x.wardenone_malware_hashes;
       const next = new Set();
       addMalwareHashes(Array.isArray(stored) ? stored : (stored && stored.sha256), next);
-      MALWARE_HASH_SOURCES.stored = next;
+      sources.stored = next;
     } catch (_) {}
-    MALWARE_HASHES.clear();
-    for (const hashes of Object.values(MALWARE_HASH_SOURCES)) {
-      for (const hash of hashes) MALWARE_HASHES.add(hash);
+    const next = new Set();
+    for (const hashes of Object.values(sources)) {
+      for (const hash of hashes) next.add(hash);
     }
+    Object.assign(MALWARE_HASH_SOURCES, sources);
+    MALWARE_HASHES = next;
   });
   return malwareHashesReady;
 }
 loadMalwareHashes();
+
+/* Download Guard feeds (DOWNLOAD_THREAT_LIST_SOURCES). Each is kept as one string of sorted,
+   fixed-width SHA-256 prefixes -- about 0.7 MB where the raw lists are 3.4 MB, because stored
+   lists already sit near the 4 MB storage soft limit. Read on first use, not on worker wake. */
+const DOWNLOAD_THREAT_FEED_KEY = 'wardenone_download_threat_feeds';
+const DOWNLOAD_THREAT_META_KEY = 'wardenone_download_threat_meta';
+/* 128 bits per file hash and 64 per address: far past accidental collision at these sizes. */
+const DOWNLOAD_HASH_PREFIX_HEX = 32;
+const DOWNLOAD_URL_KEY_HEX = 16;
+/* The hash feed is ordered by how many sources report each sample, so a cap keeps the best. */
+const DOWNLOAD_THREAT_FEED_CAPS = { sha256: 16000, 'payload-urls': 32000 };
+const DOWNLOAD_THREAT_DRIFT = { minBaseline: 200, dropRatio: 0.25 };
+const DOWNLOAD_URL_KEY_MAX_CHARS = 2048;
+const DOWNLOAD_URL_CANDIDATE_MAX = 24;
+const LISTED_PAYLOAD_URL_MIN_SCORE = 6;
+
+/* host[:port] + path + query, lowercased like the published list. Only an entry ending in '/'
+   covers what is beneath it; any other entry names one file, so a short listed path on a shared
+   host cannot quietly cover everything under it. */
+function downloadPayloadUrlParts(raw) {
+  let u;
+  try { u = new URL(String(raw || '')); } catch (_) { return null; }
+  if (!/^https?:$/.test(u.protocol) || !u.hostname || u.pathname.length < 2) return null;
+  const port = u.port && u.port !== '80' && u.port !== '443' ? ':' + u.port : '';
+  return { host: (u.hostname + port).toLowerCase(), path: u.pathname.toLowerCase(), search: u.search.toLowerCase() };
+}
+function downloadPayloadUrlEntryKey(line) {
+  const m = /^\|\|([^\s^$]+)\^(?:\$[a-z,]*)?$/i.exec(String(line || '').trim());
+  if (!m || m[1].indexOf('/') < 0 || m[1].length > DOWNLOAD_URL_KEY_MAX_CHARS) return '';
+  const parts = downloadPayloadUrlParts('http://' + m[1]);
+  return parts ? parts.host + parts.path + parts.search : '';
+}
+function downloadPayloadUrlCandidates(raw) {
+  const parts = downloadPayloadUrlParts(raw);
+  if (!parts) return [];
+  const out = new Set();
+  for (let i = parts.path.indexOf('/', 1); i > 0; i = parts.path.indexOf('/', i + 1)) {
+    out.add(parts.host + parts.path.slice(0, i + 1));
+  }
+  out.add(parts.host + parts.path);
+  if (parts.search) out.add(parts.host + parts.path + parts.search);
+  return [...out].filter((key) => key.length <= DOWNLOAD_URL_KEY_MAX_CHARS).slice(-DOWNLOAD_URL_CANDIDATE_MAX);
+}
+async function downloadUrlKeyFingerprint(key) {
+  return (await sha256Hex(new TextEncoder().encode(key))).slice(0, DOWNLOAD_URL_KEY_HEX);
+}
+
+function packSortedHex(values) {
+  return [...new Set(values)].sort().join('');
+}
+function packedHexValid(packed, width) {
+  if (typeof packed !== 'string' || packed.length % width || !/^[0-9a-f]*$/.test(packed)) return false;
+  for (let at = width; at < packed.length; at += width) {
+    if (packed.slice(at - width, at) >= packed.slice(at, at + width)) return false;
+  }
+  return true;
+}
+function packedHexHas(packed, width, key) {
+  if (!packed || !key || key.length !== width) return false;
+  let lo = 0;
+  let hi = packed.length / width - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const value = packed.slice(mid * width, mid * width + width);
+    if (value === key) return true;
+    if (value < key) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return false;
+}
+
+async function packDownloadThreatFeed(kind, text) {
+  const cap = DOWNLOAD_THREAT_FEED_CAPS[kind] || 0;
+  const lines = String(text || '').split(/\r?\n/);
+  if (kind === 'sha256') {
+    const seen = new Set();
+    for (const line of lines) {
+      const hash = line.trim().toLowerCase();
+      if (/^[a-f0-9]{64}$/.test(hash)) seen.add(hash.slice(0, DOWNLOAD_HASH_PREFIX_HEX));
+      if (seen.size >= cap) break;
+    }
+    return { packed: packSortedHex(seen), count: seen.size, truncated: seen.size >= cap };
+  }
+  const keys = new Set();
+  for (const line of lines) {
+    const key = downloadPayloadUrlEntryKey(line);
+    if (key) keys.add(key);
+    if (keys.size >= cap) break;
+  }
+  const fingerprints = [];
+  const list = [...keys];
+  for (let i = 0; i < list.length; i += 256) {
+    fingerprints.push(...await Promise.all(list.slice(i, i + 256).map(downloadUrlKeyFingerprint)));
+  }
+  const packed = packSortedHex(fingerprints);
+  return { packed, count: packed.length / DOWNLOAD_URL_KEY_HEX, truncated: keys.size >= cap };
+}
+
+function readDownloadThreatFeedStore(stored) {
+  const hashes = packedHexValid(stored && stored.sha256Prefixes, DOWNLOAD_HASH_PREFIX_HEX) ? stored.sha256Prefixes : '';
+  const urls = packedHexValid(stored && stored.payloadUrlKeys, DOWNLOAD_URL_KEY_HEX) ? stored.payloadUrlKeys : '';
+  return {
+    hashes,
+    hashCount: hashes.length / DOWNLOAD_HASH_PREFIX_HEX,
+    urls,
+    urlCount: urls.length / DOWNLOAD_URL_KEY_HEX,
+    updatedAt: Number(stored && stored.updatedAt) || 0,
+  };
+}
+let downloadThreatFeedCache = null;
+function resetDownloadThreatFeedCache() {
+  downloadThreatFeedCache = null;
+}
+function downloadThreatFeeds() {
+  if (!downloadThreatFeedCache) {
+    const pending = (async () => {
+      try {
+        const x = await localGetStrict(DOWNLOAD_THREAT_FEED_KEY);
+        return readDownloadThreatFeedStore(x && x[DOWNLOAD_THREAT_FEED_KEY]);
+      } catch (_) {
+        if (downloadThreatFeedCache === pending) downloadThreatFeedCache = null;
+        return readDownloadThreatFeedStore(null);
+      }
+    })();
+    downloadThreatFeedCache = pending;
+  }
+  return downloadThreatFeedCache;
+}
+
+/* source: 'bundled' or 'stored' for MALWARE_HASHES, 'feed' for the downloaded hash feed. */
+async function knownMalwareHash(sha256) {
+  const hash = String(sha256 || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(hash)) return { hit: false, diagnostic: false, source: '' };
+  await malwareHashesReady;
+  if (MALWARE_HASHES.has(hash)) {
+    return { hit: true, diagnostic: hash === EICAR_SHA256, source: MALWARE_HASH_SOURCES.stored.has(hash) ? 'stored' : 'bundled' };
+  }
+  const feeds = await downloadThreatFeeds();
+  if (packedHexHas(feeds.hashes, DOWNLOAD_HASH_PREFIX_HEX, hash.slice(0, DOWNLOAD_HASH_PREFIX_HEX))) {
+    return { hit: true, diagnostic: false, source: 'feed' };
+  }
+  return { hit: false, diagnostic: false, source: '' };
+}
+async function malwareHashCoverage() {
+  await malwareHashesReady;
+  const local = localMalwareHashCoverage();
+  const feeds = await downloadThreatFeeds();
+  const signatureCount = local.signatureCount + feeds.hashCount;
+  return {
+    listSize: local.listSize + feeds.hashCount,
+    signatureCount,
+    feedSignatureCount: feeds.hashCount,
+    diagnosticOnly: local.listSize > 0 && signatureCount === 0,
+  };
+}
+
+async function listedPayloadUrl(urls) {
+  const feeds = await downloadThreatFeeds();
+  if (!feeds.urlCount) return '';
+  const seen = new Set();
+  for (const url of urls || []) {
+    for (const key of downloadPayloadUrlCandidates(url)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (packedHexHas(feeds.urls, DOWNLOAD_URL_KEY_HEX, await downloadUrlKeyFingerprint(key))) return String(url);
+    }
+  }
+  return '';
+}
+
+/* URLhaus also lists official installers that attack scripts fetch, so an address match pauses
+   the download as Dangerous with a deliberate override; deleting it takes a content-hash match. */
+async function enrichDownloadWithPayloadUrlFeed(rep, urls) {
+  if (!rep) return rep;
+  let matched = '';
+  try { matched = await listedPayloadUrl(urls); } catch (_) { return rep; }
+  if (!matched) return rep;
+  rep.score = Math.max(Number(rep.score) || 0, LISTED_PAYLOAD_URL_MIN_SCORE);
+  /* Publisher trust is about the host; this names the file, and it also unlocks the hash check. */
+  rep.trustedEligible = false;
+  rep.trustAllowed = false;
+  rep.payloadUrlListed = true;
+  rep.reasons.unshift('URLhaus lists this exact download address as a malware source');
+  appendExternalReputation(rep, { provider: 'URLhaus payload feed', ok: true, hit: true, url: downloadDisplayUrl(matched) });
+  return applyDownloadMeta(rep);
+}
+
+async function updateDownloadThreatFeeds(reason) {
+  if (privateDownloadContext()) return { ok: false, skipped: true, error: 'Private-window worker' };
+  const cfgStore = await localGet('wardenone_config');
+  const cfg = (cfgStore && cfgStore.wardenone_config) || {};
+  const forced = /^(manual|settings-change|master-reenable|repair)$/i.test(String(reason || ''));
+  if (cfg.enabled === false || cfg.downloadReputation === false) return { ok: false, skipped: true, error: 'Download Guard is off' };
+  if (cfg.autoUpdateLists === false && !forced) return { ok: false, skipped: true, error: 'Auto-update is disabled' };
+
+  const held = await localGet([DOWNLOAD_THREAT_FEED_KEY, DOWNLOAD_THREAT_META_KEY]);
+  const previous = readDownloadThreatFeedStore(held && held[DOWNLOAD_THREAT_FEED_KEY]);
+  const previousMeta = (held && held[DOWNLOAD_THREAT_META_KEY]) || {};
+  const packed = { sha256: previous.hashes, 'payload-urls': previous.urls };
+  const widths = { sha256: DOWNLOAD_HASH_PREFIX_HEX, 'payload-urls': DOWNLOAD_URL_KEY_HEX };
+  const results = await Promise.all(DOWNLOAD_THREAT_LIST_SOURCES.map(async (source) => {
+    const fetched = await fetchValidatedRemoteListText(source.url, false, LIST_FETCH_TIMEOUT_MS);
+    if (!fetched || !fetched.ok) {
+      return { url: source.url, kind: source.kind, ok: false, error: String((fetched && fetched.error) || 'failed').slice(0, 180) };
+    }
+    const next = await packDownloadThreatFeed(source.kind, fetched.text);
+    const before = packed[source.kind].length / widths[source.kind];
+    /* A feed that suddenly loses most of its entries is far likelier broken than cleaned up. */
+    if (!next.count || (before >= DOWNLOAD_THREAT_DRIFT.minBaseline && next.count < before * DOWNLOAD_THREAT_DRIFT.dropRatio)) {
+      return { url: source.url, kind: source.kind, ok: false, rejected: true,
+        error: 'Kept the previous copy: ' + next.count + ' usable entries, down from ' + before };
+    }
+    packed[source.kind] = next.packed;
+    return { url: source.url, kind: source.kind, ok: true, count: next.count, truncated: next.truncated };
+  }));
+
+  const now = Date.now();
+  const succeeded = results.filter((r) => r.ok).length;
+  const store = { version: 1, updatedAt: succeeded ? now : previous.updatedAt, sha256Prefixes: packed.sha256, payloadUrlKeys: packed['payload-urls'] };
+  const meta = {
+    version: 1,
+    updated: succeeded ? now : (previousMeta.updated || 0),
+    lastAttempt: now,
+    reason: String(reason || ''),
+    counts: { fileHashes: store.sha256Prefixes.length / DOWNLOAD_HASH_PREFIX_HEX, payloadUrls: store.payloadUrlKeys.length / DOWNLOAD_URL_KEY_HEX },
+    sources: { total: results.length, succeeded, failed: results.length - succeeded },
+    failures: results.filter((r) => !r.ok).map((r) => ({ url: r.url, error: r.error, rejected: !!r.rejected })),
+  };
+  await localSet(succeeded ? { [DOWNLOAD_THREAT_FEED_KEY]: store, [DOWNLOAD_THREAT_META_KEY]: meta } : { [DOWNLOAD_THREAT_META_KEY]: meta });
+  resetDownloadThreatFeedCache();
+  if (succeeded && typeof pruneStorageIfNeeded === 'function') await pruneStorageIfNeeded('download-threat-feeds').catch(() => {});
+  return { ok: succeeded > 0, meta };
+}
+
+async function attachDownloadThreatFeedUpdate(result, reason) {
+  try {
+    return Object.assign({}, result || {}, { downloadFeeds: await updateDownloadThreatFeeds(reason) });
+  } catch (e) {
+    return Object.assign({}, result || {}, { downloadFeeds: { ok: false, error: String(e).slice(0, 180) } });
+  }
+}
 
 // Compute (and cache on rep.fileHash) the SHA-256 URL re-fetch fingerprint exactly once,
 // so the local and VirusTotal hash checks share one fetch+hash instead of doing it twice.
@@ -907,13 +1151,12 @@ async function ensureDownloadHash(rep, url) {
 async function enrichDownloadWithLocalHash(rep, url, filename, cfg) {
   if (!cfg || cfg.downloadHashCheck === false) return rep;
   if (!shouldReviewDownload(rep)) return rep;
-  await malwareHashesReady;
-  const coverage = localMalwareHashCoverage();
+  const coverage = await malwareHashCoverage();
   if (!coverage.signatureCount) {
     if (!rep.hashReputation) rep.hashReputation = {
       provider: 'Local SHA-256 list', local: true, checked: false, skipped: true, ...coverage,
       reason: coverage.diagnosticOnly
-        ? 'Local hash check skipped: the bundled list contains only the EICAR test signature. No re-fetch was made for this local check.'
+        ? 'Local hash check skipped: the bundled list contains only the EICAR test signature and the malware hash feed is not loaded yet. No re-fetch was made for this local check.'
         : 'Local hash check skipped: no malware signatures are loaded.',
     };
     return rep;
@@ -935,20 +1178,23 @@ async function enrichDownloadWithLocalHash(rep, url, filename, cfg) {
     }
     return rep;
   }
-  if (MALWARE_HASHES.has(h.sha256) && h.sha256 === EICAR_SHA256) {
+  const known = await knownMalwareHash(h.sha256);
+  if (known.diagnostic) {
     rep.hashReputation = { provider: 'Local SHA-256 list', checked: true, ok: true,
       hit: true, local: true, diagnostic: true, sha256: h.sha256,
       source: h.source || null, exactFile: h.exactFile === true, ...coverage };
     return rep;
   }
-  if (MALWARE_HASHES.has(h.sha256)) {
+  if (known.hit) {
     rep.score += 100;
     rep.blocklisted = true;
     rep.critical = true;
     rep.trustAllowed = false;
-    rep.reasons.unshift('URL-content hash matches a known-malware signature (local database)');
-    appendExternalReputation(rep, { provider: 'Local malware-hash set', sha256: h.sha256, hit: true, source: h.source || null, exactFile: h.exactFile === true });
-    rep.hashReputation = { provider: 'Local malware-hash set', checked: true, ok: true, hit: true, local: true, sha256: h.sha256, source: h.source || null, exactFile: h.exactFile === true };
+    rep.reasons.unshift(known.source === 'feed'
+      ? 'URL-content hash matches a known-malware sample (downloaded hash feed)'
+      : 'URL-content hash matches a known-malware signature (local database)');
+    appendExternalReputation(rep, { provider: 'Local malware-hash set', sha256: h.sha256, hit: true, matchedList: known.source, source: h.source || null, exactFile: h.exactFile === true });
+    rep.hashReputation = { provider: 'Local malware-hash set', checked: true, ok: true, hit: true, local: true, matchedList: known.source, sha256: h.sha256, source: h.source || null, exactFile: h.exactFile === true };
     return applyDownloadMeta(rep);
   }
   if (!rep.hashReputation) {
@@ -2306,6 +2552,8 @@ async function runDownloadGuardScan(id, hint, reason) {
     const filename = item.filename || item.url || '';
     const redirectContext = downloadRedirectContext(downloadUrl, item.referrer, item);
     let rep = scoreDownload(downloadUrl, item.referrer, filename, item.mime, trustedSites, item.danger, redirectContext);
+    /* Checked before the pause decision: a listed address must not finish while lookups run. */
+    rep = await enrichDownloadWithPayloadUrlFeed(rep, [item.url, item.finalUrl]);
     let pauseResult = null;
 
     if (shouldReviewDownload(rep) && item.state !== 'complete' && item.state !== 'interrupted') {

@@ -502,8 +502,15 @@ async function readArchive(entries) {
     check(diagnostic ? 'an EICAR hit is diagnostic information' : 'a configured signature hit remains dangerous',
       finding && finding.level === (diagnostic ? 'info' : 'danger'));
   }
-  check('the real file hash is checked against the bundled list',
-    /kind: 'file-scan-known'/.test(JS) && /MALWARE_HASHES\.has/.test(BG));
+  box.chrome.runtime.sendMessage = (_message, callback) => callback({ ok: true, hit: true, diagnostic: false,
+    matchedList: 'feed', listSize: 3, signatureCount: 2, feedSignatureCount: 2 });
+  const feedResult = await analyse(new File(['fixture'], 'sample.bin'), () => {});
+  const feedFinding = feedResult.findings.find((entry) => /known malware sample/.test(entry.title));
+  check('a hash-feed hit is dangerous and names the feed',
+    feedFinding && feedFinding.level === 'danger' && /hash feed/.test(feedFinding.detail)
+      && /This is the real file you picked/.test(feedFinding.detail));
+  check('the real file hash is checked against the local lists',
+    /kind: 'file-scan-known'/.test(JS) && /knownMalwareHash\(sha256\)/.test(BG));
   check('a match says it is this exact file',
     /This is the real file you picked,[\s\S]{0,30}not a guess from its name/.test(JS));
   check('a miss is reported too, with its own limits',
@@ -571,9 +578,9 @@ async function readArchive(entries) {
       && JS.slice(JS.indexOf("$('vt-run').addEventListener"), JS.indexOf("/* ---- picking a file")).includes("'file-scan-vt'"),
     'anything that leaves the machine has to be asked for');
   check('the known-malware check never leaves the machine',
-    /MALWARE_HASHES\.has\(sha256\)/.test(BG)
+    /knownMalwareHash\(sha256\)/.test(BG)
       && !/fetch\(/.test(BG.slice(BG.indexOf("msg.kind === 'file-scan-known'"), BG.indexOf("msg.kind === 'file-scan-vt'"))),
-    'it answers from a bundled list; a lookup would make an offline check a network one');
+    'it answers from lists already on the device; a lookup would make an offline check a network one');
   check('the button that does reach the network is present', /id="vt-run"/.test(HTML));
   check('the file itself is never sent anywhere',
     !/FormData|files\/upload|body: (file|buf)/.test(JS),

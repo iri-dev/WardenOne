@@ -80,6 +80,7 @@ vm.runInContext(between(background, 'async function urlReputationConfig(', '\nfu
   check('navigation uses automatic consent', /async function handleSafeBrowsingNavigation[\s\S]*?const state = await urlReputationConfig\(\);/.test(background));
   bgCtx.__initBlockedDomains = Promise.resolve();
   bgCtx.loadLearned = async () => {};
+  bgCtx.siteIdentityBg = h => String(h || '').split('.').slice(-2).join('.');
   bgCtx.registrableDomainBg = (host) => String(host).split('.').slice(-2).join('.');
   bgCtx.SECURITY_DOMAINS = new Set(['listed.example']);
   bgCtx.LEARNED = { 'blocked.example': { userBlocked: true } };

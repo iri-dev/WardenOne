@@ -615,10 +615,34 @@ function sameSiteIdentity(a, b) {
   return !!(left && right && left === right);
 }
 
+function normalizeSiteHost(value) {
+  let raw = String(value || '').trim();
+  if (!raw || raw.length > 512) return '';
+  try {
+    const input = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : 'https://' + ((raw.match(/:/g) || []).length > 1 && !raw.startsWith('[') ? '[' + raw + ']' : raw);
+    const url = new URL(input);
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password) return '';
+    raw = url.hostname;
+  } catch (_) { return ''; }
+  if (raw.startsWith('[') && raw.endsWith(']')) return raw.slice(1, -1).toLowerCase();
+  const host = regDomain(raw);
+  const labels = host.split('.');
+  if (host.length > 253 || labels.length < 2 || labels.some(label => label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label))) return '';
+  if (wardenOneIsPublicSuffix(host) || WARDENONE_OPAQUE_TENANT_SUFFIXES.includes(host)) return '';
+  return host;
+}
+
+function normalizeSiteTarget(value) {
+  const host = normalizeSiteHost(value);
+  if (!host || host.includes(':') || /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return '';
+  return siteIdentity(host);
+}
+
 /* Exemptions cover descendants only inside the same authoritative site boundary. */
 function hostMatchesSite(host, candidate) {
   const h = regDomain(host);
   const d = regDomain(candidate);
   if (!h || !d) return false;
+  if (wardenOneIsPublicSuffix(d) || WARDENONE_OPAQUE_TENANT_SUFFIXES.includes(d)) return false;
   return h === d || (h.endsWith('.' + d) && sameSiteIdentity(h, d));
 }

@@ -12,6 +12,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { installSessionIo } = require('./lib/dynamic-rule-io.js');
 const resourceTypes = require('./lib/resource-types.js');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -44,6 +45,7 @@ function harness(domains) {
   assert(from > 0 && to > from, 'could not delimit the tracker cookie rule');
 
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   vm.runInContext(BG.slice(from, to) + '\nthis.__api = { applyTrackerCookieRule, trackerCookieResourceTypes };',
     sandbox, { filename: 'background.js' });
   return { api: sandbox.__api, state };

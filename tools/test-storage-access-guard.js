@@ -51,6 +51,7 @@ function build(opts) {
 
   const doc = Object.create(proto);
   doc.activeElement = null;
+  doc.readyState = 'loading';
   /* The key arrives on the document (SEC-01), so its listeners must be real. */
   const dispatchDoc = woAuth.documentEvents(doc);
   doc.removeEventListener = () => {};

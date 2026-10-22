@@ -49,7 +49,7 @@ function makeWorld() {
       });
       return true;
     },
-    documentElement: { nodeType: 1 },
+    documentElement: { nodeType: 1, attributes: [], getElementsByTagName: () => [] },
     readyState: 'loading',
     querySelectorAll: () => [],
   };
@@ -146,6 +146,7 @@ function loadDetector(world, options = {}) {
   sandbox.window.Worker = FakeWorker;
   sandbox.window.WebAssembly = undefined;
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), sandbox);
   vm.runInContext(DETECT, sandbox, { filename: 'cryptominer-detect.js' });
   state.startWorker = (url) => new sandbox.window.Worker(url || 'https://miner.example/w.js');
   return state;

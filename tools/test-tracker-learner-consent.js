@@ -38,13 +38,13 @@ function lift(name) {
   }
   throw new Error(name + ' is unterminated');
 }
-const PIECES = ['normalizeTrackerDomain', 'registrableDomainBg', 'trackerStoreShape', 'trackerDistinctSiteCount',
+const PIECES = ['normalizeTrackerDomain', 'siteIdentityBg', 'trackerStoreShape', 'trackerDistinctSiteCount',
   'trackerDistinctSessionCount', 'trackerDay', 'trackerNewSalt', 'trackerSaltShape', 'trackerLearnerSalt', 'trackerMarkPositions', 'trackerMarkHas', 'trackerMarkAdd',
   'trackerSessionState', 'noteTrackerSessionSeen', 'noteTrackerSiteView', 'trackerSiteViewFor', 'resetTrackerSessionState', 'trackerControlledDomains',
   'isProtectedTrackerDomain', 'looksLikeKnownTrackerHost',
   'ownProviderDomains', 'noteTrackerObservation', 'pruneTrackerLearnerStore', 'saveTrackerLearner',
   'applyTrackerLearnerRules', 'trackerLearnerProposals', 'decideTrackerProposal', 'decideAllTrackerProposals',
-  'trackerLearnerStatus', 'dnrValueMatches', 'dnrBandUnchanged'];
+  'trackerLearnerStatus', 'setTrackerLearnerSiteMode', 'dnrValueMatches', 'dnrBandUnchanged'];
 const CONSTS = BG.slice(BG.indexOf('const TRACKER_LEARNER_KEY ='), BG.indexOf('\n', BG.indexOf('const TRACKER_RESOURCE_TYPES')));
 
 function rig(options) {
@@ -89,7 +89,7 @@ function rig(options) {
     + '\nvar loadTrackerLearner = async () => TRACKER_LEARNER;'
     + '\nglobalThis.api = { note: noteTrackerObservation, shape: trackerStoreShape, proposals: trackerLearnerProposals,'
     + ' decide: decideTrackerProposal, decideAll: decideAllTrackerProposals, apply: applyTrackerLearnerRules,'
-    + ' status: trackerLearnerStatus, norm: normalizeTrackerDomain, learner: () => TRACKER_LEARNER,'
+    + ' status: trackerLearnerStatus, setMode: setTrackerLearnerSiteMode, norm: normalizeTrackerDomain, learner: () => TRACKER_LEARNER,'
     + ' releaseSession: () => { __trackerSession = null; } };', sandbox);
   /* A browser restart: the worker's session state is released and storage.session is gone. The
      session used to be an id the rig handed out; now it is the record's own lifetime. */
@@ -203,6 +203,65 @@ const rulesFor = (r, domain) => r.state.dnr.filter((x) => x.condition && (x.cond
     await forge(r, 'y.example', 'watching.net');
     await forge(r, 'z.example', 'watching.net');
     check('a candidate reaches the proposal across a restart, because its sessions survived the reload', r.entry('watching.net').state === 'proposed', r.entry('watching.net'));
+  }
+
+  for (const [alice, bob] of [
+    ['alice.webflow.io', 'bob.webflow.io'],
+    ['alice.github.io', 'bob.github.io'],
+    ['alice.netlify.app', 'bob.netlify.app'],
+    ['alice.foo.kawasaki.jp', 'bob.foo.kawasaki.jp'],
+  ]) {
+    const r = rig();
+    await attack(r, 'analytics.' + alice);
+    await attack(r, 'analytics.' + bob);
+    check('proposals retain separate tenants: ' + alice,
+      JSON.stringify(r.api.proposals().map(p => p.domain).sort()) === JSON.stringify([alice, bob].sort()));
+    await r.api.apply();
+    check('neither tenant is blocked before approval: ' + alice, r.state.dnr.length === 0);
+    const approved = await r.api.decide('analytics.' + alice, 'block');
+    check('approval names only the selected tenant: ' + alice,
+      approved.ok && approved.domain === alice && r.entry(alice).state === 'learned' && r.entry(bob).state === 'proposed');
+    check('the rule cannot cover the unrelated tenant: ' + bob,
+      r.state.dnr.length === 1 && r.state.dnr[0].condition.requestDomains[0] === alice
+      && !r.state.dnr.some(rule => rule.condition.requestDomains.some(d => bob === d || bob.endsWith('.' + d))));
+    const saved = r.state.written[r.state.written.length - 1].wardenone_tracker_learner;
+    const restored = rig({ store: saved });
+    await restored.api.apply();
+    check('approval and scope survive restore: ' + alice,
+      restored.entry(alice).approvedAt > 0 && restored.entry(bob).state === 'proposed'
+      && restored.state.dnr.length === 1 && restored.state.dnr[0].condition.requestDomains[0] === alice);
+  }
+  {
+    const r = rig();
+    await forge(r, 'news.alice.webflow.io', 'beacon-collector.net');
+    await forge(r, 'shop.alice.webflow.io', 'beacon-collector.net');
+    await forge(r, 'news.bob.webflow.io', 'beacon-collector.net');
+    check('first-party corroboration counts tenants, not subdomains or platform apexes',
+      r.entry('beacon-collector.net').sites === 2);
+    for (const host of ['webflow.io', 'github.io', 'co.uk', 'amazonaws.com', '*.webflow.io', 'bad..com']) {
+      check('an invalid tracker scope is refused: ' + host, r.api.norm(host) === '');
+    }
+    check('a www label can be a tenant', r.api.norm('www.webflow.io') === 'www.webflow.io');
+    const own = rig();
+    await forge(own, 'shop.alice.webflow.io', 'analytics.alice.webflow.io');
+    check('one tenant does not become its own third-party tracker', Object.keys(own.api.learner().domains).length === 0);
+  }
+  {
+    const r = rig();
+    const alice = 'alice.webflow.io', bob = 'bob.webflow.io', target = 'alice.netlify.app';
+    await r.api.setMode('https://shop.' + alice + '/', 'analytics.' + target, 'block');
+    await r.api.setMode('https://shop.' + bob + '/', 'analytics.' + target, 'allow');
+    check('per-site controls preserve both target and initiator tenant boundaries',
+      r.state.dnr.length === 2 && r.state.dnr.every(rule => rule.condition.requestDomains[0] === target)
+      && r.state.dnr.some(rule => rule.action.type === 'block' && rule.condition.initiatorDomains[0] === alice)
+      && r.state.dnr.some(rule => rule.action.type === 'allow' && rule.condition.initiatorDomains[0] === bob));
+    const a = await r.api.status('https://news.' + alice + '/');
+    const b = await r.api.status('https://news.' + bob + '/');
+    const c = await r.api.status('https://charlie.webflow.io/');
+    check('status never borrows another tenant\'s decision',
+      a.site === alice && a.items[0].mode === 'block' && b.site === bob && b.items[0].mode === 'allow' && c.items.length === 0);
+    const rejected = await r.api.setMode('https://webflow.io/', target, 'block');
+    check('a platform-wide initiator cannot create a per-site rule', rejected.ok === false && r.state.dnr.length === 2);
   }
 
   /* ---- 6. the wiring: handlers, popup, labels ------------------------------------- */

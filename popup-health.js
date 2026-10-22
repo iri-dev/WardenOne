@@ -272,9 +272,10 @@ function renderListPublishers(...groups) {
   return counts;
 }
 function renderListMeta() {
-  chrome.storage.local.get(['wardenone_list_meta', 'wardenone_aux_list_meta', 'wardenone_adshield_cosmetic_publishers'], (x) => {
+  chrome.storage.local.get(['wardenone_list_meta', 'wardenone_aux_list_meta', 'wardenone_adshield_cosmetic_publishers', 'wardenone_download_threat_meta'], (x) => {
     const meta = x && x.wardenone_list_meta;
     const auxMeta = x && x.wardenone_aux_list_meta;
+    const downloadCounts = (x && x.wardenone_download_threat_meta && x.wardenone_download_threat_meta.counts) || {};
     const statusEl = $('list-status');
     const updEl = $('list-updated');
     const count = listMetaCount(meta);
@@ -331,6 +332,9 @@ function renderListMeta() {
       const auxCounts = (auxMeta && auxMeta.counts) || {};
       const auxTotal = Number(auxCounts.adultDomainsExtra || 0) + Number(auxCounts.grabberDomainsExtra || 0) + Number(auxCounts.trustedPaymentHostsExtra || 0);
       if (auxTotal) line += ' - page lists +' + fmtCount(auxTotal);
+      const payloadUrls = Number(downloadCounts.payloadUrls || 0);
+      const fileHashes = Number(downloadCounts.fileHashes || 0);
+      if (payloadUrls || fileHashes) line += ' - downloads: ' + fmtCount(payloadUrls) + ' malware URLs, ' + fmtCount(fileHashes) + ' file hashes';
       updEl.textContent = line;
     } else {
       statusEl.textContent = 'Blocking ' + fmtCount(162) + ' domains (built-in)';

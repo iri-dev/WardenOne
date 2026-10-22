@@ -65,6 +65,7 @@ function constBlock(name) {
 const LIFTED = [
   constArray('REMOTE_LISTS'), constArray('TOKEN_AND_SCAM_LISTS'), constArray('MALWARE_LISTS'), constArray('TRACKER_LISTS'),
   constArray('ADSHIELD_NET_LISTS'), constArray('ADSHIELD_COSMETIC_LISTS'), constLine('REMOTE_LIST_URL'),
+  constArray('DOWNLOAD_THREAT_LIST_SOURCES'), constLine('DOWNLOAD_THREAT_LIST_URLS'), constLine('DOWNLOAD_THREAT_SOURCE_MAX_BYTES'),
   constLine('SUPPLEMENTAL_LIST_STORAGE_KEY'), constLine('SUPPLEMENTAL_LIST_META_KEY'), constLine('SUPPLEMENTAL_LIST_VERSION'),
   BG.slice(BG.indexOf('const SUPPLEMENTAL_LIST_SOURCES = ['), BG.indexOf('const SUPPLEMENTAL_LIST_SOURCES = [') + balanced(BG, BG.indexOf('const SUPPLEMENTAL_LIST_SOURCES = ['), '[', ']').length) + ';',
   constLine('SUPPLEMENTAL_BUNDLED_MANIFEST_PATH'), constLine('SUPPLEMENTAL_MANIFEST_URL'),

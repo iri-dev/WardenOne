@@ -54,6 +54,7 @@ function isNeverBlockDomain(value) {
   const h = String(value || '').replace(/^www\\./, '').toLowerCase();
   return ['google.com', 'github.com', 'stripe.com', 'paypal.com', 'twitch.tv'].some((d) => h === d || h.endsWith('.' + d));
 }
+function isUnsafeFeedBlockTarget(value) { return value === 'co.uk'; }
 function parseList(text) {
   const out = [];
   const seen = new Set();

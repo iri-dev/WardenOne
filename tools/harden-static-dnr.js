@@ -81,18 +81,21 @@ const replacementIds = new Set([164, 165, 166, 167]);
 const hardened = rules
   .filter((rule) => !genericLabelRules.includes(rule) && !replacementIds.has(rule.id))
   .map((rule) => {
+    if (rule.action?.type === 'redirect') return { ...rule, priority: 2001 };
+    if (rule.id === 163 && rule.action?.type === 'allow') return { ...rule, priority: 1900 };
     const match = exactHostFilter.exec(String(rule.condition && rule.condition.urlFilter || ''));
-    if (!match || !rule.action || rule.action.type !== 'block') return rule;
+    if (!rule.action || rule.action.type !== 'block') return rule;
+    if (!match) return { ...rule, priority: 2000 };
     const condition = Object.assign({}, rule.condition);
     delete condition.urlFilter;
     condition.requestDomains = [match[1].toLowerCase()];
-    return Object.assign({}, rule, { condition });
+    return Object.assign({}, rule, { condition, priority: 2000 });
   });
 
 hardened.push(
   {
     id: 164,
-    priority: 3000,
+    priority: 1900,
     action: { type: 'allow' },
     condition: {
       initiatorDomains: ['github.com'],
@@ -111,7 +114,7 @@ hardened.push(
   },
   {
     id: 165,
-    priority: 3000,
+    priority: 1900,
     action: { type: 'allow' },
     condition: {
       initiatorDomains: ['google.com'],
@@ -126,7 +129,7 @@ hardened.push(
   },
   {
     id: 166,
-    priority: 3000,
+    priority: 1900,
     action: { type: 'allow' },
     condition: {
       initiatorDomains: ['gamedrive.org'],
@@ -136,7 +139,7 @@ hardened.push(
   },
   {
     id: 167,
-    priority: 3000,
+    priority: 1900,
     action: { type: 'allow' },
     condition: {
       requestDomains: AUTH_CHALLENGE_DOMAINS,

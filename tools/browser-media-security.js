@@ -38,6 +38,8 @@ async function run() {
   const control = 'control.wardenone-security.test';
   const blocked = 'blocked.wardenone-security.test';
   const cdn = 'fixture.googlevideo.com';
+  const infrastructure = ['github.com', 'raw.githubusercontent.com', 'objects.githubusercontent.com', 'accounts.google.com', 'login.live.com'];
+  const tenants = ['alice.webflow.io', 'bob.webflow.io', 'analytics.alice.webflow.io', 'analytics.bob.webflow.io', 'alice.netlify.app', 'bob.netlify.app'];
   const hits = [];
   const media = fs.readFileSync(path.join(root, 'spotify-silent-1s.mp4'));
   const server = https.createServer(tls, (request, response) => {
@@ -64,7 +66,7 @@ async function run() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-media-security-'));
   let cdp;
   try {
-    const hosts = sites.concat(child, control, blocked, cdn);
+    const hosts = sites.concat(child, control, blocked, cdn, infrastructure, tenants);
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir,
       ['--ignore-certificate-errors', '--autoplay-policy=no-user-gesture-required',
         '--host-resolver-rules=' + hosts.map((host) => 'MAP ' + host + ' 127.0.0.1').join(', ')]);
@@ -130,8 +132,194 @@ async function run() {
         assert.equal(await probe(tabId, 0, deniedUrl), 'blocked', 'replacing legacy rules repairs an already loaded document');
         assert(!hits.slice(before).some((hit) => hit.includes('/denied-migration')));
         console.log('[ok] legacy frame-wide exemption reproduces the bypass; migration restores blocking without reloading');
+        await until(page, 'window.__wardenOneYouTubeReadyVersion===' + JSON.stringify(require('../manifest.json').version));
+        const probeAds = `Object.hasOwn(JSON.parse('{"adPlacements":[{}],"playerAds":[{}],"videoDetails":{"videoId":"auth-fixture"}}'),'adPlacements')`;
+        await until(page, '!' + probeAds);
+        await evaluate(page, `window.__ytFixtureConfigs=[];
+          window.addEventListener('message',e=>{
+            if(e.source===window&&e.data?.source==='wardenone'&&e.data.kind==='config') __ytFixtureConfigs.push(e.data);
+          });true`);
+        await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=false;}).then(()=>true)');
+        await until(page, probeAds);
+        await until(page, '__ytFixtureConfigs.some(m=>m.overrides.enabled===false&&typeof m.mac==="string")');
+        await evaluate(page, 'window.__ytOldDisable=__ytFixtureConfigs.find(m=>m.overrides.enabled===false&&typeof m.mac==="string");true');
+        await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=true;}).then(()=>true)');
+        await until(page, '!' + probeAds);
+        await evaluate(page, `new Promise(resolve=>{
+          const done=e=>{if(e.source===window&&e.data?.kind==='yt-auth-fixture-done'){
+            window.removeEventListener('message',done);resolve(true);
+          }};
+          window.addEventListener('message',done);
+          for(const message of [
+            {source:'wardenone-handshake',token:'attacker-picked'},
+            {source:'wardenone',kind:'config',token:'attacker-picked',overrides:{enabled:false}},
+            {...__ytOldDisable,seq:1000000,mac:'0'.repeat(64)},
+            {...__ytOldDisable,mac:undefined},__ytOldDisable
+          ]) window.postMessage(message,location.origin);
+          window.postMessage({kind:'yt-auth-fixture-done'},location.origin);
+        })`);
+        assert.equal(await evaluate(page, probeAds), false, 'unsigned, invalid and replayed config cannot disable YouTube pruning');
+        await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=false;}).then(()=>true)');
+        await until(page, probeAds);
+        await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=true;}).then(()=>true)');
+        await until(page, '!' + probeAds);
+        await evaluate(page, 'document.getElementById("player").play().then(()=>true)');
+        const resumedAt = await evaluate(page, 'document.getElementById("player").currentTime');
+        await until(page, '(()=>{const v=document.getElementById("player");return !v.paused&&v.readyState>=2&&v.currentTime!==' + resumedAt + '})()');
+        console.log('[ok] authenticated YouTube toggles, forgery/replay rejection and media playback through the real bridge');
+      }
+      if (site === 'www.twitch.tv') {
+        await until(page, '!!document.getElementById("wo-twitch-adblock-css")');
+        const off = 'document.getElementById("wo-twitch-adblock-css").disabled';
+        await until(page, '!' + off);
+        await evaluate(page, `window.__twitchFixtureConfigs=[];
+          window.addEventListener('message',e=>{
+            if(e.source===window&&e.data?.source==='wardenone'&&e.data.kind==='config') __twitchFixtureConfigs.push(e.data);
+          });true`);
+        await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=false;}).then(()=>true)');
+        await until(page, off);
+        await until(page, '__twitchFixtureConfigs.some(m=>m.overrides.enabled===false)');
+        await evaluate(page, 'window.__oldTwitchOff=__twitchFixtureConfigs.find(m=>m.overrides.enabled===false);true');
+        await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=true;}).then(()=>true)');
+        await until(page, '!' + off);
+        await evaluate(page, `new Promise(resolve=>{
+          window.__WO_CONFIG__={enabled:false,twitchAdBlock:false,__configReady:true};
+          document.dispatchEvent(new CustomEvent('wo-config-change',{detail:{config:window.__WO_CONFIG__}}));
+          const done=e=>{if(e.source===window&&e.data?.kind==='twitch-auth-fixture-done'){
+            window.removeEventListener('message',done);resolve(true);
+          }};
+          window.addEventListener('message',done);
+          for(const message of [
+            {source:'wardenone-handshake',token:'attacker-picked'},
+            {source:'wardenone',kind:'config',token:'attacker-picked',overrides:{enabled:false}},
+            {...__oldTwitchOff,seq:1000000,mac:'0'.repeat(64)}, {...__oldTwitchOff,mac:undefined}, __oldTwitchOff
+          ]) window.postMessage(message,location.origin);
+          window.postMessage({kind:'twitch-auth-fixture-done'},location.origin);
+        })`);
+        assert.equal(await evaluate(page, off), false, 'Twitch rejects page-controlled protection changes');
+        await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=false;}).then(()=>true)');
+        await until(page, off);
+        await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=true;}).then(()=>true)');
+        await until(page, '!' + off);
+        await evaluate(page, 'document.getElementById("player").play().then(()=>true)');
+        const resumed = await evaluate(page, 'document.getElementById("player").currentTime');
+        await until(page, 'document.getElementById("player").currentTime!==' + resumed);
+        console.log('[ok] authenticated Twitch toggles reject forgery, replay and page globals while media plays');
       }
     }
+    const githubUrl = 'https://github.com:' + serverPort + '/fixture';
+    await cdp.send('Page.navigate', { url: githubUrl }, page);
+    await until(page, 'window.fixtureReady===true&&document.readyState==="complete"');
+    const githubTab = await evaluate(worker, `chrome.tabs.query({}).then(tabs=>tabs.find(tab=>tab.url===${JSON.stringify(githubUrl)}).id)`);
+    for (const host of infrastructure.slice(1)) {
+      const badUrl = 'https://' + host + ':' + serverPort + '/denied-infrastructure/payload.js';
+      const knownUrl = 'https://' + host + ':' + serverPort + '/denied-confirmed/payload.js';
+      const goodUrl = 'https://' + host + ':' + serverPort + '/ordinary-resource';
+      await evaluate(worker, `(()=>{
+        const candidates=parseList(${JSON.stringify(host)});
+        if(!candidates.includes(${JSON.stringify(host)})) throw new Error('Security-feed host was discarded');
+        const option=parseNetworkRules(${JSON.stringify('|' + badUrl + '|$script,xmlhttprequest')},0,1);
+        if(option.length!==1) throw new Error('Security-feed path was discarded');
+        return chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds:[6000004,6000005,6000006],addRules:[
+          finalizeOptionRule(option[0],6000004,'security'),
+          {id:6000005,priority:2000,action:{type:'block'},condition:{urlFilter:${JSON.stringify('|' + knownUrl + '|')},resourceTypes:['xmlhttprequest']}},
+          {id:6000006,priority:1000,action:{type:'block'},condition:{urlFilter:${JSON.stringify('|' + goodUrl + '|')},resourceTypes:['xmlhttprequest']}}
+        ]}).then(()=>true);
+      })()`);
+      if (host === infrastructure[1]) {
+        await evaluate(worker, `chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds:[6000007],addRules:[{
+          id:6000007,priority:3000,action:{type:'allow'},condition:{requestDomains:[${JSON.stringify(host)}],resourceTypes:['xmlhttprequest']}
+        }]}).then(()=>true)`);
+        const before = hits.length;
+        assert.equal(await probe(githubTab, 0, badUrl), 'loaded 200', 'legacy infrastructure allow reproduces the tie bypass');
+        assert(hits.slice(before).some(hit => hit.includes('/denied-infrastructure/')));
+        await evaluate(worker, 'chrome.declarativeNetRequest.updateDynamicRules({removeRuleIds:[6000007]}).then(()=>true)');
+      }
+      for (const url of [badUrl, knownUrl]) {
+        const before = hits.length;
+        assert.equal(await probe(githubTab, 0, url), 'blocked', 'security remains authoritative on ' + host);
+        assert(!hits.slice(before).some(hit => hit.includes('/denied-')), 'blocked infrastructure request reached the server');
+      }
+      assert.equal(await probe(githubTab, 0, goodUrl), 'loaded 200', 'ad-list compatibility remains effective on ' + host);
+    }
+    console.log('[ok] shared infrastructure retains threat blocking and ordinary-resource compatibility in ' + browser.Browser);
+    await evaluate(worker, `(async()=>{
+      const now=Date.now(), proposal={state:'proposed',firstSeen:now,lastSeen:now,hits:6,sites:3,sessions:2,proposedAt:now};
+      await chrome.storage.local.set({[TRACKER_LEARNER_KEY]:{version:2,salt:'a'.repeat(32),domains:{
+        'webflow.io':{...proposal,state:'learned',approvedAt:now},
+        'alice.webflow.io':{...proposal},'bob.webflow.io':{...proposal}
+      },siteControls:{}}});
+      await writeDynamicRules({removeRuleIds:[TRACKER_RULE_BASE],addRules:[{
+        id:TRACKER_RULE_BASE,priority:1800,action:{type:'block'},
+        condition:{requestDomains:['webflow.io'],domainType:'thirdParty',resourceTypes:TRACKER_RESOURCE_TYPES}
+      }]});
+      __initTrackerLearner=null;
+      await loadTrackerLearner();await applyTrackerLearnerRules();return true;
+    })()`);
+    for (const host of tenants.slice(0, 4)) {
+      assert.equal(await probe(githubTab, 0, 'https://' + host + ':' + serverPort + '/tenant-scope'), 'loaded 200', 'an unapproved proposal or withdrawn legacy apex must not block');
+    }
+    const decision = await evaluate(worker, 'decideTrackerProposal("analytics.alice.webflow.io","block")');
+    assert.equal(decision.ok, true);
+    assert.equal(decision.domain, 'alice.webflow.io');
+    for (const host of ['alice.webflow.io', 'analytics.alice.webflow.io']) {
+      const before = hits.length;
+      assert.equal(await probe(githubTab, 0, 'https://' + host + ':' + serverPort + '/denied-tenant'), 'blocked');
+      assert(!hits.slice(before).some(hit => hit.includes('/denied-tenant')));
+    }
+    for (const host of ['bob.webflow.io', 'analytics.bob.webflow.io']) {
+      assert.equal(await probe(githubTab, 0, 'https://' + host + ':' + serverPort + '/tenant-scope'), 'loaded 200');
+    }
+    const alicePage = 'https://alice.webflow.io:' + serverPort + '/fixture';
+    const mode = await evaluate(worker, `setTrackerLearnerSiteMode(${JSON.stringify(alicePage)},'alice.netlify.app','block')`);
+    assert.equal(mode.ok, true);
+    for (const first of ['alice.webflow.io', 'bob.webflow.io']) {
+      await cdp.send('Page.navigate', { url: 'https://' + first + ':' + serverPort + '/fixture' }, page);
+      await until(page, 'window.fixtureReady===true&&document.readyState==="complete"');
+      assert.equal(await probe(githubTab, 0, 'https://alice.netlify.app:' + serverPort + '/tenant-control'),
+        first === 'alice.webflow.io' ? 'blocked' : 'loaded 200', 'a per-site decision must retain its initiator tenant');
+      assert.equal(await probe(githubTab, 0, 'https://bob.netlify.app:' + serverPort + '/tenant-control'), 'loaded 200');
+    }
+    console.log('[ok] tracker approval, legacy scope removal and per-site controls isolate hosted tenants in ' + browser.Browser);
+    const shutdownUrl = 'https://' + control + ':' + serverPort + '/shutdown-fixture';
+    const shutdown = await evaluate(worker, `(async()=>{
+      const id=USER_RULE_BASE+USER_RULE_MAX-1;
+      await writeDynamicRules({removeRuleIds:[id],addRules:[{
+        id,priority:3000,action:{type:'block'},condition:{urlFilter:${JSON.stringify('|' + shutdownUrl + '|')},resourceTypes:['xmlhttprequest']}
+      }]});
+      const dnr=chrome.declarativeNetRequest,original=dnr.updateDynamicRules;
+      let failures=0;
+      const request=()=>chrome.scripting.executeScript({target:{tabId:${githubTab}},world:'MAIN',
+        func:async url=>fetch(url).then(r=>'loaded '+r.status,()=> 'blocked'),args:[${JSON.stringify(shutdownUrl)}]
+      }).then(rows=>rows[0].result);
+      try{
+        dnr.updateDynamicRules=function(change){
+          if(!failures&&(change.removeRuleIds||[]).includes(id)){
+            failures++;return Promise.reject(new Error('Injected shutdown removal failure'));
+          }
+          return original.call(dnr,change);
+        };
+        const first=await refreshBlocklistRuleset({enabled:false});
+        const result={failures,first,firstKey:__blocklistRulesetStateKey,firstError:__blocklistRulesetError,firstRequest:await request()};
+        await refreshBlocklistRuleset({enabled:false});
+        result.secondKey=__blocklistRulesetStateKey;result.secondError=__blocklistRulesetError;
+        result.secondRequest=await request();result.staticDisabled=(await dnr.getEnabledRulesets()).length===0;
+        return result;
+      }finally{
+        dnr.updateDynamicRules=original;
+        await refreshBlocklistRuleset({enabled:true});
+      }
+    })()`);
+    assert.equal(shutdown.failures, 1);
+    assert.equal(shutdown.first, false);
+    assert.equal(shutdown.firstKey, '');
+    assert.match(shutdown.firstError, /Injected shutdown removal failure/);
+    assert.equal(shutdown.firstRequest, 'blocked');
+    assert(shutdown.secondKey.startsWith('0|'));
+    assert.equal(shutdown.secondError, '');
+    assert.equal(shutdown.secondRequest, 'loaded 200');
+    assert.equal(shutdown.staticDisabled, true);
+    console.log('[ok] a rejected native shutdown remains visible and retries successfully in ' + browser.Browser);
     console.log('[ok] media compatibility security boundary in ' + browser.Browser);
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }

@@ -283,6 +283,7 @@ function buildHarness(options) {
   const videos = options.videos || [];
   const iframes = options.iframes || [];
   sandbox.document = {
+    readyState: 'loading',
     activeElement: null,
     dispatchEvent(event) { if (event && event.type === 'wo-event') state.emitted.push(event.detail); },
     getElementsByTagName(tag) {

@@ -1,7 +1,7 @@
 [
   {
     "id": 163,
-    "priority": 2000,
+    "priority": 1900,
     "action": {
       "type": "allow"
     },
@@ -15,7 +15,7 @@
   },
   {
     "id": 164,
-    "priority": 3000,
+    "priority": 1900,
     "action": {
       "type": "allow"
     },
@@ -47,7 +47,7 @@
   },
   {
     "id": 165,
-    "priority": 3000,
+    "priority": 1900,
     "action": {
       "type": "allow"
     },
@@ -75,7 +75,7 @@
   },
   {
     "id": 166,
-    "priority": 3000,
+    "priority": 1900,
     "action": {
       "type": "allow"
     },
@@ -100,7 +100,7 @@
   },
   {
     "id": 167,
-    "priority": 3000,
+    "priority": 1900,
     "action": {
       "type": "allow"
     },

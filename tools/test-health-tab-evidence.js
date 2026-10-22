@@ -174,7 +174,11 @@ const TAB = (over) => Object.assign({ id: 7, url: 'https://shop.example/cart', d
     const d = decide({ enabled: true }, [{ severity: 'danger', text: 'a danger', topLevel: false }], evidenceFor('verified'), count);
     check('a danger beats a verified page', d.status === 'Needs review' && d.detail === 'a danger');
     const off = decide({ enabled: false }, [], evidenceFor('verified'), () => 0);
-    check('master off is Off whatever the page says', off.status === 'Off');
+    check('master off without errors is Off whatever the page says', off.status === 'Off');
+    const shutdownError = 'WardenOne could not finish switching off. Some blocking rules may still be active.';
+    const failedOff = decide({ enabled: false }, [{ severity: 'danger', text: shutdownError }], evidenceFor('off'), () => 0);
+    check('an incomplete shutdown keeps its error in the headline',
+      failedOff.status === 'Needs review' && failedOff.detail === shutdownError && failedOff.highest === 'danger');
     const dated = decide({ enabled: true }, [{ severity: 'info', text: 'old publisher date', topLevel: false }],
       evidenceFor('verified'), count, { publisher: { stale: 4 } });
     check('old publisher dates leave verified shields on without a setup warning',

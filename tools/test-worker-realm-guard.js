@@ -12,6 +12,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { installSessionIo } = require('./lib/dynamic-rule-io.js');
 const resourceTypes = require('./lib/resource-types.js');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -54,6 +55,7 @@ function loadRules() {
   assert(from > 0 && to > from, 'could not delimit the intranet network rules');
 
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   vm.runInContext(
     BG.slice(from, to)
       + '\nthis.__api = { applyIntranetNetworkRules, INTRANET_NET_PATTERNS, intranetNetResourceTypes, locallyServedTabIds };',
@@ -80,8 +82,9 @@ pending.push((async function privateAddressesAreRefusedAtTheNetworkLayer() {
   check('every other transport is covered, workers included',
     rules.every((r) => ['script', 'xmlhttprequest', 'websocket', 'webtransport', 'sub_frame', 'other']
       .every((t) => r.condition.resourceTypes.indexOf(t) >= 0)));
-  check('the rules sit below the login-compat allow priority',
-    rules.every((r) => r.priority < 96000));
+  const loginPriority = Number(BG.match(/id: LOGIN_COMPAT_RULE_BASE \+ i,\s*priority:\s*(\d+)/)[1]);
+  check('LAN security rules outrank login compatibility',
+    rules.every((r) => r.priority > loginPriority));
 }()));
 
 pending.push((async function thePatternsMatchWhatTheyShould() {

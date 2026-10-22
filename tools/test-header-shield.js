@@ -18,6 +18,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { installSessionIo } = require('./lib/dynamic-rule-io.js');
 const resourceTypes = require('./lib/resource-types.js');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -78,6 +79,7 @@ function makeHarness() {
     },
   });
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   const constants = between(
     BACKGROUND,
     'const CLIENT_HINT_HIGH_ENTROPY_RULE_ID =',

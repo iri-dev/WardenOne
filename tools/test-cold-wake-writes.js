@@ -204,7 +204,7 @@ const quiet = (d) => d.dnrWrites === 0 && d.removeAll === 0 && d.creates === 0 &
     const r = b.state.dynamic.get(745000);
     r.priority = 1;
     const w = await wake(b);
-    check('a rule whose field differs from the desired one makes exactly that band rewrite', w.delta.dnrWrites === 1 && b.state.dynamic.get(745000).priority === 3000, JSON.stringify(w.delta));
+    check('a rule whose field differs from the desired one makes exactly that band rewrite', w.delta.dnrWrites === 1 && b.state.dynamic.get(745000).priority === 1900, JSON.stringify(w.delta));
     /* A field Chrome added that this code never set is not a difference. */
     b.state.dynamic.get(745000).condition.isUrlFilterCaseSensitive = false;
     check('a field Chrome adds on its own does not count as a change', quiet((await wake(b)).delta));

@@ -197,6 +197,13 @@ function checkContentBuild() {
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
   'tools/test-download-hash-redirects.js',
+  'tools/test-malware-hash-reload.js',
+  'tools/test-download-threat-feeds.js',
+  'tools/test-blocking-site-scope.js',
+  'tools/test-infrastructure-threat-precedence.js',
+  'tools/test-blocklist-shutdown-retry.js',
+  'tools/test-trust-boundaries.js',
+  'tools/harden-adshield-exceptions.js',
   'tools/test-reputation-bypass.js',
   'tools/test-download-review-format.js',
   'tools/test-extension-change-watch.js',
@@ -490,6 +497,7 @@ function checkContentBuild() {
   'logger.js',
   'file-shield.js',
   'network.js',
+  'network-policy.js',
   'oauth-guard.js',
   'permission-chain.js',
   'redirect-warning.js',
@@ -641,6 +649,13 @@ checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
 checkCommand('download hash redirect tests', ['tools/test-download-hash-redirects.js']);
+checkCommand('malware hash reload tests', ['tools/test-malware-hash-reload.js']);
+checkCommand('download threat feed tests', ['tools/test-download-threat-feeds.js']);
+checkCommand('blocking site scope tests', ['tools/test-blocking-site-scope.js']);
+checkCommand('infrastructure threat precedence tests', ['tools/test-infrastructure-threat-precedence.js']);
+checkCommand('blocklist shutdown retry tests', ['tools/test-blocklist-shutdown-retry.js']);
+checkCommand('trust boundary contracts', ['tools/test-trust-boundaries.js']);
+checkCommand('packaged ad exception authority', ['tools/harden-adshield-exceptions.js', '--check']);
 checkCommand('reputation navigation grant tests', ['tools/test-reputation-bypass.js']);
 checkCommand('download review formatting tests', ['tools/test-download-review-format.js']);
 checkCommand('extension change watcher tests', ['tools/test-extension-change-watch.js']);

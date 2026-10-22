@@ -44,7 +44,7 @@ if (setStart < 0 || isNeverStart < 0 || fnStart < 0) {
 }
 
 const box = {
-  String, Object, Set, RegExp, console,
+  URL, String, Object, Set, RegExp, console,
   LOGIN_COMPAT_NEVER_BLOCK_DOMAINS: [],
   WARDENONE_PRIVATE_SUFFIXES: [],
   WARDENONE_OPAQUE_TENANT_SUFFIXES: [],
@@ -53,9 +53,11 @@ const box = {
     const p = String(h || '').split('.');
     return p.length > 2 ? p.slice(-2).join('.') : String(h || '');
   },
+  siteIdentityBg: (h) => String(h || '').split('.').slice(-2).join('.'),
   X_APP_COMPAT_DOMAINS: new Set(),
 };
 vm.createContext(box);
+vm.runInContext(fs.readFileSync('domain-utils.js', 'utf8'), box);
 vm.runInContext(
   BG.slice(setStart, isNeverEnd) + String.fromCharCode(10) + BG.slice(fnStart, fnEnd)
     + ';globalThis.norm=normalizeLearnedDomain;globalThis.never=NEVER_BLOCK_DOMAINS;',

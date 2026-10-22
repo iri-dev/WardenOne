@@ -20,6 +20,7 @@
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const BACKGROUND_PATH = path.join(__dirname, '..', '..', 'background.js');
 
@@ -33,7 +34,17 @@ function prelude(source, bands) {
   if (!/^function writeDynamicRules\(/m.test(block)) {
     block += '\nfunction writeDynamicRules(change) { return chrome.declarativeNetRequest.updateDynamicRules(change); }';
   }
-  return 'function ownDynamicRuleBands() { return ' + JSON.stringify(bands || []) + '; }\n' + block + '\n';
+  const policy = fs.readFileSync(path.join(__dirname, '..', '..', 'network-policy.js'), 'utf8');
+  return policy + '\nfunction ownDynamicRuleBands() { return ' + JSON.stringify(bands || []) + '; }\n' + block + '\n';
 }
 
-module.exports = { prelude };
+function installSessionIo(context, source) {
+  const src = source || fs.readFileSync(BACKGROUND_PATH, 'utf8');
+  const start = src.indexOf('function writeSessionRules(change) {');
+  const end = src.indexOf('\n}', start);
+  assert(start >= 0 && end > start);
+  context.WONetworkPolicy = require('./network-policy.js');
+  vm.runInContext(src.slice(start, end + 2), context);
+}
+
+module.exports = { prelude, installSessionIo };

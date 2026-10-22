@@ -536,7 +536,8 @@ function holdsKey(pads, hex) {
   check('the shipped engine takes its key from wo-key and nothing else',
     /woOn\(document,"wo-key",/.test(MIN) && !/"wardenone-handshake"/.test(MIN));
   check('the shipped engine verifies config, verdicts, background replies, the frame relay and dispose',
-    ['"config"', '"safe-browsing"', '"bg-response"', '"frame-clickfix"', '"dispose"'].every((k) => MIN.indexOf('__woVerify(' + k) !== -1));
+    MIN.includes('__woAuth.config(m,__woKey,__woLastSeq)')
+    && ['"safe-browsing"', '"bg-response"', '"frame-clickfix"', '"dispose"'].every((k) => MIN.indexOf('__woVerify(' + k) !== -1));
   check('a verdict that does not verify leaves the request pending',
     /if\(!__woVerify\("safe-browsing",id\+"\\n"\+JSON\.stringify\(m\.result\),m\)\)return;\s*const pending=safeBrowsingPending\.get\(id\)/.test(MIN));
   const minimised = [...MIN.matchAll(/__woAuth\.hmac\(/g)].length;
@@ -548,7 +549,7 @@ function holdsKey(pads, hex) {
   check('the other MAIN security consumers take their key from wo-key too',
     ['anti-redirect.js', 'permission-chain.js', 'cryptominer-detect.js'].every((f) => {
       const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
-      return /woOn\(document, 'wo-key'/.test(src) && !/'wardenone-handshake'/.test(src) && /woVerify\('config', JSON\.stringify\(/.test(src);
+      return /woOn\(document, 'wo-key'/.test(src) && !/'wardenone-handshake'/.test(src) && /__woAuth\.config\(/.test(src);
     }));
   check('the bridge signs config, both relays and the frame relay with one counter',
     ["signed('config'", "signed('safe-browsing'", "signed('bg-response'", "signed('frame-clickfix'"].every((k) => BRIDGE.indexOf(k) !== -1)

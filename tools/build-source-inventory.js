@@ -15,6 +15,7 @@ const ARRAYS = {
   ADSHIELD_NET_LISTS: ['Network-level ad filtering', 'adShield'],
   ADSHIELD_COSMETIC_LISTS: ['Cosmetic (element-hiding) filtering', 'adShield'],
   SUPPLEMENTAL_LIST_SOURCES: ['Supplemental domain lists', 'always'],
+  DOWNLOAD_THREAT_LIST_SOURCES: ['Download Guard payload URLs and file hashes', 'downloadReputation'],
 };
 const DIRECT = {
   OPENPHISH_FEED_URL: ['Optional phishing intelligence', 'openPhish'],
@@ -42,7 +43,7 @@ function runtimeFeeds(background) {
     for (const line of body.split('\n')) {
       const url = line.match(/^\s*(?:url:\s*)?'(https:\/\/[^']+)'\s*(?:,|$)/);
       if ((!url && /^\s*url:/.test(line))
-        || (name !== 'SUPPLEMENTAL_LIST_SOURCES' && line.trim() && !/^\s*\/\//.test(line) && !url)) {
+        || (!/_LIST_SOURCES$/.test(name) && line.trim() && !/^\s*\/\//.test(line) && !url)) {
         throw new Error('Feed discovery requires literal HTTPS addresses; document dynamic generation explicitly: ' + name);
       }
       if (url) add(url[1], purpose, toggle);
@@ -150,7 +151,7 @@ function notices(inv) {
   const lines = ['<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WardenOne — Third-party notices</title><style>body{max-width:70rem;margin:3rem auto;padding:0 1.5rem;font:16px/1.65 system-ui;color:#172033;background:#fafbff}a{color:#1548a5}section{border-top:1px solid #ccc;padding:1rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 monospace}h1,h2{line-height:1.2}</style></head><body>',
     '<h1>Third-party protection sources</h1>',
     '<p>WardenOne uses independently maintained filtering and threat-intelligence lists to identify advertisements, trackers, phishing sites, scams and malicious domains. These sources remain the work of their respective maintainers; WardenOne does not claim ownership of their data.</p>',
-    '<p>Published licenses and separate written permissions provide the bases described below. Specific scope exceptions remain for OpenPhish and aggregators that include it; the <a href="https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md">source review</a> explains them. Those feeds remain configured. This notice does not describe them as cleared for redistribution.</p>',
+    '<p>Published licenses and separate written permissions provide the bases described below. Specific scope exceptions remain for OpenPhish and aggregators that include it, and for the AlienVault OTX portion of the malicious-hash feed; the <a href="https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md">source review</a> explains them. Those feeds remain configured. This notice does not describe them as cleared for redistribution.</p>',
     '<p>Runtime lists are downloaded directly by your browser and parsed, normalized, deduplicated and capped into local domain, URL or selector rules. They are not bundled as raw feeds. Packaged rules are selected, converted and supplemented by WardenOne. Attribution does not imply endorsement. Review date: ' + esc(inv.checkedAt) + '.</p>',
     '<p><a href="CREDITS.md">Additional code, media and data credits</a> · <a href="LICENSE">WardenOne GPL license</a> · <a href="https://github.com/iri-dev/WardenOne">Source, build scripts and filter-source snapshots</a></p>'];
   for (const s of profiles) {

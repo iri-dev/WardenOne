@@ -24,7 +24,23 @@
   global defaults and all saved profiles. Off sites are excluded from
   EyeShield's content-script registration.
 
+- Download Guard now keeps two malware feeds on your device while it is on: URLhaus's exact payload addresses and SHA-256 hashes of recent MalwareBazaar, URLhaus and OTX samples, refreshed with the daily list update. A listed address pauses the download as Dangerous, even on GitHub, Google Drive and other shared hosts that domain lists cannot block; a matching file hash blocks it. File Shield checks the files you pick against the same hashes, and the popup shows both counts.
+
 ### Changed
+
+- Site controls now share domain validation and tenant boundaries. Network-rule writes enforce exception authority below security rules unless the user explicitly chooses an override. Page modules share configuration verification; Twitch no longer accepts public handshakes or page globals as settings.
+
+- The off switch now reports failed dynamic-rule removal and retries it instead of caching an incomplete shutdown as successful. Applied-state caches commit only after the required operations complete, and Health identifies blocking that may remain active after switching off.
+
+- Tracker Learner observations, proposals, approvals and per-site controls now retain shared-hosting tenant identities. Stored platform-wide targets are withdrawn, and approved rules cannot cover unrelated tenants.
+
+- Security feeds can now block malicious resources on otherwise reputable infrastructure. Infrastructure and login compatibility allows sit below security blocks, while ad/tracker compatibility and safeguards against platform-wide feed targets remain in place.
+
+- Context-menu and learned blocks now preserve shared-hosting tenant boundaries. Cold-start cleanup removes saved public-suffix targets without guessing the original tenant; typed host/path patterns keep their explicit scope.
+
+- Malware-hash reloads now publish a replacement snapshot after reading the bundled and stored lists. Successful list changes withdraw deleted hashes; failed reads retain that source's last good data, and overlapping reloads remain ordered.
+
+- YouTube adblock now verifies signed configuration updates and rejects forged handshakes, invalid signatures and replayed messages. Normal protection toggles use the existing authenticated bridge.
 
 - Minimum-Chrome CI uses Windows 2022 with software ANGLE and checks Canvas/WebGL rendering before the extension suites. Browser startup allows slow worker registration and reports target details on failure.
 
@@ -97,6 +113,7 @@
 
 ### Fixed
 
+- Parked domains and other brand-new landing pages no longer show "Suspicious site behavior". A Caution-level notice now waits until the page offers somewhere to type, so it still appears when a new domain asks for a login, card or other details. Stronger findings are unchanged.
 - The bundled hash list is now labelled as EICAR-only diagnostic coverage. Download Shield skips automatic re-fetches until additional signatures are loaded, and File Shield identifies EICAR as a diagnostic result.
 - DNS filtering checks now show partial coverage in amber and no detected coverage in red.
 - Clarified the Tabs and activeTab permission explanations following a browser compatibility review.

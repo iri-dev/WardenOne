@@ -157,6 +157,7 @@ function loadDownloadGuard() {
     windowsCreate: async () => ({ ok: false }),
     extensionUiAllowed: async () => false,
   };
+  sandbox.localGetStrict = key => sandbox.localGet(key);
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync('domain-utils.js', 'utf8'), sandbox);
@@ -586,7 +587,10 @@ async function main() {
   console.log('[ok] download guard tests passed');
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+module.exports = { loadDownloadGuard };
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}

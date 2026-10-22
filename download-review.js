@@ -164,7 +164,9 @@ function formatHashReputation(review) {
     if (hashRep.local && hashRep.diagnostic && hashRep.hit) {
       parts.push('Local SHA-256 list: EICAR diagnostic match');
     } else if (hashRep.local && hashRep.checked && hashRep.ok && hashRep.hit) {
-      parts.push('Local malware URL-content database: known-malicious match');
+      parts.push(hashRep.matchedList === 'feed'
+        ? 'Malware hash feed: URL-content hash matches a known sample'
+        : 'Local malware URL-content database: known-malicious match');
     } else if (hashRep.local && hashRep.checked && hashRep.ok) {
       parts.push('Local malware URL-content database: no match');
     } else if (hashRep.skipped) {

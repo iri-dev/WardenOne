@@ -3,12 +3,12 @@
   "note": "Generated from runtime constants, embedded build provenance and docs/source-licensing.json. Edit policy metadata, not this file. Counts include optional configured feeds; license and permission counts can overlap.",
   "checkedAt": "2026-10-20",
   "summary": {
-    "runtimeFeeds": 38,
-    "publishers": 24,
-    "publishedLicenseCoveredFeeds": 32,
+    "runtimeFeeds": 40,
+    "publishers": 25,
+    "publishedLicenseCoveredFeeds": 33,
     "writtenPermissionFeeds": 7,
-    "resolvedFeeds": 34,
-    "unresolvedFeeds": 4,
+    "resolvedFeeds": 35,
+    "unresolvedFeeds": 5,
     "buildOnlyInputs": 7,
     "redistributedArtifacts": 20
   },
@@ -390,7 +390,7 @@
       ],
       "kind": "fetched",
       "policyId": "urlhaus",
-      "name": "malware-filter URLhaus hosts",
+      "name": "malware-filter URLhaus hosts and online URLs",
       "publisher": "Ming Di Leom / malware-filter",
       "home": "https://gitlab.com/malware-filter/urlhaus-filter",
       "license": {
@@ -421,8 +421,8 @@
       "evidence": [
         {
           "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md",
-          "documentSha256": "6b19cb313a6c234ad851ee253ef8ef444de784481fe66622daac745512f4ab40",
-          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+          "documentSha256": "0166b8144a53b9a114440ee1ebac612d72d9cab9dc26b01b76014245c867fdeb",
+          "finding": "Published basis for the exact lists; the README's license section (CC0-1.0 and MIT) covers the hosts and online-URL outputs alike. File-specific declarations take precedence over repository defaults."
         }
       ],
       "upstream": [
@@ -430,7 +430,7 @@
           "name": "URLhaus / abuse.ch",
           "url": "https://urlhaus.abuse.ch/",
           "license": "CC0-1.0",
-          "note": ""
+          "note": "As labelled by malware-filter. abuse.ch's current terms state CC0 only for Feodo Tracker, SSL Blacklist and YARAify and make URLhaus free for not-for-profit use, which covers WardenOne's noncommercial use."
         },
         {
           "name": "Tranco",
@@ -439,7 +439,68 @@
           "note": "False-positive exclusion input, not republished as ranking data."
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-10-22"
+    },
+    {
+      "url": "https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-online.txt",
+      "purposes": [
+        "Download Guard payload URLs and file hashes"
+      ],
+      "toggles": [
+        "downloadReputation"
+      ],
+      "kind": "fetched",
+      "policyId": "urlhaus",
+      "name": "malware-filter URLhaus hosts and online URLs",
+      "publisher": "Ming Di Leom / malware-filter",
+      "home": "https://gitlab.com/malware-filter/urlhaus-filter",
+      "license": {
+        "type": "published-license",
+        "id": "MIT OR CC0-1.0",
+        "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2023 Ming Di Leom; URLhaus / abuse.ch.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md",
+          "documentSha256": "0166b8144a53b9a114440ee1ebac612d72d9cab9dc26b01b76014245c867fdeb",
+          "finding": "Published basis for the exact lists; the README's license section (CC0-1.0 and MIT) covers the hosts and online-URL outputs alike. File-specific declarations take precedence over repository defaults."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "URLhaus / abuse.ch",
+          "url": "https://urlhaus.abuse.ch/",
+          "license": "CC0-1.0",
+          "note": "As labelled by malware-filter. abuse.ch's current terms state CC0 only for Feodo Tracker, SSL Blacklist and YARAify and make URLhaus free for not-for-profit use, which covers WardenOne's noncommercial use."
+        },
+        {
+          "name": "Tranco",
+          "url": "https://tranco-list.eu/",
+          "license": "MIT",
+          "note": "False-positive exclusion input, not republished as ranking data."
+        }
+      ],
+      "checkedAt": "2026-10-22"
     },
     {
       "url": "https://malware-filter.gitlab.io/vn-badsite-filter/vn-badsite-filter-hosts.txt",
@@ -1681,6 +1742,84 @@
       "checkedAt": "2026-10-19"
     },
     {
+      "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/full-hash-sha256-aa.txt",
+      "purposes": [
+        "Download Guard payload URLs and file hashes"
+      ],
+      "toggles": [
+        "downloadReputation"
+      ],
+      "kind": "fetched",
+      "policyId": "malicious-hash",
+      "name": "malicious-hash SHA-256 feed",
+      "publisher": "Romain Marcoux",
+      "home": "https://github.com/romainmarcoux/malicious-hash",
+      "license": {
+        "type": "published-license",
+        "id": "MIT",
+        "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2025 Romain MARCOUX; MalwareBazaar and URLhaus / abuse.ch; AlienVault OTX community pulses.",
+      "compliance": {
+        "status": "clarification-required",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material.",
+          "The MIT grant covers the aggregator's own work. The OTX EULA prohibits republishing any portion of OTX, so the MIT grant does not establish rights to the OTX-derived hashes."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing keeps truncated SHA-256 prefixes for local lookups only; the raw runtime feed is not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": [
+          "MH-1"
+        ]
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/LICENSE",
+          "documentSha256": "e1940949a700d0b62f9f195673d29202813f97494bfe89fb57d273eb7f004390",
+          "finding": "Repository-wide MIT grant covering the published hash files; the README names the aggregated upstream sources."
+        },
+        {
+          "url": "https://www.levelblue.com/terms/otx-eula",
+          "finding": "OTX is free for non-commercial end use. Section 2.3 prohibits republishing or distributing all or any portion of OTX and commercial exploitation; Section 8 grants no further rights. The file does not mark which hashes came from OTX, so they cannot be removed locally."
+        },
+        {
+          "url": "https://abuse.ch/terms-of-use/",
+          "finding": "Current terms state CC0 only for Feodo Tracker, SSL Blacklist and YARAify. MalwareBazaar and URLhaus are free for not-for-profit use; commercial use may require a Spamhaus subscription. WardenOne's use is free and noncommercial."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "MalwareBazaar / abuse.ch",
+          "url": "https://bazaar.abuse.ch/",
+          "license": "abuse.ch Terms of Use",
+          "note": "Samples from the last 120 days. Free for not-for-profit use."
+        },
+        {
+          "name": "URLhaus / abuse.ch",
+          "url": "https://urlhaus.abuse.ch/",
+          "license": "abuse.ch Terms of Use",
+          "note": "Payloads fetched from malicious URLs in the last month. Free for not-for-profit use."
+        },
+        {
+          "name": "AlienVault OTX",
+          "url": "https://otx.alienvault.com/",
+          "license": "Scope clarification pending",
+          "note": "Hashes from two public community pulses, as selected by the aggregator; see MH-1."
+        }
+      ],
+      "checkedAt": "2026-10-22"
+    },
+    {
       "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
       "purposes": [
         "Supplemental domain lists"
@@ -2556,7 +2695,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "1fd7fe18bf6b6f5bee602ff8a8e7514205185e62a4c824e184acae2ef0d57f77"
+      "sha256": "7ba1756dfd39e9618b67aeddc703c9fedb21a038bfb756974da0ecfe5f73ae00"
     },
     {
       "file": "rules-easyprivacy.json",
@@ -2641,7 +2780,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "71b959cb70c5a770ae0a7e03385cbe9367f5e361c414befc25317a6cf003273b"
+      "sha256": "15aef03f34977f47d25f27964f728d06e00bf4345345f2c43e701e9f8b97da0d"
     },
     {
       "file": "domain-utils-isolated.js",
@@ -2664,7 +2803,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "71b959cb70c5a770ae0a7e03385cbe9367f5e361c414befc25317a6cf003273b"
+      "sha256": "15aef03f34977f47d25f27964f728d06e00bf4345345f2c43e701e9f8b97da0d"
     },
     {
       "file": "spotify-silent-1s.mp4",
@@ -2706,7 +2845,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "efaeaa9ee16727b07e4f86bd8be2881e55655e56feac8eef93f50a266c2d9af3"
+      "sha256": "3939ac3a6a033fd50b3372262b2f09ae2a536eb121830137c5db5e2f8ea4cfc9"
     },
     {
       "file": "rules-trackers.json",
@@ -2769,7 +2908,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "5781390a13e3c7d33970489541f4be7185b58f40ca5fc9ae30a0594e37ebb994"
+      "sha256": "f8adeb455cb1138ff6cf271bd04f66c99043bc9c487bf59857ba546cbf1bf485"
     },
     {
       "file": "cryptominer-domains.json",
@@ -2875,7 +3014,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "4988c72d843ef2d14b372acd5c0451767686c7b993fd0bc37dae15286b812346"
+      "sha256": "387a0761153fa60ffd95cb285dc5fdeef43ec79cd5e5da02a34a4e42aab0ff56"
     },
     {
       "file": "rules-grabber-malware-navigation.json",
@@ -2897,7 +3036,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "e22cb286317674539f8878c2c896ff60f98cb4342f0979aa862761b761ade642"
+      "sha256": "31bd7d5e456da3d3fc8d431cc4ac9af038c276127154abc309406a7a10bef2f2"
     },
     {
       "file": "rules-grabber-navigation.json",
@@ -2919,7 +3058,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "40deca412948fde42a584b0fc550c5f2f94eaffa5c786db26b1544dcfab4d40b"
+      "sha256": "2a35528d4dee3411bde86fc04c1b6dcde865844f6e1d6a6a151eb892b7801ed2"
     },
     {
       "file": "rules-grabber-resources.json",
@@ -2941,7 +3080,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "2e5972f081921bd273a21b70714e2a7a0e1387d629821590e7e9eb591d9def19"
+      "sha256": "fa4c46ccbba325e2bd642fd8bd995545976ca9f7273880d22b1119ee8a64f61c"
     },
     {
       "file": "rules-spotify-media.json",

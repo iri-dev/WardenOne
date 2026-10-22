@@ -25,6 +25,9 @@ The owner chose not to contact Dandelion Sprout through GitHub Discussions.
 That choice remains in effect. Dandelicence and credited upstream terms supply
 the basis for the documented runtime use; no Discussion is requested.
 
-The remaining action is narrowly described under OP-1, PA-1 and FL-1 in the
-source review. Review relevant existing replies first. No new outreach has been
-sent or scheduled, and no additional maintainer contact is currently proposed.
+The remaining action is narrowly described under OP-1, PA-1, FL-1 and MH-1 in the
+source review. Review relevant existing replies first. For MH-1, a request to
+Romain Marcoux (malicious-hash) was drafted on 22 October 2026 for the owner to
+send through the LinkedIn contact his GitHub profile names; it asks for an
+OTX-free file or the basis for the OTX portion. No reply is inferred until one
+is recorded here. No other maintainer contact is currently proposed.

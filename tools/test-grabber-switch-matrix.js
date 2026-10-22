@@ -130,10 +130,10 @@ async function checkLearnedScope() {
     { resources: false, warnings: false, malware: false, types: [], priority: 2000 },
     { resources: true, warnings: false, malware: false,
       types: ['sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket'], priority: 2000 },
-    { resources: false, warnings: true, malware: false, types: [], priority: 1000 },
+    { resources: false, warnings: true, malware: false, types: [], priority: 2000 },
     { resources: false, warnings: false, malware: true, types: ['main_frame'], priority: 2000 },
     { resources: true, warnings: true, malware: true,
-      types: ['sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket', 'main_frame'], priority: 1000 },
+      types: ['sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket', 'main_frame'], priority: 2000 },
   ];
   for (const state of variants) {
     Object.assign(config, { blockGrabberResources: state.resources,

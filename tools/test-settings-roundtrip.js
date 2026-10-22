@@ -43,8 +43,9 @@ function grabFn(src, name) {
 /* the popup's tables and the two functions, as shipped */
 const TABLES = between(POPUP, 'const DEFAULTS = {', '\nconst SITE_OVERRIDE_SCOPE = {', 'the popup tables');
 const SECRET = between(POPUP, 'const SECRET_FIELD_RE', '\n', 'the secret pattern');
-const ctx = { Object, Array, Number, String, JSON, RegExp, WOEyeShieldProfiles: require('../eyeshield-profiles.js') };
+const ctx = { URL, Object, Array, Number, String, JSON, RegExp, WOEyeShieldProfiles: require('../eyeshield-profiles.js') };
 vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), ctx);
 vm.runInContext(TABLES + '\n' + SECRET + '\n' + grabFn(POPUP, 'sanitizeSiteOverrides') + '\n' + grabFn(POPUP, 'exportableSettings') + '\n'
   + grabFn(POPUP, 'sanitizeImportedSettings') + '\nglobalThis.api = { DEFAULTS, IMPORT_SCHEMA, IMPORT_ONLY_DEFAULTS, exportableSettings, sanitizeImportedSettings, sanitizeSiteOverrides };', ctx);
 const api = ctx.api;

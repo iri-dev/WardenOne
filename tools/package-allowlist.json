@@ -72,6 +72,7 @@
   "mail-shield.js",
   "malware-hashes.json",
   "manifest.json",
+  "network-policy.js",
   "network.html",
   "network.js",
   "notification-manager.js",

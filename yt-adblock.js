@@ -16,7 +16,6 @@
   var realFetch = self.fetch;
   var realParse = JSON.parse;
   var realStringify = JSON.stringify;
-  var woConfigToken = null;
   var woMasterEnabled = true;
   var cosmeticStyle = null;
   var installSsapPushCapture = function () {};
@@ -25,6 +24,7 @@
   /* AdShield reports the ad breaks it strips to the Site Dashboard's count, signed like every
      other page-world report so a page cannot inflate it: the bridge hands over its key at
      document_start, before any page script can run, and only the HMAC pads are kept. */
+  /* AUTH-BEGIN: shared by MAIN-world receivers and the isolated bridge. */
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
     const U8=Uint8Array,U32=Uint32Array,D="0123456789abcdef";
@@ -127,19 +127,70 @@
     function eventText(src,seq,type,detail){
       return"event\n"+String(src)+"\n"+String(seq)+"\n"+String(type)+"\n"+canon(detail,0)
     }
-    return{hmac:hmac,same:same,key:key,canon:canon,eventText:eventText}
+    const parse=JSON.parse,stringify=JSON.stringify,isSafeInteger=Number.isSafeInteger,isArray=Array.isArray;
+    function config(message,pads,lastSeq){
+      try{
+        const seq=message.seq;
+        if(!pads||!isSafeInteger(seq)||seq<=lastSeq)return null;
+        const payload=stringify(message.overrides);
+        if(!payload||payload.length>1048576)return null;
+        const overrides=parse(payload);
+        if(!overrides||typeof overrides!=="object"||isArray(overrides))return null;
+        if(!same(message.mac,hmac(pads,seq+"\nconfig\n"+payload)))return null;
+        return{seq:seq,overrides:overrides}
+      }catch(_){return null}
+    }
+    function pageCouldHaveRun(doc){
+      try{
+        if(doc.readyState!=="loading"||doc.body)return true;
+        const root=doc.documentElement;
+        if(!root)return false;
+        const all=root.getElementsByTagName("*");
+        if(all.length>64)return true;
+        for(let i=-1;i<all.length;i++){
+          const el=i<0?root:all[i];
+          if(i>=0&&!/^(?:head|meta|title|link|style|base)$/.test(String(el.localName||"").toLowerCase()))return true;
+          for(let j=0;el.attributes&&j<el.attributes.length;j++)if(/^on/i.test(String(el.attributes[j].name||"")))return true;
+        }
+        return false
+      }catch(_){return true}
+    }
+    function configReceiver(){
+      let token=null,pads=null,lastSeq=0;
+      return{
+        acceptKey(detail,doc){
+          if(pads||!detail||typeof detail.token!=="string"||!detail.token||typeof detail.key!=="string"||!/^[0-9a-f]{64}$/i.test(detail.key)||pageCouldHaveRun(doc))return false;
+          token=detail.token,pads=key(detail.key);
+          return true
+        },
+        read(event,win){
+          try{
+            const message=event.data;
+            if(event.source!==win||!message||message.source!=="wardenone"||message.kind!=="config"||token===null||message.token!==token)return null;
+            const verified=config(message,pads,lastSeq);
+            if(!verified)return null;
+            lastSeq=verified.seq;
+            return verified.overrides
+          }catch(_){return null}
+        }
+      }
+    }
+    return{hmac:hmac,same:same,key:key,canon:canon,eventText:eventText,config:config,configReceiver:configReceiver,pageCouldHaveRun:pageCouldHaveRun}
   })();
+  /* AUTH-END */
   var woKey = null;
   var woToken = "";
+  var configReceiver = __woAuth.configReceiver();
   var adshieldEventSeq = 0;
   var adsCountedByVideo = Object.create(null);
+
   try {
     document.addEventListener("wo-key", function (e) {
       var d = e && e.detail;
-      if (woKey || !d || typeof d.token !== "string" || !d.token || typeof d.key !== "string" || !d.key) return;
+      if (!configReceiver.acceptKey(d, document)) return;
       woToken = d.token;
       woKey = __woAuth.key(d.key);
-    });
+    }, true);
   } catch (_) {}
 
   /* One count per video: the same player response can pass through JSON.parse and the fetch
@@ -196,16 +247,8 @@
 
   try {
     window.addEventListener("message", function (event) {
-      if (event.source !== window) return;
-      var message = event.data;
-      if (!message || typeof message !== "object") return;
-      if (message.source === "wardenone-handshake" && typeof message.token === "string" && woConfigToken === null) {
-        woConfigToken = message.token;
-        return;
-      }
-      if (message.source !== "wardenone" || message.kind !== "config" || !message.overrides) return;
-      if (woConfigToken === null || message.token !== woConfigToken) return;
-      setMasterEnabled(message.overrides.enabled !== false);
+      var overrides = configReceiver.read(event, window);
+      if (overrides) setMasterEnabled(overrides.enabled !== false);
     });
   } catch (_) {}
 
@@ -1107,4 +1150,5 @@
 
   applyCosmetics();
   window.__wardenOneYouTubeReadyVersion = YT_MODULE_VERSION;
+  try { document.dispatchEvent(new CustomEvent("wo-bridge-replay")); } catch (_) {}
 })();

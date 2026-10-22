@@ -121,6 +121,14 @@ displaying the page makes no network request.
   writes `community/blocklist.json`; WardenOne consumes `primary_active/domains.txt`.
   OpenPhish’s appearance among Community credits is not treated as proof that
   the consumed curated Primary feed imports that aggregate.
+- **malicious-hash (Romain Marcoux):** the repository publishes an
+  [MIT grant](https://github.com/romainmarcoux/malicious-hash/blob/main/LICENSE),
+  retained in `licenses/MIT-NOTICES.txt`. Its README names MalwareBazaar,
+  URLhaus and two public AlienVault OTX community pulses as inputs. abuse.ch’s
+  [current terms](https://abuse.ch/terms-of-use/) make MalwareBazaar and URLhaus
+  free for not-for-profit use, which covers WardenOne. The OTX portion creates
+  MH-1 below. WardenOne downloads the SHA-256 file directly and stores 128-bit
+  prefixes for local matching; it redistributes no hashes.
 - **TMAFE:** [MPL 2.0](https://github.com/TMAFE/anti-grabify/blob/master/LICENSE)
   applies to Anti-Grabify. The original list link, MPL text and source-availability
   explanation are supplied. Downloading and locally parsing it does not relicense
@@ -128,6 +136,8 @@ displaying the page makes no network request.
 - **malware-filter:** [URLhaus](https://gitlab.com/malware-filter/urlhaus-filter#license)
   and [VN Badsite](https://gitlab.com/malware-filter/vn-badsite-filter#license)
   publish MIT/CC0 grants and identify URLhaus and ChongLuaDao data as CC0. The
+  URLhaus grant covers both outputs WardenOne reads: the hosts list for DNR rules
+  and the online-URL list, which Download Guard keeps only as local fingerprints. The
   [Phishing filter](https://gitlab.com/malware-filter/phishing-filter#license)
   distinguishes MIT/CC0 `src/` code from CC BY-SA 4.0 filter data. Its OpenPhish
   input creates OP-1 below; the public filter license is identified, not erased.
@@ -191,7 +201,7 @@ and historical incident evidence in `CREDITS.md` are preserved.
 ## Specific exceptions, not a new outreach campaign
 
 No feed, security permission or protection is removed by this review. The Store
-rights gate blocks these **four exact feeds** instead of demanding personal
+rights gate blocks these **five exact feeds** instead of demanding personal
 approval for every open license. The normal development gate validates their
 documented status without falsely clearing the Store package.
 
@@ -200,6 +210,7 @@ documented status without falsely clearing the Store package.
 | OP-1 | `openphish/public_feed/.../feed.txt`; malware-filter `phishing-filter-hosts.txt`; Phishing Army; flinteger malicious domains | [OpenPhish’s own repository](https://github.com/openphish/public_feed) refers to its [usage terms](https://openphish.com/terms.html). These restrict personal/research and commercial/product use and third-party disclosure/derivative sharing. Public availability or an aggregator’s license does not establish a grant for OpenPhish’s portion. A reply in the existing outreach thread can establish the relevant direct/indirect local security-use scope. This is a scope question, not a declaration that every personal direct download is unlawful. |
 | PA-1 | Phishing Army and its inclusion in flinteger | The [current nine-provider manifest](https://github.com/drego85/PhishingArmyCore/blob/master/SOURCES.md) includes urlscan search results. [urlscan’s terms](https://urlscan.io/terms/) restrict copying, derivative/distribution use and systematic extraction; the available record does not establish the scope of its consent for this downstream domain feed. Iris already contacted urlscan. Andrea’s grant for Phishing Army’s own work remains intact. |
 | FL-1 | flinteger `malicious.domains.txt` | Its [active inputs](https://github.com/flinteger/dnss-blocklists/blob/release/sources/malicious.json) include a Mandiant APT1 Appendix D mirror that still returns data; its [README](https://bitbucket.org/ethanr/dns-blacklists/raw/master/README.md) supplies no reuse grant for the report compilation. No publisher statement resolving that input’s rights was found. This is narrower than reopening flinteger’s own conditional permission. |
+| MH-1 | romainmarcoux `malicious-hash/full-hash-sha256-aa.txt` | The [README](https://github.com/romainmarcoux/malicious-hash) lists two AlienVault OTX community pulses among its inputs. The [OTX EULA](https://www.levelblue.com/terms/otx-eula) makes OTX free for non-commercial use but prohibits republishing or distributing any portion of OTX, so the aggregator’s MIT grant does not establish rights to those hashes. The file does not mark each hash’s source, so the OTX portion cannot be removed locally. Resolved by an OTX-free file from the publisher (MalwareBazaar and URLhaus only) or a recorded OTX grant. Outreach to the publisher was drafted on 22 October 2026 for the owner to send through the LinkedIn contact his GitHub profile names. |
 
 PhishStats restricts redistribution of **raw feeds**. WardenOne does not query
 it or redistribute its raw feed; that clause alone is not asserted to prohibit
@@ -253,7 +264,7 @@ Run `node tools/build-source-inventory.js` after a source/policy change and
 missing policy, URL drift, stale entries, collapsed permission scopes, missing
 notices, undocumented manifest rule data and absent compiler source. The Store
 rights gate additionally requires implemented conditions and matching artifact
-hashes and continues to fail on the four documented feed exceptions.
+hashes and continues to fail on the five documented feed exceptions.
 
 No extra request or permission grant is inferred from outreach alone. No commit,
 push, website publication or Store submission is part of this local review.

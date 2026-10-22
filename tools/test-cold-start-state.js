@@ -63,6 +63,7 @@ function loadLearnedStore(options = {}) {
     applyLearnedRules: () => {},
     refreshListMetaCounts: () => {},
     normalizeLearnedDomain: (v) => String(v || '').toLowerCase(),
+    normalizeUserBlockDomain: (v) => String(v || '').toLowerCase(),
     localSet: (obj) => { state.writes.push(JSON.parse(JSON.stringify(obj.wardenone_learned))); return Promise.resolve(); },
     chrome: {
       storage: {

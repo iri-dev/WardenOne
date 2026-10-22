@@ -575,13 +575,23 @@ locally and sends only the hash. It cannot read the file Chrome saved, so the re
 not be the same. WhoisXML domain registration, domain reputation and threat intelligence are also
 separate choices that use the same key.
 
-The bundled local SHA-256 list contains only the **EICAR antivirus test signature**. It is a
-diagnostic mechanism and supplies no real-world malware-signature coverage. Download Shield
-skips automatic URL re-fetches for that seed alone. Additional signatures can be supplied through
-the existing `wardenone_malware_hashes` local-storage key; no maintained hash feed is included.
-With additional signatures, local checks may re-fetch eligible reviewed downloads up to 50 MB.
-The hash describes that response, which may differ from the saved file. Other download checks
-and the opt-in VirusTotal lookup are separate protections.
+Download Shield also keeps two malware feeds on your device, refreshed with the daily list update
+while it is on: URLhaus's exact payload addresses (through malware-filter) and SHA-256 hashes of
+recent samples from MalwareBazaar, URLhaus and OTX (through malicious-hash). Both are stored as
+truncated fingerprints and matched locally, so nothing about your downloads is sent anywhere for
+them. They catch what a domain blocklist can't: a payload on GitHub, Google Drive or another
+shared host.
+
+- **A listed address** pauses the download as Dangerous. URLhaus sometimes lists official tools
+  that attackers also fetch, so you can still continue on purpose.
+- **A matching file hash** blocks the download. To get that hash, Download Shield re-fetches the
+  eligible risky download, up to 50 MB, from its address. That response may differ from the file
+  Chrome saved, so a miss proves nothing; File Shield below checks a file's real bytes.
+
+The bundled `malware-hashes.json` holds only the **EICAR antivirus test signature**, which tests
+the lookup and covers nothing real. Until the hash feed arrives, Download Shield makes no automatic
+re-fetch for that seed alone. You can add your own signatures through the `wardenone_malware_hashes`
+local-storage key. The opt-in VirusTotal lookup is a separate protection.
 
 The popup also has a manual **VirusTotal URL scanner**. Paste a link and press **Scan URL with
 VirusTotal** to check its report using your saved key; this works without turning on automatic
@@ -623,7 +633,7 @@ flowchart TB
     Pick["File you hand it"] --> Format["Identify the real format from its signature"]
     Format --> Parse["Parse the structure — never open, extract or run"]
     Parse --> Inspect["Inspect what is inside: program imports · script lines · archive index · document actions"]
-    Inspect --> Hash["Hash locally and compare with configured signatures and the EICAR diagnostic seed"]
+    Inspect --> Hash["Hash locally and compare with the malware hash feed and any signatures you added"]
     Hash --> Report["Evidence-based report — findings, not a verdict"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
     class Pick,Format,Parse,Inspect,Hash,Report warden
@@ -643,7 +653,7 @@ extracted or run.
 - **Shortcuts.** The actual command a Windows `.lnk` file would run when you double-click it.
 - **Archives.** The index gets checked without extracting anything. Executables, path traversal, encryption, nesting, macros, files that claim they'll expand to something enormous.
 - **Documents.** Office macros and PDF actions that can run scripts, launch programs or carry embedded files.
-- **SHA-256.** Checked offline against the EICAR diagnostic seed and any additional local signatures. The bundled seed alone provides no real-world malware coverage, and a non-match does not establish safety.
+- **SHA-256.** Checked offline against the malware hash feed Download Shield keeps, any signatures you added and the EICAR test seed. A match means this exact file is a known sample. Most malware is new or repacked, so a non-match does not establish safety.
 - **Optional VirusTotal lookup.** There's a button for this, but it only sends the SHA-256 (with your own API key) and only when you press it. The file and its name never leave your computer.
 
 You can drop a bunch of files or a whole folder at once, and copy the report to send back to

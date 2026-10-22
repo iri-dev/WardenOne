@@ -195,6 +195,15 @@ The [source review](https://github.com/iri-dev/WardenOne/blob/main/docs/source-r
 identifies specific upstream scope exceptions; public availability alone is not
 treated as permission to redistribute a feed. These notices add no background requests.
 
+While Download Guard is on, two of those lists are its own: URLhaus's exact malware
+payload addresses (from `malware-filter.gitlab.io`) and SHA-256 hashes of known malware
+samples (from `raw.githubusercontent.com`). They are stored as fingerprints and compared on
+your device; nothing about your downloads is sent for them. Once the hash list is loaded,
+Download Guard may download a risky file it is already reviewing a second time, up to
+50 MB, from the same address and without cookies, to hash it locally. That site therefore
+sees a second request from your IP address. The hash stays on your device unless you
+also turned on the VirusTotal hash lookup described below.
+
 ### 1b. Browser release check (when you open the popup)
 
 Update Guardian asks your browser maker for its current public Stable release when you
