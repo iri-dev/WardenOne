@@ -41,6 +41,39 @@ const SCANNER = sourceBetween(
   'catch(e){log("behavioral_scan_failed"',
 ) + 'catch(e){this.__scanError=e}';
 
+// The shipped "somewhere to type" selector, read by a matcher for the subset it uses:
+// tag, [attr], [attr=value] and :not([attr=value]), comma-separated.
+const ENTRY_SELECTOR = (() => {
+  const m = /BEHAVE_ENTRY_SELECTOR="([^"]+)"/.exec(CONTENT);
+  assert(m, 'missing runtime marker: BEHAVE_ENTRY_SELECTOR');
+  return m[1];
+})();
+
+function matchesSelector(el, selector) {
+  return selector.split(',').some((part) => {
+    const tag = /^[a-z]+/i.exec(part);
+    if (tag && tag[0].toLowerCase() !== el.tag) return false;
+    const rest = part.slice(tag ? tag[0].length : 0);
+    const re = /(:not\()?\[([a-z-]+)(?:=([^\]]+))?\]\)?/gi;
+    let consumed = 0;
+    let m;
+    let ok = true;
+    while ((m = re.exec(rest))) {
+      consumed += m[0].length;
+      const has = Object.prototype.hasOwnProperty.call(el.attrs, m[2]);
+      const want = m[3] === undefined ? null : m[3].replace(/^["']|["']$/g, '').toLowerCase();
+      const hit = want === null ? has : has && String(el.attrs[m[2]]).toLowerCase() === want;
+      if (m[1] ? hit : !hit) ok = false;
+    }
+    if (consumed !== rest.length) throw new Error('selector syntax this test cannot read: ' + part);
+    return ok;
+  });
+}
+
+function element(tag, attrs) {
+  return { tag, attrs: attrs || {}, matches(selector) { return matchesSelector(this, selector); } };
+}
+
 function runScan(options) {
   const opts = options || {};
   const url = new URL(opts.page);
@@ -48,6 +81,8 @@ function runScan(options) {
   const logs = [];
   const timers = [];
   const ageRequests = [];
+  const elements = (opts.elements || []).slice();
+  const listeners = {};
 
   class HTMLCanvasElement {
     toDataURL() { return 'data:,'; }
@@ -94,7 +129,8 @@ function runScan(options) {
     getComputedStyle() { return { display: 'block', visibility: 'visible', opacity: '1' }; },
     document: {
       querySelectorAll() { return []; },
-      addEventListener() {},
+      querySelector(selector) { return elements.find((el) => el.matches(selector)) || null; },
+      addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
     },
     setTimeout(fn) { timers.push(fn); return timers.length; },
     clearTimeout() {},
@@ -138,8 +174,13 @@ function runScan(options) {
   return {
     logs,
     risk: sandbox.WO.__pageRisk || null,
-    warnings: logs.filter((entry) => entry.type === 'behavioral_risk'),
+    get warnings() { return logs.filter((entry) => entry.type === 'behavioral_risk'); },
     ageRequests,
+    // A field the page renders later, then the visitor moving into it.
+    focus(el) {
+      elements.push(el);
+      for (const fn of (listeners.focusin || [])) fn({ type: 'focusin', target: el, composedPath: () => [el] });
+    },
   };
 }
 
@@ -240,6 +281,75 @@ test('an established domain is not warned about below Suspicious', () => {
   assert.strictEqual(result.warnings.length, 0,
     'a 900-day-old domain warned at Caution: '
       + JSON.stringify(result.risk && result.risk.behavioralReasons));
+});
+
+// A registrar's parking lander on a 12-day-old domain, measured live: the registrar's analytics
+// beacon fires before any click, so it scores Caution with nowhere on the page to type.
+const PARKED_PAGE = {
+  page: 'https://wardenone.com/lander',
+  requests: [
+    'https://csp.secureserver.net/eventbus/web?clientid=b18ef4f046435b64a469b32c3c1c20a3',
+    'https://api.aws.parking.godaddy.com/v1/parking/landers/wardenone.com?trafficTarget=gd',
+  ],
+  ageDays: 12,
+};
+
+test('a parked page on a brand-new domain is not called suspicious', () => {
+  const blank = runScan(PARKED_PAGE);
+  assert.strictEqual(blank.warnings.length, 0, 'a parked lander raised Suspicious site behavior');
+  assert.strictEqual(blank.risk && blank.risk.behavioralLevel, 'Caution',
+    'the parked fixture no longer reaches Caution, so it tests nothing');
+  assert.strictEqual(blank.risk.newDomain, true, 'the new-domain fact other checks read was dropped');
+
+  const controlsOnly = runScan(Object.assign({
+    elements: [element('input', { type: 'hidden' }), element('input', { type: 'submit' }),
+      element('button'), element('a', { href: '/buy' }), element('select')],
+  }, PARKED_PAGE));
+  assert.strictEqual(controlsOnly.warnings.length, 0, 'buttons and hidden inputs counted as somewhere to type');
+});
+
+test('the held notice arrives when the visitor moves into a field', () => {
+  const result = runScan(PARKED_PAGE);
+  result.focus(element('button'));
+  assert.strictEqual(result.warnings.length, 0, 'focusing a button released the notice');
+  result.focus(element('input', { type: 'email' }));
+  assert.strictEqual(result.warnings.length, 1, 'a field rendered after load never released the notice');
+  assert.strictEqual(result.warnings[0].detail.level, 'Caution');
+});
+
+test('a brand-new domain asking for credentials is still warned at Caution', () => {
+  const result = runScan(Object.assign({ elements: [element('input', { type: 'password' })] }, PARKED_PAGE));
+  assert.strictEqual(result.warnings.length, 1, 'a fresh domain with a login field was not warned');
+  assert.strictEqual(result.warnings[0].detail.level, 'Caution');
+});
+
+test('Suspicious and hard evidence does not wait for a field', () => {
+  const result = runScan({
+    page: 'https://a8f31c9d0b2e.secure-login.cfd/verify',
+    requests: ['https://collector.example.net/log?ip=1'],
+    ageDays: 3,
+    fingerprintProbes: 1,
+  });
+  assert.strictEqual(result.warnings.length, 1, 'a Suspicious page with no field was held back');
+  assert.notStrictEqual(result.warnings[0].detail.level, 'Caution');
+});
+
+test('the entry selector counts typing surfaces and nothing else', () => {
+  const typing = [['input', {}], ['input', { type: 'text' }], ['input', { type: 'email' }],
+    ['input', { type: 'password' }], ['input', { type: 'search' }], ['input', { type: 'tel' }],
+    ['input', { type: 'file' }], ['textarea', {}], ['div', { contenteditable: '' }],
+    ['div', { contenteditable: 'true' }]];
+  const notTyping = [['input', { type: 'hidden' }], ['input', { type: 'submit' }],
+    ['input', { type: 'button' }], ['input', { type: 'reset' }], ['input', { type: 'image' }],
+    ['input', { type: 'checkbox' }], ['input', { type: 'radio' }], ['input', { type: 'range' }],
+    ['input', { type: 'color' }], ['button', {}], ['select', {}], ['a', { href: '/' }],
+    ['div', { contenteditable: 'false' }]];
+  for (const [tag, attrs] of typing) {
+    assert(element(tag, attrs).matches(ENTRY_SELECTOR), tag + JSON.stringify(attrs) + ' is not counted as a field');
+  }
+  for (const [tag, attrs] of notTyping) {
+    assert(!element(tag, attrs).matches(ENTRY_SELECTOR), tag + JSON.stringify(attrs) + ' is counted as a field');
+  }
 });
 
 void (async () => {

@@ -105,11 +105,12 @@ check('verify-repair leaves excluded and sleeping tabs alone',
   /engineExcludedByManifest\(url\)/.test(repairBody) && /t\.discarded/.test(repairBody),
   'repair must not reload a page the engine does not run on');
 
-check('remote option rules respect never-block domains',
+check('remote compatibility is separate from security evidence',
   /function networkRulePatternHost/.test(background)
     && /const patternHost = networkRulePatternHost\(pattern\)/.test(background)
-    && /isNeverBlockDomain\(patternHost\)/.test(background),
-  'option-rule parser must drop Twitch and other never-block false positives');
+    && /remoteListBlockAllowed\(patternHost, pattern, sourceKind\)/.test(background)
+    && /remoteRuleSourceKind\(sourceKind\) === 'security'\) return true/.test(background),
+  'compatibility filtering must not discard security rules');
 
 check('URL reputation bypasses Twitch official legal host',
   /function isTrustedPolicyReputationUrl/.test(background)

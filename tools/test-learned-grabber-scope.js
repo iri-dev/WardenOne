@@ -29,6 +29,7 @@ check('sanitizeLearnedForContent is where the slice expects it', s >= 0 && e > s
 if (s < 0 || e < s) { console.error('learned grabber scope: cannot continue'); process.exit(2); }
 const box = { String, Object, Array };
 vm.createContext(box);
+vm.runInContext(fs.readFileSync('domain-utils.js', 'utf8'), box);
 vm.runInContext(BG.slice(s, e) + ';globalThis.f=sanitizeLearnedForContent;', box,
   { filename: 'background.js:sanitizeLearnedForContent' });
 const shipped = box.f;

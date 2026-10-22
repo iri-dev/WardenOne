@@ -47,7 +47,7 @@ const PIECES = ['noteTrackerObservation', 'isProtectedTrackerDomain', 'looksLike
   'trackerDistinctSiteCount', 'trackerDistinctSessionCount', 'ownProviderDomains',
   'trackerDay', 'trackerNewSalt', 'trackerSaltShape', 'trackerLearnerSalt', 'trackerMarkPositions', 'trackerMarkHas', 'trackerMarkAdd',
   'trackerSessionState', 'noteTrackerSessionSeen', 'noteTrackerSiteView', 'trackerSiteViewFor', 'resetTrackerSessionState', 'trackerControlledDomains',
-  'normalizeTrackerDomain', 'registrableDomainBg'];
+  'normalizeTrackerDomain', 'siteIdentityBg'];
 
 const missing = PIECES.filter((p) => !lift(p) && !lift(p, 'async function '));
 check('every piece of the learner is present', missing.length === 0, 'missing: ' + missing.join(', '));
@@ -103,10 +103,7 @@ function build(sessionId) {
 async function forge(rig, site, domain, signal) {
   await rig.note('https://' + site + '/', { domain, signal: signal || 'tracking-path' });
 }
-// The learner keys on the REGISTRABLE domain, not the host it was told about -- so a report
-// naming analytics.victim-bank.com is stored, and would be blocked, as victim-bank.com. Look the
-// entry up the way the learner files it, or this suite asks about a key that never exists and
-// every 'not learned' assertion passes for free.
+// Look up the normalised site key so missing entries cannot make the approval checks pass vacuously.
 const stateOf = (rig, d) => ((rig.state.learner.domains || {})[rig.norm(d)] || {}).state;
 // Since SEC-04 the thresholds end in a PROPOSAL, never a rule: 'learned' exists only behind the
 // reader's approval (tools/test-tracker-learner-consent.js drives that). What this suite pins is
@@ -117,7 +114,7 @@ const proposed = (rig, d) => stateOf(rig, d) === 'proposed';
 // Anti-vacuity guard. normalizeTrackerDomain returns '' on any internal error, and
 // isProtectedTrackerDomain reads '' as PROTECTED -- so a missing dependency makes every check in
 // this file pass while testing nothing at all. That is exactly what happened when
-// registrableDomainBg was left out of PIECES. Prove the rig can tell the two apart before
+// the domain helper was left out of PIECES. Prove the rig can tell the two apart before
 // trusting anything below.
 {
   const rig = build('session-A');

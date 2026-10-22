@@ -83,9 +83,10 @@ function loadLearnedDomainPolicy() {
   const familyMatch = BACKGROUND.match(/const\s+X_APP_COMPAT_DOMAINS\s*=\s*new Set\((\[[\s\S]*?\])\);/);
   assert(familyMatch, 'missing X app compatibility-domain set');
   const sandbox = {
+    URL,
     X_APP_COMPAT_DOMAINS: new Set(vm.runInNewContext(familyMatch[1])),
     normalizeAllowlistHost(host) { return String(host || '').replace(/^www\./, '').toLowerCase(); },
-    registrableDomainBg(host) {
+    siteIdentityBg(host) {
       const labels = String(host || '').replace(/^www\./, '').toLowerCase().split('.').filter(Boolean);
       return labels.length > 1 ? labels.slice(-2).join('.') : labels[0] || '';
     },
@@ -94,7 +95,8 @@ function loadLearnedDomainPolicy() {
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
-    backgroundBetween('function normalizeLearnedDomain', 'function loadLearned')
+    fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8') + '\n'
+      + backgroundBetween('function normalizeLearnedDomain', 'function loadLearned')
       + '\nthis.__normalize=normalizeLearnedDomain;',
     sandbox,
     { filename: 'background.js:x-learned-domain-compatibility' },

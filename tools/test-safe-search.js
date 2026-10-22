@@ -176,7 +176,7 @@ const prios = [...bothBlock.matchAll(/push\((\d+),/g)].map((m) => Number(m[1]));
 check('both-on rules are ordered allow > has-udm > add-both',
   prios.length === 3 && prios[0] > prios[1] && prios[1] > prios[2], prios.join(' > '));
 check('the has-udm rule adds only SafeSearch, never udm',
-  /push\(12050, addParams\(\[SAFE\]\), GOOGLE_UDM_PRESENT\)/.test(applyBody));
+  /push\(1955, addParams\(\[SAFE\]\), GOOGLE_UDM_PRESENT\)/.test(applyBody));
 
 check('non-search Google pages are untouched by the web-only rule',
   !G_MATCH.test('https://mail.google.com/mail/u/0/')
@@ -193,6 +193,6 @@ check('rules are re-applied when either toggle changes',
 check('rules are cleared when the extension is switched off, through the reconcile list',
   /applySearchParamRules\(Object\.assign\(\{\}, cfg, \{ enabled: on \}\), sharedSessionRules, submitRules\)/.test(BG));
 check('rules use session storage, not dynamic',
-  /getSessionRules\(\)/.test(applyBody) && /updateSessionRules/.test(applyBody));
+  /getSessionRules\(\)/.test(applyBody) && /writeSessionRules\(change\)/.test(applyBody));
 
 console.log('\n' + passed + ' passed, 0 failed');

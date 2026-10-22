@@ -34,8 +34,9 @@ function between(src, start, end) {
   return src.slice(a, b);
 }
 const popupJs = read('popup.js');
-const popupCtx = {};
+const popupCtx = { URL };
 vm.createContext(popupCtx);
+vm.runInContext(read('domain-utils.js'), popupCtx);
 vm.runInContext(read('eyeshield-profiles.js'), popupCtx);
 vm.runInContext(read('notification-schema.js'), popupCtx);
 vm.runInContext(between(popupJs, 'const DEFAULTS = {', 'const IMPORT_SCHEMA').replace(/^const /gm, 'var ') +

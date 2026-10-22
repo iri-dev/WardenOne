@@ -20,6 +20,7 @@ const DOMAIN_ISOLATED_OUT = path.join(ROOT, 'domain-utils-isolated.js');
 // Each region is delimited in src/content.js by a block comment opening with NAME-BEGIN and one
 // reading exactly NAME-END; the bootstrap names it in an @wardenone-include line.
 const REALM_REGIONS = ['AUTH', 'WEBGL-SAVER', 'FINGERPRINT-NOISE'];
+const AUTH_OUTPUTS = ['bridge.js', 'anti-redirect.js', 'permission-chain.js', 'cryptominer-detect.js', 'spotify-adblock.js', 'yt-adblock.js', 'twitch-adblock.js'];
 
 function read(file) {
   return fs.readFileSync(file, 'utf8');
@@ -293,6 +294,11 @@ function buildRealm(contentSource, realmSource) {
   return out;
 }
 
+function buildAuth(contentSource, targetSource) {
+  const previous = region(targetSource, 'AUTH');
+  return targetSource.replace(previous, () => region(contentSource, 'AUTH'));
+}
+
 function check() {
   const source = read(SRC);
   assertNoLineComments(source);
@@ -323,6 +329,14 @@ function check() {
     process.exit(1);
   }
   console.log('[ok] isolated domain helpers match the canonical source exactly');
+  for (const file of AUTH_OUTPUTS) {
+    const target = read(path.join(ROOT, file));
+    if (buildAuth(source, target) !== target) {
+      console.error('[fail] ' + file + ' authentication differs from src/content.js');
+      process.exit(1);
+    }
+  }
+  console.log('[ok] page authentication receivers share the canonical implementation');
 }
 
 const arg = process.argv[2] || '--build';
@@ -345,6 +359,11 @@ if (arg === '--format-from-runtime') {
   console.log('[ok] rebuilt fingerprint-realm.js from src/fingerprint-realm.js and the engine regions');
   write(DOMAIN_ISOLATED_OUT, read(DOMAIN_SRC));
   console.log('[ok] rebuilt domain-utils-isolated.js from domain-utils.js');
+  for (const file of AUTH_OUTPUTS) {
+    const target = path.join(ROOT, file);
+    write(target, buildAuth(source, read(target)));
+  }
+  console.log('[ok] rebuilt shared authentication in page modules and bridge');
 } else {
   console.error('usage: node tools/build-content.js [--build|--check|--format-from-runtime]');
   process.exit(2);

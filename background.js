@@ -18,6 +18,7 @@ importScripts('domain-utils.js');
 // Worker-only PSL data: private rules isolate tenants (SEC-07); ICANN rules bound filter exceptions.
 // Frames receive their site identity in content config.
 importScripts('psl-private.js');
+importScripts('network-policy.js');
 importScripts('engine-compat.js');
 // IDN lookalike data is needed by startup checks, not by every page frame.
 importScripts('idn-utils.js');
@@ -2735,8 +2736,10 @@ function sanitizeLearnedForContent(raw) {
     if (count >= 1000) break;
     const entry = source[value];
     if (entry && typeof entry === 'object' && entry.userBlocked === true) continue;
-    const host = String(value || '').replace(/^www\./, '').toLowerCase();
+    let host = String(value || '').toLowerCase();
     if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(host)) continue;
+    host = regDomain(host);
+    if (wardenOneIsPublicSuffix(host)) continue;
     out[host] = true;
     count++;
   }
@@ -3105,6 +3108,23 @@ const MALWARE_LISTS = [
   // dnss-blocklist malicious aggregate -- malware, spyware, phishing, etc.
   'https://raw.githubusercontent.com/flinteger/dnss-blocklists/release/blocklists/malicious.domains.txt',
 ];
+
+/* Download Guard data, not DNR rules (toggle: downloadReputation). Payload addresses name files
+   on shared hosts that a domain list cannot block; the hash feed matches File Shield's real bytes
+   and the reviewed-download re-fetch. Both are stored as fingerprints by background-downloads.js. */
+const DOWNLOAD_THREAT_LIST_SOURCES = [
+  {
+    // malware-filter URLhaus online URLs -- exact payload addresses currently serving malware
+    url: 'https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-online.txt',
+    kind: 'payload-urls',
+  },
+  {
+    // malicious-hash -- MalwareBazaar, URLhaus payload and OTX sample hashes, refreshed hourly
+    url: 'https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/full-hash-sha256-aa.txt',
+    kind: 'sha256',
+  },
+];
+const DOWNLOAD_THREAT_LIST_URLS = DOWNLOAD_THREAT_LIST_SOURCES.map((s) => s.url);
 
 // Tracker / ad-analytics domain feeds (toggle: blockTrackers, ON by default).
 const TRACKER_LISTS = [
@@ -3867,6 +3887,8 @@ const LIST_SOURCE_MAX_BYTES = 18 * 1024 * 1024;
    popup. Cosmetic lists are parsed into selectors rather than kept whole, so
    the extra 2 MB of source text is a smaller cost than losing the list. */
 const LIST_COSMETIC_SOURCE_MAX_BYTES = 12 * 1024 * 1024;
+/* The hash feed's publisher splits files at 131,072 lines (8.5 MB); anything larger is a format change. */
+const DOWNLOAD_THREAT_SOURCE_MAX_BYTES = 9 * 1024 * 1024;
 const LIST_AUTO_MIN_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const LIST_STALE_WARN_MS = 72 * 60 * 60 * 1000;
 const LIST_STALE_CRITICAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -3874,13 +3896,14 @@ const LIST_STALE_CRITICAL_MS = 7 * 24 * 60 * 60 * 1000;
 function expectedRemoteListSources(includeCosmetic) {
   const urls = []
     .concat(REMOTE_LISTS, TOKEN_AND_SCAM_LISTS, MALWARE_LISTS, TRACKER_LISTS, ADSHIELD_NET_LISTS)
-    .concat(SUPPLEMENTAL_SOURCE_URLS)
+    .concat(SUPPLEMENTAL_SOURCE_URLS, DOWNLOAD_THREAT_LIST_URLS)
     .concat(includeCosmetic ? ADSHIELD_COSMETIC_LISTS : []);
   if (REMOTE_LIST_URL) urls.push(REMOTE_LIST_URL);
   return new Set(urls.filter(Boolean));
 }
 
 function listSourceByteLimit(url) {
+  if (DOWNLOAD_THREAT_LIST_URLS.includes(url)) return DOWNLOAD_THREAT_SOURCE_MAX_BYTES;
   if (SUPPLEMENTAL_SOURCE_URLS.includes(url)) return 8 * 1024 * 1024;
   return ADSHIELD_COSMETIC_LISTS.includes(url) ? LIST_COSMETIC_SOURCE_MAX_BYTES : LIST_SOURCE_MAX_BYTES;
 }
@@ -4222,10 +4245,15 @@ function readOwnDynamicRules() {
 }
 function writeDynamicRules(change) {
   __ownDynamicRulesRead = null;
+  WONetworkPolicy.validate(change, 'dynamic');
   const write = chrome.declarativeNetRequest.updateDynamicRules(change);
   const forget = () => { __ownDynamicRulesRead = null; };
   Promise.resolve(write).then(forget, forget);
   return write;
+}
+function writeSessionRules(change) {
+  WONetworkPolicy.validate(change, 'session');
+  return chrome.declarativeNetRequest.updateSessionRules(change);
 }
 const MEDIA_COMPAT_RULE_BASE = 806000;
 const LOGIN_COMPAT_RULE_BASE = 807000;
@@ -4523,7 +4551,7 @@ const TRACKER_LEARN_STORAGE_MAX = 600;
    Expire observations and drop the site sketch after candidacy; explicit user decisions remain settings. */
 const TRACKER_LEARN_TTL_MS = 30 * 86400000;
 const TRACKER_LEARN_MAX_SESSIONS = 4;
-const TRACKER_LEARNER_STORE_VERSION = 2;
+const TRACKER_LEARNER_STORE_VERSION = 3;
 // This session's "what did this site see" list for the popup: sites and trackers per site.
 const TRACKER_SITE_VIEW_MAX_SITES = 40;
 const TRACKER_SITE_VIEW_MAX_DOMAINS = 12;
@@ -4556,28 +4584,19 @@ let __initBlockedDomains = null;
 /* Explicit user blocks bypass the never-block compatibility veto used for automatic learning.
    Normalise the host without silently rejecting or pruning the user’s choice. */
 function normalizeUserBlockDomain(value) {
-  try {
-    const host = normalizeAllowlistHost(value);
-    if (!host || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return '';
-    /* Hosting-provider boundaries are lossy, exactly as below. */
-    if (/(?:^|\.)s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/i.test(host)) return host;
-    return registrableDomainBg(host) || host;
-  } catch (_) {
-    return '';
-  }
+  const host = normalizeAllowlistHost(value);
+  return host ? normalizeSiteTarget(host) : '';
 }
 
 function normalizeLearnedDomain(value) {
   try {
     const host = normalizeAllowlistHost(value);
     if (!host || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return '';
-    // Hosting-provider boundaries are lossy. Check the full host first so GitHub's
-    // dedicated S3 upload origins cannot collapse into the broad amazonaws.com apex.
+    // Check the original host before collapsing subdomains so GitHub upload origins stay exempt.
     if (isNeverBlockDomain(host) || X_APP_COMPAT_DOMAINS.has(host)) return '';
-    if (/(?:^|\.)s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/i.test(host)) return host;
-    const rd = registrableDomainBg(host) || host;
-    if (!rd || isNeverBlockDomain(rd) || X_APP_COMPAT_DOMAINS.has(rd)) return '';
-    return rd;
+    const site = normalizeSiteTarget(host);
+    if (!site || isNeverBlockDomain(site) || X_APP_COMPAT_DOMAINS.has(site)) return '';
+    return site;
   } catch (_) {
     return '';
   }
@@ -4589,12 +4608,16 @@ function loadLearned() {
     try {
       chrome.storage.local.get('wardenone_learned', (r) => {
         const raw = (r && r.wardenone_learned) || {};
+        let changed = false;
         // Merge hydration with live changes (M17). Synchronously registered listeners can learn a domain
         // while the storage read is pending; neither the restore nor a write may discard the other set.
         Object.keys(raw || {}).forEach((domain) => {
-          const d = normalizeLearnedDomain(domain);
-          if (!d) return;
           const stored = raw[domain] || {};
+          const d = stored.userBlocked === true
+            ? normalizeUserBlockDomain(domain)
+            : normalizeLearnedDomain(domain);
+          if (d !== domain) changed = true;
+          if (!d) return;
           const live = LEARNED[d];
           if (!live) { LEARNED[d] = stored; return; }
           LEARNED[d] = Object.assign({}, stored, live, {
@@ -4602,6 +4625,7 @@ function loadLearned() {
             hits: (Number(stored.hits) || 0) + (Number(live.hits) || 0),
           });
         });
+        if (changed) localSet({ wardenone_learned: LEARNED }).catch(() => {});
         applyLearnedRules();
         resolve();
       });
@@ -4659,9 +4683,8 @@ async function applyLearnedRules() {
       if (!resourceTypes.length) return null;
       return {
         id: LEARNED_RULE_BASE + i,
-        /* Explicit user blocks outrank automatic compatibility. Learned security
-           blocks also outrank media allows; logger blocks preserve warning redirects. */
-        priority: entry.userBlocked ? 99000 : (grabber && cfg.warnGrabberDomains !== false ? 1000 : 2000),
+        /* Warning redirects use 2001 so security blocks cannot swallow the warning. */
+        priority: entry.userBlocked ? 99000 : 2000,
         action: { type: 'block' },
         condition: { requestDomains: [d], resourceTypes },
       };
@@ -4738,8 +4761,7 @@ function packagedGrabberDomainsFrom(rules) {
     for (const d of (Array.isArray(cond.requestDomains) ? cond.requestDomains : [])) {
       const v = String(d || '').trim().toLowerCase();
       if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(v)) continue;
-      const rd = registrableDomainBg(v) || v;
-      if (isNeverBlockDomain(rd)) continue;
+      if (isUnsafeFeedBlockTarget(v)) continue;
       out.add(v);
     }
   }
@@ -4809,8 +4831,7 @@ function addGrabberFeedDomains(arr, target) {
   for (const d of (Array.isArray(arr) ? arr : [])) {
     const v = String(d || '').trim().toLowerCase().replace(/^\*?\.?/, '').replace(/\/.*$/, '');
     if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(v) || v.includes('..')) continue;
-    const rd = registrableDomainBg(v) || v;
-    if (rd && !isNeverBlockDomain(rd)) into.add(v);
+    if (!isUnsafeFeedBlockTarget(v)) into.add(v);
   }
 }
 async function applyGrabberFeedRules() {
@@ -6489,7 +6510,7 @@ async function firewallAllowOnce(site, domain, column) {
     }
   }
   try {
-    await chrome.declarativeNetRequest.updateSessionRules({
+    await writeSessionRules({
       removeRuleIds: [id],
       addRules: [{
         id,
@@ -6506,7 +6527,7 @@ async function firewallClearSession() {
   if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateSessionRules) return { ok: true, removed: 0 };
   try {
     const mine = (await firewallSessionRules()).map((r) => r.id);
-    if (mine.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: mine, addRules: [] });
+    if (mine.length) await writeSessionRules({ removeRuleIds: mine, addRules: [] });
     return { ok: true, removed: mine.length };
   } catch (e) { return { ok: false, removed: 0, error: firewallErrorText(e) }; }
 }
@@ -6528,8 +6549,7 @@ function addMinerDomains(arr, target) {
   for (const d of (Array.isArray(arr) ? arr : [])) {
     const v = String(d || '').trim().toLowerCase().replace(/^\*?\.?/, '').replace(/\/.*$/, '');
     if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(v) || v.includes('..')) continue;
-    const rd = registrableDomainBg(v) || v;
-    if (rd && !isNeverBlockDomain(rd)) target.add(v);
+    if (!isUnsafeFeedBlockTarget(v)) target.add(v);
   }
 }
 function minerFeedDisabled(cfg) {
@@ -6613,17 +6633,7 @@ async function learnDomain(domain, reason) {
 }
 
 function normalizeTrackerDomain(value) {
-  try {
-    let h = String(value || '').trim().toLowerCase();
-    if (!h) return '';
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(h)) h = new URL(h).hostname;
-    h = h.replace(/^www\./, '').replace(/^\.+|\.+$/g, '');
-    if (!/^[a-z0-9.-]+$/i.test(h) || !h.includes('.')) return '';
-    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return '';
-    return registrableDomainBg(h);
-  } catch (_) {
-    return '';
-  }
+  return normalizeSiteTarget(value);
 }
 
 function trackerStoreShape(raw) {
@@ -6713,8 +6723,7 @@ function loadTrackerLearner() {
         const raw = r && r[TRACKER_LEARNER_KEY];
         TRACKER_LEARNER = trackerStoreShape(raw);
         applyTrackerLearnerRules();
-        // A store from an earlier build names sites and sessions. The shape has folded them into
-        // counts; write it back once so the names leave the disk now, not at the next observation.
+        // Persist scope cleanup and legacy evidence minimisation before the next observation.
         if (raw && typeof raw === 'object' && Number(raw.version) !== TRACKER_LEARNER_STORE_VERSION) {
           saveTrackerLearner(false).catch(() => {});
         }
@@ -6797,13 +6806,20 @@ function trackerSessionState() {
     () => ({ counted: Array.from(state.counted).slice(-TRACKER_LEARN_STORAGE_MAX), siteView: state.siteView }),
     (stored) => {
       if (!stored || typeof stored !== 'object') return;
-      (Array.isArray(stored.counted) ? stored.counted : []).slice(-TRACKER_LEARN_STORAGE_MAX).forEach((d) => { state.counted.add(String(d)); });
+      (Array.isArray(stored.counted) ? stored.counted : []).slice(-TRACKER_LEARN_STORAGE_MAX).forEach((raw) => {
+        const domain = normalizeTrackerDomain(raw);
+        if (domain) state.counted.add(domain);
+      });
       const view = stored.siteView && typeof stored.siteView === 'object' ? stored.siteView : {};
-      Object.keys(view).slice(0, TRACKER_SITE_VIEW_MAX_SITES).forEach((site) => {
-        const src = view[site] && typeof view[site] === 'object' ? view[site] : {};
+      Object.keys(view).slice(0, TRACKER_SITE_VIEW_MAX_SITES).forEach((rawSite) => {
+        const site = normalizeTrackerDomain(rawSite);
+        if (!site) return;
+        const src = view[rawSite] && typeof view[rawSite] === 'object' ? view[rawSite] : {};
         const row = state.siteView[site] || (state.siteView[site] = {});
-        Object.keys(src).slice(0, TRACKER_SITE_VIEW_MAX_DOMAINS).forEach((d) => {
-          row[d] = Math.max(Number(row[d]) || 0, Math.floor(Number(src[d]) || 0));
+        Object.keys(src).slice(0, TRACKER_SITE_VIEW_MAX_DOMAINS).forEach((rawDomain) => {
+          const d = normalizeTrackerDomain(rawDomain);
+          if (!d || site === d || (!(d in row) && Object.keys(row).length >= TRACKER_SITE_VIEW_MAX_DOMAINS)) return;
+          row[d] = Math.max(Number(row[d]) || 0, Math.floor(Number(src[rawDomain]) || 0));
         });
       });
     },
@@ -6950,9 +6966,11 @@ async function applyTrackerLearnerRules() {
     };
     const controls = TRACKER_LEARNER.siteControls || {};
     Object.keys(controls).sort().forEach((site) => {
+      const initiator = normalizeTrackerDomain(site);
+      if (!initiator) return;
       const c = controls[site] || {};
-      Object.keys(c.allow || {}).sort().forEach((domain) => addRule('allow', 2600, domain, { initiatorDomains: [site] }));
-      Object.keys(c.block || {}).sort().forEach((domain) => addRule('block', 2500, domain, { initiatorDomains: [site] }));
+      Object.keys(c.allow || {}).sort().forEach((domain) => addRule('allow', 2600, domain, { initiatorDomains: [initiator] }));
+      Object.keys(c.block || {}).sort().forEach((domain) => addRule('block', 2500, domain, { initiatorDomains: [initiator] }));
     });
     Object.keys(TRACKER_LEARNER.domains || {})
       .filter((domain) => TRACKER_LEARNER.domains[domain] && TRACKER_LEARNER.domains[domain].state === 'learned')
@@ -6962,14 +6980,11 @@ async function applyTrackerLearnerRules() {
     await writeDynamicRules({ removeRuleIds: oldIds, addRules: rules });
   } catch (e) {
     console.warn('[WardenOne] tracker learner rules failed', e);
+    return false;
   }
 }
 
-// Unambiguous tracker host markers. A third-party host carrying one of these is ~never
-// legitimate functional content, so a SINGLE sighting is enough to learn+block it (vs the
-// 3-sites / 3-hits default for ambiguous candidates). Deliberately excludes generic words
-// (track/tracking/stats/tags/cdn/pixel) that collide with legitimate hosts such as package-
-// tracking, status pages, and asset CDNs.
+// Tracker-shaped names can explain a proposal; evidence thresholds and approval still apply.
 function looksLikeKnownTrackerHost(domain) {
   const d = String(domain || '').toLowerCase();
   if (!d) return false;
@@ -7354,34 +7369,10 @@ function cookieContentSettingPatterns(rawUrl) {
 }
 
 function normalizeAllowlistHost(value) {
-  let raw = String(value || '').trim();
-  if (!raw || raw.length > 512) return '';
-  try {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
-      const u = new URL(raw);
-      if (!/^https?:$/.test(u.protocol)) return '';
-      raw = u.hostname;
-    } else {
-      raw = new URL('https://' + raw).hostname;
-    }
-  } catch (_) {
-    if (/[/?#]/.test(raw)) return '';
-  }
-  let h = String(raw || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/^\.+|\.+$/g, '');
-  if (wardenOneIsPublicSuffix(h)) return '';
-  h = regDomain(h);
-  if (!h || h.length > 253 || h.includes('*') || h.includes('%') || h.includes('/') || h.includes('\\')) return '';
-  if (h.includes(':')) {
-    const ip = normalizeIpLiteral(h);
-    return ip && !isLocalOrPrivateHost(ip) ? ip : '';
-  }
-  if (!/^[a-z0-9.-]+$/i.test(h) || h.includes('..')) return '';
-  const labels = h.split('.');
-  if (labels.length < 2) return '';
-  if (labels.some((label) => !label || label.length > 63 || /^-|-$/.test(label))) return '';
-  if (isLocalOrPrivateHost(h)) return '';
-  if (wardenOneIsPublicSuffix(h)) return '';
-  return h;
+  const host = normalizeSiteHost(value);
+  if (!host || isLocalOrPrivateHost(host)) return '';
+  if (host.includes(':')) return normalizeIpLiteral(host) || '';
+  return host;
 }
 
 function normalizeAllowlistHosts(list, limit) {
@@ -7720,6 +7711,11 @@ function storagePruneLadder() {
         'wardenone_adshield_cosmetic_checked_at',
         'wardenone_adshield_cosmetic_publishers',
       ],
+    },
+    {
+      // Download Guard's feed fingerprints. Downloads keep their other checks until the next refresh.
+      name: 'download-threat-feeds',
+      drop: [DOWNLOAD_THREAT_FEED_KEY, DOWNLOAD_THREAT_META_KEY],
     },
   ];
 }
@@ -9717,9 +9713,10 @@ async function urlReputationConfig(manual) {
    the first navigation has the same privacy boundary as later navigations. */
 async function locallyBlockedReputationHost(host) {
   await Promise.all([__initBlockedDomains, loadLearned()]);
+  const site = siteIdentityBg(host) || host;
   const domain = registrableDomainBg(host) || host;
   if ((LEARNED[host] && LEARNED[host].userBlocked)
-    || (LEARNED[domain] && LEARNED[domain].userBlocked)) return 'user';
+    || (LEARNED[site] && LEARNED[site].userBlocked)) return 'user';
   if (SECURITY_DOMAINS.has(host) || SECURITY_DOMAINS.has(domain)) return 'security';
   return '';
 }
@@ -10738,7 +10735,7 @@ async function applyAllowlistRules(list, readRules, submitRules) {
       });
     });
     const change = { removeRuleIds: oldIds, addRules };
-    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
+    await (submitRules ? submitRules(change) : writeSessionRules(change));
     __allowlistRulesKey = key;
   } catch (e) {
     console.warn('[WardenOne] allowlist DNR rules failed', e);
@@ -10759,7 +10756,7 @@ async function applyMediaCompatibilityRules(enabled, readRules, submitRules) {
       .map((r) => r.id);
     if (!enabled) {
       const change = { removeRuleIds: oldIds, addRules: [] };
-      await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
+      await (submitRules ? submitRules(change) : writeSessionRules(change));
       __mediaCompatibilityRulesEnabled = enabled;
       return;
     }
@@ -10815,7 +10812,7 @@ async function applyMediaCompatibilityRules(enabled, readRules, submitRules) {
       }, { requestDomains: p.requestDomains || [p.domain] }),
     }));
     const change = { removeRuleIds: oldIds, addRules: frameAllowRules.concat(addRules) };
-    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
+    await (submitRules ? submitRules(change) : writeSessionRules(change));
     __mediaCompatibilityRulesEnabled = enabled;
   } catch (e) {
     console.warn('[WardenOne] media compatibility DNR rules failed', e);
@@ -10849,18 +10846,18 @@ async function applyLoginCompatibilityRules(enabled, readRules, submitRules) {
       .map((r) => r.id);
     if (!enabled) {
       const change = { removeRuleIds: oldIds, addRules: [] };
-      await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
+      await (submitRules ? submitRules(change) : writeSessionRules(change));
       __loginCompatibilityRulesEnabled = enabled;
       return;
     }
     const addRules = LOGIN_COMPAT_FILTERS.slice(0, 300).map((filter, i) => ({
       id: LOGIN_COMPAT_RULE_BASE + i,
-      priority: 96000,
+      priority: 1900,
       action: { type: 'allow' },
       condition: loginCompatibilityRuleCondition(filter),
     }));
     const change = { removeRuleIds: oldIds, addRules };
-    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
+    await (submitRules ? submitRules(change) : writeSessionRules(change));
     __loginCompatibilityRulesEnabled = enabled;
   } catch (e) {
     console.warn('[WardenOne] login compatibility DNR rules failed', e);
@@ -10897,10 +10894,7 @@ function refreshLoginCompatibilityRules() {
 }
 
 let __blocklistRulesetStateKey = '';
-// Set when updateEnabledRulesets throws. The cached state key is deliberately NOT advanced on
-// failure so a later change retries, but nothing was retrying on its own and nothing told the
-// user -- the failure reached console.warn and stopped there, while the popup went on saying
-// the shields were active.
+// A failed or partial transition remains visible to health reporting and eligible for retry.
 let __blocklistRulesetError = '';
 async function refreshBlocklistRuleset(cfgOverride) {
   try {
@@ -10928,8 +10922,6 @@ async function refreshBlocklistRuleset(cfgOverride) {
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(TRACKERS_STATIC_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(EASYPRIVACY_STATIC_RULESET_ID);
     await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds, disableRulesetIds });
-    __blocklistRulesetStateKey = stateKey;
-    __blocklistRulesetError = '';
     ADSHIELD_STATIC_ACTIVE = adshieldOn;
     // The master switch must also suspend the DYNAMIC rules, not just the static
     // ruleset -- otherwise "off" still blocks network requests. Re-fetching remote
@@ -10937,12 +10929,16 @@ async function refreshBlocklistRuleset(cfgOverride) {
     // by the settings-change listener when list composition actually changes; this
     // local refresh path may run on every popup toggle and must stay cheap.
     if (!on) {
-      try { await removeWardenOneDynamicRules(); } catch (_) {}
+      await removeWardenOneDynamicRules();
     } else {
-      try { await applyLearnedRules(); } catch (_) {}
-      try { applyTrackerLearnerRules(); } catch (_) {}
+      const learned = await applyLearnedRules();
+      if (learned === false || (learned && learned.ok === false)) throw new Error((learned && learned.error) || 'Learned rules could not be applied');
+      if (await applyTrackerLearnerRules() === false) throw new Error('Tracker Learner rules could not be applied');
     }
+    __blocklistRulesetStateKey = stateKey;
+    __blocklistRulesetError = '';
   } catch (e) {
+    __blocklistRulesetStateKey = '';
     __blocklistRulesetError = String((e && e.message) || e).slice(0, 160);
     console.warn('[WardenOne] blocklist ruleset toggle failed', e);
     return false;
@@ -11335,6 +11331,7 @@ const RECONCILE_COMPONENT_LABELS = {
   allowlist: 'site allowlist rules',
   mediaCompatibility: 'media compatibility rules',
   loginCompatibility: 'login compatibility rules',
+  infrastructureCompatibility: 'infrastructure compatibility rules',
   httpsUpgrade: 'HTTPS upgrade',
   blocklistRulesets: 'blocking rulesets',
   grabberFeed: 'IP-logger feed rules',
@@ -11430,7 +11427,7 @@ function createReconcileDnrBatch(kind) {
   let deadline = null;
   const update = kind === 'dynamic'
     ? (change) => writeDynamicRules(change)
-    : (change) => chrome.declarativeNetRequest.updateSessionRules(change);
+    : (change) => writeSessionRules(change);
   const api = {
     collect(apply) {
       pending++;
@@ -11622,6 +11619,7 @@ function refreshExtensionState() {
       run('allowlist', (submitRules) => applyAllowlistRules(on ? activeAllowlist(cfg) : [], sharedSessionRules, submitRules), JSON.stringify(on ? activeAllowlist(cfg) : []), sessionBatch);
       run('mediaCompatibility', (submitRules) => applyMediaCompatibilityRules(on, sharedSessionRules, submitRules), String(on), sessionBatch);
       run('loginCompatibility', (submitRules) => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false, sharedSessionRules, submitRules), String(on && cfg.loginCompatibility !== false), sessionBatch);
+      run('infrastructureCompatibility', () => applyNeverBlockAllowRules(on), String(on));
       run('httpsUpgrade', () => applyHttpsUpgradeRule(on && cfg.forceHttps === true), String(on && cfg.forceHttps === true));
       run('blocklistRulesets', () => refreshBlocklistRuleset(cfg));
       run('grabberFeed', () => applyGrabberFeedRules(),
@@ -11662,7 +11660,7 @@ function refreshExtensionState() {
           if (r.status === 'rejected' || r.value === false) failed.push(names[i]);
         });
         if (failed.length) {
-          // Leave the key alone so this desired state is applied again, and say what failed.
+          __refreshExtensionStateLastKey = '';
           await noteReconcileDegraded(failed, stateKey);
           await clearReconcilePending();
           return;
@@ -11671,6 +11669,7 @@ function refreshExtensionState() {
         await clearReconcilePending();
         __refreshExtensionStateLastKey = stateKey;
       }).catch(() => {
+        __refreshExtensionStateLastKey = '';
         noteReconcileDegraded(['reconcile'], '');
       }).finally(() => {
         __refreshExtensionStateInFlightKey = '';
@@ -11680,6 +11679,7 @@ function refreshExtensionState() {
         }
       });
     }).catch(() => {
+      __refreshExtensionStateLastKey = '';
       // Unknown desired state must leave Chrome’s state intact. Record degraded health and retry
       // the single reconciler inventory rather than applying hard-off fallbacks (MV3-01, BUG-08).
       noteReconcileDegraded(['reconcile'], '');
@@ -11690,6 +11690,7 @@ function refreshExtensionState() {
       }
     });
   } catch (_) {
+    __refreshExtensionStateLastKey = '';
     noteReconcileDegraded(['reconcile'], '');
   }
 }
@@ -12553,7 +12554,7 @@ function applyHeaderShieldRules(options) {
     }
 
     try {
-      await chrome.declarativeNetRequest.updateSessionRules({
+      await writeSessionRules({
         removeRuleIds: HEADER_SHIELD_RULE_IDS,
         addRules: rules,
       });
@@ -12573,7 +12574,7 @@ async function applyPrivacyHeaderRule(enabled) {
   try {
     enabled = !!enabled;
     if (__privacyHeaderRuleEnabled === enabled) return;
-    await chrome.declarativeNetRequest.updateSessionRules({
+    await writeSessionRules({
       removeRuleIds: [PRIVACY_HEADER_RULE_ID],
       addRules: !enabled ? [] : [{
         id: PRIVACY_HEADER_RULE_ID,
@@ -12600,7 +12601,7 @@ async function applyLocationPrivacyHeaderRule(enabled) {
   try {
     enabled = !!enabled;
     if (__locationPrivacyHeaderRuleEnabled === enabled) return;
-    await chrome.declarativeNetRequest.updateSessionRules({
+    await writeSessionRules({
       removeRuleIds: [LOCATION_PRIVACY_HEADER_RULE_ID],
       addRules: !enabled ? [] : [{
         id: LOCATION_PRIVACY_HEADER_RULE_ID,
@@ -12630,7 +12631,7 @@ async function applyIpLookupBlockRules(enabled) {
     if (__ipLookupBlockRulesEnabled === enabled) return;
     const removeRuleIds = IP_LOOKUP_BLOCK_DOMAINS.map((_, i) => IP_LOOKUP_BLOCK_RULE_BASE + i);
     if (!enabled) {
-      await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules: [] });
+      await writeSessionRules({ removeRuleIds, addRules: [] });
       __ipLookupBlockRulesEnabled = enabled;
       return;
     }
@@ -12644,7 +12645,7 @@ async function applyIpLookupBlockRules(enabled) {
         resourceTypes: IP_LOOKUP_BLOCK_RESOURCE_TYPES,
       },
     }));
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
+    await writeSessionRules({ removeRuleIds, addRules });
     __ipLookupBlockRulesEnabled = enabled;
   } catch (e) {
     console.warn('[WardenOne] IP lookup block rules failed', e);
@@ -12660,7 +12661,7 @@ async function applyThirdPartyCookieRule(enabled) {
   try {
     enabled = !!enabled;
     if (__thirdPartyCookieRuleEnabled === enabled) return;
-    await chrome.declarativeNetRequest.updateSessionRules({
+    await writeSessionRules({
       removeRuleIds: [THIRD_PARTY_COOKIE_RULE_ID],
       addRules: !enabled ? [] : [{
         id: THIRD_PARTY_COOKIE_RULE_ID,
@@ -12698,7 +12699,7 @@ async function applyTrackerCookieRule(enabled) {
     enabled = !!enabled;
     if (__trackerCookieRuleEnabled === enabled) return;
     if (!enabled) {
-      await chrome.declarativeNetRequest.updateSessionRules({
+      await writeSessionRules({
         removeRuleIds: [TRACKER_COOKIE_RULE_ID],
         addRules: [],
       });
@@ -12710,14 +12711,14 @@ async function applyTrackerCookieRule(enabled) {
       // No list, no rule. A requestDomains condition with an empty array matches
       // every domain, which would turn this into exactly the blanket wide rule
       // the narrow one exists to avoid.
-      await chrome.declarativeNetRequest.updateSessionRules({
+      await writeSessionRules({
         removeRuleIds: [TRACKER_COOKIE_RULE_ID],
         addRules: [],
       });
       __trackerCookieRuleEnabled = false;
       return;
     }
-    await chrome.declarativeNetRequest.updateSessionRules({
+    await writeSessionRules({
       removeRuleIds: [TRACKER_COOKIE_RULE_ID],
       addRules: [{
         id: TRACKER_COOKIE_RULE_ID,
@@ -12805,7 +12806,7 @@ async function applyHttpsUpgradeRule(enabled) {
     if (enabled) console.warn('[WardenOne] persistent https upgrade rule failed', e);
   }
   try {
-    await chrome.declarativeNetRequest.updateSessionRules({
+    await writeSessionRules({
       removeRuleIds: [HTTPS_UPGRADE_RULE_ID],
       addRules: enabled ? [httpsUpgradeRule(HTTPS_UPGRADE_RULE_ID)] : [],
     });
@@ -13155,6 +13156,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.wardenone_malware_hashes) {
     loadMalwareHashes();
   }
+  if (area === 'local' && changes[DOWNLOAD_THREAT_FEED_KEY]) resetDownloadThreatFeedCache();
   // Reader edits to the Grabber list need a refresh here. Supplemental updates call
   // loadGrabberFeed after their own write and await its result; also doing it here
   // launched a second full DNR enumeration for the same update.
@@ -14050,7 +14052,7 @@ function applyScriptShieldRules(mode, trustedHosts) {
           addRules: plan.dynamicRules,
         });
       }
-      await chrome.declarativeNetRequest.updateSessionRules({
+      await writeSessionRules({
         removeRuleIds: oldSessionIds,
         addRules: plan.sessionRules,
       });
@@ -14881,24 +14883,24 @@ async function applySearchParamRules(cfg, readRules, submitRules) {
 
     // Google: the two features share one coordinated set of rules.
     if (safeOn && webOnly) {
-      push(12100, allow(), GOOGLE_UDM_AND_SAFE_PRESENT);
-      push(12050, addParams([SAFE]), GOOGLE_UDM_PRESENT);
-      push(12000, addParams([SAFE, UDM]), GOOGLE_SEARCH_MATCH);
+      push(1960, allow(), GOOGLE_UDM_AND_SAFE_PRESENT);
+      push(1955, addParams([SAFE]), GOOGLE_UDM_PRESENT);
+      push(1950, addParams([SAFE, UDM]), GOOGLE_SEARCH_MATCH);
     } else if (safeOn) {
-      push(12100, allow(), GOOGLE_SAFE_PRESENT + '(&|$)');
-      push(12000, addParams([SAFE]), GOOGLE_SEARCH_MATCH);
+      push(1960, allow(), GOOGLE_SAFE_PRESENT + '(&|$)');
+      push(1950, addParams([SAFE]), GOOGLE_SEARCH_MATCH);
     } else if (webOnly) {
       // Any udm at all satisfies this, which is what keeps Images and Videos usable.
-      push(12100, allow(), GOOGLE_UDM_PRESENT);
-      push(12000, addParams([UDM]), GOOGLE_SEARCH_MATCH);
+      push(1960, allow(), GOOGLE_UDM_PRESENT);
+      push(1950, addParams([UDM]), GOOGLE_SEARCH_MATCH);
     }
 
     // The other engines only ever carry the SafeSearch parameter.
     if (safeOn) {
       SAFE_SEARCH_ENGINES.forEach((engine) => {
         if (engine.label === 'google') return;
-        push(12100, allow(), engine.allow);
-        push(12000, addParams([{ key: engine.param, value: engine.value }]), engine.match);
+        push(1960, allow(), engine.allow);
+        push(1950, addParams([{ key: engine.param, value: engine.value }]), engine.match);
       });
       if (addRules.length < SAFE_SEARCH_RULE_MAX) {
         addRules.push({
@@ -14916,7 +14918,7 @@ async function applySearchParamRules(cfg, readRules, submitRules) {
       }
     }
     const change = { removeRuleIds: oldIds, addRules };
-    await (submitRules ? submitRules(change) : chrome.declarativeNetRequest.updateSessionRules(change));
+    await (submitRules ? submitRules(change) : writeSessionRules(change));
   } catch (e) { console.warn('[WardenOne] search parameter rules failed', e); return false; }
 }
 
@@ -14933,7 +14935,7 @@ async function applyGoogleSearchSponsoredAllowRules(enabled, readRules, submitRu
         if (addRules.length >= GOOGLE_SEARCH_ALLOW_RULE_MAX) return;
         addRules.push({
           id: GOOGLE_SEARCH_ALLOW_RULE_BASE + addRules.length,
-          priority: 12000,
+          priority: 1900,
           action: { type: 'allow' },
           condition: { requestDomains: [domain], initiatorDomains: GOOGLE_SEARCH_INITIATOR_DOMAINS, resourceTypes: RESOURCE_TYPES },
         });
@@ -14942,7 +14944,7 @@ async function applyGoogleSearchSponsoredAllowRules(enabled, readRules, submitRu
         if (addRules.length >= GOOGLE_SEARCH_ALLOW_RULE_MAX) return;
         addRules.push({
           id: GOOGLE_SEARCH_ALLOW_RULE_BASE + addRules.length,
-          priority: 12000,
+          priority: 1900,
           action: { type: 'allow' },
           condition: { urlFilter: pathFilter, initiatorDomains: GOOGLE_SEARCH_INITIATOR_DOMAINS, resourceTypes: RESOURCE_TYPES },
         });
@@ -14980,13 +14982,7 @@ function isMediaCompatDomain(domain) {
   return isMediaCompatDomainLowercase(String(domain || '').toLowerCase());
 }
 
-// Globally-trusted infrastructure that must NEVER be turned into a block rule,
-// no matter what a downloaded community blocklist or a heuristic learner says.
-// Aggressive lists (and the occasional poisoned/over-broad phishing feed) sometimes
-// include GitHub delivery hosts such as objects/raw.githubusercontent.com,
-// which would block code hosting wholesale. This is a false-positive shield only:
-// it never relaxes blocking for any other host, and per-URL reputation/Safe Browsing
-// hits are unaffected.
+// Compatibility safeguards for heuristic learning and non-security feeds.
 const NEVER_BLOCK_DOMAINS = new Set([
   'github.com',
   'raw.githubusercontent.com',
@@ -14996,8 +14992,7 @@ const NEVER_BLOCK_DOMAINS = new Set([
   'iri-dev.github.io',
   'githubassets.com',
 'mail.google.com', 'accounts.google.com', 'apis.google.com', 'gstatic.com',
-  // User-confirmed false-positive exemption: blocked by a downloaded threat feed, not a bundled rule.
-  // Keeps all other shields active; the page navigation is allowed by grabber_compat id166 (priority 3000).
+  // Owner-reported false positive; rule 166 provides scoped resource compatibility.
   'gamedrive.org',
 ]);
 LOGIN_COMPAT_NEVER_BLOCK_DOMAINS.forEach((domain) => NEVER_BLOCK_DOMAINS.add(domain));
@@ -15031,6 +15026,10 @@ function isGithubUploadInfraDomain(domain) {
   return /^github(?:-[a-z0-9]+)*\.s3\.amazonaws\.com$/i.test(String(domain || ''));
 }
 
+function isUnsafeFeedBlockTarget(host) {
+  return NEVER_BLOCK_PUBLIC_SUFFIXES.has(host) || wardenOneIsPublicSuffix(host);
+}
+
 function isNeverBlockDomain(domain) {
   const d = String(domain || '').replace(/^www\./, '').toLowerCase();
   if (!d) return false;
@@ -15048,18 +15047,16 @@ function isNeverBlockDomain(domain) {
   return false;
 }
 
-// Allow functional resources on trusted infrastructure above blocklists, but
-// keep image, ping and beacon requests blockable. Exclude hosts that serve
-// first-party ads, and include WebSocket so apps do not fail silently.
+// Functional-resource compatibility stays below learned and feed security blocks.
 const NEVER_BLOCK_ALLOW_EXCLUDE = new Set([
   'google.com', 'youtube.com', 'youtube-nocookie.com',
   'microsoft.com', 'live.com', 'office.com', 'office365.com',
 ]);
-async function applyNeverBlockAllowRules() {
+async function applyNeverBlockAllowRules(enabled = true) {
   try {
     const domains = [];
     const seen = new Set();
-    for (const raw of NEVER_BLOCK_DOMAINS) {
+    for (const raw of enabled ? NEVER_BLOCK_DOMAINS : []) {
       const h = String(raw || '').replace(/^www\./, '').toLowerCase();
       if (NEVER_BLOCK_ALLOW_EXCLUDE.has(h)) continue;
       if (/^[a-z0-9.-]+\.[a-z]{2,}$/.test(h) && !h.includes('..') && !seen.has(h)) { seen.add(h); domains.push(h); }
@@ -15071,14 +15068,14 @@ async function applyNeverBlockAllowRules() {
     for (let i = 0; i < domains.length && addRules.length < NEVER_BLOCK_ALLOW_MAX; i += BATCH) {
       addRules.push({
         id: NEVER_BLOCK_ALLOW_RULE_BASE + addRules.length,
-        priority: 3000,
+        priority: 1900,
         action: { type: 'allow' },
         condition: { requestDomains: domains.slice(i, i + BATCH), resourceTypes: ['script', 'stylesheet', 'font', 'xmlhttprequest', 'websocket', 'sub_frame'] },
       });
     }
     if (dnrBandUnchanged(mine, addRules)) return;
     await writeDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
-  } catch (e) { console.warn('[WardenOne] never-block allow rules failed', e); }
+  } catch (e) { console.warn('[WardenOne] never-block allow rules failed', e); return false; }
 }
 /* The boot-time calls of these two appliers live below SERIALIZED_STATE_APPLIERS: called here,
    they ran before the wrappers existed, so a cold-start rebuild took the unqueued path and could
@@ -15246,6 +15243,11 @@ function networkRulePatternHost(pattern) {
   return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(p) ? p : '';
 }
 
+function remoteListBlockAllowed(host, pattern, sourceKind) {
+  if (remoteRuleSourceKind(sourceKind) === 'security') return true;
+  return !isNeverBlockDomain(host) && !isMediaCompatDomainLowercase(host) && !isMediaCompatFilter(pattern);
+}
+
 function parseNetworkRules(text, ruleStartId, maxRules) {
   const rules = [];
   let id = ruleStartId;
@@ -15266,8 +15268,6 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
     const pattern = line.slice(0, line.indexOf('$')).trim();
     const optStr = line.slice(line.indexOf('$') + 1).trim();
     if (!pattern || !optStr) continue;
-    const patternHost = networkRulePatternHost(pattern);
-    if (!isException && (isMediaCompatFilter(pattern) || isNeverBlockDomain(patternHost))) continue;
     const opts = optStr.split(',').map((o) => o.trim()).filter(Boolean);
 
     if (opts.some((o) => UBO_UNSUPPORTED.test(o.replace(/^~/, '').split('=')[0]))) continue;
@@ -15378,8 +15378,7 @@ function parseList(text) {
 
     // reject bare IPs -- DNR urlFilter ||x is for domains, not IP literals
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(line)) return;
-    if (isMediaCompatDomainLowercase(line)) return;
-    if (isNeverBlockDomain(line)) return; // GitHub & other vetted infra: never blocklist-block
+    if (isUnsafeFeedBlockTarget(line)) return;
     if (isFeedFalsePositiveDomain(line)) return; // one feed's disputed listing, not a safe verdict (see above)
     if (domainRe.test(line) && !seen.has(line)) {
       seen.add(line);
@@ -15945,7 +15944,7 @@ function normalizeSupplementalListDomain(value, bucket) {
     if (/^[a-f0-9]{12,}$/i.test(firstLabel)) return '';
     return h;
   }
-  if (isNeverBlockDomain(h)) return '';
+  if (bucket === 'grabberDomainsExtra' ? isUnsafeFeedBlockTarget(h) : isNeverBlockDomain(h)) return '';
   return h;
 }
 
@@ -16491,6 +16490,7 @@ async function updateRemoteListsCore(reason) {
       if (domains.length) {
         anySucceeded = true;
         for (const d of domains) {
+          if (!remoteListBlockAllowed(d, '', sourceKind)) continue;
           merged.add(d);
           domainBuckets[sourceKind].add(d);
         }
@@ -16498,6 +16498,9 @@ async function updateRemoteListsCore(reason) {
       if (Array.isArray(result.optionRules) && result.optionRules.length && optionRuleBuckets[sourceKind].length < OPTION_RULES_MAX) {
         for (const r of result.optionRules) {
           if (optionRuleBuckets[sourceKind].length >= OPTION_RULES_MAX) break;
+          const pattern = String(r && r.condition && r.condition.urlFilter || '');
+          const patternHost = networkRulePatternHost(pattern);
+          if (r.action.type !== 'allow' && !remoteListBlockAllowed(patternHost, pattern, sourceKind)) continue;
           optionRuleBuckets[sourceKind].push(r);
         }
       }
@@ -16662,7 +16665,9 @@ async function updateRemoteLists(reason) {
   // Held for the whole refresh -- network batch and supplemental pass -- so a body one of them
   // downloaded is still there for the other; the cosmetic pass holds it for itself.
   LIST_BROKER.retain();
-  const run = updateRemoteListsCore(reason).then((result) => attachSupplementalListUpdate(result, reason));
+  const run = updateRemoteListsCore(reason)
+    .then((result) => attachSupplementalListUpdate(result, reason))
+    .then((result) => attachDownloadThreatFeedUpdate(result, reason));
   __remoteListUpdateInFlight = run;
   try {
     return await run;
@@ -17022,7 +17027,7 @@ async function applyIntranetNetworkRules(enabled) {
       };
     }) : [];
 
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules });
+    await writeSessionRules({ removeRuleIds, addRules });
     __intranetNetRulesKey = key;
   } catch (e) {
     console.warn('[WardenOne] intranet network rules failed', e);
@@ -17099,7 +17104,7 @@ async function syncRebindQuarantineRules() {
     const removeRuleIds = existing
       .filter((r) => r.id >= REBIND_QUARANTINE_RULE_BASE && r.id < REBIND_QUARANTINE_RULE_BASE + REBIND_QUARANTINE_MAX)
       .map((r) => r.id);
-    await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds, addRules: rebindQuarantineRules() });
+    await writeSessionRules({ removeRuleIds, addRules: rebindQuarantineRules() });
   } catch (e) {
     console.warn('[WardenOne] rebind quarantine rules failed', e);
   }
@@ -17527,7 +17532,9 @@ async function buildProtectionHealthSummary(tab) {
     }
   } catch (_) {}
   if (__blocklistRulesetError) {
-    addIssue('danger', 'WardenOne could not apply its blocking rulesets, so network blocking may be off.', false, { fix: 'repair' });
+    addIssue('danger', cfg.enabled === false
+      ? 'WardenOne could not finish switching off. Some blocking rules may still be active.'
+      : 'WardenOne could not apply its blocking rulesets, so network blocking may be off.', false, { fix: 'repair' });
   }
   // The reconciler's own record of what did not reach Chrome. A switch that is on in settings
   // and missing from the browser is the one state this summary must not call healthy (MV3-01).
@@ -17537,7 +17544,7 @@ async function buildProtectionHealthSummary(tab) {
     const exhausted = Number(degraded.attempts || 0) >= RECONCILE_RETRY_MAX;
     addIssue('danger', (degraded.failed[0] === 'config'
       ? 'WardenOne could not read its settings, so it left the browser as it was rather than applying defaults.'
-      : 'Could not apply to the browser: ' + named.join(', ') + '. Those settings are on but not in effect.')
+      : 'Could not apply to the browser: ' + named.join(', ') + '. Requested settings are not in effect.')
       + (exhausted
         ? ' Automatic retries are used up; change any setting or run Repair to try again.'
         : ' WardenOne will retry.'), true, { fix: 'repair' });
@@ -17600,8 +17607,9 @@ async function buildProtectionHealthSummary(tab) {
   const highest = criticalIssue ? 'danger' : setupIssue ? 'warning' : 'ok';
   const verified = tabEvidence.state === 'verified';
   const publisherAgeNote = list.publisher.stale > 0;
-  const status = cfg.enabled === false ? 'Off' : highest === 'danger' ? 'Needs review' : highest === 'warning' ? 'Check setup' : verified && !publisherAgeNote ? "You're safe" : 'Protections on';
-  const detail = cfg.enabled === false
+  const offWithoutError = cfg.enabled === false && !criticalIssue;
+  const status = offWithoutError ? 'Off' : highest === 'danger' ? 'Needs review' : highest === 'warning' ? 'Check setup' : verified && !publisherAgeNote ? "You're safe" : 'Protections on';
+  const detail = offWithoutError
     ? 'Turn the master switch back on to re-enable WardenOne.'
     : criticalIssue
       ? criticalIssue.text
@@ -19575,13 +19583,18 @@ async function runWardenManualCheck(rawText, tab) {
         'WardenOne only keeps SHA-256 hashes, so it cannot answer for this one.');
       return;
     }
-    const known = typeof MALWARE_HASHES !== 'undefined' && MALWARE_HASHES.has(found.value);
+    const known = typeof knownMalwareHash === 'function' ? await knownMalwareHash(found.value) : { hit: false };
+    const coverage = typeof malwareHashCoverage === 'function' ? await malwareHashCoverage() : { signatureCount: 0 };
     await notice('SHA-256',
-      known
-        ? found.value === EICAR_SHA256
-          ? 'This hash matches the EICAR diagnostic signature. It confirms the local lookup works, not real-world malware coverage.'
-          : 'This hash matches a configured local malware signature. Do not run that file.'
-        : 'No local SHA-256 match. The bundle contains only an EICAR test signature; a miss does not establish safety.');
+      known.diagnostic
+        ? 'This hash matches the EICAR diagnostic signature. It confirms the local lookup works, not real-world malware coverage.'
+        : known.hit
+          ? known.source === 'feed'
+            ? 'This hash matches a known-malware sample in the downloaded hash feed. Do not run that file.'
+            : 'This hash matches a configured local malware signature. Do not run that file.'
+          : coverage.signatureCount
+            ? 'No match among ' + coverage.signatureCount.toLocaleString() + ' known-malware hashes on this device; a miss does not establish safety.'
+            : 'No local SHA-256 match. No malware-hash feed is loaded yet; a miss does not establish safety.');
   } catch (e) {
     await notice('The check did not finish', 'The provider or local check failed. Please try again.');
   } finally {
@@ -20683,6 +20696,7 @@ const PRIVACY_STORE_POLICY = Object.freeze([
     'wardenone_aux_lists', 'wardenone_aux_list_meta',
     'wardenone_cryptominer_domains', 'wardenone_grabber_domains', 'wardenone_search_junk_domains',
     'wardenone_malware_hashes', 'wardenone_openphish_feed_cache', 'wardenone_list_integrity',
+    'wardenone_download_threat_feeds', 'wardenone_download_threat_meta',
     'wardenone_list_meta', 'wardenone_list_retry_n', 'wardenone_storage_meta',
   ] },
   { owner: 'Temporary operation state', sensitivity: 'session state', area: 'session', maxAgeDays: null, maxItems: null, retention: 'Browser or extension session', siteErase: 'prune', keys: [
@@ -20881,7 +20895,7 @@ async function eraseWardenOneSite(rawHost, dryRun) {
       chrome.declarativeNetRequest.getSessionRules(),
     ]);
     if (dynamic.length) await writeDynamicRules({ removeRuleIds: dynamic.map((rule) => rule.id), addRules: [] });
-    if (sessionRules.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
+    if (sessionRules.length) await writeSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
     if (chrome.storage.session) await chrome.storage.session.set({ [PRIVACY_ERASE_REBUILD_KEY]: true });
     setTimeout(() => { try { chrome.runtime.reload(); } catch (_) {} }, 400);
     return { ok: true, site: plan.site, affected };
@@ -20911,7 +20925,7 @@ async function eraseWardenOneData(mode) {
       chrome.declarativeNetRequest.getSessionRules(),
     ]);
     if (dynamic.length) await writeDynamicRules({ removeRuleIds: dynamic.map((rule) => rule.id), addRules: [] });
-    if (sessionRules.length) await chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
+    if (sessionRules.length) await writeSessionRules({ removeRuleIds: sessionRules.map((rule) => rule.id), addRules: [] });
     await withConfigLock(async () => {
       const latest = await chrome.storage.local.get('wardenone_config');
       const preserved = preservedPrivacyConfig(latest && latest.wardenone_config, mode);
@@ -22659,9 +22673,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const sha256 = String(msg.sha256 || '').trim().toLowerCase();
       if (!/^[a-f0-9]{64}$/.test(sha256)) { sendResponse({ ok: false, error: 'That is not a SHA-256 hash.' }); return; }
-      await malwareHashesReady;
-      sendResponse({ ok: true, hit: MALWARE_HASHES.has(sha256), diagnostic: sha256 === EICAR_SHA256,
-        ...localMalwareHashCoverage() });
+      const known = await knownMalwareHash(sha256);
+      sendResponse({ ok: true, hit: known.hit, diagnostic: !!known.diagnostic, matchedList: known.source || '',
+        ...(await malwareHashCoverage()) });
     })();
     return true;
   }
@@ -23250,7 +23264,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           CORE_FILES.push('rules-grabber-resources.json', 'rules-grabber-navigation.json',
             'rules-grabber-malware-navigation.json', 'rules-grabber-compat.json',
             'rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
-            'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'build-update.js');
+            'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'build-update.js', 'network-policy.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
           // would report a package that is exactly as built as missing pieces.
           for (const omitted of woOmittedFiles()) {

@@ -149,6 +149,7 @@ function wake(b) {
     DEFAULT_CONFIG: { enabled: true, blockGrabberResources: true, warnGrabberDomains: true, blockMalwareSites: true, blockCryptominers: true },
     registrableDomainBg: (host) => { const p = String(host || '').toLowerCase().split('.'); return p.length >= 2 ? p.slice(-2).join('.') : String(host || ''); },
     isNeverBlockDomain: (d) => d === 'google.com',
+    isUnsafeFeedBlockTarget: (d) => d === 'co.uk',
     SECURITY_RESOURCE_TYPES: ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'websocket', 'other'],
     MINER_RESOURCE_TYPES: ['main_frame', 'sub_frame', 'script', 'xmlhttprequest', 'websocket', 'other'],
     MINER_POOL_RESOURCE_TYPES: ['sub_frame', 'script', 'xmlhttprequest', 'websocket', 'other'],

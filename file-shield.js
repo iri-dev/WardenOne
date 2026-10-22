@@ -959,7 +959,7 @@ async function analyse(file, onStage, shouldContinue = () => true) {
   const hash = await hashFile(file);
 
   /* This is the real file you picked, not a URL re-fetch. The bundled signature
-     is EICAR-only; additional local signatures may be configured separately. */
+     is EICAR-only; real coverage is the downloaded hash feed plus any configured signatures. */
   let known = null;
   if (!hash.skipped) {
     onStage('Checking the local SHA-256 list…');
@@ -975,13 +975,17 @@ async function analyse(file, onStage, shouldContinue = () => true) {
       } catch (_) { done(null); }
     });
     if (known && known.hit) {
+      const fromFeed = known.matchedList === 'feed';
       findings.unshift({
         level: known.diagnostic ? 'info' : 'danger',
-        title: known.diagnostic ? 'EICAR diagnostic signature detected' : 'This file matches a local malware signature',
+        title: known.diagnostic ? 'EICAR diagnostic signature detected'
+          : fromFeed ? 'This file matches a known malware sample' : 'This file matches a local malware signature',
         detail: known.diagnostic
           ? 'Its SHA-256 matches the EICAR antivirus test signature. This confirms the hash lookup works; it does not demonstrate real-world malware coverage.'
-          : 'Its SHA-256 matches a configured local malware signature. This is the real file you picked,'
-            + ' not a guess from its name. Delete it rather than opening it.',
+          : (fromFeed
+            ? 'Its SHA-256 is in the malware hash feed WardenOne keeps on this device (samples reported to MalwareBazaar, URLhaus and OTX).'
+            : 'Its SHA-256 matches a configured local malware signature.')
+            + ' This is the real file you picked, not a guess from its name. Delete it rather than opening it.',
       });
     }
   }
@@ -1102,9 +1106,10 @@ function render(report) {
     item.appendChild(el('div', 'fs-finding-title', diagnosticOnly ? 'No malware-signature coverage loaded' : 'No local SHA-256 match'));
     item.appendChild(el('div', 'fs-finding-detail',
       diagnosticOnly
-        ? 'The bundled list contains only the EICAR test signature. This diagnostic check does not establish whether a file is safe.'
+        ? 'The bundled list contains only the EICAR test signature, and the malware hash feed has not been downloaded yet'
+          + ' (it arrives with the daily list update while Download Guard is on). This check does not establish whether a file is safe.'
         : 'Checked offline against ' + (report.known.signatureCount || 0).toLocaleString()
-          + ' local malware signatures. A non-match does not establish safety.'));
+          + ' known-malware hashes kept on this device. Most malware is new or repacked, so a non-match does not establish safety.'));
     list.appendChild(item);
   }
 

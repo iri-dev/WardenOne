@@ -216,7 +216,7 @@ assert(!conditionMatches(pawchivePopup, 'cdn.jsdelivr.net', 'pawchive.pw', 'scri
 
 const compatibilityRules = [ruleById(164), ruleById(165), ruleById(166)];
 for (const rule of compatibilityRules) {
-  assert.strictEqual(rule.priority, 3000);
+  assert.strictEqual(rule.priority, 1900);
   assert.strictEqual(rule.action.type, 'allow');
   assert(Array.isArray(rule.condition.requestDomains) && rule.condition.requestDomains.length);
   assert(Array.isArray(rule.condition.initiatorDomains) && rule.condition.initiatorDomains.length);
@@ -246,7 +246,7 @@ assert(conditionMatches(gameDriveRule, 'cdn.gamedrive.org', 'gamedrive.org', 'sc
 assert(!conditionMatches(gameDriveRule, 'cdn.gamedrive.org', 'evil.example', 'script'));
 
 const authRule = ruleById(167);
-assert.strictEqual(authRule.priority, 3000);
+assert.strictEqual(authRule.priority, 1900);
 assert.strictEqual(authRule.action.type, 'allow');
 assert(!Object.prototype.hasOwnProperty.call(authRule.condition, 'initiatorDomains'),
   'cross-site authentication compatibility must not be tied to one relying party');

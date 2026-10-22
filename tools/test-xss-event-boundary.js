@@ -173,10 +173,10 @@ assert(!/else if \(tabHost && msg\.type === 'behavioral_risk'\)/.test(background
 console.log('ok - bridge routing cannot turn page claims into learned blocking');
 
 {
-  const learnedSandbox = {
+  const learnedSandbox = { URL,
     X_APP_COMPAT_DOMAINS: new Set(),
     normalizeAllowlistHost(value) { return String(value || '').toLowerCase().replace(/^www\./, ''); },
-    registrableDomainBg(value) {
+    siteIdentityBg(value) {
       const parts = String(value || '').split('.').filter(Boolean);
       return parts.length > 1 ? parts.slice(-2).join('.') : parts[0] || '';
     },
@@ -185,6 +185,7 @@ console.log('ok - bridge routing cannot turn page claims into learned blocking')
     },
   };
   vm.createContext(learnedSandbox);
+  vm.runInContext(fs.readFileSync('domain-utils.js', 'utf8'), learnedSandbox);
   const policyStart = background.indexOf('function normalizeLearnedDomain(value)');
   const policyEnd = background.indexOf('function loadLearned()', policyStart);
   vm.runInContext(background.slice(policyStart, policyEnd)

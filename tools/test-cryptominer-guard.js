@@ -199,7 +199,7 @@ function run() {
     /if \(masterOff \|\| siteAllowlisted\)/.test(DETECT)
       && /detected_cryptominer/.test(DETECT) && /blocked_cryptominer/.test(DETECT));
   check('the allowlist is matched the same way the content script matches it',
-    /HOST === h \|\| HOST\.endsWith\('\.' \+ h\)/.test(DETECT));
+    /hostMatchesSite\(HOST, h\)/.test(DETECT));
   check('only workers whose own source matched are terminated',
     /liveByUrl\[url\]/.test(DETECT) && !/for \(var k in liveByUrl\)/.test(DETECT));
   check('respawned miners are killed on sight without a re-scan',

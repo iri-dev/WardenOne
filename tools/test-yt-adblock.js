@@ -9,6 +9,7 @@
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
+const auth = require("./lib/wo-auth.js");
 
 const src = fs.readFileSync(path.join(__dirname, "..", "yt-adblock.js"), "utf8");
 
@@ -50,7 +51,9 @@ function newCtx(networkBody) {
   const ctx = {
     window: { location, addEventListener: addWindowListener },
     self: { fetch: function () { return Promise.resolve(new FakeResponse(networkBody, { status: 200 })); } },
-    document: { createElement: () => ({}), head: { appendChild() {} }, documentElement: { appendChild() {} }, location },
+    document: { readyState: "loading", body: null, createElement: () => ({}), head: { appendChild() {} },
+      documentElement: { localName: "html", attributes: [], getElementsByTagName: () => [], appendChild() {} }, location },
+    CustomEvent: function (type, init) { this.type = type; this.detail = init && init.detail; },
     Response: FakeResponse,
     XMLHttpRequest: FakeXHR,
     Request: FakeRequest,
@@ -61,9 +64,11 @@ function newCtx(networkBody) {
     Promise, Object, Array, String, console, Reflect, Proxy, WeakMap, WeakSet, Date, Map,
     URLSearchParams, setTimeout,
   };
-  ctx.__postWindowMessage = (data) => {
-    (listeners.message || []).forEach((cb) => cb({ source: ctx.window, data }));
+  ctx.__postWindowMessage = (data, source = ctx.window) => {
+    (listeners.message || []).forEach((cb) => cb({ source, data }));
   };
+  ctx.__dispatchDocument = auth.documentEvents(ctx.document);
+  ctx.document.dispatchEvent = event => { ctx.__dispatchDocument(event.type, event.detail); return true; };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   return ctx;
@@ -564,14 +569,102 @@ async function main() {
       return Promise.resolve(new FakeResponse(JSON.stringify(coldSample()), { status: 200 }));
     };
     vm.runInContext(src, ctx);
-    ctx.__postWindowMessage({ source: "wardenone-handshake", token: "master-off-test" });
-    ctx.__postWindowMessage({ source: "wardenone", kind: "config", token: "master-off-test", overrides: { enabled: false } });
+    const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    bridge.sendConfig({ enabled: false });
     const body = { context: { client: { clientName: "WEB", userAgent: "UA" } }, videoId: "off", playbackContext: { contentPlaybackContext: {} } };
     const resp = await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", { method: "POST", body: JSON.stringify(body) });
     const sent = JSON.parse(receivedBody);
     const rawResponse = JSON.parse(await resp.text());
     ok("master off leaves /player request body untouched", !sent.params && !sent.playbackContext.contentPlaybackContext.lactMilliseconds);
     ok("master off leaves player response ads intact", rawResponse.adPlacements && rawResponse.playerAds && rawResponse.adSlots);
+    bridge.sendConfig({ enabled: true });
+    const resumed = await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", { method: "POST", body: JSON.stringify(body) });
+    ok("signed master on restores response pruning", adsGone(JSON.parse(await resumed.text())));
+    ok("signed master on restores request shaping", !!JSON.parse(receivedBody).params);
+  }
+
+  console.log("22) authenticated configuration:");
+  {
+    const protecting = ctx => adsGone(ctx.JSON.parse(JSON.stringify(coldSample())));
+    const ctx = newCtx("{}");
+    vm.runInContext(src, ctx);
+    const fake = { source: "wardenone", kind: "config", token: "attacker-picked", overrides: { enabled: false } };
+    ctx.__postWindowMessage({ source: "wardenone-handshake", token: fake.token });
+    ctx.__postWindowMessage(fake);
+    ok("a fake window handshake and unsigned config cannot disable pruning", protecting(ctx));
+    const foreign = auth.handshake(() => {}, ctx.__postWindowMessage, { token: fake.token });
+    foreign.sendConfig({ enabled: false });
+    ok("a self-signed config without the document-start key is rejected", protecting(ctx));
+    const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    const genuine = auth.configMessage(bridge.signer, bridge.token, { enabled: false });
+    for (const [name, change] of [
+      ["missing MAC", { mac: undefined }], ["invalid MAC", { mac: "0".repeat(64) }],
+      ...[undefined, null, [], "config"].map(overrides => ["invalid payload " + JSON.stringify(overrides), { overrides }]),
+      ["modified payload", { overrides: { enabled: false, changed: true } }],
+      ["wrong token", { token: "another-frame" }], ["wrong source", { source: "page" }],
+      ["wrong message kind", { kind: "dispose" }], ["advanced unsigned sequence", { seq: 1000000, mac: "0".repeat(64) }],
+      ...[0, -1, 0.5, "1", NaN, Infinity, Number.MAX_SAFE_INTEGER + 1].map(seq => ["invalid sequence " + seq, { seq }]),
+    ]) {
+      ctx.__postWindowMessage({ ...genuine, ...change });
+      ok(name + " cannot disable pruning", protecting(ctx));
+    }
+    ctx.__postWindowMessage(genuine, {});
+    ok("a config from another window is rejected", protecting(ctx));
+    ctx.__dispatchDocument("wo-key", { token: foreign.token, key: foreign.key });
+    foreign.sendConfig({ enabled: false });
+    ok("a replacement key cannot take over an established channel", protecting(ctx));
+    ctx.__postWindowMessage(genuine);
+    ok("rejected messages do not consume a genuine config sequence", !protecting(ctx));
+    bridge.sendConfig({ enabled: true });
+    ctx.__postWindowMessage(genuine);
+    ok("replaying an older signed disable cannot undo a newer enable", protecting(ctx));
+    const changedSequence = { ...genuine, seq: bridge.signer.seq + 1 };
+    ctx.__postWindowMessage(changedSequence);
+    ok("changing a replay's sequence invalidates its MAC", protecting(ctx));
+    const snapshot = auth.configMessage(bridge.signer, bridge.token, { enabled: true });
+    let reads = 0;
+    snapshot.overrides = { get enabled() { return ++reads === 1; } };
+    ctx.__postWindowMessage(snapshot);
+    ok("only the authenticated payload snapshot is applied", protecting(ctx) && reads === 1);
+    const duplicate = auth.configMessage(bridge.signer, bridge.token, { enabled: true });
+    ctx.__postWindowMessage(duplicate);
+    let applied = 0;
+    duplicate.overrides = { toJSON() { applied++; return { enabled: true }; } };
+    ctx.__postWindowMessage(duplicate);
+    ok("an exact duplicate is rejected before its payload is inspected", applied === 0 && protecting(ctx));
+    bridge.sendConfig({ enabled: false });
+    ok("later signed toggles still work after rejected replays", !protecting(ctx));
+    const late = newCtx("{}");
+    const lateBridge = auth.handshake(() => {}, late.__postWindowMessage);
+    let replays = 0;
+    late.document.addEventListener("wo-bridge-replay", () => {
+      replays++;
+      late.__dispatchDocument("wo-key", { token: lateBridge.token, key: lateBridge.key });
+      lateBridge.sendConfig({ enabled: false });
+    });
+    vm.runInContext(src, late);
+    ok("a module loaded after the bridge obtains authenticated config through replay", replays === 1 && !protecting(late));
+    lateBridge.sendConfig({ enabled: true });
+    ok("replayed initialization preserves later legitimate toggles", protecting(late));
+    const invalidKey = newCtx("{}");
+    vm.runInContext(src, invalidKey);
+    invalidKey.__dispatchDocument("wo-key", { token: "forged", key: "not-a-key" });
+    const validKey = auth.handshake(invalidKey.__dispatchDocument, invalidKey.__postWindowMessage);
+    validKey.sendConfig({ enabled: false });
+    ok("malformed key handoffs cannot poison legitimate initialization", !protecting(invalidKey));
+  }
+  for (const [name, change] of [
+    ["completed page", doc => { doc.readyState = "complete"; }],
+    ["existing body", doc => { doc.body = {}; }],
+    ["executable script", doc => { doc.documentElement.getElementsByTagName = () => [{ localName: "script", attributes: [] }]; }],
+    ["event-handler attribute", doc => { doc.documentElement.attributes = [{ name: "onload" }]; }],
+  ]) {
+    const ctx = newCtx("{}");
+    change(ctx.document);
+    vm.runInContext(src, ctx);
+    const forged = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    forged.sendConfig({ enabled: false });
+    ok(name + " cannot establish a new signing key", adsGone(ctx.JSON.parse(JSON.stringify(coldSample()))));
   }
 
   {

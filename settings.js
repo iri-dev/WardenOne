@@ -1917,12 +1917,14 @@ function sanitizeSiteOverrides(raw) {
   Object.keys(raw).slice(0, 500).forEach((host) => {
     const entry = raw[host];
     if (typeof host !== 'string' || !host || host.length > 260 || !isObj(entry)) { dropped++; return; }
+    const target = normalizeSiteHost(host);
+    if (!target) { dropped++; return; }
     const kept = {};
     Object.keys(entry).forEach((key) => {
       if (entry[key] === false && Object.prototype.hasOwnProperty.call(POPUP_DEFAULTS, key) && typeof POPUP_DEFAULTS[key] === 'boolean') kept[key] = false;
       else dropped++;
     });
-    if (Object.keys(kept).length) out[host] = kept;
+    if (Object.keys(kept).length) out[target] = Object.assign(out[target] || {}, kept);
   });
   return { map: out, dropped };
 }

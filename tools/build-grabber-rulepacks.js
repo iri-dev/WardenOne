@@ -27,7 +27,7 @@ assert(redirects.every((rule) => rule.condition.resourceTypes.length === 1
 
 const withoutNavigation = (rule) => ({ ...rule, condition: { ...rule.condition,
   resourceTypes: rule.condition.resourceTypes.filter((type) => type !== 'main_frame') } });
-const asSiteBlock = (rule) => ({ ...rule, priority: 1000, action: { type: 'block' } });
+const asSiteBlock = (rule) => ({ ...rule, priority: 2000, action: { type: 'block' } });
 const packs = {
   'rules-grabber-resources.json': hostBlocks.map(withoutNavigation).concat(resourceOnly),
   'rules-grabber-navigation.json': redirects,

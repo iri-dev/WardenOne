@@ -290,9 +290,9 @@ check('a click with no tab falls back to the tab you are looking at',
 {
   const compat = BG.slice(BG.indexOf('const frameAllowRules = ['), BG.indexOf('const pairs = ['));
   const compatPriority = Number((BG.match(/const MEDIA_COMPAT_RULE_PRIORITY = (\d+);/) || [])[1]);
-  const learnedPriority = BG.match(/priority: entry\.userBlocked \? (\d+) : \(grabber && cfg\.warnGrabberDomains !== false \? (\d+) : (\d+)\)/);
+  const learnedPriority = BG.match(/priority: entry\.userBlocked \? (\d+) : (\d+)/);
   const userPriority = Number(learnedPriority && learnedPriority[1]);
-  const autoPriority = Number(learnedPriority && learnedPriority[3]);
+  const autoPriority = Number(learnedPriority && learnedPriority[2]);
   check('YouTube compatibility allows only the frame request itself',
     /action: \{ type: 'allow' \}/.test(compat) && !/allowAllRequests/.test(compat)
       && /'main_frame'/.test(compat) && compatPriority > 0);
@@ -429,6 +429,15 @@ function runtime() {
     MALWARE_HASHES: new Set(['e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       '275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f']),
     EICAR_SHA256: '275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f',
+    /* The lookups live in background-downloads.js; these answer the same way over the sets here. */
+    FEED_HASHES: new Set(['b'.repeat(64)]),
+    knownMalwareHash: async (value) => {
+      const hash = String(value).toLowerCase();
+      if (sandbox.MALWARE_HASHES.has(hash)) return { hit: true, diagnostic: hash === sandbox.EICAR_SHA256, source: 'stored' };
+      if (sandbox.FEED_HASHES.has(hash)) return { hit: true, diagnostic: false, source: 'feed' };
+      return { hit: false, diagnostic: false, source: '' };
+    },
+    malwareHashCoverage: async () => ({ signatureCount: 2 }),
     DEFAULT_CONFIG: {},
     localGet: async () => ({}),
     /* The toast is raised by injecting into the tab. The test records what would
@@ -525,9 +534,14 @@ function runtime() {
     /EICAR diagnostic signature/.test((last() || {}).message || '')
       && !/Do not run|known-malware/.test((last() || {}).message || ''), JSON.stringify(last()));
 
+  await r.ask('B'.repeat(64));
+  check('a hash-feed match warns against running it and says where it matched',
+    /downloaded hash feed\. Do not run/.test((last() || {}).message || ''), JSON.stringify(last()));
+
   await r.ask('a'.repeat(64));
   check('an unknown hash is not called safe',
-    /a miss does not establish safety/.test((last() || {}).message || ''), JSON.stringify(last()));
+    /a miss does not establish safety/.test((last() || {}).message || '')
+      && /No match among 2 known-malware hashes/.test((last() || {}).message || ''), JSON.stringify(last()));
 
   /* The bundled set is SHA-256 only, so anything else must say it cannot answer
      rather than return a clean-looking "not found" it did not earn. */
@@ -550,8 +564,8 @@ function runtime() {
 
   /* Every branch answers. A check that goes quiet when it finds nothing is
      indistinguishable from one that never ran. */
-  check('every question got exactly one answer', r.notices.length === 13,
-    r.notices.length + ' answers for 13 questions');
+  check('every question got exactly one answer', r.notices.length === 14,
+    r.notices.length + ' answers for 14 questions');
   check('every answer is filed under the category that governs it',
     r.notices.every((n) => n.type === 'manual_check'));
   /* The toast is the answer, not the tray. If these start coming back as "tray"
@@ -767,8 +781,8 @@ function runtime() {
       check('the never-block list is still grown at load time', ms >= 0 && me > ms,
         'a harness that skips these reads youtube.com as blockable and hides the bug');
       if (ms >= 0 && me > ms) vm.runInContext(BG.slice(ms, me + TAIL.length), dsb, { filename: 'mutations' });
-      ['ipv4FromMappedIpv6', 'isLocalOrPrivateHost', 'isGithubUploadInfraDomain',
-       'isNeverBlockDomain', 'registrableDomainBg', 'normalizeAllowlistHost',
+      ['ipv4FromMappedIpv6', 'canonicalIpv6', 'ipv6Range', 'normalizeIpLiteral', 'isLocalOrPrivateHost', 'isGithubUploadInfraDomain',
+       'isNeverBlockDomain', 'registrableDomainBg', 'siteIdentityBg', 'normalizeAllowlistHost',
        'normalizeUserBlockDomain', 'normalizeLearnedDomain'].forEach((n) => {
         const src = liftFn(n);
         if (src) { try { vm.runInContext(src, dsb); } catch (_) {} }

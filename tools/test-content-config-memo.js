@@ -132,6 +132,7 @@ function realm(local) {
     localGet: (keys) => new Promise((resolve, reject) => { try { sandbox.chrome.storage.local.get(keys, resolve); } catch (e) { reject(e); } }),
     sanitizeWardenNotificationSettings: (v) => clone(v || {}),
     isNeverBlockDomain: () => false,
+    isUnsafeFeedBlockTarget: () => false,
     normalizeIpLiteral: () => '',
     ipv4FromMappedIpv6: () => '',
     isSafeSelector: () => true,

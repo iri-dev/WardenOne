@@ -65,7 +65,8 @@ assert(/saveConfig\('Recommended protections on', reloadActiveHttpTab\);\s*\n\s*
     assert(at > 0 && /<div class="name">[^<]+<\/div>/.test(row), key + ' has no named row, so the note could not name it');
   });
 }
-assert(/const status = cfg\.enabled === false \? 'Off'[\s\S]*'Check setup'[\s\S]*"You're safe"/.test(background), 'health status should use safer calm label');
+assert(/const offWithoutError = cfg\.enabled === false && !criticalIssue;/.test(background)
+  && /const status = offWithoutError \? 'Off'[\s\S]*'Check setup'[\s\S]*"You're safe"/.test(background), 'health status should preserve errors while keeping the calm verified label');
 assert(/severity === 'warn' && i\.topLevel/.test(background), 'non-critical notes should not force top-level attention state');
 assert(/font-family:\s*var\(--display\);[\s\S]*font-size:\s*13px;[\s\S]*font-weight:\s*700;/.test(popupHtml), 'health title should use the popup display heading styling');
 assert(/font:\s*800 15px\/1 var\(--display\)/.test(popupHtml), 'health stat numbers should use the bold display style shared with other popup stats');

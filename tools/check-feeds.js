@@ -25,6 +25,7 @@ function constant(name, fallback) {
 const MAX_BYTES = constant('LIST_SOURCE_MAX_BYTES', 18 * 1024 * 1024);
 const COSMETIC_MAX_BYTES = constant('LIST_COSMETIC_SOURCE_MAX_BYTES', 12 * 1024 * 1024);
 const SUPPLEMENTAL_MAX_BYTES = 8 * 1024 * 1024;
+const DOWNLOAD_THREAT_MAX_BYTES = constant('DOWNLOAD_THREAT_SOURCE_MAX_BYTES', 9 * 1024 * 1024);
 const OPENPHISH_MAX_BYTES = constant('OPENPHISH_FEED_MAX_BYTES', 6 * 1024 * 1024);
 const TIMEOUT_MS = constant('LIST_FETCH_TIMEOUT_MS', 25000);
 const OPENPHISH_TIMEOUT_MS = constant('EXTERNAL_REPUTATION_TIMEOUT_MS', 6500);
@@ -34,6 +35,7 @@ const OPENPHISH_TIMEOUT_MS = constant('EXTERNAL_REPUTATION_TIMEOUT_MS', 6500);
 const policyFor = (feed) => {
   const purposes = feed.purposes || [];
   if (feed.toggles.includes('openPhish')) return { url: feed.url, maxBytes: OPENPHISH_MAX_BYTES, timeoutMs: OPENPHISH_TIMEOUT_MS };
+  if (purposes.includes('Download Guard payload URLs and file hashes')) return { url: feed.url, maxBytes: DOWNLOAD_THREAT_MAX_BYTES, timeoutMs: TIMEOUT_MS };
   if (purposes.includes('Supplemental domain lists')) return { url: feed.url, maxBytes: SUPPLEMENTAL_MAX_BYTES, timeoutMs: TIMEOUT_MS };
   if (purposes.includes('Cosmetic (element-hiding) filtering')) return { url: feed.url, maxBytes: COSMETIC_MAX_BYTES, timeoutMs: TIMEOUT_MS };
   return { url: feed.url, maxBytes: MAX_BYTES, timeoutMs: TIMEOUT_MS };

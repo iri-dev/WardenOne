@@ -146,8 +146,8 @@ check('the feed is attributed in CREDITS',
 
 /* parseList is what turns the feed into hosts, so its guards matter here. */
 const parseListSrc = BG.slice(BG.indexOf('function parseList(text)'), BG.indexOf('\n}\n', BG.indexOf('function parseList(text)')));
-check('the parser refuses never-block domains, so a bad feed cannot dim GitHub',
-  /isNeverBlockDomain\(line\)/.test(parseListSrc));
+check('the search-junk bucket retains its compatibility guard',
+  /bucket === 'grabberDomainsExtra' \? isUnsafeFeedBlockTarget\(h\) : isNeverBlockDomain\(h\)/.test(BG));
 check('the parser skips comment lines the feed header uses',
   /startsWith\('#'\)/.test(parseListSrc));
 

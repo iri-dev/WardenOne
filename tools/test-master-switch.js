@@ -49,7 +49,7 @@ function rig(options) {
   const o = options || {};
   const state = { enabled: o.enabled !== false, dnr: [], session: [], updates: 0, sessionCleared: 0, writes: [] };
   const ctx = {
-    console: { warn() {}, log() {} }, Object, Array, Number, String, JSON, Math, Date, Promise, Set, Map, RegExp,
+    URL, console: { warn() {}, log() {} }, Object, Array, Number, String, JSON, Math, Date, Promise, Set, Map, RegExp,
     localGet: async () => ({ wardenone_config: { enabled: state.enabled } }),
     localSet: async (o2) => { state.writes.push(o2); },
     userFilterBundle: async () => ({ network: [{ id: 750000, priority: 97000, action: { type: 'block' }, condition: { urlFilter: '||ads.example^', resourceTypes: ['script'] } }], cosmetic: [], errors: [] }),
@@ -77,6 +77,7 @@ function rig(options) {
     },
   };
   vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), ctx);
   vm.runInContext(BAND_CONSTS + '\nvar __allowlistRulesKey = null; const ALLOWLIST_RULE_BASE = 800000;\n'
     + ['masterSwitchOn', 'isWardenOneDynamicRuleId', 'removeWardenOneDynamicRules', 'applyUserFilterRulesFrom', 'applyUserFilterRules',
       'applyFirewallRulesFrom', 'applyFirewallRules', 'applyUserBlocklistRules', 'applyAllowlistRules',

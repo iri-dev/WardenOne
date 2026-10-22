@@ -129,9 +129,9 @@ check('a navigation signal counts only with the bridge\'s signature (SEC-13)',
   /engineMac\('nav-signal', seq \+ '\\n' \+ kind \+ '\\n' \+ host \+ \(url \? '\\n' \+ url : ''\)\)/.test(BRIDGE));
 check('an interstitial request counts only with the bridge\'s signature (SEC-15)', /interstitialRequestSigned\(d\.detail\)/.test(BRIDGE));
 check('"installed" and "pong" count only signed', /engineMac\('installed', TOKEN\)/.test(BRIDGE) && /engineMac\('pong', bridgePendingPong\.nonce\)/.test(BRIDGE));
-check('the engine applies a config only after verifying its signature', /__woVerify\("config",JSON\.stringify\(m\.overrides\),m\)/.test(engineMin));
+check('the engine applies a config only after verifying its signature', /__woAuth\.config\(m,__woKey,__woLastSeq\)/.test(engineMin));
 check('the redirect guard applies config and dispose only after verifying their signatures',
-  /woVerify\('config', JSON\.stringify\(msg\.overrides\), msg\)/.test(guard) && /woVerify\('dispose', '', msg\)/.test(guard));
+  /__woAuth\.config\(msg, woKey, woLastSeq\)/.test(guard) && /woVerify\('dispose', '', msg\)/.test(guard));
 {
   const probe = BG.slice(BG.indexOf('async function verifyEngineInTab'), BG.indexOf('\n}\n', BG.indexOf('async function verifyEngineInTab')));
   check('the worker\'s health authority is the bridge, not a page-writable marker (SEC-03)',

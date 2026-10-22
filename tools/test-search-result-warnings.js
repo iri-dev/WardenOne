@@ -211,6 +211,7 @@ check('the pressure trim cuts the count with the array',
     String, Set, Array, RegExp,
     registrableDomainBg: (h) => { const p = String(h).split('.'); return p.slice(-2).join('.'); },
     isNeverBlockDomain: (d) => /^(google\.com|googleapis\.com|gstatic\.com|microsoft\.com|live\.com|apple\.com)$/.test(d),
+    isUnsafeFeedBlockTarget: (d) => d === 'co.uk',
   };
   vm.createContext(sandbox);
   vm.runInContext(BG.slice(from, to) + ';globalThis.__load = packagedGrabberDomainsFrom;', sandbox, { filename: 'background.js:packaged-grabbers' });
@@ -228,8 +229,8 @@ check('the pressure trim cuts the count with the array',
     { action: { type: 'block' }, condition: { requestDomains: ['google.com'], resourceTypes: ['main_frame'] } },
   ]);
   check('only a rule that blocks a whole domain outright names a logger',
-    built.has('logger.example') && built.has('www.logger2.example') && built.size === 2, Array.from(built).join(','));
-  check('a never-block domain is refused even from a block rule', !built.has('google.com'));
+    built.has('logger.example') && built.has('www.logger2.example') && built.size === 3, Array.from(built).join(','));
+  check('an explicit packaged block is not discarded by infrastructure compatibility', built.has('google.com'));
 }
 
 /* ---- what warns, and what must not ---------------------------------------- */

@@ -29,13 +29,13 @@ function check(name, cond, detail) {
 /* Helpers whose purpose is to take rules away, with nothing to put back. */
 const REMOVAL_ONLY = new Set(['removeWardenOneDynamicRules']);
 /* Where a write reaches Chrome on another's behalf: each passes the caller's change on whole. */
-const PASS_THROUGH = new Set(['createReconcileDnrBatch', 'writeDynamicRules']);
+const PASS_THROUGH = new Set(['createReconcileDnrBatch', 'writeDynamicRules', 'writeSessionRules']);
 function enclosingFunction(source, index) {
   const names = [...source.slice(0, index).matchAll(/(?:async\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/g)];
   return names.length ? names[names.length - 1][1] : '';
 }
 {
-  const re = /chrome\.declarativeNetRequest\.update(Session|Dynamic)Rules\(|(?<!function )\bwriteDynamicRules\(/g;
+  const re = /chrome\.declarativeNetRequest\.update(Session|Dynamic)Rules\(|(?<!function )\bwrite(?:Dynamic|Session)Rules\(/g;
   let m;
   let calls = 0;
   const offenders = [];

@@ -223,6 +223,7 @@ function build(opts) {
   loc.pathname = opts.pathname || '/page';
   sandbox.location = loc;
   sandbox.document = {
+    readyState: 'loading',
     body: opts.bodyChildren || opts.htmlChildren ? { nodeType: 1, tagName: 'BODY', children: opts.bodyChildren || [] } : undefined,
     documentElement: opts.bodyChildren || opts.htmlChildren ? { nodeType: 1, tagName: 'HTML', children: opts.htmlChildren || [] } : undefined,
     activeElement: null,
@@ -315,7 +316,14 @@ function build(opts) {
     submit(form) { sandbox.HTMLFormElement.prototype.submit.call(form); },
     lastEmit() { return state.emits[state.emits.length - 1] || null; },
     handshake(config) {
-      if (!api.link) api.link = woAuth.handshake(dispatchDoc, (data) => api.fire('message', { source: innerWindow, data }));
+      if (!api.link) {
+        const body = sandbox.document.body, root = sandbox.document.documentElement;
+        sandbox.document.body = null;
+        sandbox.document.documentElement = null;
+        api.link = woAuth.handshake(dispatchDoc, (data) => api.fire('message', { source: innerWindow, data }));
+        sandbox.document.body = body;
+        sandbox.document.documentElement = root;
+      }
       if (config !== false) {
         api.link.sendConfig(Object.assign({
           enabled: true,

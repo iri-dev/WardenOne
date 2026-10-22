@@ -43,7 +43,7 @@ function lift(name) {
   }
   return null;
 }
-const PIECES = ['normalizeTrackerDomain', 'registrableDomainBg', 'trackerStoreShape', 'trackerDistinctSiteCount',
+const PIECES = ['normalizeTrackerDomain', 'siteIdentityBg', 'trackerStoreShape', 'trackerDistinctSiteCount',
   'trackerDistinctSessionCount', 'trackerDay', 'trackerNewSalt', 'trackerSaltShape', 'trackerLearnerSalt',
   'trackerMarkPositions', 'trackerMarkHas', 'trackerMarkAdd', 'trackerSessionState', 'noteTrackerSessionSeen',
   'noteTrackerSiteView', 'trackerSiteViewFor', 'resetTrackerSessionState', 'isProtectedTrackerDomain',
@@ -143,7 +143,7 @@ function section(name, fn) { sections.push([name, fn]); }
     check('the sketch is one 32-bit number', e && typeof e.marks === 'number' && e.marks >= 0 && e.marks <= 0xffffffff, e && e.marks);
     check('sessions is a count, and no session id is stored', e && e.sessions === 2 && !/__wo_tracker_session|sessionId|"sessions":\[/.test(r.lastWritten()), e && e.sessions);
     check('times are to the day', e && dayAligned(e.firstSeen) && dayAligned(e.lastSeen), e && [e.firstSeen, e.lastSeen]);
-    check('the store carries its version and a 32-hex key', /"version":2/.test(r.lastWritten()) && /"salt":"[0-9a-f]{32}"/.test(r.lastWritten()));
+    check('the store carries its version and a 32-hex key', JSON.parse(r.lastWritten()).wardenone_tracker_learner.version === Number(BG.match(/^const TRACKER_LEARNER_STORE_VERSION = (\d+);/m)[1]) && /"salt":"[0-9a-f]{32}"/.test(r.lastWritten()));
     check('no per-site hit counts or per-site times exist anywhere', !/"lastSeen":\{|"hits":\{/.test(r.lastWritten()) && !r.lastWritten().includes('siteHits'));
   });
 
@@ -251,7 +251,7 @@ function section(name, fn) { sections.push([name, fn]); }
     check('...and into the sketch, so counting continues where it left off', w && r.api.markHas(w.marks, learner.salt, 'news-alpha.example') && r.api.markHas(w.marks, learner.salt, 'shop-beta.example') && !r.api.markHas(w.marks, learner.salt, 'forum-gamma.example'));
     check('session ids fold into a distinct count', w && w.sessions === 2 && l && l.sessions === 2);
     check('exact times fold to the day', w && dayAligned(w.firstSeen) && dayAligned(w.lastSeen) && l && dayAligned(l.approvedAt));
-    check('the names are written back out of the store at once, without waiting for an observation', r.state.written.length === 1 && namesIn(r.lastWritten()).length === 0 && /"version":2/.test(r.lastWritten()), r.state.written.length);
+    check('the names are written back out of the store at once, without waiting for an observation', r.state.written.length === 1 && namesIn(r.lastWritten()).length === 0 && JSON.parse(r.lastWritten()).wardenone_tracker_learner.version === learner.version, r.state.written.length);
     await r.observe('shop-beta.example', 'legacy-watch.net');
     check('a folded site is not counted again', r.entry('legacy-watch.net').sites === 2);
     await r.observe('forum-gamma.example', 'legacy-watch.net');
@@ -262,6 +262,54 @@ function section(name, fn) { sections.push([name, fn]); }
   });
 
   /* ---- 6. the reset PRIVACY.md promised --------------------------------------------- */
+  section('tenant scope migration', async () => {
+    const now = 1758240000000;
+    const approved = { state: 'learned', approvedAt: now, lastSeen: now, hits: 4, sites: 3, sessions: 2 };
+    const proposed = { ...approved, state: 'proposed', approvedAt: 0 };
+    const r = rig({ raw: { version: 2, salt: 'a'.repeat(32), domains: {
+      'webflow.io': approved, 'github.io': approved, 'co.uk': proposed,
+      'alice.webflow.io': approved, 'bob.webflow.io': proposed, 'ordinary.net': approved,
+    }, siteControls: {
+      'webflow.io': { block: { 'ordinary.net': now } },
+      'shop.alice.webflow.io': { allow: { 'webflow.io': now }, block: { 'analytics.bob.webflow.io': now } },
+    } }, now });
+    await r.api.load();
+    const saved = JSON.parse(r.lastWritten()).wardenone_tracker_learner;
+    check('migration withdraws public-suffix targets without guessing a tenant',
+      JSON.stringify(Object.keys(saved.domains).sort()) === JSON.stringify(['alice.webflow.io', 'bob.webflow.io', 'ordinary.net']));
+    check('migration preserves independent tenant evidence and approval',
+      saved.domains['alice.webflow.io'].state === 'learned' && saved.domains['alice.webflow.io'].approvedAt > 0
+      && saved.domains['bob.webflow.io'].state === 'proposed' && saved.domains['bob.webflow.io'].approvedAt === 0);
+    check('migration removes broad site controls and scopes surviving controls to tenants',
+      !saved.siteControls['webflow.io'] && !saved.siteControls['alice.webflow.io'].allow['webflow.io']
+      && saved.siteControls['alice.webflow.io'].block['bob.webflow.io'] > 0);
+    const restored = rig({ raw: saved, now });
+    await restored.api.load();
+    check('a migrated store needs no second migration write', restored.state.written.length === 0);
+  });
+  section('tenant session restore', async () => {
+    const r = rig();
+    r.state.sessionStore.wardenone_tracker_session = {
+      counted: ['webflow.io', 'analytics.alice.webflow.io', TRACKER],
+      siteView: {
+        'webflow.io': { [TRACKER]: 5 },
+        'shop.alice.webflow.io': { 'analytics.bob.webflow.io': 2, 'webflow.io': 10, [TRACKER]: 4 },
+        'shop.bob.webflow.io': { [TRACKER]: 3 },
+      },
+    };
+    await r.observe('news.alice.webflow.io');
+    const a = await r.api.status('https://alice.webflow.io/');
+    const b = await r.api.status('https://bob.webflow.io/');
+    check('restored session views keep counts on the owning tenant',
+      a.items.find(item => item.domain === TRACKER)?.siteHits === 5
+      && b.items.find(item => item.domain === TRACKER)?.siteHits === 3);
+    check('worker restore does not count the same browser session twice', r.entry(TRACKER).sessions === 0);
+    const restored = r.state.sessionStore.wardenone_tracker_session;
+    check('restored session data rejects platform-wide keys and retains tenant membership',
+      !restored.counted.includes('webflow.io') && restored.counted.includes('alice.webflow.io')
+      && !restored.siteView['webflow.io'] && restored.siteView['alice.webflow.io']['bob.webflow.io'] === 2);
+  });
+
   section('the reset PRIVACY.md promised', async () => {
     const r = rig();
     await r.observe(SITES[0]);

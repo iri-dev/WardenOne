@@ -167,12 +167,8 @@ const sorted = (a) => a.slice().sort().join(',');
     (lists.MINER_POOL_RESOURCE_TYPES || []).indexOf('websocket') >= 0);
 }());
 
-(function allowRulesOutrankAndOutcoverBlocks() {
-  /* Login-compat allow rules run at priority 96000 and beat every block rule in
-   * the extension. That only helps on the types they actually list: widening a
-   * block list past the allow list breaks a sign-in on whichever type the allow
-   * list forgot, and it breaks it invisibly, because the request simply does not
-   * arrive. So the allow list must be a superset, permanently. */
+(function loginCompatibilityCoversAllTransports() {
+  /* Compatibility covers the same transports; security blocks retain priority. */
   const allow = lists.LOGIN_COMPAT_RESOURCE_TYPES || [];
   [['RESOURCE_TYPES', lists.RESOURCE_TYPES], ['SECURITY_RESOURCE_TYPES', lists.SECURITY_RESOURCE_TYPES]]
     .forEach((pair) => {

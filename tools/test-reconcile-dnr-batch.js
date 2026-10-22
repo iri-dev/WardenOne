@@ -8,6 +8,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { installSessionIo } = require('./lib/dynamic-rule-io.js');
 
 const background = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
 const start = background.indexOf('function createReconcileDnrBatch(kind) {');
@@ -34,6 +35,7 @@ function harness(fail) {
     Promise, Set, Error,
   };
   vm.createContext(context);
+  installSessionIo(context);
   vm.runInContext(source + '\nthis.make = createReconcileDnrBatch;', context);
   return { make: context.make, calls, timers, flushTimer: async () => { const timer = timers.shift(); assert(timer); await timer.fn(); await tick(); } };
 }

@@ -263,7 +263,7 @@ WardenOne uses independently maintained protection lists. Their maintainers reta
 Published licenses and written permissions are separate permission grants; no personal reply is needed when the applicable license covers the use.
 The inventory records exact addresses, local processing, evidence and any specific scope exception.
 
-[38 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)
+[40 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)
 
 | Source | Runtime feeds | License or permission |
 | --- | --- | --- |
@@ -272,7 +272,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [Fanboy’s Annoyance and Social Blocking lists](https://easylist.to/) | 2 | CC-BY-3.0 |
 | [EasyList and EasyPrivacy](https://easylist.to/) | 2 | GPL-3.0-or-later OR CC-BY-SA-3.0-or-later |
 | [malware-filter Phishing hosts](https://gitlab.com/malware-filter/phishing-filter) | 1 | CC-BY-SA-4.0; Specific upstream/use-scope exception — see source review |
-| [malware-filter URLhaus hosts](https://gitlab.com/malware-filter/urlhaus-filter) | 1 | MIT OR CC0-1.0 |
+| [malware-filter URLhaus hosts and online URLs](https://gitlab.com/malware-filter/urlhaus-filter) | 2 | MIT OR CC0-1.0 |
 | [malware-filter VN Badsite hosts](https://gitlab.com/malware-filter/vn-badsite-filter) | 1 | MIT OR CC0-1.0 |
 | [Peter Lowe ad and tracking servers](https://pgl.yoyo.org/adservers/) | 1 | Written permission (2026-10) |
 | [Phishing Army](https://phishing.army/) | 1 | Written permission (2026-10); Specific upstream/use-scope exception — see source review |
@@ -290,6 +290,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [OpenPhish Community Feed](https://openphish.com/) | 1 | LicenseRef-OpenPhish-Terms; Specific upstream/use-scope exception — see source review |
 | [PhishDestroy Destroylist](https://github.com/phishdestroy/destroylist) | 1 | MIT |
 | [uBlock-Origin-dev-filter domains](https://github.com/quenhus/uBlock-Origin-dev-filter) | 1 | Unlicense |
+| [malicious-hash SHA-256 feed](https://github.com/romainmarcoux/malicious-hash) | 1 | MIT; Specific upstream/use-scope exception — see source review |
 | [StevenBlack porn-only hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND CC-BY-4.0 |
 | [StevenBlack unified hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND upstream terms |
 | [Anti-Grabify](https://github.com/TMAFE/anti-grabify) | 1 | MPL-2.0 |

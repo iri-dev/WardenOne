@@ -12,6 +12,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { installSessionIo } = require('./lib/dynamic-rule-io.js');
 const resourceTypes = require('./lib/resource-types.js');
 
 const ROOT = path.resolve(__dirname, '..');
@@ -83,6 +84,7 @@ function harness(options) {
   }, resourceTypes.resolveAll(BG));
 
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   /* Publishing the quarantine writes through the worker's config write path. */
   vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ, sandbox, { filename: 'config-write-harness' });
   vm.runInContext(
@@ -175,9 +177,8 @@ pending.push((async function quarantineBlocksAndIsPublished() {
   check('a session block rule is installed for the host', !!rule && rule.action.type === 'block');
   check('the block covers every transport, as a security rule should',
     !!rule && rule.condition.resourceTypes.length === resourceTypes.resolve('SECURITY_RESOURCE_TYPES', BG).length);
-  /* Below login-compat's 96000. A quarantine that outranked it would let one bad
-     resolution lock someone out of their own identity provider. */
-  check('the rule sits below the login-compat allow priority', !!rule && rule.priority < 96000);
+  const loginPriority = Number(BG.match(/id: LOGIN_COMPAT_RULE_BASE \+ i,\s*priority:\s*(\d+)/)[1]);
+  check('a confirmed rebind quarantine outranks login compatibility', !!rule && rule.priority > loginPriority);
   check('the quarantine is published for the page guard',
     (h.config.rebindQuarantine || []).indexOf('evil.example') >= 0,
     JSON.stringify(h.config.rebindQuarantine));
@@ -354,6 +355,7 @@ function sessionHarness(sessionMarked, durableHosts) {
     },
   }, resourceTypes.resolveAll(BG));
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ, sandbox, { filename: 'config-write-harness' });
   /* The region ends with the top-level restoreRebindQuarantine() call: that IS the worker-start
      restore, launched on evaluation exactly as the real worker launches it. */
@@ -447,6 +449,7 @@ pending.push((async () => {
   sandbox.activeAllowlist = () => [];
   sandbox.refreshIntranetNetworkRules = () => {};
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   vm.runInContext(
     between('function ipv4FromMappedIpv6(', '\nfunction normalizeIpLiteral(')
       + between('const REBIND_QUARANTINE_RULE_BASE', '\nconst HEALTH_SHIELD_KEYS = [')

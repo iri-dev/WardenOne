@@ -498,11 +498,12 @@
       "checkedAt": "2026-10-20"
     },
     "urlhaus": {
-      "name": "malware-filter URLhaus hosts",
+      "name": "malware-filter URLhaus hosts and online URLs",
       "publisher": "Ming Di Leom / malware-filter",
       "home": "https://gitlab.com/malware-filter/urlhaus-filter",
       "urls": [
-        "https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-hosts.txt"
+        "https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-hosts.txt",
+        "https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-online.txt"
       ],
       "license": {
         "type": "published-license",
@@ -532,8 +533,8 @@
       "evidence": [
         {
           "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md",
-          "documentSha256": "6b19cb313a6c234ad851ee253ef8ef444de784481fe66622daac745512f4ab40",
-          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+          "documentSha256": "0166b8144a53b9a114440ee1ebac612d72d9cab9dc26b01b76014245c867fdeb",
+          "finding": "Published basis for the exact lists; the README's license section (CC0-1.0 and MIT) covers the hosts and online-URL outputs alike. File-specific declarations take precedence over repository defaults."
         }
       ],
       "upstream": [
@@ -541,7 +542,7 @@
           "name": "URLhaus / abuse.ch",
           "url": "https://urlhaus.abuse.ch/",
           "license": "CC0-1.0",
-          "note": ""
+          "note": "As labelled by malware-filter. abuse.ch's current terms state CC0 only for Feodo Tracker, SSL Blacklist and YARAify and make URLhaus free for not-for-profit use, which covers WardenOne's noncommercial use."
         },
         {
           "name": "Tranco",
@@ -550,7 +551,79 @@
           "note": "False-positive exclusion input, not republished as ranking data."
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-10-22"
+    },
+    "malicious-hash": {
+      "name": "malicious-hash SHA-256 feed",
+      "publisher": "Romain Marcoux",
+      "home": "https://github.com/romainmarcoux/malicious-hash",
+      "urls": [
+        "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/full-hash-sha256-aa.txt"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT",
+        "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2025 Romain MARCOUX; MalwareBazaar and URLhaus / abuse.ch; AlienVault OTX community pulses.",
+      "compliance": {
+        "status": "clarification-required",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material.",
+          "The MIT grant covers the aggregator's own work. The OTX EULA prohibits republishing any portion of OTX, so the MIT grant does not establish rights to the OTX-derived hashes."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing keeps truncated SHA-256 prefixes for local lookups only; the raw runtime feed is not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": [
+          "MH-1"
+        ]
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/LICENSE",
+          "documentSha256": "e1940949a700d0b62f9f195673d29202813f97494bfe89fb57d273eb7f004390",
+          "finding": "Repository-wide MIT grant covering the published hash files; the README names the aggregated upstream sources."
+        },
+        {
+          "url": "https://www.levelblue.com/terms/otx-eula",
+          "finding": "OTX is free for non-commercial end use. Section 2.3 prohibits republishing or distributing all or any portion of OTX and commercial exploitation; Section 8 grants no further rights. The file does not mark which hashes came from OTX, so they cannot be removed locally."
+        },
+        {
+          "url": "https://abuse.ch/terms-of-use/",
+          "finding": "Current terms state CC0 only for Feodo Tracker, SSL Blacklist and YARAify. MalwareBazaar and URLhaus are free for not-for-profit use; commercial use may require a Spamhaus subscription. WardenOne's use is free and noncommercial."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "MalwareBazaar / abuse.ch",
+          "url": "https://bazaar.abuse.ch/",
+          "license": "abuse.ch Terms of Use",
+          "note": "Samples from the last 120 days. Free for not-for-profit use."
+        },
+        {
+          "name": "URLhaus / abuse.ch",
+          "url": "https://urlhaus.abuse.ch/",
+          "license": "abuse.ch Terms of Use",
+          "note": "Payloads fetched from malicious URLs in the last month. Free for not-for-profit use."
+        },
+        {
+          "name": "AlienVault OTX",
+          "url": "https://otx.alienvault.com/",
+          "license": "Scope clarification pending",
+          "note": "Hashes from two public community pulses, as selected by the aggregator; see MH-1."
+        }
+      ],
+      "checkedAt": "2026-10-22"
     },
     "vn": {
       "name": "malware-filter VN Badsite hosts",

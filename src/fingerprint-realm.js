@@ -96,40 +96,13 @@
 
   /* Accept the one-time key only before executable page content could have run. Initial about:blank
      children already have a body and must use same-origin adoption rather than accept a forged key. */
-  const INERT_TAG = /^(?:head|meta|title|link|style|base)$/;
-  const pageCouldHaveRun = () => {
-    try {
-      if (document.readyState !== 'loading' || document.body) return true;
-      const root = document.documentElement;
-      if (!root) return false;
-      const all = root.getElementsByTagName('*');
-      if (all.length > 64) return true;
-      for (let i = -1; i < all.length; i++) {
-        const el = i < 0 ? root : all[i];
-        if (i >= 0 && !INERT_TAG.test(String(el.localName || '').toLowerCase())) return true;
-        const attrs = el.attributes;
-        for (let j = 0; attrs && j < attrs.length; j++) {
-          if (/^on/i.test(String(attrs[j].name || ''))) return true;
-        }
-      }
-      return false;
-    } catch (_) { return true; }
-  };
   let token = null;
   let key = null;
   let lastSeq = 0;
-  const verify = (kind, payload, m) => {
-    if (key === null || !m) return false;
-    const seq = Number(m.seq);
-    if (!Number.isInteger(seq) || seq <= lastSeq) return false;
-    if (!__woAuth.same(m.mac, __woAuth.hmac(key, seq + '\n' + kind + '\n' + String(payload)))) return false;
-    lastSeq = seq;
-    return true;
-  };
   document.addEventListener('wo-key', (e) => {
     const d = e && e.detail;
     if (key !== null || !d || typeof d.token !== 'string' || !d.token || typeof d.key !== 'string' || !d.key) return;
-    if (pageCouldHaveRun()) return;
+    if (!/^[0-9a-f]{64}$/i.test(d.key) || __woAuth.pageCouldHaveRun(document)) return;
     token = d.token;
     key = __woAuth.key(d.key);
   }, true);
@@ -137,8 +110,10 @@
     if (event.source !== window) return;
     const m = event.data || {};
     if (m.source !== 'wardenone' || m.kind !== 'config' || token === null || m.token !== token) return;
-    if (!m.overrides || typeof m.overrides !== 'object') return;
-    if (!verify('config', JSON.stringify(m.overrides), m)) return;
+    const verified = __woAuth.config(m, key, lastSeq);
+    if (!verified) return;
+    lastSeq = verified.seq;
+    const config = verified.overrides;
     /* The parent's answer normally lands before this frame's own. Mirroring it keeps the realms
        a page can compare agreeing on the numbers, so adoption is tried once more first. */
     const late = adopt();
@@ -147,8 +122,8 @@
       else settle(late.noise, late.webglBlocked === true, late);
       return;
     }
-    if (settled) publishWebGL(m.overrides.webglDisabled === true);
-    else settle(m.overrides.frameNoise === true, m.overrides.webglDisabled === true, null);
+    if (settled) publishWebGL(config.webglDisabled === true);
+    else settle(config.frameNoise === true, config.webglDisabled === true, null);
   }, true);
   /* The bridge may have run first, and handed its key to a document with no listener yet. */
   if (!early) try { document.dispatchEvent(new CustomEvent('wo-bridge-replay')); } catch (_) {}

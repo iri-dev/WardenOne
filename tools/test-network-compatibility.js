@@ -16,6 +16,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { installSessionIo } = require('./lib/dynamic-rule-io.js');
 const resourceTypes = require('./lib/resource-types.js');
 /* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
  * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
@@ -54,6 +55,8 @@ function loadNetworkParsers(realMedia = false) {
     URL,
     isMediaCompatFilter: () => false,
     isNeverBlockDomain: () => false,
+    isUnsafeFeedBlockTarget: () => false,
+    remoteRuleSourceKind: (kind) => kind === 'adshield' || kind === 'tracker' ? kind : 'security',
     setTimeout(callback, ms) {
       yields.count++;
       return setTimeout(callback, ms);
@@ -61,14 +64,15 @@ function loadNetworkParsers(realMedia = false) {
   };
   if (!realMedia) sandbox.isMediaCompatDomainLowercase = () => false;
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   installEngineAmbient(sandbox);
   if (realMedia) {
-    vm.runInContext(sourceBetween('const MEDIA_COMPAT_DOMAINS', '\n// Globally-trusted')
+    vm.runInContext(sourceBetween('const MEDIA_COMPAT_DOMAINS', '\n// Compatibility safeguards')
       + '\nthis.__media = { domains: Array.from(MEDIA_COMPAT_DOMAINS), isMediaCompatDomain, isMediaCompatDomainLowercase };', sandbox);
   }
   vm.runInContext(
     sourceBetween('const UBO_TYPE_MAP', '\nfunction getListMeta')
-      + '\nthis.__api = { parseList, parseListInSlices, parseNetworkRules };',
+      + '\nthis.__api = { parseList, parseListInSlices, parseNetworkRules, remoteListBlockAllowed };',
     sandbox,
   );
   return Object.assign({ yields, media: sandbox.__media }, sandbox.__api);
@@ -79,6 +83,7 @@ function loadRedirectPolicy() {
     isLoginCompatibilityUrl: (url) => String(url).includes('auth.example'),
   };
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('function redirectChainContainsKnownAuth', '\nasync function evaluateRedirectChain')
@@ -119,6 +124,7 @@ function loadMediaCompatibilityRules() {
     console,
   }, resourceTypes.resolveAll(BACKGROUND));
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('let __mediaCompatibilityRulesEnabled', '\nlet __loginCompatibilityRulesEnabled')
@@ -144,6 +150,7 @@ function loadRemoteListCommitGuard(options = {}) {
     },
   };
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('async function commitRemoteListRules', '\nlet __remoteListUpdateInFlight')
@@ -156,6 +163,7 @@ function loadRemoteListCommitGuard(options = {}) {
 function runStoredConfigUpdateMigration(config) {
   const sandbox = { cfg: Object.assign({}, config || {}) };
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
     'let changed = false;\n'
@@ -173,6 +181,7 @@ function loadExactDomainRuleHelpers() {
      the moment the code under test grows, not at the moment it goes wrong. */
   const sandbox = Object.assign({}, resourceTypes.resolveAll(BACKGROUND));
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('function domainToRule', '\nfunction isWardenOneDynamicRuleId')
@@ -257,9 +266,11 @@ test('media-domain suffix matching preserves exact, child, case, and deceptive-h
       'normalized path mismatch: ' + host);
   }
   const feed = entries.filter(([host]) => host).map(([host]) => '0.0.0.0 ' + host).join('\n');
-  const expectedFeed = Array.from(unfiltered.parseList(feed)).filter((host) => !previous(host));
-  assert.deepStrictEqual(Array.from(real.parseList(feed)), expectedFeed,
-    'the full feed parser changed which media and deceptive hosts it keeps');
+  const parsed = Array.from(real.parseList(feed));
+  assert.deepStrictEqual(parsed, Array.from(unfiltered.parseList(feed)), 'parsing must retain security-feed candidates');
+  assert.deepStrictEqual(parsed.filter(host => real.remoteListBlockAllowed(host, '', 'tracker')),
+    parsed.filter(host => !previous(host)), 'tracker compatibility changed');
+  assert(parsed.every(host => real.remoteListBlockAllowed(host, '', 'security')), 'media compatibility vetoed security evidence');
 });
 
 /* Reported 2026-10-02: Google results for SteamRIP said "On a malware and scam blocklist", and the
@@ -588,6 +599,7 @@ test('background no longer closes blank login popups or blocks client-cert promp
     recentlyForcedFromHttp: () => null,
   };
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween('function classifyTrustError', '\nasync function trustErrorPageUrl')

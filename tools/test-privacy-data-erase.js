@@ -8,6 +8,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { installSessionIo } = require('./lib/dynamic-rule-io.js');
 process.exitCode = 1;
 
 const root = path.resolve(__dirname, '..');
@@ -69,6 +70,7 @@ function harness(initialLocal, initialSession, options = {}) {
   };
   let lock = Promise.resolve();
   vm.createContext(sandbox);
+  installSessionIo(sandbox);
   vm.runInContext(fs.readFileSync(path.join(root, 'domain-utils.js'), 'utf8') + '\n'
     + fs.readFileSync(path.join(root, 'psl-private.js'), 'utf8'), sandbox);
   /* The reset clears and rewrites the config under the config lock (config-lock.js). */

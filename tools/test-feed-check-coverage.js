@@ -32,6 +32,8 @@ assert.equal(source('/filter_3_Spyware/').maxBytes, 12 * 1024 * 1024,
   'a source shared with cosmetic filtering uses the cosmetic cap');
 assert.equal(source('/blocklistproject/Lists/master/scam.txt').maxBytes, 18 * 1024 * 1024,
   'an ordinary network list uses the network cap');
+assert.deepEqual([source('/urlhaus-filter-online.txt').maxBytes, source('/malicious-hash/').maxBytes],
+  [9 * 1024 * 1024, 9 * 1024 * 1024], 'Download Guard feeds use their own cap');
 assert(policies.every((policy) => Number.isSafeInteger(policy.maxBytes) && policy.maxBytes > 0
   && Number.isSafeInteger(policy.timeoutMs) && policy.timeoutMs > 0));
 

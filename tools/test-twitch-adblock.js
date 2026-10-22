@@ -17,6 +17,7 @@
 
 const fs = require('fs');
 const vm = require('vm');
+const auth = require('./lib/wo-auth.js');
 /* This suite lifts a region of the engine and runs it in a hand-built sandbox, so it has to be
  * given the helpers the engine declares in its teardown preamble -- a lifted fragment cannot see
  * them otherwise. Only those helpers are supplied, not the whole preamble, so a fragment that
@@ -419,6 +420,7 @@ function createPageHarness(config, harnessOptions) {
   }
 
   const document = new EventTargetHarness();
+  document.readyState = 'loading';
   Object.defineProperty(document, 'hidden', {
     configurable: true,
     get() { return state.documentHidden; },
@@ -432,6 +434,7 @@ function createPageHarness(config, harnessOptions) {
     get() { return state.documentHidden; },
   });
   const root = new ElementHarness('html');
+  root.getElementsByTagName = () => [];
   root.isConnected = true;
   /* rootless starts the module before the document has a root, as at the earliest document_start;
      attachRoot() then supplies it. */
@@ -529,6 +532,7 @@ function createPageHarness(config, harnessOptions) {
     Element: ElementHarness,
     HTMLVideoElement: HarnessVideoElement,
     MutationObserver: HarnessMutationObserver,
+    CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
     console,
   };
 
@@ -538,6 +542,15 @@ function createPageHarness(config, harnessOptions) {
     workerDescriptor: Object.getOwnPropertyDescriptor(window, 'Worker'),
   };
 
+  const authKey = auth.newKey();
+  const authToken = 'twitch-fixture';
+  const signer = new auth.Signer(authKey);
+  const sendConfig = (patch) => window.dispatchEvent({ type: 'message', source: window,
+    data: auth.configMessage(signer, authToken, patch) });
+  document.addEventListener('wo-bridge-replay', () => {
+    document.dispatchEvent({ type: 'wo-key', detail: { token: authToken, key: authKey } });
+    if (window.__WO_CONFIG__.__configReady !== false) sendConfig(window.__WO_CONFIG__);
+  });
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(harnessOptions.moduleSource || MODULE_SOURCE, sandbox, { filename: 'twitch-adblock.js' });
@@ -545,6 +558,9 @@ function createPageHarness(config, harnessOptions) {
     sandbox,
     window,
     document,
+    sendConfig,
+    authToken,
+    signer,
     state,
     natives,
     NativeWorker,
@@ -1526,23 +1542,23 @@ test('Twitch AdManager is declined with the exact player-size contract and follo
     'successful AdManager discovery left the retry loop armed');
 
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   assert(manager.declineReason === null,
     'config-off did not release the player_size decline owned by WardenOne');
   assert(calls.length === 1, 'config-off issued another AdManager decline');
 
   harness.window.__WO_CONFIG__.twitchAdBlock = true;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   equal(calls[1], { reason: 'player_size', options: { sendEvent: false } },
     'config-on did not reapply the exact AdManager decline contract');
 
   manager.declineReason = 'twitch_owned_reason';
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   assert(manager.declineReason === 'twitch_owned_reason',
     'config-off erased an AdManager decline reason WardenOne did not own');
   harness.window.__WO_CONFIG__.twitchAdBlock = true;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   assert(calls.length === 2,
     'config-on overrode an existing Twitch-owned AdManager decline');
 });
@@ -1587,7 +1603,7 @@ test('Twitch AdManager decline survives the SDK reset used by long-lived players
     'AdManager reset left the long-lived player able to request a creative');
 
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   assert(manager.reset === nativeReset,
     'config-off did not restore Twitch native AdManager reset');
   manager.reset();
@@ -1596,7 +1612,7 @@ test('Twitch AdManager decline survives the SDK reset used by long-lived players
 
   manager.declineReason = 'twitch_owned_reason';
   harness.window.__WO_CONFIG__.twitchAdBlock = true;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   assert(calls.length === 2 && manager.declineReason === 'twitch_owned_reason',
     'config-on overwrote a Twitch-owned decline before its lifecycle reset');
   assert(manager.reset !== nativeReset,
@@ -1664,9 +1680,9 @@ test('Twitch AdManager discovery retries are bounded and can be rearmed by confi
   };
   exposeWebpackAdManager(harness.window, LateAdManager);
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   harness.window.__WO_CONFIG__.twitchAdBlock = true;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   equal(calls, [{ reason: 'player_size', options: { sendEvent: false } }],
     'config cycle did not rearm bounded AdManager discovery');
 });
@@ -2067,7 +2083,7 @@ test('terminated workers receive no later page broadcasts', () => {
   assert(worker.terminateCalls === 1 && worker.terminated === true,
     'wrapped terminate did not call the native Worker termination exactly once');
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   assert(worker.messages.length === beforeTerminate,
     'terminated worker remained registered for config broadcasts');
 });
@@ -2559,7 +2575,7 @@ test('only intervention-linked network/decode errors enter a short recovery wind
     harness.document.documentElement.getAttribute('data-wo-twitch-fail-open') === 'decode',
   'fresh intervention-linked MEDIA_ERR_DECODE did not trip the stream circuit breaker');
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change' });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   harness.advance(8000);
   assert(configs().at(-1).enabled === false,
     'circuit breaker expiry overrode the user-disabled configuration');
@@ -3011,30 +3027,13 @@ test('config-off clears a pending stall recovery on both configuration paths', (
     harness.advance(1000);
 
     if (mode === 'bridge-message') {
-      const token = 'config-cycle-token';
-      harness.window.dispatchEvent({
-        type: 'message', source: harness.window,
-        data: { source: 'wardenone-handshake', token: token },
-      });
-      harness.window.dispatchEvent({
-        type: 'message', source: harness.window,
-        data: {
-          source: 'wardenone', kind: 'config', token: token,
-          overrides: { enabled: true, twitchAdBlock: false },
-        },
-      });
-      harness.window.dispatchEvent({
-        type: 'message', source: harness.window,
-        data: {
-          source: 'wardenone', kind: 'config', token: token,
-          overrides: { enabled: true, twitchAdBlock: true },
-        },
-      });
+      harness.sendConfig({ enabled: true, twitchAdBlock: false });
+      harness.sendConfig({ enabled: true, twitchAdBlock: true });
     } else {
       harness.window.__WO_CONFIG__.twitchAdBlock = false;
-      harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+      harness.sendConfig(harness.window.__WO_CONFIG__);
       harness.window.__WO_CONFIG__.twitchAdBlock = true;
-      harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+      harness.sendConfig(harness.window.__WO_CONFIG__);
     }
 
     harness.advance(3000);
@@ -3168,7 +3167,7 @@ test('Twitch visibility recovery preserves native events and resumes only the sa
 
   harness.setDocumentHidden(true);
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   assert(harness.document.hidden === true && harness.document.visibilityState === 'hidden',
     'config-off did not restore the browser native visibility surface');
   const disabledEvent = harness.setDocumentHidden(false);
@@ -3622,7 +3621,7 @@ test('guard re-silences volume changes, restores on source reuse, and restores e
   harness.fireMedia('loadedmetadata', video);
   assertGuarded(video, 'reused independent ad');
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   equal(videoPresentation(video), original, 'toggle-off did not restore exact original presentation state');
   assert(video.pauseCalls === 0, 'toggle-off paused an attached guarded video');
   assert(harness.state.mutationObservers[0].disconnected === true,
@@ -3650,7 +3649,7 @@ test('toggle-off pauses then restores a detached ad before blob-video reuse', ()
   video.pauseCalls = 0;
   video.isConnected = false;
   harness.window.__WO_CONFIG__.twitchAdBlock = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   assertDetachedCleanup(video, original, 'toggle-off detached cleanup');
 
   video.currentSrc = 'blob:https://www.twitch.tv/reused-after-toggle';
@@ -3778,7 +3777,7 @@ function announceWorkerReady(worker, version) {
 
 function setTwitchConfig(harness, patch) {
   harness.window.__WO_CONFIG__ = Object.assign({}, harness.window.__WO_CONFIG__, patch);
-  harness.document.dispatchEvent({ type: 'wo-config-change', target: harness.document });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
 }
 
 test('steadier playback answers an unset Twitch Low Latency preference with off', () => {
@@ -3822,12 +3821,12 @@ test('steadier playback stays native until authoritative config arrives', () => 
     __configReady: true,
     twitchSteadyPlayback: true,
   });
-  harness.document.dispatchEvent({ type: 'wo-config-change' });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false',
     'authoritative enabled setting did not activate the preference hook');
 
   window.__WO_CONFIG__.twitchSteadyPlayback = false;
-  harness.document.dispatchEvent({ type: 'wo-config-change' });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   equal(window.localStorage.getItem('lowLatencyModeEnabled'), null,
     'authoritative disabled setting did not restore native preference behavior');
 });
@@ -3863,7 +3862,7 @@ test('steadier playback follows a live settings change and keeps a native-lookin
   const { harness, window, nativeGetItem } = storageHarness();
   equal(window.localStorage.getItem('lowLatencyModeEnabled'), 'false', 'precondition: answered off');
   window.__WO_CONFIG__ = Object.assign({}, window.__WO_CONFIG__, { twitchSteadyPlayback: false });
-  harness.document.dispatchEvent({ type: 'wo-config-change' });
+  harness.sendConfig(harness.window.__WO_CONFIG__);
   equal(window.localStorage.getItem('lowLatencyModeEnabled'), null, 'a live switch-off was not honoured');
   const hook = window.Storage.prototype.getItem;
   assert(hook !== nativeGetItem, 'precondition: the hook is installed');
@@ -4186,6 +4185,28 @@ test('dedicated module installs no React/reload/polling recovery', () => {
     'module has a raw polling interval outside the teardown helper');
   assert(!/__react|_reactRootContainer|mediaPlayerInstance/i.test(MODULE_SOURCE),
     'module depends on Twitch React internals');
+});
+
+test('only authenticated configuration changes Twitch protection state', () => {
+  const harness = createPageHarness();
+  const css = () => mountedTwitchStyles(harness).find(node => node.id === 'wo-twitch-adblock-css');
+  assert(css() && !css().disabled, 'signed initial configuration enables protection');
+  const post = data => harness.window.dispatchEvent({ type: 'message', source: harness.window, data });
+  harness.sendConfig({ enabled: false });
+  assert(css().disabled, 'legitimate off switch applies');
+  const old = auth.configMessage(harness.signer, harness.authToken, { enabled: false });
+  post(old);
+  harness.sendConfig({ enabled: true });
+  for (const message of [
+    { source: 'wardenone-handshake', token: 'attacker-picked' },
+    { source: 'wardenone', kind: 'config', token: 'attacker-picked', overrides: { enabled: false } },
+    { ...old, seq: 1000000, mac: '0'.repeat(64) }, { ...old, mac: undefined }, old,
+  ]) post(message);
+  harness.window.__WO_CONFIG__ = { enabled: false, twitchAdBlock: false, __configReady: true };
+  harness.document.dispatchEvent({ type: 'wo-config-change', detail: { config: harness.window.__WO_CONFIG__ } });
+  assert(!css().disabled, 'handshakes, forgery, replay and page globals cannot disable protection');
+  harness.sendConfig({ enabled: false });
+  assert(css().disabled, 'a rejected forgery does not prevent the next legitimate toggle');
 });
 
 (async () => {
