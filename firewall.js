@@ -149,7 +149,7 @@ function allowOnce(domain, button) {
 /* ---- rendering ---------------------------------------------------------- */
 function render() {
   $('site-name').textContent = SITE || '(no site)';
-  const domains = [...new Set([...OBSERVED.keys(), ...Object.keys(RULES), ...MANUAL])];
+  const domains = [...new Set([...OBSERVED.keys(), ...Object.keys(RULES), ...MANUAL, ...ONCE])];
   /* First-party last: the rows worth acting on are the third parties, and a
      site's own domain at the top is the one people mis-click. */
   const base = registrable(SITE);
@@ -227,7 +227,8 @@ function render() {
   $('count').textContent = domains.length + ' domain' + (domains.length === 1 ? '' : 's')
     + (decided ? ', ' + decided + ' rule' + (decided === 1 ? '' : 's') + ' of yours' : ', none of your rules yet')
     + (omitted ? ' — ' + omitted + ' of them stored but not in effect (over the rule limit)' : '');
-  $('reset-site').disabled = decided === 0;
+  /* A temporary allowance is undone by the same button, so it alone keeps it enabled. */
+  $('reset-site').disabled = decided === 0 && ONCE.size === 0;
 }
 
 /* ---- controls ----------------------------------------------------------- */
@@ -267,7 +268,7 @@ function reset(all) {
     ONCE = new Set();
     $('status').textContent = all
       ? 'Every firewall rule on every site has been removed.'
-      : 'Your rules for ' + SITE + ' have been removed. Reload the site.';
+      : 'Your rules and temporary allowances for ' + SITE + ' have been removed. Other sites keep theirs. Reload the site.';
     render();
   });
 }

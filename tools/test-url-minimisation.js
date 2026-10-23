@@ -340,7 +340,7 @@ function askedAbout(req) {
   console.log('7. the download review');
   {
     const LOG_HELPERS = between(BG, 'const LOG_URL_MAX = 300;', '\n// Details carry URLs too', 'the log URL helpers');
-    const REVIEW = grabFn(DL, 'function downloadDisplayUrl(raw) {') + grabFn(DL, 'function buildDownloadReview(item, rep, pauseResult) {')
+    const REVIEW = grabFn(DL, 'function downloadDisplayUrl(raw) {') + grabFn(DL, 'function buildDownloadReview(item, rep, pauseResult, finishedBeforeStop) {')
       + grabFn(DL, 'function downloadHashSourceMeta(fetched, kind, extra) {') + grabFn(DL, 'async function rememberPendingDownload(review) {');
     const store = {};
     const ctx = {

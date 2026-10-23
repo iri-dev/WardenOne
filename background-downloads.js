@@ -130,19 +130,65 @@ const DOWNLOAD_SCANNING = {};
 // name/URL looked dangerous. The scan resumes them if they grade clean. Tracked so the
 // clean path knows to undo an early-pause even when it didn't issue the pause itself.
 const EARLY_PAUSED = new Set();
-// Cheap, synchronous risk sniff for the onCreated early-pause: does the name or URL end in
-// a dangerous executable/script or disk-image extension? (Double-extension lures like
-// invoice.pdf.exe end in .exe, so DANGEROUS_EXT already covers them.)
+/* Listed-source checks started in onCreated. Scans wait for their download's check, so a late
+   pause can never land after a scan has already resumed or reviewed that download. */
+const EARLY_SOURCE_CHECKS = new Map();
+/* Downloads created in this worker whose first scan has not finished. Only these may be paused
+   by the filename event; a later pause could hold a file the reader already chose to continue. */
+const AWAITING_FIRST_SCAN = new Set();
+/* Every type the scorer charges as a file type: programs and scripts, disk images, archives and
+   macro-enabled Office files. Double-extension lures such as invoice.pdf.exe end in .exe. */
+function downloadNameLooksRisky(name) {
+  return !!name && (DANGEROUS_EXT.test(name) || CONTAINER_EXT.test(name) || ARCHIVE_EXT.test(name) || MACRO_DOC_EXT.test(name));
+}
 function downloadLooksRisky(item) {
   try {
     const fn = item && item.filename;
-    if (fn) { const n = downloadNameFromItemish(fn); if (n && (DANGEROUS_EXT.test(n) || CONTAINER_EXT.test(n))) return true; }
+    if (fn && downloadNameLooksRisky(downloadNameFromItemish(fn))) return true;
   } catch (_) {}
   for (const u of [item && item.finalUrl, item && item.url]) {
     if (!u) continue;
-    try { const n = downloadNameFromItemish(u); if (n && (DANGEROUS_EXT.test(n) || CONTAINER_EXT.test(n))) return true; } catch (_) {}
+    try { if (downloadNameLooksRisky(downloadNameFromItemish(u))) return true; } catch (_) {}
   }
   return false;
+}
+function earlyPauseDownload(id) {
+  EARLY_PAUSED.add(String(id));
+  return Promise.resolve(downloadApiCall('pause', id)).catch(() => {});
+}
+/* onCreated fires before Chrome picks the filename, so a Content-Disposition name such as
+   setup.exe from /get?id=1 is first seen in this onChanged delta, a few milliseconds later. */
+function earlyPauseNamedDownload(id, filename) {
+  const key = String(id);
+  if (!AWAITING_FIRST_SCAN.has(key) || EARLY_PAUSED.has(key)) return;
+  try { if (downloadNameLooksRisky(downloadNameFromItemish(filename))) earlyPauseDownload(id); } catch (_) {}
+}
+function downloadHostBlocklisted(urls) {
+  for (const raw of urls) {
+    try {
+      const host = new URL(/^blob:https?:/i.test(raw) ? raw.slice(5) : raw).hostname;
+      const rd = regDomainBg(host);
+      if (rd && (BLOCKED_DOMAINS.has(rd) || BLOCKED_DOMAINS.has(host))) return true;
+    } catch (_) {}
+  }
+  return false;
+}
+/* A listed address serving a harmless-looking name passes the name sniff. Check the local lists
+   now instead of after the scheduled scan's other awaits. */
+function earlyPauseListedSource(item) {
+  const key = String(item.id);
+  const urls = [item.url, item.finalUrl].filter(Boolean);
+  if (!urls.length) return null;
+  const pauseIfListed = (listed) => (listed && !EARLY_PAUSED.has(key) ? earlyPauseDownload(item.id) : null);
+  const check = Promise.all([
+    listedPayloadUrl(urls).then(pauseIfListed, () => {}),
+    Promise.resolve(typeof securityStoresReady === 'function' ? securityStoresReady() : null)
+      .then(() => pauseIfListed(downloadHostBlocklisted(urls)), () => {}),
+  ]).then(() => {}, () => {}).finally(() => {
+    if (EARLY_SOURCE_CHECKS.get(key) === check) EARLY_SOURCE_CHECKS.delete(key);
+  });
+  EARLY_SOURCE_CHECKS.set(key, check);
+  return check;
 }
 const DOWNLOAD_SAFE_LOGGED = new Set();
 
@@ -493,7 +539,13 @@ function shouldReviewDownload(rep) {
   return rep && rep.action === 'review';
 }
 
-function downloadRecommendation(grade) {
+function downloadRecommendation(grade, finished) {
+  if (finished) {
+    if (grade === 'C') return 'Review the source before opening this file.';
+    if (grade === 'D') return 'WardenOne could not confirm where this came from. Keep it only if this is the file you meant to download from a site you know.';
+    if (grade === 'E') return 'Deleting it is recommended unless you are completely sure this source is legitimate.';
+    if (grade === 'F') return 'Delete this file without opening it. Opening it could put this computer at serious risk.';
+  }
   if (grade === 'C') return 'Review the source before continuing.';
   if (grade === 'D') return 'WardenOne could not confirm where this came from. Continue if this is the file you meant to download from a site you know.';
   if (grade === 'E') return 'Cancellation is recommended unless you are completely sure this source is legitimate.';
@@ -853,35 +905,49 @@ const DOWNLOAD_URL_KEY_HEX = 16;
 const DOWNLOAD_THREAT_FEED_CAPS = { sha256: 16000, 'payload-urls': 32000 };
 const DOWNLOAD_THREAT_DRIFT = { minBaseline: 200, dropRatio: 0.25 };
 const DOWNLOAD_URL_KEY_MAX_CHARS = 2048;
-const DOWNLOAD_URL_CANDIDATE_MAX = 24;
+/* Directory depth checked when a store predates its depth list: shallowest first, so padding a path
+   beneath a listed directory cannot push that directory out. */
+const DOWNLOAD_URL_FALLBACK_DIR_DEPTH = 24;
 const LISTED_PAYLOAD_URL_MIN_SCORE = 6;
 
-/* host[:port] + path + query, lowercased like the published list. Only an entry ending in '/'
-   covers what is beneath it; any other entry names one file, so a short listed path on a shared
-   host cannot quietly cover everything under it. */
+/* URL.host keeps only a port that is not the scheme's default. The publisher lowercases whole URLs
+   and drops a leading www. before listing them, so both are folded here or those payloads never match. */
 function downloadPayloadUrlParts(raw) {
   let u;
   try { u = new URL(String(raw || '')); } catch (_) { return null; }
   if (!/^https?:$/.test(u.protocol) || !u.hostname || u.pathname.length < 2) return null;
-  const port = u.port && u.port !== '80' && u.port !== '443' ? ':' + u.port : '';
-  return { host: (u.hostname + port).toLowerCase(), path: u.pathname.toLowerCase(), search: u.search.toLowerCase() };
+  return { host: u.host.replace(/^www\.(?=[^:])/, ''), path: u.pathname.toLowerCase(), search: u.search.toLowerCase() };
 }
+/* Only an entry ending in '/' covers what is beneath it; any other entry names one file, so a short
+   listed path on a shared host cannot quietly cover everything under it. */
 function downloadPayloadUrlEntryKey(line) {
   const m = /^\|\|([^\s^$]+)\^(?:\$[a-z,]*)?$/i.exec(String(line || '').trim());
   if (!m || m[1].indexOf('/') < 0 || m[1].length > DOWNLOAD_URL_KEY_MAX_CHARS) return '';
   const parts = downloadPayloadUrlParts('http://' + m[1]);
-  return parts ? parts.host + parts.path + parts.search : '';
+  if (!parts) return '';
+  /* A listed port already survived its own scheme's default; reading the entry as http drops :80. */
+  const host = /:80$/.test(m[1].split(/[/?]/, 1)[0]) ? parts.host + ':80' : parts.host;
+  return host + parts.path + parts.search;
 }
-function downloadPayloadUrlCandidates(raw) {
+/* Depth is the slash count of a directory key ('host/a/' is 2). Directories are only checked at
+   depths the feed lists, which bounds the lookups without dropping any listed parent. */
+function downloadPayloadUrlDirDepth(key) {
+  return key.endsWith('/') && key.indexOf('?') < 0 ? key.split('/').length - 1 : 0;
+}
+function downloadPayloadUrlCandidates(raw, dirDepths) {
   const parts = downloadPayloadUrlParts(raw);
   if (!parts) return [];
+  const listed = Array.isArray(dirDepths) ? new Set(dirDepths) : null;
+  const deepest = listed ? Math.max(0, ...listed) : DOWNLOAD_URL_FALLBACK_DIR_DEPTH;
   const out = new Set();
-  for (let i = parts.path.indexOf('/', 1); i > 0; i = parts.path.indexOf('/', i + 1)) {
-    out.add(parts.host + parts.path.slice(0, i + 1));
+  for (let i = parts.path.indexOf('/', 1), depth = 2; i > 0 && depth <= deepest; i = parts.path.indexOf('/', i + 1), depth++) {
+    const key = parts.host + parts.path.slice(0, i + 1);
+    if (key.length > DOWNLOAD_URL_KEY_MAX_CHARS) break;
+    if (!listed || listed.has(depth)) out.add(key);
   }
   out.add(parts.host + parts.path);
   if (parts.search) out.add(parts.host + parts.path + parts.search);
-  return [...out].filter((key) => key.length <= DOWNLOAD_URL_KEY_MAX_CHARS).slice(-DOWNLOAD_URL_CANDIDATE_MAX);
+  return [...out].filter((key) => key.length <= DOWNLOAD_URL_KEY_MAX_CHARS);
 }
 async function downloadUrlKeyFingerprint(key) {
   return (await sha256Hex(new TextEncoder().encode(key))).slice(0, DOWNLOAD_URL_KEY_HEX);
@@ -935,17 +1001,22 @@ async function packDownloadThreatFeed(kind, text) {
     fingerprints.push(...await Promise.all(list.slice(i, i + 256).map(downloadUrlKeyFingerprint)));
   }
   const packed = packSortedHex(fingerprints);
-  return { packed, count: packed.length / DOWNLOAD_URL_KEY_HEX, truncated: keys.size >= cap };
+  const dirDepths = [...new Set(list.map(downloadPayloadUrlDirDepth).filter(Boolean))].sort((a, b) => a - b);
+  return { packed, count: packed.length / DOWNLOAD_URL_KEY_HEX, truncated: keys.size >= cap, dirDepths };
 }
 
 function readDownloadThreatFeedStore(stored) {
   const hashes = packedHexValid(stored && stored.sha256Prefixes, DOWNLOAD_HASH_PREFIX_HEX) ? stored.sha256Prefixes : '';
   const urls = packedHexValid(stored && stored.payloadUrlKeys, DOWNLOAD_URL_KEY_HEX) ? stored.payloadUrlKeys : '';
+  const depths = stored && stored.payloadUrlDirDepths;
+  const urlDirDepths = Array.isArray(depths) && depths.length <= DOWNLOAD_URL_KEY_MAX_CHARS
+    && depths.every((d) => Number.isInteger(d) && d >= 2 && d <= DOWNLOAD_URL_KEY_MAX_CHARS) ? depths : null;
   return {
     hashes,
     hashCount: hashes.length / DOWNLOAD_HASH_PREFIX_HEX,
     urls,
     urlCount: urls.length / DOWNLOAD_URL_KEY_HEX,
+    urlDirDepths,
     updatedAt: Number(stored && stored.updatedAt) || 0,
   };
 }
@@ -1001,7 +1072,7 @@ async function listedPayloadUrl(urls) {
   if (!feeds.urlCount) return '';
   const seen = new Set();
   for (const url of urls || []) {
-    for (const key of downloadPayloadUrlCandidates(url)) {
+    for (const key of downloadPayloadUrlCandidates(url, feeds.urlDirDepths)) {
       if (seen.has(key)) continue;
       seen.add(key);
       if (packedHexHas(feeds.urls, DOWNLOAD_URL_KEY_HEX, await downloadUrlKeyFingerprint(key))) return String(url);
@@ -1039,6 +1110,7 @@ async function updateDownloadThreatFeeds(reason) {
   const previous = readDownloadThreatFeedStore(held && held[DOWNLOAD_THREAT_FEED_KEY]);
   const previousMeta = (held && held[DOWNLOAD_THREAT_META_KEY]) || {};
   const packed = { sha256: previous.hashes, 'payload-urls': previous.urls };
+  let urlDirDepths = previous.urlDirDepths;
   const widths = { sha256: DOWNLOAD_HASH_PREFIX_HEX, 'payload-urls': DOWNLOAD_URL_KEY_HEX };
   const results = await Promise.all(DOWNLOAD_THREAT_LIST_SOURCES.map(async (source) => {
     const fetched = await fetchValidatedRemoteListText(source.url, false, LIST_FETCH_TIMEOUT_MS);
@@ -1053,12 +1125,14 @@ async function updateDownloadThreatFeeds(reason) {
         error: 'Kept the previous copy: ' + next.count + ' usable entries, down from ' + before };
     }
     packed[source.kind] = next.packed;
+    if (next.dirDepths) urlDirDepths = next.dirDepths;
     return { url: source.url, kind: source.kind, ok: true, count: next.count, truncated: next.truncated };
   }));
 
   const now = Date.now();
   const succeeded = results.filter((r) => r.ok).length;
-  const store = { version: 1, updatedAt: succeeded ? now : previous.updatedAt, sha256Prefixes: packed.sha256, payloadUrlKeys: packed['payload-urls'] };
+  const store = { version: 1, updatedAt: succeeded ? now : previous.updatedAt, sha256Prefixes: packed.sha256,
+    payloadUrlKeys: packed['payload-urls'], payloadUrlDirDepths: urlDirDepths };
   const meta = {
     version: 1,
     updated: succeeded ? now : (previousMeta.updated || 0),
@@ -1452,6 +1526,14 @@ async function closeDownloadReviewTabs(id) {
   if (ids.length) await tabsRemove(ids);
 }
 
+/* A review lapses when its download moves on without it: erased, interrupted, or resumed elsewhere
+   and finished. Reviews of a file already saved or already removed stay until they are answered. */
+function downloadReviewSuperseded(review, item) {
+  if (review && review.autoBlocked) return false;
+  if (!item || item.state === 'interrupted') return true;
+  return item.state === 'complete' && !!(review && review.paused);
+}
+
 async function cleanupDownloadReviews(closeTabs) {
   try {
     // The scan reads the store, decides what is stale, and writes the survivors back -- with
@@ -1469,8 +1551,7 @@ async function cleanupDownloadReviews(closeTabs) {
         let stale = !review.createdAt || (now - review.createdAt) > DOWNLOAD_REVIEW_TTL_MS;
         if (!stale && review.downloadId != null) {
           const items = await downloadSearch({ id: Number(review.downloadId) });
-          const item = items && items[0];
-          if (!item || item.state === 'complete' || item.state === 'interrupted') stale = true;
+          if (downloadReviewSuperseded(review, items && items[0])) stale = true;
         }
         if (stale) {
           delete store[id];
@@ -1634,7 +1715,7 @@ function downloadDisplayUrl(raw) {
 }
 try { globalThis.downloadDisplayUrl = downloadDisplayUrl; } catch (_) {}
 
-function buildDownloadReview(item, rep, pauseResult) {
+function buildDownloadReview(item, rep, pauseResult, finishedBeforeStop) {
   const name = (item.filename || item.url || '').split(/[\\/]/).pop() || '(unknown file)';
   return {
     id: String(item.id),
@@ -1648,7 +1729,7 @@ function buildDownloadReview(item, rep, pauseResult) {
     color: rep.color,
     score: rep.score,
     reasons: rep.reasons.slice(0, 8),
-    recommendation: downloadRecommendation(rep.grade),
+    recommendation: downloadRecommendation(rep.grade, finishedBeforeStop),
     trusted: !!rep.trusted,
     trustedEligible: !!rep.trustedEligible,
     trustAllowed: !!rep.trustAllowed,
@@ -1661,6 +1742,8 @@ function buildDownloadReview(item, rep, pauseResult) {
     hashReputation: rep.hashReputation || null,
     paused: !!(pauseResult && pauseResult.ok),
     pauseError: pauseResult && pauseResult.error ? pauseResult.error : '',
+    /* The whole file was already saved when WardenOne identified it, so nothing was stopped. */
+    finishedBeforeStop: !!finishedBeforeStop,
     createdAt: Date.now(),
   };
 }
@@ -1724,7 +1807,8 @@ async function handleDownloadDecision(id, decision, sender) {
     }
     let trustedHost = '';
     if (decision === 'trust-continue') {
-      if (grade !== 'C') {
+      /* The review window offers Trust on C and D; D is where a recurring work file lands. */
+      if (grade !== 'C' && grade !== 'D') {
         return { ok: false, error: 'Only lower-risk review downloads can be trusted and continued.' };
       }
       if (!review.trustAllowed || !review.trustHost) {
@@ -1739,21 +1823,25 @@ async function handleDownloadDecision(id, decision, sender) {
       const res = await downloadApiCall('resume', review.downloadId);
       if (!res.ok) return { ok: false, error: res.error || 'Chrome could not resume this download.' };
     }
-    logDownloadDecision(review, decision === 'trust-continue' ? 'trusted and continued' : 'continued');
+    const label = (decision === 'trust-continue' ? 'trusted and ' : '') + (review.finishedBeforeStop ? 'kept' : 'continued');
+    logDownloadDecision(review, label);
     await removePendingDownload(id);
-    await rememberHandledDownload(review.downloadId || id, decision === 'trust-continue' ? 'trusted and continued' : 'continued');
+    await rememberHandledDownload(review.downloadId || id, label);
     dismissDownloadReviewPanels(id);
-    return { ok: true, decision: decision === 'trust-continue' ? 'trusted and continued' : 'continued', trustedHost };
+    return { ok: true, decision: label, trustedHost };
   }
   if (decision === 'cancel') {
     // Cancel alone does not remove already-completed downloads. Also attempt byte deletion and entry erasure
     // for the small/cached-file race; tolerate expected already-complete/removed errors.
     const removed = await hardRemoveDownload(review.downloadId);
-    logDownloadDecision(review, 'cancelled');
+    const deleted = !!(removed.removedFile || (review.removed && review.removed.removedFile));
+    const label = review.finishedBeforeStop ? (deleted ? 'deleted' : 'delete failed') : 'cancelled';
+    logDownloadDecision(review, label);
     await removePendingDownload(id);
-    await rememberHandledDownload(review.downloadId || id, 'cancelled');
-    dismissDownloadReviewPanels(id);
-    return { ok: true, decision: 'cancelled', removed };
+    await rememberHandledDownload(review.downloadId || id, label);
+    /* Leave the window up when a saved file may still be there, so its message can be read. */
+    if (!review.finishedBeforeStop || deleted) dismissDownloadReviewPanels(id);
+    return { ok: true, decision: label, removed, deleted };
   }
   return { ok: false, error: 'Unknown decision.' };
 }
@@ -2503,9 +2591,12 @@ async function runDownloadGuardScan(id, hint, reason) {
   DOWNLOAD_SCANNING[key] = true;
 
   try {
+    if (EARLY_SOURCE_CHECKS.has(key)) await EARLY_SOURCE_CHECKS.get(key);
     await cleanupDownloadReviews(false);
     let pending = await getPendingDownload(key);
     if (await isDownloadHandled(key) && !pending) return;
+    /* The file is gone; nothing a rescan learns can change that notice. */
+    if (pending && pending.autoBlocked) return;
 
     const item = await latestDownloadItem(key, hint);
     if (!item || item.id == null) return;
@@ -2520,10 +2611,16 @@ async function runDownloadGuardScan(id, hint, reason) {
     }
 
     if (item.state === 'complete' && pending) {
-      await removePendingDownload(key);
-      await rememberHandledDownload(key, 'completed');
-      await closeDownloadReviewTabs(key);
-      return;
+      /* A finished file cannot change, so its review stands until answered. */
+      if (pending.finishedBeforeStop) return;
+      /* Paused by WardenOne and finished anyway: it was resumed outside the review. */
+      if (pending.paused) {
+        await removePendingDownload(key);
+        await rememberHandledDownload(key, 'completed');
+        await closeDownloadReviewTabs(key);
+        return;
+      }
+      /* Chrome refused the pause and the file has since finished; rescan so the review says so. */
     }
 
     // Leftover from a PREVIOUS browser session (Chrome restores paused/interrupted
@@ -2599,11 +2696,15 @@ async function runDownloadGuardScan(id, hint, reason) {
     if (!pauseResult && item.state !== 'complete' && item.state !== 'interrupted') {
       pauseResult = await downloadApiCall('pause', item.id);
     }
+    /* A refused pause usually means Chrome finished writing first. Ask Chrome, because the review
+       must not claim a stop that never happened. */
+    const finishedBeforeStop = !(pauseResult && pauseResult.ok)
+      && (item.state === 'complete' || ((await latestDownloadItem(key, item)) || {}).state === 'complete');
 
     const oldReview = await getPendingDownload(key);
-    const review = buildDownloadReview(item, rep, pauseResult);
+    const review = buildDownloadReview(item, rep, pauseResult, finishedBeforeStop);
     if (oldReview && oldReview.createdAt) review.createdAt = oldReview.createdAt;
-    if (oldReview && oldReview.paused) {
+    if (oldReview && oldReview.paused && !finishedBeforeStop) {
       review.paused = true;
       if (!review.pauseError) review.pauseError = oldReview.pauseError || '';
     }
@@ -2619,6 +2720,10 @@ async function runDownloadGuardScan(id, hint, reason) {
       review.removed = await hardRemoveDownload(item.id);
       review.autoBlocked = true;
       review.paused = false; // the file is gone, not paused
+      /* removeFile succeeds only on a finished download, which catches one that finished after the check above. */
+      if (review.removed.removedFile) review.finishedBeforeStop = true;
+      review.recommendation = review.finishedBeforeStop && !review.removed.removedFile
+        ? downloadRecommendation('F', true) : 'Do not download this file again.';
     }
     // From here the review's own pause/removed state owns the download; drop the early-pause tag.
     EARLY_PAUSED.delete(key);
@@ -2626,6 +2731,10 @@ async function runDownloadGuardScan(id, hint, reason) {
     await rememberPendingDownload(review);
     if (!oldReview || oldReview.grade !== review.grade || oldReview.score !== review.score) {
       logDownloadCheck(item, rep);
+    }
+    if (review.autoBlocked) {
+      logDownloadDecision(review, !review.finishedBeforeStop ? 'blocked before it finished'
+        : (review.removed.removedFile ? 'deleted after it finished' : 'finished before it could be stopped'));
     }
     // Persist handled state after pausing. Worker termination between the two can cause a duplicate
     // review; pause and storage writes cannot be atomic. Recovery must never silently resume it.
@@ -2640,6 +2749,7 @@ async function runDownloadGuardScan(id, hint, reason) {
     });
   } finally {
     delete DOWNLOAD_SCANNING[key];
+    AWAITING_FIRST_SCAN.delete(key);
   }
 }
 
@@ -2653,29 +2763,35 @@ function scheduleDownloadGuardScan(id, hint, reason, delayMs) {
   }, typeof delayMs === 'number' ? delayMs : 250);
 }
 
+/* A small or cached file can finish before the +180 ms scan pauses it, so pause a risky type at
+   once and check the local lists for any other name. A clean file resumes within about a second. */
+function handleDownloadCreated(item) {
+  let sourceCheck = null;
+  try {
+    // Skip the early-pause when the cached config already says the guard is off (avoids a
+    // pointless pause/resume cycle; a cold cache falls through and the scan resolves it).
+    const guardOff = __cfgCacheValid && __cfgCache && (__cfgCache.enabled === false || __cfgCache.downloadReputation === false);
+    if (!guardOff && item && item.id != null && item.state !== 'complete' && item.state !== 'interrupted') {
+      AWAITING_FIRST_SCAN.add(String(item.id));
+      if (downloadLooksRisky(item)) earlyPauseDownload(item.id);
+      else sourceCheck = earlyPauseListedSource(item);
+    }
+  } catch (_) {}
+  scheduleDownloadGuardScan(item.id, item, 'created', 180);
+  setTimeout(() => scheduleDownloadGuardScan(item.id, null, 'created-followup', 0), 1200);
+  return sourceCheck;
+}
+
+function handleDownloadChanged(delta) {
+  if (!delta || delta.id == null) return;
+  if (delta.filename && delta.filename.current) earlyPauseNamedDownload(delta.id, delta.filename.current);
+  const relevant = delta.filename || delta.finalUrl || delta.url || delta.mime || delta.danger || delta.state || delta.exists || delta.paused;
+  if (relevant) scheduleDownloadGuardScan(delta.id, { id: delta.id }, 'changed', 160);
+}
+
 try {
-  chrome.downloads.onCreated.addListener((item) => {
-    // Race shrink: a small/cached risky file can finish writing to disk before the +180ms
-    // scan can pause it. Pause IMMEDIATELY on a dangerous-looking name/URL; the scan resumes
-    // it within ~200ms-1.2s if it grades clean. Pausing is reversible, so an over-pause on a
-    // clean file is invisible to the user. Only meaningful while download guard is on.
-    try {
-      // Skip the early-pause when the cached config already says the guard is off (avoids a
-      // pointless pause/resume cycle; a cold cache falls through and the scan resolves it).
-      const guardOff = __cfgCacheValid && __cfgCache && (__cfgCache.enabled === false || __cfgCache.downloadReputation === false);
-      if (!guardOff && item && item.id != null && item.state !== 'complete' && item.state !== 'interrupted' && downloadLooksRisky(item)) {
-        EARLY_PAUSED.add(String(item.id));
-        Promise.resolve(downloadApiCall('pause', item.id)).catch(() => {});
-      }
-    } catch (_) {}
-    scheduleDownloadGuardScan(item.id, item, 'created', 180);
-    setTimeout(() => scheduleDownloadGuardScan(item.id, null, 'created-followup', 0), 1200);
-  });
-  chrome.downloads.onChanged.addListener((delta) => {
-    if (!delta || delta.id == null) return;
-    const relevant = delta.filename || delta.finalUrl || delta.url || delta.mime || delta.danger || delta.state || delta.exists || delta.paused;
-    if (relevant) scheduleDownloadGuardScan(delta.id, { id: delta.id }, 'changed', 160);
-  });
+  chrome.downloads.onCreated.addListener(handleDownloadCreated);
+  chrome.downloads.onChanged.addListener(handleDownloadChanged);
 } catch (_) {}
 
 // Reconcile Chrome’s paused downloads on every worker boot (M25). A worker can stop between
@@ -2744,6 +2860,11 @@ try {
       runDownloadGuardScan,
       getPendingDownload,
       shouldReviewDownload,
+      handleDownloadCreated,
+      handleDownloadChanged,
+      handleDownloadDecision,
+      cleanupDownloadReviews,
+      EARLY_PAUSED,
     });
   }
 } catch (_) {}

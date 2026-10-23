@@ -138,6 +138,31 @@ function loadWholeQuietRule() {
     'the popup would list mutes that are no longer in force');
 }());
 
+(function aPageMuteCoversOnlyItsOwnSite() {
+  /* A mute arrives from the page. With the key leaked it could silence a kind of warning on every
+     site for good, so the worker files it under the site of the sending tab. */
+  const code = BG.slice(BG.indexOf('function toastMemoryKey'), BG.indexOf('async function recordToastShown'))
+    + BG.slice(BG.indexOf('async function muteToastType'), BG.indexOf('async function maybeClearOnLeave'));
+  const sandbox = { URL, Object, Number, Date, String, cfg: {} };
+  sandbox.updateStoredConfig = (fn) => {
+    const next = JSON.parse(JSON.stringify(sandbox.cfg));
+    if (fn(next) !== false) sandbox.cfg = next;
+    return Promise.resolve();
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(code, sandbox);
+  const mutes = () => Object.keys(sandbox.cfg.toastMutes || {}).sort();
+
+  sandbox.muteToastType('warned_phishing', 0, 'https://www.shop.example/checkout');
+  check('a page mute is filed under the sending site', mutes().join() === 'warned_phishing|shop.example', mutes().join());
+  sandbox.muteToastType('blocked_popup', 60, '');
+  check('a page mute with no site to file it under writes nothing', mutes().join() === 'warned_phishing|shop.example', mutes().join());
+  sandbox.muteToastType('blocked_popup', 60);
+  check('the worker\'s own callers can still mute a kind everywhere', mutes().indexOf('blocked_popup') >= 0, mutes().join());
+  check('the message handler always passes the sending tab',
+    BG.indexOf("muteToastType(msg.type, msg.minutes, String((sender.tab && sender.tab.url) || ''))") >= 0);
+}());
+
 // --- the way back -----------------------------------------------------------
 
 (function everyMuteIsReversible() {
@@ -164,8 +189,8 @@ function loadWholeQuietRule() {
 // --- the card offers it -----------------------------------------------------
 
 (function theCardOffersTheChoice() {
-  const row = SOURCE.slice(SOURCE.indexOf('Hide this:') - 2000, SOURCE.indexOf('Hide this:') + 2000);
-  check('the card asks plainly', row.indexOf('Hide this:') >= 0);
+  const row = SOURCE.slice(SOURCE.indexOf('Hide here:') - 2000, SOURCE.indexOf('Hide here:') + 2000);
+  check('the card asks plainly', row.indexOf('Hide here:') >= 0);
   ['1h', '2h', 'Today', 'Always'].forEach((label) => {
     check('the card offers ' + label, row.indexOf('"' + label + '"') >= 0);
   });
@@ -173,7 +198,7 @@ function loadWholeQuietRule() {
     /Undo it in WardenOne/.test(row));
   check('it uses the existing background request channel',
     /__woBackgroundRequest\(__woSignedRequest\(\{kind:"mute-toast"/.test(row));  /* signed since SEC-14 */
-  check('the built engine carries it', CONTENT.indexOf('Hide this:') > 0);
+  check('the built engine carries it', CONTENT.indexOf('Hide here:') > 0);
 }());
 
 // --- the hour-long memory ---------------------------------------------------
@@ -295,8 +320,8 @@ function loadWholeQuietRule() {
   /* The last choice wrapped onto its own line, which made it read as a separate
      and heavier decision than the other three rather than the last item in a row
      of four. Shorter label, tighter pills, and no wrapping. */
-  const row = SOURCE.slice(SOURCE.indexOf('Hide this:') - 2600, SOURCE.indexOf('Hide this:') + 2600);
-  check('the label is short enough to leave room', row.indexOf('"Hide this:"') >= 0);
+  const row = SOURCE.slice(SOURCE.indexOf('Hide here:') - 2600, SOURCE.indexOf('Hide here:') + 2600);
+  check('the label is short enough to leave room', row.indexOf('"Hide here:"') >= 0);
   check('the row does not wrap', row.indexOf('flex-wrap:nowrap!important') >= 0,
     'the last choice drops to a second line again');
   check('the pills refuse to shrink or wrap their text',
@@ -317,7 +342,7 @@ function loadWholeQuietRule() {
     'the label list changed shape');
   check('the permanent choice is a duration, not a frequency',
     !!built && built[1] === 'Always',
-    built ? '"Hide this: ... ' + built[1] + '" reads as "' + built[1].toLowerCase() + ' hide this"' : '');
+    built ? '"Hide here: ... ' + built[1] + '" reads as "' + built[1].toLowerCase() + ' hide here"' : '');
   check('the popup describes the same four choices as the card',
     ['1h', '2h', 'Today', 'Always'].every((l) => POPUP_HTML.indexOf(l) >= 0)
       && POPUP_HTML.indexOf('Today or Never') < 0,
@@ -330,7 +355,7 @@ function loadWholeQuietRule() {
      with a hairline to mark the row as being about the card rather than part of
      it. Checked because "make it quieter" is the kind of change that gets
      undone by the next person adding a state to these buttons. */
-  const row = SOURCE.slice(SOURCE.indexOf('Hide this:') - 2600, SOURCE.indexOf('Hide this:') + 2600);
+  const row = SOURCE.slice(SOURCE.indexOf('Hide here:') - 2600, SOURCE.indexOf('Hide here:') + 2600);
   check('the row is separated from the message', row.indexOf('border-top:1px solid rgba(157,84,201,.16)!important') >= 0);
   check('a button is transparent at rest',
     /muteRest\s*=\s*muteFace\s*\+\s*"[^"]*background:transparent!important;/.test(row),

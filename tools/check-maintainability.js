@@ -196,6 +196,8 @@ function checkContentBuild() {
   'tools/test-feed-check-coverage.js',
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
+  'tools/test-download-early-pause.js',
+  'tools/test-download-trust-decision.js',
   'tools/test-download-hash-redirects.js',
   'tools/test-malware-hash-reload.js',
   'tools/test-download-threat-feeds.js',
@@ -382,6 +384,7 @@ function checkContentBuild() {
   'tools/test-logger-batch-reset.js',
   'tools/test-x-compatibility.js',
   'tools/test-behavioral-false-positives.js',
+  'tools/test-parked-lander-rules.js',
   // Suites that existed but were never referenced here. They cover engine test-shim isolation,
   // guard lifecycle and re-injection, JSON-prune stacking, page ownership of closed-shadow UI,
   // worker/state recovery, quota pruning, engine start-up and cosmetic-feed provenance -- all
@@ -465,6 +468,7 @@ function checkContentBuild() {
   'tools/test-package-completeness.js',
   'tools/test-engine-ambient.js',
   'tools/test-engine-startup.js',
+  'tools/test-engine-block-scope.js',
   'tools/test-guard-lifecycle.js',
   'tools/test-json-prune-stacking.js',
   'tools/test-owned-ui.js',
@@ -648,6 +652,8 @@ checkCommand('shared extension theme tests', ['tools/test-theme.js']);
 checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
+checkCommand('download early-pause tests', ['tools/test-download-early-pause.js']);
+checkCommand('download trust decision tests', ['tools/test-download-trust-decision.js']);
 checkCommand('download hash redirect tests', ['tools/test-download-hash-redirects.js']);
 checkCommand('malware hash reload tests', ['tools/test-malware-hash-reload.js']);
 checkCommand('download threat feed tests', ['tools/test-download-threat-feeds.js']);
@@ -697,6 +703,7 @@ checkCommand('extension verdict tests', ['tools/test-extension-verdicts.js']);
 // the source was fine, so nothing drew attention to the fact that nothing was checking it.
 checkCommand('engine ambient tests', ['tools/test-engine-ambient.js']);
 checkCommand('engine start-up tests', ['tools/test-engine-startup.js']);
+checkCommand('engine block scope tests', ['tools/test-engine-block-scope.js']);
 checkCommand('guard lifecycle tests', ['tools/test-guard-lifecycle.js']);
 checkCommand('JSON-prune stacking tests', ['tools/test-json-prune-stacking.js']);
 checkCommand('owned-UI tests', ['tools/test-owned-ui.js']);
@@ -850,6 +857,7 @@ checkCommand('health card extension-note tests', ['tools/test-health-extension-d
 checkCommand('Twitch adblock tests', ['tools/test-twitch-adblock.js']);
 checkCommand('Spotify adblock tests', ['tools/test-spotify-adblock.js']);
 checkCommand('Spotify media redirect tests', ['tools/test-spotify-media-dnr.js']);
+checkCommand('parked-lander rule tests', ['tools/test-parked-lander-rules.js']);
 checkCommand('Spotify silent media asset', ['tools/build-spotify-media.js', '--check']);
 checkCommand('Twitch fail-open tests', ['tools/test-twitch-failopen.js']);
 checkCommand('Twitch playlist compatibility tests', ['tools/test-twitch-playlist-compatibility.js']);

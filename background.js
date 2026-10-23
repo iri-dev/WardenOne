@@ -3788,7 +3788,7 @@ const STATIC_RULE_COUNT = 135;
 // TOTAL_DYNAMIC_BUDGET below. Count must match the builder's output.
 const ADSHIELD_STATIC_RULESET_ID = 'adshield_easylist';
 const SPOTIFY_MEDIA_RULESET_ID = 'spotify_media';
-const ADSHIELD_STATIC_RULE_COUNT = 28024;
+const ADSHIELD_STATIC_RULE_COUNT = 28026;
 let ADSHIELD_STATIC_ACTIVE = true; // tracked by refreshBlocklistRuleset for the stats display
 const TRACKERS_STATIC_RULESET_ID = 'trackers';
 // EasyPrivacy-derived third-party tracker host blocks (~15k hosts batched into ~150 rules).
@@ -6523,10 +6523,16 @@ async function firewallAllowOnce(site, domain, column) {
   } catch (e) { return { ok: false, error: firewallErrorText(e) }; }
 }
 
-async function firewallClearSession() {
+// With no site the whole band goes; with one, only the allowances that site made. A site that
+// does not normalise removes nothing rather than falling through to the whole band.
+async function firewallClearSession(site) {
   if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateSessionRules) return { ok: true, removed: 0 };
+  const host = site === undefined ? null : firewallNormalizeHost(site);
+  if (host === '') return { ok: true, removed: 0 };
   try {
-    const mine = (await firewallSessionRules()).map((r) => r.id);
+    const mine = (await firewallSessionRules())
+      .filter((r) => host === null || firewallSessionRuleFor(r).site === host)
+      .map((r) => r.id);
     if (mine.length) await writeSessionRules({ removeRuleIds: mine, addRules: [] });
     return { ok: true, removed: mine.length };
   } catch (e) { return { ok: false, removed: 0, error: firewallErrorText(e) }; }
@@ -20559,15 +20565,19 @@ if (keys.length > TOAST_MEMORY_MAX) {
 cfg.toastMemory = memory;
 });
 }
-async function muteToastType(rawType, rawMinutes) {
+/* With a page URL the mute covers that site only, keyed type|host like toastMemory: a page's own
+   "Hide here" must never silence a kind of warning everywhere. Without one it is global. */
+async function muteToastType(rawType, rawMinutes, siteUrl) {
 const type = String(rawType || "");
 if (!/^[a-z_]{3,60}$/.test(type)) return;
 const minutes = Number(rawMinutes);
 if (![60, 120, 480, 0].includes(minutes)) return;
+const key = siteUrl === undefined ? type : toastMemoryKey(type, siteUrl);
+if (!key) return;
 await updateStoredConfig((cfg) => {
 const mutes = Object.assign({}, cfg.toastMutes || {});
 /* 0 means forever. A timestamp means until then. */
-mutes[type] = minutes ? Date.now() + minutes * 60000 : 0;
+mutes[key] = minutes ? Date.now() + minutes * 60000 : 0;
 /* Bounded, and expired entries swept on every write so the list the popup
      shows is the list that is actually in force. */
 const now = Date.now();
@@ -21242,7 +21252,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'mute-toast' && messageSenderIsTab(sender)) {
-    muteToastType(msg.type, msg.minutes).then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
+    muteToastType(msg.type, msg.minutes, String((sender.tab && sender.tab.url) || ''))
+      .then(() => sendResponse({ ok: true }), () => sendResponse({ ok: false }));
     return true;
   }
   if (msg && msg.kind === 'consent-accepted' && messageSenderIsTab(sender)) {
@@ -22652,7 +22663,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       else if (site) { next = JSON.parse(JSON.stringify(matrix)); delete next[site]; }
       else { sendResponse({ ok: false, error: 'Nothing to reset.' }); return; }
       // Both removals have to succeed before anything claims the rules are gone (H18).
-      const session = await firewallClearSession();
+      // A per-site undo takes only this site's allowances; other sites keep theirs.
+      const session = await firewallClearSession(msg.all === true ? undefined : site);
       const result = await applyFirewallRulesFrom(firewallRulesFrom(next));
       if (!session.ok || !result.ok) {
         sendResponse({ ok: false, error: 'The browser refused the reset: ' + (session.ok ? result.error : session.error) + ' Your rules are still stored and still in effect.' });

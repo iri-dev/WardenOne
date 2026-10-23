@@ -165,9 +165,9 @@ check('session rules have their own id range',
 /* ---- undo ---------------------------------------------------------------- */
 check('there is a per-site undo', /id="reset-site"/.test(HTML_RAW) && /kind: 'firewall-reset'/.test(JS));
 check('there is a remove-everything undo', /id="reset-all"/.test(HTML_RAW) && /all: all === true/.test(JS));
-check('resetting also drops the session rules',
-  /const session = await firewallClearSession\(\);[\s\S]{0,160}applyFirewallRulesFrom\(firewallRulesFrom\(next\)\)/.test(BG),
-  'otherwise an allow-once survives the undo that was supposed to clear everything');
+check('resetting also drops the session rules, scoped to the site being reset',
+  /const session = await firewallClearSession\(msg\.all === true \? undefined : site\);[\s\S]{0,160}applyFirewallRulesFrom\(firewallRulesFrom\(next\)\)/.test(BG),
+  'otherwise an allow-once survives the undo, or a per-site undo takes every other site\'s allowances with it');
 check('and a reset that Chrome refused is not reported as done',
   /if \(!session\.ok \|\| !result\.ok\) \{/.test(BG),
   'H18: "removed" was printed over rules Chrome still held');
@@ -176,6 +176,59 @@ check('undo is on the page, not behind a menu',
 check('the page says plainly that it can break a site',
   /This is the tool that can break a site/.test(HTML)
     && /nothing here tries to stop you doing that/.test(HTML));
+
+/* The page itself, in a minimal DOM. The per-site undo was disabled whenever the site had no
+   stored decisions, so a site with only a temporary allowance had no way to undo it here. */
+class FakeNode {
+  constructor(tag) {
+    Object.assign(this, { tag, children: [], listeners: {}, className: '', ownText: '', disabled: false, hidden: false, title: '', type: '', value: '' });
+  }
+  get textContent() { return this.ownText + this.children.map((c) => c.textContent).join(' '); }
+  set textContent(v) { this.ownText = String(v); this.children = []; }
+  appendChild(c) { this.children.push(c); return c; }
+  addEventListener(type, fn) { this.listeners[type] = fn; }
+}
+function firewallPage(get, answers = {}) {
+  const nodes = new Map();
+  const sent = [];
+  const byId = (id) => { if (!nodes.has(id)) nodes.set(id, new FakeNode('#' + id)); return nodes.get(id); };
+  const ctx = {
+    URLSearchParams, Number, String, Set, Map, Object, Array, Math, console,
+    location: { search: '?tab=7&site=news.example' },
+    setTimeout: (fn) => { fn(); return 1; },
+    document: { getElementById: byId, createElement: (tag) => new FakeNode(tag) },
+    chrome: {
+      runtime: {
+        lastError: undefined,
+        connect: () => ({ onMessage: { addListener() {} }, onDisconnect: { addListener() {} } }),
+        sendMessage: (msg, cb) => { sent.push(msg); cb(msg.kind === 'firewall-get' ? get : (answers[msg.kind] || { ok: true })); },
+      },
+      tabs: { reload() {} },
+    },
+  };
+  vm.createContext(ctx);
+  vm.runInContext(JS, ctx, { filename: 'firewall.js' });
+  return { byId, sent };
+}
+{
+  const page = firewallPage({ ok: true, site: 'news.example', rules: {}, omitted: [], once: [{ domain: 'cdn.example', column: 'all' }], sites: 0 });
+  check('a site with only a temporary allowance can be undone here', page.byId('reset-site').disabled === false);
+  check('and the allowance has a row, so the reader can see what the undo will take',
+    /cdn\.example[\s\S]*allowed until the browser closes/.test(page.byId('rows').textContent), page.byId('rows').textContent);
+  page.byId('reset-site').listeners.click();
+  const reset = page.sent.find((m) => m.kind === 'firewall-reset');
+  check('the per-site undo asks for this site only', !!reset && reset.site === 'news.example' && reset.all === false, JSON.stringify(reset));
+  check('and says other sites keep theirs', /Other sites keep theirs/.test(page.byId('status').textContent), page.byId('status').textContent);
+  check('with nothing left here the button goes back to disabled', page.byId('reset-site').disabled === true);
+}
+{
+  const page = firewallPage({ ok: true, site: 'news.example', rules: {}, omitted: [], once: [], sites: 0 });
+  check('with neither a decision nor an allowance there is nothing to undo', page.byId('reset-site').disabled === true);
+}
+{
+  const page = firewallPage({ ok: true, site: 'news.example', rules: { 'ads.example': { script: 'block' } }, omitted: [], once: [], sites: 1 });
+  check('a stored decision alone still enables the undo', page.byId('reset-site').disabled === false);
+}
 
 /* ---- the rows are observed, not invented -------------------------------- */
 check('the matrix is fed by the real capture',

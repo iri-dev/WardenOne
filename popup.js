@@ -333,6 +333,8 @@ const TOAST_TITLES = {
 };
 
 function humanToastType(type) {
+  const bar = String(type || '').indexOf('|');
+  if (bar > 0) return humanToastType(type.slice(0, bar)) + ' on ' + type.slice(bar + 1);
   const known = Object.prototype.hasOwnProperty.call(TOAST_TITLES, type) && TOAST_TITLES[type];
   if (known) return known;
   const label = String(type || '').replace(/^(blocked|warned|detected|gated|cleaned)_/, '').replace(/_/g, ' ');

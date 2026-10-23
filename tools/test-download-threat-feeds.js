@@ -70,7 +70,7 @@ function world() {
     update: updateDownloadThreatFeeds, attach: attachDownloadThreatFeedUpdate, reset: resetDownloadThreatFeedCache,
     feeds: downloadThreatFeeds, known: knownMalwareHash, coverage: malwareHashCoverage,
     listed: listedPayloadUrl, enrichUrl: enrichDownloadWithPayloadUrlFeed, enrichHash: enrichDownloadWithLocalHash,
-    loadHashes: loadMalwareHashes, caps: DOWNLOAD_THREAT_FEED_CAPS,
+    loadHashes: loadMalwareHashes, caps: DOWNLOAD_THREAT_FEED_CAPS, fallbackDepth: DOWNLOAD_URL_FALLBACK_DIR_DEPTH,
   })`, sandbox);
   return { guard, sandbox, api };
 }
@@ -87,8 +87,35 @@ async function main() {
     for (const line of ['1.62.169.8', 'evil-host.example', '||whole-host.example^$all', '||github.com/^$all', '! comment', '']) {
       assert.equal(api.entryKey(line), '', 'not a payload address: ' + JSON.stringify(line));
     }
-    assert.equal(api.entryKey('||files.example:443/x^$all'), 'files.example/x', 'default ports are dropped');
+    /* The publisher prints URL.host, so a listed port is never its own scheme's default. */
+    assert.equal(api.entryKey('||files.example:443/x^$all'), 'files.example:443/x', 'a listed :443 came from http');
+    assert.equal(api.entryKey('||files.example:80/x^$all'), 'files.example:80/x', 'a listed :80 came from https');
+    assert.equal(api.entryKey('||[2001:db8::1]:80/x^$all'), '[2001:db8::1]:80/x');
     assert.equal(api.entryKey('||files.example:8080/x^$all'), 'files.example:8080/x');
+    assert.equal(api.entryKey('||files.example:1080/x^$all'), 'files.example:1080/x');
+    const portKey = (url) => api.candidates(url).slice(-1)[0];
+    assert.equal(portKey('https://files.example:443/x'), 'files.example/x', 'https drops only its own default port');
+    assert.equal(portKey('http://files.example:80/x'), 'files.example/x', 'http drops only its own default port');
+    assert.equal(portKey('http://files.example:443/x'), 'files.example:443/x', ':443 is not http\'s default');
+    assert.equal(portKey('https://files.example:80/x'), 'files.example:80/x', ':80 is not https\'s default');
+    assert.equal(portKey('https://files.example:80/x'), api.entryKey('||files.example:80/x^$all'));
+
+    /* The publisher lowercases whole URLs (urlhaus-filter src/script.sh: tr upper lower), so a
+       case-exact comparison would leave every mixed-case listing, Drive IDs included, unmatchable. */
+    assert(api.candidates('https://drive.google.com/uc?export=download&id=1OsJrfVjdY1vBlK4fya98jP5jLnK7RutV')
+      .includes(api.entryKey('||drive.google.com/uc?export=download&id=1osjrfvjdy1vblk4fya98jp5jlnk7rutv^$all')),
+    'a mixed-case download address matches its lowercased listing');
+    assert(api.candidates('https://raw.githubusercontent.com/x/y/main/%7D/a.zip')
+      .includes(api.entryKey('||raw.githubusercontent.com/x/y/main/%7D/a.zip^$all')), 'percent-escape case never matters');
+
+    /* The publisher also drops a leading www. (urlhaus-filter src/clean_url.js cleanHost). */
+    assert.equal(portKey('https://www.dropbox.com/s/abc/Setup.exe'), api.entryKey('||dropbox.com/s/abc/setup.exe^$all'),
+      'a www. download address matches its www-less listing');
+    assert.equal(portKey('http://www.files.example:8080/x'), 'files.example:8080/x', 'a port survives the www. fold');
+    assert.equal(api.entryKey('||www.files.example/x^$all'), 'files.example/x', 'a www. entry folds the same way');
+    for (const host of ['www2.files.example', 'wwwfiles.example', 'cdn.www.files.example']) {
+      assert.equal(portKey('https://' + host + '/x'), host + '/x', 'only a leading www. label is dropped: ' + host);
+    }
 
     const keys = new Set(api.candidates('https://raw.githubusercontent.com/Evil/Repo/main/stage2.exe?token=secret#frag'));
     assert(keys.has('raw.githubusercontent.com/evil/repo/main/stage2.exe'), 'the exact path is a candidate');
@@ -98,7 +125,13 @@ async function main() {
     assert(![...keys].some((k) => k.includes('#') || k.includes('frag')), 'fragments never identify a payload');
     assert.equal(api.candidates('blob:https://site.example/uuid').length, 0);
     assert.equal(api.candidates('data:application/octet-stream;base64,AA==').length, 0);
-    assert(api.candidates('https://deep.example/' + 'a/'.repeat(200) + 'x.exe').length <= 24, 'candidate count is bounded');
+    const deep = 'https://deep.example/a/' + 'b/'.repeat(200) + 'x.exe';
+    const dirs = (keys) => plain(keys).filter((k) => k.endsWith('/'));
+    assert(api.candidates(deep).length <= api.fallbackDepth + 1, 'without a depth list the candidate count is bounded');
+    assert(api.candidates(deep).includes('deep.example/a/'), 'and the shallowest directories are the ones kept');
+    assert.deepEqual(dirs(api.candidates(deep, [2, 7])), ['deep.example/a/', 'deep.example/a/' + 'b/'.repeat(5)],
+      'with a depth list only the listed depths are checked, however deep the path');
+    assert.deepEqual(dirs(api.candidates(deep, [])), [], 'a feed without directory entries checks no directories');
     console.log('  [ok] feed lines and download addresses normalise to the same keys');
   }
 
@@ -242,6 +275,14 @@ async function main() {
     const ported = guard.scoreDownload('http://files.example:8080/bins/x86', '', 'x86', '', [], '');
     await api.enrichUrl(ported, ['http://files.example:8080/bins/x86']);
     assert.equal(ported.payloadUrlListed, true);
+    const otherPort = 'http://raw.githubusercontent.com:443/evil/repo/main/stage2.exe';
+    const wrongPort = guard.scoreDownload(otherPort, '', 'stage2.exe', '', [], '');
+    await api.enrichUrl(wrongPort, [otherPort]);
+    assert(!wrongPort.payloadUrlListed, 'plain http on port 443 is another server than the listed https address');
+    const wwwUrl = 'https://www.acusense.ae/umbrella/x/run.exe';
+    const viaWww = guard.scoreDownload(wwwUrl, '', 'run.exe', '', [], '');
+    await api.enrichUrl(viaWww, [wwwUrl]);
+    assert.equal(viaWww.payloadUrlListed, true, 'the www. address of a listed directory is covered too');
 
     /* The content hash is what earns a hard block. */
     vm.runInContext(`fetchBytesForHash = async () => ({ ok: true, bytes: new TextEncoder().encode(${JSON.stringify(SAMPLE)}),
@@ -276,6 +317,33 @@ async function main() {
     assert.equal(review.grade, 'E');
     assert.equal(review.autoBlocked, undefined);
     console.log('  [ok] a scan of a listed download pauses it as Dangerous');
+  }
+
+  /* ---- directory entries beneath deep paths ---- */
+  {
+    const { api, sandbox } = world();
+    sandbox.feedBodies[URLHAUS] = ['||evil.example/a/^$all', '||deep.example/1/2/3/4/5/6/^$all', '||evil.example/file.exe^$all'].join('\n');
+    await api.update('alarm');
+    assert.deepEqual(plain(sandbox.store[KEY].payloadUrlDirDepths), [2, 7], 'the store records the depths the feed lists directories at');
+    api.reset();
+    assert.deepEqual(plain((await api.feeds()).urlDirDepths), [2, 7], 'and lookups read them back');
+    const padding = 'p/'.repeat(200) + 'x.exe';
+    for (const url of ['https://evil.example/a/' + padding, 'https://deep.example/1/2/3/4/5/6/' + padding]) {
+      assert.equal(await api.listed([url]), url, 'padding beneath a listed directory cannot hide it: ' + url.slice(0, 40));
+    }
+    assert.equal(await api.listed(['https://evil.example/b/' + padding]), '', 'a sibling directory is not covered');
+
+    sandbox.feedBodies[URLHAUS] = undefined;
+    await api.update('alarm');
+    assert.deepEqual(plain(sandbox.store[KEY].payloadUrlDirDepths), [2, 7], 'an unreachable feed keeps the previous depths');
+
+    const legacy = Object.assign({}, sandbox.store[KEY]);
+    delete legacy.payloadUrlDirDepths;
+    sandbox.store[KEY] = legacy;
+    api.reset();
+    const legacyUrl = 'https://evil.example/a/' + padding + '?id=1';
+    assert.equal(await api.listed([legacyUrl]), legacyUrl, 'a store written before the depth list still checks the shallowest directories');
+    console.log('  [ok] a listed directory covers every depth beneath it');
   }
 
   /* ---- worker wiring ---- */

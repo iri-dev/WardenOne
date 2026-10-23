@@ -269,18 +269,61 @@
       return out;
     } catch (_) { return ''; }
   })();
-  // Seal key delivery once executable page content could have run. Extension-inserted styles
-  // at document_start are inert and must not prevent the initial handoff.
+  // The key goes to MAIN only before any page script can have run. A DOM snapshot cannot show that,
+  // since a script can delete itself, so after the hand-off the bridge records every added node and
+  // seals for good at the first that could run code. Extension-inserted styles are inert.
   const BRIDGE_INERT_TAG = /^(?:head|meta|title|link|style|base)$/;
   const pageCouldHaveRun = () => __woAuth.pageCouldHaveRun(document);
   const BRIDGE_FRESH = !pageCouldHaveRun();
+  // A same-origin parent or opener can listen on this document without adding a node to it.
+  // The start-up hand-off still goes out: same-origin player frames need their guards configured.
+  const sameOriginRelative = (others) => others.some((other) => {
+    try { return !!(other && other.document); } catch (_) { return false; }
+  });
+  let keySealed = !KEY || !BRIDGE_FRESH;
+  let keyWatch = null;
+  const inertNode = (node) => {
+    if (!node || node.nodeType !== 1) return true;
+    const all = [node].concat(Array.from(node.getElementsByTagName('*')));
+    return all.length <= 64 && all.every((el) => BRIDGE_INERT_TAG.test(String(el.localName || '').toLowerCase())
+      && !Array.from(el.attributes || []).some((attr) => /^on/i.test(String(attr.name || ''))));
+  };
+  const addsCode = (records) => records.some((record) => Array.from(record.addedNodes || []).some((node) => !inertNode(node)));
+  const sealKey = () => {
+    keySealed = true;
+    if (keyWatch) { try { keyWatch.disconnect(); } catch (_) {} keyWatch = null; }
+  };
+  const keyOpen = () => {
+    if (keySealed) return false;
+    try {
+      if ((keyWatch && addsCode(keyWatch.takeRecords())) || pageCouldHaveRun()) sealKey();
+    } catch (_) { sealKey(); }
+    return !keySealed;
+  };
   const deliverKey = () => {
-    if (!KEY || pageCouldHaveRun()) return false;
+    if (!keyOpen()) return false;
     try {
       document.dispatchEvent(new CustomEvent('wo-key', { detail: { token: TOKEN, key: KEY } }));
       return true;
     } catch (_) { return false; }
   };
+  // The end of this bridge's start: every MAIN listener so far gets the key, then the watch begins.
+  // Not the shared DOM watcher: a replay must read pending records at once, with takeRecords().
+  const handOffKey = () => {
+    const sent = deliverKey();
+    if (!keySealed && !keyWatch) {
+      try {
+        keyWatch = woObserver((records) => {
+          try { if (addsCode(records)) sealKey(); } catch (_) { sealKey(); }
+        });
+        keyWatch.observe(document, { childList: true, subtree: true });
+      } catch (_) { sealKey(); }
+    }
+    return sent;
+  };
+  // For a MAIN module that starts after this bridge; never while a same-origin relative can reach it.
+  const replayKey = () => (sameOriginRelative([window.parent !== window ? window.parent : null, window.opener])
+    ? false : deliverKey());
   let authSeq = 0;
   // Sign a message in place: one counter for every kind, so a replayed message -- even a
   // genuine one from a minute ago -- fails on its sequence number.
@@ -2090,6 +2133,26 @@
     }
     const clean = Object.assign({}, source || {});
     clean.allowlist = current && bridgeHostMatchesList(current, clean.allowlist) ? [current] : [];
+    // type|host entries name other sites the user visited; the page gets only its own, keyed by
+    // type, in the host form the worker uses for these keys (toastMemoryKey).
+    const toastHost = String(host || '').replace(/^www./, '').toLowerCase();
+    const forThisSite = (map, byType) => {
+      const out = {};
+      if (!map || typeof map !== 'object') return out;
+      // A mute of 0 lasts forever, so it outlasts any end time.
+      const keep = (name, until) => {
+        const had = out[name];
+        out[name] = had === undefined ? until : (had === 0 || until === 0 ? 0 : Math.max(Number(had), Number(until)));
+      };
+      for (const key of Object.keys(map)) {
+        const bar = key.indexOf('|');
+        if (bar < 0) { if (byType) keep(key, map[key]); continue; }
+        if (key.slice(bar + 1) === toastHost) keep(byType ? key.slice(0, bar) : key, map[key]);
+      }
+      return out;
+    };
+    clean.toastMutes = forThisSite(clean.toastMutes, true);
+    clean.toastMemory = forThisSite(clean.toastMemory, false);
     delete clean.forgetMeList;
     delete clean.allowlistUntil;
     delete clean.siteOverrides;
@@ -2199,7 +2262,7 @@
     // The key goes out again only while nothing but content scripts can be listening; a
     // detector registered after this bridge asks at its own document_start and gets it, a page
     // asking later gets the nonce and the config it has already seen.
-    deliverKey();
+    replayKey();
     postToPage({ source: 'wardenone-handshake', token: TOKEN });
     if (bridgeConfigReady) sendConfig(bridgeConfig);
   };
@@ -2682,10 +2745,9 @@
         if (!relaySamePageHost(hostname)) return null;
         return { kind: 'adshield-cosmetic', hostname, playerPage: msg.playerPage === true };
       }
-      /* Silencing one kind of notice. The page can only name a warning TYPE and
-         a duration -- never a host, never a setting -- so the worst a hostile
-         page can do with this channel is quieten a card about itself, which it
-         could already achieve by not triggering one. */
+      /* Silencing one kind of notice on this site. The page names only a type and a duration;
+         the worker takes the site from the sending tab, so even a page holding the key can only
+         quieten cards about itself. Turning a kind off everywhere stays a WardenOne settings choice. */
       /* 'I showed this one.' Same narrow shape as the mute: a type and nothing
          else. The host is taken from the sending tab by the worker, never from
          the page, so a page cannot claim to have shown a notice on someone
@@ -3367,6 +3429,6 @@
   // receive it. Nothing but content scripts can be running at this point of a document_start
   // injection; if something has been built already, this bridge was injected late and the key
   // stays here.
-  deliverKey();
+  handOffKey();
   try { window.__wardenOneBridgeReadyVersion = BRIDGE_VERSION; } catch (_) {}
 })();

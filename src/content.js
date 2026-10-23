@@ -3997,6 +3997,19 @@
         for(const root of roots)scanImages(root)
       },!0)
     }
+    /* Declared outside the link-check block because the tracker learner, Intranet Guard and
+       Risky-site Mode use them too, and each turns a ReferenceError into a silent "off". */
+    const regDom=regDomain,
+    u2=s=>{
+      try{
+        return new URL(s,
+        location.href)
+      }
+      catch{
+        return null
+      }
+
+    };
     {
       const REDIRECT_PARAMS=["url",
       "target",
@@ -4035,18 +4048,7 @@
       LOGGER_API_PATHS=/\/(log|logs|track|tracker|tracking|visit|capture|collect|hit|beacon|pixel|api\/log|api\/track|api\/collect)(\/|$|\?)/i,
       /* Suppress warnings for destinations already covered by enabled tracker rules.
          Page hooks see attempts before DNR blocks them. Keep this list aligned with rules-trackers.json. */
-      ALREADY_BLOCKED_TRACKERS=/(^|\.)(google-analytics|analytics\.google|googletagmanager|doubleclick|g\.doubleclick|heapanalytics|hs-analytics|scorecardresearch|quantserve|mixpanel|amplitude|segment|fullstory|hotjar|mouseflow|crazyegg|luckyorange|inspectlet|chartbeat|matomo|clarity\.ms|bat\.bing|branch\.io|adjust|appsflyer|kochava|clevertap|newrelic|nr-data|bugsnag|sentry|datadoghq|logrocket|smartlook|yandex\.(ru|com)|mc\.yandex)\./i,
-      regDom=regDomain,
-      u2=s=>{
-        try{
-          return new URL(s,
-          location.href)
-        }
-        catch{
-          return null
-        }
-
-      };
+      ALREADY_BLOCKED_TRACKERS=/(^|\.)(google-analytics|analytics\.google|googletagmanager|doubleclick|g\.doubleclick|heapanalytics|hs-analytics|scorecardresearch|quantserve|mixpanel|amplitude|segment|fullstory|hotjar|mouseflow|crazyegg|luckyorange|inspectlet|chartbeat|matomo|clarity\.ms|bat\.bing|branch\.io|adjust|appsflyer|kochava|clevertap|newrelic|nr-data|bugsnag|sentry|datadoghq|logrocket|smartlook|yandex\.(ru|com)|mc\.yandex)\./i;
       let lastLinkWarn=0;
       const safeBrowsingAllowedLinks=new WeakSet,
       linkLooksDownloadish=(a,
@@ -4416,16 +4418,22 @@
 
     };
     if(WO.intranetProtection&&publicPage())try{
-      const blockLocal=(raw,
+      /* Every attempt is refused, but one record per host and kind: Discord's desktop-app check
+         alone tries ten ports on 127.0.0.1 on each invite page. */
+      const probesRecorded=new Set,
+      blockLocal=(raw,
       how)=>{
         if(!localAdminTarget(raw))return!1;
+        const u=u2(raw),
+        key=(how||"request")+"|"+(u?u.hostname:"");
+        probesRecorded.has(key)||probesRecorded.size>=40||(probesRecorded.add(key),
         log("blocked_intranet_probe",
         {
           matched:String(raw||"").slice(0,
           160),
           how:how||"request",
           why:"public page tried to reach a local/router admin target"
-        });
+        }));
         return!0
       };
       if(window.fetch){
@@ -4590,9 +4598,32 @@
         }
 
       }
+      /* A sign-in response posted to a loopback callback is local development (ASP.NET's form_post, a SAML
+         ACS), so loopback forms are judged at submit, when their fields exist; LAN targets are refused outright. */
+      const loopbackTarget=raw=>{
+        try{
+          const u=u2(raw);
+          return!!u&&/^(localhost|127(?:\.\d{1,3}){0,3}|::1)$/i.test(u.hostname.replace(/^\[|\]$/g,
+          ""))
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      identityResponseForm=form=>{
+        try{
+          return!!form.querySelector('input[name="SAMLResponse"],input[name="SAMLRequest"],input[name="wresult"],input[name="id_token"],input[name="access_token"]')||!!(form.querySelector('input[name="code"]')&&form.querySelector('input[name="state"]'))
+        }
+        catch(_){
+          return!1
+        }
+
+      };
       const blockForm=form=>{
         try{
           const action=form&&form.action||form&&form.getAttribute&&form.getAttribute("action")||location.href;
+          if(loopbackTarget(action)&&identityResponseForm(form))return!1;
           return blockLocal(action,
           "form")
         }
@@ -4621,7 +4652,10 @@
       },
       guardLocalNode=el=>{
         const kind=localResourceKind(el);
-        if(kind&&blockLocal(localResourceUrl(el),
+        if(!kind)return!1;
+        const url=localResourceUrl(el);
+        if("form"===kind&&loopbackTarget(url))return!1;
+        if(blockLocal(url,
         kind)){
           try{
             "FORM"===String(el.tagName||"").toUpperCase()?el.removeAttribute("action"):("SCRIPT"===String(el.tagName||"").toUpperCase()&&(el.type="javascript/blocked-by-wardenone"),
@@ -4658,8 +4692,9 @@
         const setAttr=Element.prototype.setAttribute;
         Element.prototype.setAttribute=function(name,
         value){
-          if(/^(src|href|data|action)$/i.test(String(name||""))&&localResourceKind(this)&&blockLocal(value,
-          localResourceKind(this)))return;
+          const kind=/^(src|href|data|action)$/i.test(String(name||""))&&localResourceKind(this);
+          if(kind&&!("form"===kind&&loopbackTarget(value))&&blockLocal(value,
+          kind))return;
           return setAttr.apply(this,
           arguments)
         }
@@ -4738,7 +4773,8 @@
           const u=u2(raw);
           if(!u||!/^https?:$/i.test(u.protocol))return!1;
           const dest=regDom(u.hostname);
-          return!!(dest&&here&&dest!==here&&!dest.endsWith("."+here)&&!here.endsWith("."+dest)&&!TRUSTED_THIRD_PARTY.test(dest))
+          /* Sibling subdomains (app. and api. of one risky site) are the same site, not a third party. */
+          return!!(dest&&here&&dest!==here&&!dest.endsWith("."+here)&&!here.endsWith("."+dest)&&!TRUSTED_THIRD_PARTY.test(dest)&&siteKey(dest)!==siteKey(here))
         }
         catch(_){
           return!1
@@ -21823,14 +21859,14 @@
         String(matched).slice(0,
         80));
         /* Mute durations start at one hour because recent-notice suppression already lasts thirty minutes.
-           "Always" describes the hide duration; permanent mutes remain reversible in the popup. */
+           "Always" describes the hide duration; the worker scopes it to this site, and it stays reversible in the popup. */
 
         try{
           const muteRow=oDiv(body,
           "display:flex!important;flex-wrap:nowrap!important;gap:1px!important;align-items:center!important;margin-top:9px!important;padding-top:7px!important;border-top:1px solid rgba(157,84,201,.16)!important;");
           oTextDiv(muteRow,
           "font-size:10px!important;color:#a08db3!important;flex:0 1 auto!important;white-space:nowrap!important;overflow:hidden!important;margin-right:4px!important;",
-          "Hide this:");
+          "Hide here:");
           /* One base, two endings. Written out rather than composed so that what
              the button looks like is readable in one line each. */
           const muteFace="all:initial!important;box-sizing:border-box!important;flex:0 0 auto!important;cursor:pointer!important;font-family:inherit!important;font-size:10.5px!important;font-weight:600!important;line-height:15px!important;white-space:nowrap!important;padding:2px 6px!important;border-radius:7px!important;",
@@ -21853,7 +21889,7 @@
                 ev.stopPropagation(),
                 __woBackgroundRequest(__woSignedRequest({kind:"mute-toast",type:type,minutes:minutes})),
                 muteRow.textContent="",
-                oTextDiv(muteRow,"font-size:10.5px!important;color:#6b4f85!important;",0===minutes?"Hidden from now on. Undo it in WardenOne.":"Hidden for "+label+". Undo it in WardenOne."),
+                oTextDiv(muteRow,"font-size:10.5px!important;color:#6b4f85!important;",0===minutes?"Hidden on this site from now on. Undo it in WardenOne.":"Hidden on this site for "+label+". Undo it in WardenOne."),
                 setTimeout(()=>{try{dismiss()}catch(_){}},1400)
               }
               catch(_){
