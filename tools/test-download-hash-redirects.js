@@ -65,13 +65,13 @@ async function run() {
   assert.equal(await w.api.sha256Hex(result.bytes), createHash('sha256').update('redirected file bytes').digest('hex'));
   assert.deepEqual(w.calls, [START, FILE]); released(w);
 
-  for (const timeStampOffset of [-0.375, 0, 1]) {
+  for (const timeStampOffset of [-11.12, -1.36, -0.375, 0, 1]) {
     const t = world(routes, { timeStampOffset });
     assert.equal((await t.api.fetchBytesForHash(START, 100)).ok, true, 'browser timestamp offset ' + timeStampOffset);
     released(t);
   }
-  const earlier = world(routes, { timeStampOffset: -1, timeout: 20 });
-  assert.equal((await earlier.api.fetchBytesForHash(START, 100)).ok, false, 'an earlier millisecond cannot register a request');
+  const earlier = world(routes, { timeStampOffset: -51, timeout: 20 });
+  assert.equal((await earlier.api.fetchBytesForHash(START, 100)).ok, false, 'a request from before the clock slack cannot register');
   assert.deepEqual(earlier.calls, [START]); released(earlier);
 
   for (const target of ['http://127.0.0.1/file', 'http://2130706433/file', 'http://10.0.0.1/file',
