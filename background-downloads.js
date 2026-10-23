@@ -609,6 +609,8 @@ function formatBytesShort(n) {
 
 const DOWNLOAD_HASH_HOP_QUEUES = new Map();
 const DOWNLOAD_HASH_ACTIVE_HOPS = new Map();
+/* webRequest stamps use another clock than Date.now(); Chrome 121 on Windows put a hop's own request up to 11 ms early. */
+const DOWNLOAD_HASH_CLOCK_SLACK_MS = 50;
 let downloadHashStartObserverReady = false;
 let downloadHashRedirectObserverReady = false;
 
@@ -622,8 +624,8 @@ function downloadHashObservation(details) {
 try {
   chrome.webRequest.onBeforeRequest.addListener((details) => {
     const job = downloadHashObservation(details);
-    /* webRequest has sub-millisecond precision; Date.now() does not. */
-    if (job && Math.ceil(details.timeStamp) >= job.startedAt) job.requests.add(details.requestId);
+    /* A late event from an older same-URL request can land inside the slack; the single-request check then fails closed. */
+    if (job && details.timeStamp + DOWNLOAD_HASH_CLOCK_SLACK_MS >= job.startedAt) job.requests.add(details.requestId);
   }, { urls: ['http://*/*', 'https://*/*'], types: ['xmlhttprequest'], tabId: -1 });
   downloadHashStartObserverReady = true;
 } catch (_) {}
