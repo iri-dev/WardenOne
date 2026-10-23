@@ -59,7 +59,7 @@ function loadRules() {
   vm.runInContext(
     BG.slice(from, to)
       + '\nthis.__api = { applyIntranetNetworkRules, INTRANET_NET_PATTERNS, INTRANET_LOOPBACK_PATTERNS,'
-      + ' INTRANET_NET_RULES_BUDGET, SIGN_IN_CALLBACK_PROVIDERS, intranetNetResourceTypes, locallyServedTabIds };',
+      + ' INTRANET_NET_RULES_BUDGET, SIGN_IN_CALLBACK_PROVIDERS, INTRANET_LOCAL_INITIATOR_DOMAINS, intranetNetResourceTypes, locallyServedTabIds };',
     sandbox,
     { filename: 'background.js' }
   );
@@ -118,29 +118,29 @@ pending.push((async function aTopLevelFormPostIsJudgedByWhoSentIt() {
   /* The page hooks never see a form built in a child frame's realm and submitted to _top, so
      this rule is what stops it. Field names play no part: the browser supplies the initiator. */
   const h = loadRules();
-  await h.api.applyIntranetNetworkRules(true, ['auth.company.example']);
+  await h.api.applyIntranetNetworkRules(true, ['auth.company.example.com']);
   const rules = h.state.updates[0].addRules;
   const post = (initiator, url) => ({ url, initiator, type: 'main_frame', method: 'post', tabId: 7 });
   [
-    ['a public page posting a disguised form to a local service', post('https://evil.example/', 'http://localhost:2375/containers/create')],
-    ['the same to 127.0.0.1', post('https://evil.example/', 'http://127.0.0.1:2375/containers/create')],
-    ['the same to [::1]', post('https://evil.example/', 'http://[::1]:2375/containers/create')],
-    ['a public page posting to the router', post('https://evil.example/', 'http://192.168.1.1/apply.cgi')],
+    ['a public page posting a disguised form to a local service', post('https://evil.example.com/', 'http://localhost:2375/containers/create')],
+    ['the same to 127.0.0.1', post('https://evil.example.com/', 'http://127.0.0.1:2375/containers/create')],
+    ['the same to [::1]', post('https://evil.example.com/', 'http://[::1]:2375/containers/create')],
+    ['a public page posting to the router', post('https://evil.example.com/', 'http://192.168.1.1/apply.cgi')],
     ['a sandboxed or data: page, which has no origin', post('', 'http://localhost:2375/containers/create')],
     ['a sign-in provider posting to the router', post('https://login.microsoftonline.com/', 'http://192.168.1.1/apply.cgi')],
-    ['a lookalike of a sign-in provider', post('https://login.microsoftonline.com.evil.example/', 'https://localhost:5001/signin-oidc')],
-    ['a public page posting to a bare machine name', post('https://evil.example/', 'http://nas:5000/webapi/entry.cgi')],
+    ['a lookalike of a sign-in provider', post('https://login.microsoftonline.com.evil.example.com/','https://localhost:5001/signin-oidc')],
+    ['a public page posting to a bare machine name', post('https://evil.example.com/', 'http://nas:5000/webapi/entry.cgi')],
     ['a sign-in provider posting to a bare machine name', post('https://login.microsoftonline.com/', 'http://nas:5000/')],
-    ['a public page posting to localhost with a trailing dot', post('https://evil.example/', 'http://localhost.:2375/containers/create')],
-    ['a public page posting to a carrier-grade NAT address', post('https://evil.example/', 'http://100.64.0.1:9000/')],
+    ['a public page posting to localhost with a trailing dot', post('https://evil.example.com/', 'http://localhost.:2375/containers/create')],
+    ['a public page posting to a carrier-grade NAT address', post('https://evil.example.com/', 'http://100.64.0.1:9000/')],
   ].forEach(([name, req]) => check('blocked: ' + name, blockedBy(rules, req)));
   [
     ['Microsoft posting a sign-in response to localhost', post('https://login.microsoftonline.com/', 'https://localhost:5001/signin-oidc')],
     ['Google posting one to 127.0.0.1', post('https://accounts.google.com/', 'http://127.0.0.1:8080/auth/callback')],
-    ['an allowlisted identity provider posting to localhost', post('https://auth.company.example/', 'https://localhost:5001/signin-oidc')],
+    ['an allowlisted identity provider posting to localhost', post('https://auth.company.example.com/', 'https://localhost:5001/signin-oidc')],
     ['the router posting its own settings form', post('http://192.168.1.1/', 'http://192.168.1.1/apply.cgi')],
     ['the router address typed into the address bar', { url: 'http://192.168.1.1/', type: 'main_frame', method: 'get', tabId: 7 }],
-    ['a link to the router', { url: 'http://192.168.1.1/', initiator: 'https://evil.example/', type: 'main_frame', method: 'get', tabId: 7 }],
+    ['a link to the router', { url: 'http://192.168.1.1/', initiator: 'https://evil.example.com/', type: 'main_frame', method: 'get', tabId: 7 }],
   ].forEach(([name, req]) => check('allowed: ' + name, !blockedBy(rules, req)));
   check('the provider exemption is on the loopback rules alone',
     rules.every((r) => {
@@ -151,9 +151,29 @@ pending.push((async function aTopLevelFormPostIsJudgedByWhoSentIt() {
   const bare = loadRules();
   await bare.api.applyIntranetNetworkRules(true);
   check('an identity provider the reader has not allowlisted cannot post to localhost',
-    blockedBy(bare.state.updates[0].addRules, post('https://auth.company.example/', 'https://localhost:5001/signin-oidc')));
-  await bare.api.applyIntranetNetworkRules(true, ['auth.company.example']);
+    blockedBy(bare.state.updates[0].addRules, post('https://auth.company.example.com/', 'https://localhost:5001/signin-oidc')));
+  await bare.api.applyIntranetNetworkRules(true, ['auth.company.example.com']);
   check('allowlisting it rewrites the rules', bare.state.updates.length === 2);
+}()));
+
+pending.push((async function aPageNamedLocalIsNotAPublicPage() {
+  /* The engine judges publicPage() from the page's own name at once. The rules used to wait for
+     the tab to be marked local from its resolved address, and a page's first requests could lose
+     that race. A local name settles it with no wait; a public page is refused as before. */
+  const h = loadRules();
+  await h.api.applyIntranetNetworkRules(true);
+  const rules = h.state.updates[0].addRules;
+  const req = (initiator, url, type, method) => ({ url, initiator, type, method: method || 'get', tabId: 9 });
+  [
+    ['a .example page loading a .test image', req('http://reader.wardenone-smoke.example:8080/', 'http://iplogger.selected-wardenone-smoke.test:8080/selected', 'image')],
+    ['a localhost dev page reaching the router', req('http://localhost:3000/', 'http://192.168.1.1/api', 'xmlhttprequest')],
+    ['a .test dev site embedding another', req('https://myapp.test/', 'https://admin.othersite.test/', 'sub_frame')],
+    ['a home.arpa dashboard posting to a camera', req('http://hub.home.arpa/', 'http://192.168.1.40/settings', 'main_frame', 'post')],
+  ].forEach(([name, r]) => check('allowed before the tab is known local: ' + name, !blockedBy(rules, r)));
+  check('a public page is still refused the same image',
+    blockedBy(rules, req('https://news.example.com/', 'http://iplogger.selected-wardenone-smoke.test:8080/selected', 'image')));
+  check('every rule carries the local-name exemption',
+    rules.every((r) => h.api.INTRANET_LOCAL_INITIATOR_DOMAINS.every((d) => (r.condition.excludedInitiatorDomains || []).includes(d))));
 }()));
 
 pending.push((async function theLoopbackPatternsAreLoopbackOnly() {
