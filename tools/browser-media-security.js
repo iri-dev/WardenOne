@@ -34,9 +34,10 @@ BAMCA0cAMEQCIHzhciLrZznd4ChC0R4xO7NvDLZosQM3YYMJL2UHmycbAiBUtd2i
 
 async function run() {
   const sites = ['www.youtube.com', 'www.youtube-nocookie.com', 'youtu.be', 'www.twitch.tv'];
-  const child = 'child.wardenone-security.test';
-  const control = 'control.wardenone-security.test';
-  const blocked = 'blocked.wardenone-security.test';
+  /* Public-looking names: Intranet Guard refuses .test hosts embedded by a public site. */
+  const child = 'child.wardenone-security.example.net';
+  const control = 'control.wardenone-security.example.net';
+  const blocked = 'blocked.wardenone-security.example.net';
   const cdn = 'fixture.googlevideo.com';
   const infrastructure = ['github.com', 'raw.githubusercontent.com', 'objects.githubusercontent.com', 'accounts.google.com', 'login.live.com'];
   const tenants = ['alice.webflow.io', 'bob.webflow.io', 'analytics.alice.webflow.io', 'analytics.bob.webflow.io', 'alice.netlify.app', 'bob.netlify.app'];

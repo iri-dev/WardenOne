@@ -6,9 +6,9 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { zipEntries } = require('./check-package-archive.js');
+const { localStatePath } = require('./check-repository-hygiene.js');
 
 const ROOT = path.resolve(__dirname, '..');
-const LOCAL_PREFIXES = ['.git/', '.publish/', '.store-candidates/'];
 
 function git(args, options = {}) {
   const result = spawnSync('git', args, { cwd: ROOT, encoding: 'utf8', ...options });
@@ -37,7 +37,7 @@ function buildSourceBundle(options = {}) {
   assertClean(status, options.committed === true);
   const commit = git(['rev-parse', 'HEAD']).trim();
   const tracked = git(['ls-tree', '-r', '--name-only', '-z', commit]).split('\0').filter(Boolean).sort();
-  const local = tracked.filter((name) => LOCAL_PREFIXES.some((prefix) => name.startsWith(prefix)));
+  const local = tracked.filter(localStatePath);
   if (local.length) throw new Error('Committed local files must be removed before bundling: ' + local.join(', '));
 
   const output = path.resolve(options.output || path.join(path.dirname(ROOT), 'WardenOne-source-' + commit.slice(0, 12) + '.zip'));

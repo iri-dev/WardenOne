@@ -165,11 +165,11 @@ check('session rules have their own id range',
 /* ---- undo ---------------------------------------------------------------- */
 check('there is a per-site undo', /id="reset-site"/.test(HTML_RAW) && /kind: 'firewall-reset'/.test(JS));
 check('there is a remove-everything undo', /id="reset-all"/.test(HTML_RAW) && /all: all === true/.test(JS));
-check('resetting also drops the session rules, scoped to the site being reset',
-  /const session = await firewallClearSession\(msg\.all === true \? undefined : site\);[\s\S]{0,160}applyFirewallRulesFrom\(firewallRulesFrom\(next\)\)/.test(BG),
-  'otherwise an allow-once survives the undo, or a per-site undo takes every other site\'s allowances with it');
+check('resetting also drops the session rules, scoped to the site being reset, after the stored rules',
+  /const result = await applyFirewallRulesFrom\(firewallRulesFrom\(next\)\);[\s\S]{0,400}const session = await firewallClearSession\(msg\.all === true \? undefined : site\);/.test(BG),
+  'otherwise an allow-once survives the undo, or a refused rule write leaves the allowances already gone');
 check('and a reset that Chrome refused is not reported as done',
-  /if \(!session\.ok \|\| !result\.ok\) \{/.test(BG),
+  /if \(!result\.ok\) \{[\s\S]{0,200}Nothing was changed/.test(BG) && /if \(problems\.length\) \{/.test(BG),
   'H18: "removed" was printed over rules Chrome still held');
 check('undo is on the page, not behind a menu',
   HTML.indexOf('Undo my rules here') > 0 && HTML.indexOf('Remove every firewall rule') > 0);
@@ -220,6 +220,17 @@ function firewallPage(get, answers = {}) {
   check('the per-site undo asks for this site only', !!reset && reset.site === 'news.example' && reset.all === false, JSON.stringify(reset));
   check('and says other sites keep theirs', /Other sites keep theirs/.test(page.byId('status').textContent), page.byId('status').textContent);
   check('with nothing left here the button goes back to disabled', page.byId('reset-site').disabled === true);
+}
+{
+  const page = firewallPage({ ok: true, site: 'news.example', rules: { 'ads.example': { script: 'block' } }, omitted: [], once: [{ domain: 'cdn.example', column: 'all' }], sites: 1 },
+    { 'firewall-reset': { ok: false, partial: true, rulesRemoved: true, error: 'Your saved rules for news.example were removed. The browser refused to clear the temporary allowances.', once: [{ domain: 'cdn.example', column: 'all' }] } });
+  page.byId('reset-site').listeners.click();
+  check('a half-done undo shows the reason, not "removed"',
+    /refused to clear the temporary allowances/.test(page.byId('status').textContent) && !/have been removed\. Other sites/.test(page.byId('status').textContent),
+    page.byId('status').textContent);
+  check('and redraws what is left: the allowance stays, the stored rule goes',
+    /cdn\.example/.test(page.byId('rows').textContent) && !/ads\.example/.test(page.byId('rows').textContent) && page.byId('reset-site').disabled === false,
+    page.byId('rows').textContent);
 }
 {
   const page = firewallPage({ ok: true, site: 'news.example', rules: {}, omitted: [], once: [], sites: 0 });

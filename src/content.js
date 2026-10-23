@@ -4379,29 +4379,37 @@
         error:String(e)
       })
     }
+    /* Held to background.js intranetTargetHost by tools/test-ip-classifier-agreement.js. A trailing dot
+       is the same DNS name (localhost. is localhost), and Chrome answers every name under localhost itself. */
     const localAdminTarget=raw=>{
       try{
         const u=u2(raw);
         if(!u||!/^(https?|wss?):$/i.test(u.protocol))return!1;
         const h=u.hostname.replace(/^\[|\]$/g,
+        "").replace(/\.$/,
         "").toLowerCase(),
         p=u.pathname.toLowerCase();
-        if(/^(localhost|0\.0\.0\.0|127(?:\.\d{1,3}){0,3}|::1)$/i.test(h))return!0;
+        if(/^(::|::1|127(?:\.\d{1,3}){0,3})$/i.test(h)||/(^|\.)localhost$/i.test(h))return!0;
         /* Unique local fc00::/7 and link-local fe80::/10 -- fe80 through febf, not the text
            "fe80" alone. The hostname is the URL parser's canonical form, so the first group is
            exactly four digits here. Held to background.js ipv6Range by
            tools/test-ip-classifier-agreement.js. */
         if(/^(f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):/i.test(h))return!0;
-        /* A private IPv4 address written as IPv4-mapped IPv6 (::ffff:10.0.0.1 is ::ffff:a00:1). */
-        if(/^::ffff:(a[0-9a-f]{2}|7f[0-9a-f]{2}|c0a8|a9fe|ac1[0-9a-f]):/i.test(h))return!0;
+        /* A local IPv4 address written as IPv4-mapped IPv6 (::ffff:10.0.0.1 is ::ffff:a00:1). */
+        if(/^::ffff:([0-9a-f]{1,2}|a[0-9a-f]{2}|7f[0-9a-f]{2}|64[4-7][0-9a-f]|c0a8|a9fe|ac1[0-9a-f]):/i.test(h))return!0;
         if(/^\d{1,3}(\.\d{1,3}){3}$/.test(h)){
           const parts=h.split(".").map(Number),
           a=parts[0],
           b=parts[1];
-          return a===10||a===127||a===192&&b===168||a===172&&b>=16&&b<=31||a===169&&b===254
+          /* 0/8 reaches this computer on Linux and macOS; 100.64/10 is carrier-grade NAT and mesh VPNs. */
+          return a===0||a===10||a===127||a===100&&b>=64&&b<=127||a===192&&b===168||a===172&&b>=16&&b<=31||a===169&&b===254
         }
-        if(/\.(local|localdomain|lan|home|internal|intranet|corp)$/i.test(h))return!0;
-        return/^(router|gateway|modem|fritz\.box|myfiosgateway\.com|tplinkwifi\.net|routerlogin\.net|routerlogin\.com|asusrouter\.com|miwifi\.com)$/i.test(h)||/(^|\/)(admin|login|cgi-bin|goform|setup|webfig|luci)(\/|$)/i.test(p)&&/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.|router|gateway|modem)/i.test(h)
+        /* A bare machine name (nas, printer) is resolved on your own network. */
+        if(h.indexOf(".")<0&&h.indexOf(":")<0)return!0;
+        if(/\.(local|localdomain|lan|home|internal|intranet|corp|test|invalid|example|home\.arpa)$/i.test(h))return!0;
+        /* Every IPv4 address was answered above, so a numeric prefix here could only match a public
+           name such as 192.168.example.com. */
+        return/^(router|gateway|modem|fritz\.box|myfiosgateway\.com|tplinkwifi\.net|routerlogin\.net|routerlogin\.com|asusrouter\.com|miwifi\.com)$/i.test(h)||/(^|\/)(admin|login|cgi-bin|goform|setup|webfig|luci)(\/|$)/i.test(p)&&/^(router|gateway|modem)/i.test(h)
       }
       catch(_){
         return!1
@@ -4598,33 +4606,35 @@
         }
 
       }
-      /* A sign-in response posted to a loopback callback is local development (ASP.NET's form_post, a SAML
-         ACS), so loopback forms are judged at submit, when their fields exist; LAN targets are refused outright. */
-      const loopbackTarget=raw=>{
+      /* A sign-in provider may post its response to an app on this computer (ASP.NET's form_post, a SAML
+         ACS). The page's own host decides, never its form fields, which any page can write. Keep this list
+         equal to SIGN_IN_CALLBACK_PROVIDERS in background.js. */
+      const signInCallbackPage=(()=>{
+        const h=String(location.hostname||"").toLowerCase();
+        return["login.microsoftonline.com",
+        "login.microsoft.com",
+        "login.windows.net",
+        "login.live.com",
+        "accounts.google.com"].some(d=>h===d||h.endsWith("."+d))
+      })(),
+      loopbackTarget=raw=>{
         try{
-          const u=u2(raw);
-          return!!u&&/^(localhost|127(?:\.\d{1,3}){0,3}|::1)$/i.test(u.hostname.replace(/^\[|\]$/g,
-          ""))
+          const u=u2(raw),
+          h=u?u.hostname.replace(/^\[|\]$/g,
+          "").replace(/\.$/,
+          "").toLowerCase():"";
+          return/^(127(?:\.\d{1,3}){0,3}|::1)$/.test(h)||/(^|\.)localhost$/.test(h)
         }
         catch(_){
           return!1
         }
 
       },
-      identityResponseForm=form=>{
-        try{
-          return!!form.querySelector('input[name="SAMLResponse"],input[name="SAMLRequest"],input[name="wresult"],input[name="id_token"],input[name="access_token"]')||!!(form.querySelector('input[name="code"]')&&form.querySelector('input[name="state"]'))
-        }
-        catch(_){
-          return!1
-        }
-
-      };
+      signInCallback=raw=>signInCallbackPage&&loopbackTarget(raw);
       const blockForm=form=>{
         try{
           const action=form&&form.action||form&&form.getAttribute&&form.getAttribute("action")||location.href;
-          if(loopbackTarget(action)&&identityResponseForm(form))return!1;
-          return blockLocal(action,
+          return!signInCallback(action)&&blockLocal(action,
           "form")
         }
         catch(_){
@@ -4654,7 +4664,7 @@
         const kind=localResourceKind(el);
         if(!kind)return!1;
         const url=localResourceUrl(el);
-        if("form"===kind&&loopbackTarget(url))return!1;
+        if("form"===kind&&signInCallback(url))return!1;
         if(blockLocal(url,
         kind)){
           try{
@@ -4693,7 +4703,7 @@
         Element.prototype.setAttribute=function(name,
         value){
           const kind=/^(src|href|data|action)$/i.test(String(name||""))&&localResourceKind(this);
-          if(kind&&!("form"===kind&&loopbackTarget(value))&&blockLocal(value,
+          if(kind&&!("form"===kind&&signInCallback(value))&&blockLocal(value,
           kind))return;
           return setAttr.apply(this,
           arguments)

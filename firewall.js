@@ -263,6 +263,14 @@ function addTyped() {
 function reset(all) {
   chrome.runtime.sendMessage({ kind: 'firewall-reset', site: SITE, all: all === true }, (res) => {
     void chrome.runtime.lastError;
+    if (res && res.partial) {
+      /* Part of the undo took: draw what is actually left, not what was asked for. */
+      if (res.rulesRemoved) RULES = {};
+      ONCE = new Set((res.once || []).map((o) => String(o.domain || '')).filter(Boolean));
+      $('status').textContent = res.error;
+      render();
+      return;
+    }
     if (!res || !res.ok) { $('status').textContent = (res && res.error) || 'Nothing was reset.'; return; }
     RULES = {};
     ONCE = new Set();

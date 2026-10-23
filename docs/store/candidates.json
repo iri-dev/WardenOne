@@ -4,7 +4,7 @@
   "captured": "2026-09-10",
   "package": {
     "version": "1.0.2",
-    "commit": "4081cbf",
+    "commit": "d347e0a",
     "dirty": true,
     "note": "Captured from a working tree ahead of this commit. Regenerate from the frozen release build before submission and set dirty to false."
   },
