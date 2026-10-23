@@ -17003,6 +17003,11 @@ const INTRANET_NET_PATTERNS = INTRANET_LOOPBACK_PATTERNS.concat([
 // localhost is a single label too. The loopback rule owns it, so a sign-in
 // provider's post there is judged by that rule alone.
 const INTRANET_PATTERN_EXCLUDED_HOSTS = new Map([[INTRANET_SINGLE_LABEL_PATTERN, ['localhost']]]);
+// A page whose own name is local by sight is not a public page (the engine's publicPage()),
+// so the rules leave it alone from its first request instead of waiting for its tab to be
+// marked local. Bare names and addresses still rely on excludedTabIds.
+const INTRANET_LOCAL_INITIATOR_DOMAINS = ['localhost', 'local', 'localdomain', 'lan', 'home', 'internal',
+  'intranet', 'corp', 'test', 'invalid', 'example', 'home.arpa'];
 
 // Sign-in pages whose content only the provider writes, so a form they post to
 // loopback is a real sign-in response (ASP.NET's form_post, a SAML ACS) and not
@@ -17075,10 +17080,11 @@ async function applyIntranetNetworkRules(enabled, allowlist) {
       regexFilter,
       domainType: 'thirdParty',
       resourceTypes: intranetNetResourceTypes(),
+      excludedInitiatorDomains: INTRANET_LOCAL_INITIATOR_DOMAINS.slice(),
     })).concat(INTRANET_NET_PATTERNS.map((regexFilter) => intranetFormPostCondition(regexFilter,
-      INTRANET_LOOPBACK_PATTERNS.includes(regexFilter)
+      INTRANET_LOCAL_INITIATOR_DOMAINS.concat(INTRANET_LOOPBACK_PATTERNS.includes(regexFilter)
         ? SIGN_IN_CALLBACK_PROVIDERS.concat(trustedInitiators)
-        : trustedInitiators)));
+        : trustedInitiators))));
     const removeRuleIds = Array.from({ length: INTRANET_NET_RULES_BUDGET }, (_, i) => INTRANET_NET_RULE_BASE + i);
     const addRules = enabled ? conditions.map((condition, i) => {
       const excludedHosts = INTRANET_PATTERN_EXCLUDED_HOSTS.get(condition.regexFilter);

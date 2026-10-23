@@ -35,7 +35,7 @@ vm.runInContext(between(BG, 'function ipv4FromMappedIpv6(', 'function ipFromUrl(
   + between(BG, 'function classifyResolvedIp(', 'function rebindQuarantineRules(', 'classifyResolvedIp')
   + between(BG, 'const INTRANET_LOOPBACK_PATTERNS = [', '// Sign-in pages whose content', 'the intranet patterns')
   + '\nthis.api = { normalizeIpLiteral, isLocalOrPrivateHost, classifyResolvedIp, intranetTargetHost, ipv6Range,'
-  + ' INTRANET_NET_PATTERNS, INTRANET_PATTERN_EXCLUDED_HOSTS };',
+  + ' INTRANET_NET_PATTERNS, INTRANET_PATTERN_EXCLUDED_HOSTS, INTRANET_LOCAL_INITIATOR_DOMAINS };',
 sandbox, { filename: 'background.js:ip-classifiers' });
 const bg = sandbox.api;
 /* DNR regex filters are case-insensitive unless a rule says otherwise. */
@@ -124,6 +124,13 @@ for (const url of ['https://nas:pw@example.com/', 'https://localhost:pw@example.
   'https://router.lan:1@example.com/', 'wss://printer@example.com/socket']) {
   check(url, !ruleMatchesUrl(url) && !engineMatchesUrl(url), 'rule=' + ruleMatchesUrl(url) + ' engine=' + engineMatchesUrl(url));
 }
+/* Pages named under these are not public pages. The list must be exactly the local names the
+   policy knows, or a local page waits on its tab again, or a public one goes unguarded. */
+const tlds = (/\^\(([a-z|]+)\)\$\/i\.test\(tld\)/.exec(between(BG, 'function isLocalOrPrivateHost(', 'function ipFromUrl(', 'isLocalOrPrivateHost')) || [])[1];
+check('the local-page exemption names every local suffix the policy knows, and nothing else',
+  !!tlds && JSON.stringify(tlds.split('|').concat('home.arpa').sort()) === JSON.stringify(bg.INTRANET_LOCAL_INITIATOR_DOMAINS.slice().sort())
+    && bg.INTRANET_LOCAL_INITIATOR_DOMAINS.every((d) => bg.intranetTargetHost('page.' + d)),
+  tlds + ' vs ' + bg.INTRANET_LOCAL_INITIATOR_DOMAINS.join('|'));
 check('the rebinding observer leaves to Intranet Guard exactly what it refuses',
   /if \(intranetTargetHost\(host\)\) return;/.test(BG) && !/if \(isLocalOrPrivateHost\(host\)\) return;/.test(BG));
 
