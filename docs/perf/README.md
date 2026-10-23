@@ -27,7 +27,7 @@ the complete data. This is a package-size review, not an execution-time claim.
 
 ## ICANN data footprint review (2026-10-20)
 
-Against `769dd30`, the staged security and compatibility fixes add 71,468 ZIP
+Against `41dedc7`, the staged security and compatibility fixes add 71,468 ZIP
 bytes, 229,408 unpacked bytes and 108,457 unique manifest-script bytes. The two
 shared domain helpers account for 107,376 of those script bytes: each now carries
 the complete compact ICANN suffix data. The worker's full suffix representation
@@ -47,7 +47,7 @@ See [the quota audit](../dnr-budget-audit.md#static-package-reserve) for evidenc
 
 ## Page-cost reprofile (2026-10-19)
 
-A five-run Edge 150 profile of the edited build, against untouched `498883e`
+A five-run Edge 150 profile of the edited build, against untouched `55a59aa`
 and no extension, loaded all 3,636 remote hosts. With background timer throttling
 and native window occlusion disabled, median main-thread task overhead was:
 
@@ -126,7 +126,7 @@ script running. It was not re-measured after the band-filtered rule reads under
 browser process uses about 2% of a core with WardenOne and 0.5% without it.
 
 **Method.** Edge 150.0.4078.48, i5-12400F (6 cores), Windows 10 19045, with other desktop apps
-open. The build is `5a7b336`, exported with `git archive`, so an uncommitted worker change in the
+open. The build is `267aa82`, exported with `git archive`, so an uncommitted worker change in the
 tree at the time is not included. Each variant has its own disposable profile under `%TEMP%`.
 WardenOne's profiles waited for the remote lists (22,136 dynamic rules, 3,636 remote hosts)
 before any session. A session relaunches with `--restore-last-session` onto six tabs (Wikipedia,
@@ -248,7 +248,7 @@ passed, and a live YouTube page loaded and played with the changed build.
 
 ### Current startup and churn baseline
 
-At commit `91196d4`, two five-run Edge profiles compared WardenOne with no
+At commit `1f47e13`, two five-run Edge profiles compared WardenOne with no
 extension in opposite variant orders. Both loaded all 3,636 remote hosts. Cold
 main-thread overhead was:
 
@@ -297,7 +297,7 @@ and ignores boxes too small to meet any removal rule before reading their text.
 Unchanged badge positions no longer trigger repeated style writes.
 
 Two five-run Edge comparisons of the complete edited build with untouched
-`91196d4`, one in each order, loaded all 3,636 remote hosts. Median change in
+`1f47e13`, one in each order, loaded all 3,636 remote hosts. Median change in
 main-thread task time (edited minus starting build):
 
 | Fixture | Cold, both orders | Warm, both orders |
@@ -335,12 +335,12 @@ widget. Moving those reads after provider recognition kept marked widgets
 exempt and unmarked widgets covered in the behavior test. In two five-run
 Edge churn comparisons, warm main-thread task time fell 5.7/4.6 ms; cold was
 1.6/0.1 ms lower. This isolates the change against the immediately preceding
-build, rather than the original `91196d4` baseline.
+build, rather than the original `1f47e13` baseline.
 
 ### Start-to-current comparison
 
 To measure the accumulated effect without adding isolated gains, two direct
-five-run Edge comparisons paired an archived `205c193` extension with the
+five-run Edge comparisons paired an archived `4894fd0` extension with the
 current working tree in opposite orders. Both variants loaded 3,636 remote
 hosts; the image-frame comparison confirmed the logger active in all eight
 frames. Median main-thread task time saved by the current build:
@@ -353,8 +353,8 @@ frames. Median main-thread task time saved by the current build:
 | Image-heavy frames | 9.4 / 3.0 ms | 9.7 / 13.6 ms |
 
 The original 2026-10-18 stress profiles used a modified working tree at
-`205c193` and three runs per cell. The direct baseline here is the exact
-committed `205c193` tree, so this table is a reproducible start point rather
+`4894fd0` and three runs per cell. The direct baseline here is the exact
+committed `4894fd0` tree, so this table is a reproducible start point rather
 than a byte-identical rerun of the original stress build. Timing varied
 substantially between sessions; these paired differences should not be
 subtracted from the original no-extension overhead figures as exact current
@@ -841,7 +841,7 @@ after a browser restart.
   from the command line, so the browser is Microsoft Edge, and its version is in every profile
   (for Chrome, see [Chrome over the DevTools pipe](#chrome-over-the-devtools-pipe)).
 
-## 1.0.1 at 4cd3119 (2026-09-20)
+## 1.0.1 at 27e619f (2026-09-20)
 
 Edge 150, desktop test CPU, no CPU throttle, 5 runs per cell. Main-thread task time, cold, median:
 article 43 ms off / 95 ms on (+52 ms); churn stress page 192 ms / 1,094 ms (+902 ms, one long

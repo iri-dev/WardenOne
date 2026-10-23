@@ -42,6 +42,7 @@ function dnrModel() {
   const session = new Map();
   const log = [];
   let refuseNext = null;   // a reason string, to force one rejection
+  let refuseOnly = null;   // 'dynamic' or 'session' to aim it at one store
   function validate(store, removeRuleIds, addRules) {
     const remaining = new Set(store.keys());
     for (const id of removeRuleIds || []) remaining.delete(id);
@@ -59,8 +60,9 @@ function dnrModel() {
   }
   function update(store, name) {
     return async function (opts) {
-      const why = refuseNext || validate(store, opts.removeRuleIds, opts.addRules);
-      refuseNext = null;
+      const forced = refuseNext && (!refuseOnly || refuseOnly === name) ? refuseNext : '';
+      if (forced) { refuseNext = null; refuseOnly = null; }
+      const why = forced || validate(store, opts.removeRuleIds, opts.addRules);
       log.push({ name, ok: !why, remove: (opts.removeRuleIds || []).length, add: (opts.addRules || []).length });
       if (why) throw new Error(why);
       for (const id of opts.removeRuleIds || []) store.delete(id);
@@ -109,7 +111,7 @@ function dnrModel() {
   }
   return {
     log, dynamic, session,
-    refuse(why) { refuseNext = why; },
+    refuse(why, only) { refuseNext = why; refuseOnly = only || null; },
     decide,
     api: {
       getDynamicRules: async () => [...dynamic.values()],
@@ -260,8 +262,52 @@ function firewallWorld({ store, failStorage, transaction } = {}) {
         && (await api.firewallSessionAllowances('news.example')).length === 0, JSON.stringify([...dnr.session.values()]));
     dnr.refuse('rule count exceeded');
     const bad = await call(api.handleReset, { site: 'shop.example', all: false });
-    check('a reset Chrome refuses is reported as refused', bad.ok === false && /still stored and still in effect/.test(bad.error), JSON.stringify(bad));
+    check('a reset Chrome refuses is reported as refused', bad.ok === false && !bad.partial
+      && /Nothing was changed/.test(bad.error) && /still stored and still in effect/.test(bad.error), JSON.stringify(bad));
     check('and the stored matrix still has the site', !!storage.wardenone_firewall['shop.example']);
+    /* The claim has to be true of Chrome, not only of storage: this case used to clear the
+       allowances first, so "still in effect" was printed over allowances already gone. */
+    check('and Chrome still holds the site\'s rules and its temporary allowance',
+      dnr.dynamic.size === 1 && (await api.firewallSessionAllowances('shop.example')).length === 1,
+      'dynamic ' + dnr.dynamic.size + ', session ' + JSON.stringify([...dnr.session.values()]));
+  }
+  {
+    /* The other half failing: Chrome takes the stored rules away, then refuses to clear the allowances. */
+    const { api, dnr, storage, call } = firewallWorld({ store: { 'news.example': { 'cdn.example': { script: 'block' } }, 'shop.example': { 'x.example': { all: 'allow' } } } });
+    await dnr.api.updateDynamicRules({ removeRuleIds: [], addRules: api.firewallRulesFrom(storage.wardenone_firewall) });
+    await api.firewallAllowOnce('news.example', 'cdn.example', 'all');
+    dnr.refuse('Internal error while updating session rules', 'session');
+    const half = await call(api.handleReset, { site: 'news.example', all: false });
+    check('a reset that only half took says so, and is not reported as done',
+      half.ok === false && half.partial === true && half.rulesRemoved === true
+        && /saved rules for news\.example were removed/.test(half.error) && /temporary allowances/.test(half.error)
+        && !/Nothing was changed|still in effect/.test(half.error), JSON.stringify(half));
+    check('and storage matches what Chrome holds: the site\'s rules are gone from both',
+      !storage.wardenone_firewall['news.example'] && !!storage.wardenone_firewall['shop.example'] && dnr.dynamic.size === 1);
+    check('and the allowance still in effect is handed back, so the page can show it',
+      Array.isArray(half.once) && half.once.length === 1 && half.once[0].domain === 'cdn.example', JSON.stringify(half.once));
+    const again = await call(api.handleReset, { site: 'news.example', all: false });
+    check('undoing again finishes the job', again.ok === true && again.sessionRemoved === 1
+      && (await api.firewallSessionAllowances('news.example')).length === 0, JSON.stringify(again));
+  }
+  {
+    /* A failed read must not pass for "there were no allowances to clear". */
+    const { api, dnr, call } = firewallWorld({ store: { 'news.example': { 'cdn.example': { script: 'block' } } } });
+    await api.firewallAllowOnce('news.example', 'cdn.example', 'all');
+    const read = dnr.api.getSessionRules;
+    dnr.api.getSessionRules = async () => { dnr.api.getSessionRules = read; throw new Error('session rules unavailable'); };
+    const blind = await call(api.handleReset, { site: 'news.example', all: false });
+    check('a reset that could not read the allowances is not reported as done',
+      blind.ok === false && blind.partial === true && /session rules unavailable/.test(blind.error)
+        && dnr.session.size === 1, JSON.stringify(blind));
+  }
+  {
+    const { api, dnr, call } = firewallWorld({ store: { 'news.example': { 'cdn.example': { script: 'block' } } }, failStorage: true });
+    await dnr.api.updateDynamicRules({ removeRuleIds: [], addRules: api.firewallRulesFrom({ 'news.example': { 'cdn.example': { script: 'block' } } }) });
+    const unsaved = await call(api.handleReset, { site: 'news.example', all: false });
+    check('a reset Chrome took but storage refused says the rules will come back',
+      unsaved.ok === false && unsaved.rulesRemoved === false && /come back when the browser restarts/.test(unsaved.error)
+        && dnr.dynamic.size === 0, JSON.stringify(unsaved));
   }
   {
     const { api, dnr, storage, call } = firewallWorld({ store: { 'shop.example': { 'x.example': { all: 'allow' } } } });

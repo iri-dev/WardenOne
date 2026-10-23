@@ -64,7 +64,7 @@ compact ICANN data in both content-script worlds; see `icann-boundary-audit.md`.
 
 ## Review completion in CI
 
-Commit `9e7830c` passed the unit gate, but both CI browser jobs timed out after
+Commit `48dcf7d` passed the unit gate, but both CI browser jobs timed out after
 applying the import review. Completion depended solely on the dialog's native
 `close` event. Chrome 121's
 [dialog implementation](https://chromium.googlesource.com/chromium/src/+/refs/tags/121.0.6167.184/third_party/blink/renderer/core/html/html_dialog_element.cc)

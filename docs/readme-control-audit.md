@@ -1,6 +1,6 @@
 # README control and feature cross-audit
 
-Audited 16 October 2026 against the local extension at `2bcf1e0bea711b942191b2ea40a8523b78ae7fe3`, with the documentation and VirusTotal URL-sanitizing edits made during this audit. The GitHub `main` README matched the pre-edit local file (blob `1444adca81471cad79a87b4faba0ced562f1890e`). This is a documentation audit, not a live-browser effectiveness test.
+Audited 16 October 2026 against the local extension at `5e822baa08710d6a2f73cb84e59d73237aa8edc6`, with the documentation and VirusTotal URL-sanitizing edits made during this audit. The GitHub `main` README matched the pre-edit local file (blob `1444adca81471cad79a87b4faba0ced562f1890e`). This is a documentation audit, not a live-browser effectiveness test.
 
 ## Scope and result
 
@@ -301,14 +301,14 @@ The protection count test checks the registry against popup switches and all pub
 
 ## Screenshot refresh
 
-Seven images were captured from the actual extension at `4b5892a41cb5b9aba79cbd9d02268d06a00b0cd8` in a disposable Edge 150.0.4078.48 profile on 16 October 2026. The popup used `example.com`; Settings used the default Recommended configuration. The fresh profile had built-in rules active and no downloaded-list timestamp, which the Health images show. No protection counts or events were fabricated.
+Seven images were captured from the actual extension at `b1b60308fa72fd8a8aee46fd746c42a3373df445` in a disposable Edge 150.0.4078.48 profile on 16 October 2026. The popup used `example.com`; Settings used the default Recommended configuration. The fresh profile had built-in rules active and no downloaded-list timestamp, which the Health images show. No protection counts or events were fabricated.
 
-The popup captures were retaken at `e5ed67421915bd6d30f8c42321916c5a31f1aa0d` using a 348 CSS-pixel width at 4× resolution: 1392×1884 for the overview and 1392×2472 for expanded Health. They use new dated filenames because the previous image URLs continued showing an earlier capture after the push. Settings captures use a 1280 CSS-pixel viewport at 1.5× resolution; Resource Saver and fingerprinting focus on complete main panels. Browser chrome and scrollbars are excluded. The lossless WebP copies preserve the source pixels. Earlier feature images remain available, with the two poor popup images replaced and five new feature images added.
+The popup captures were retaken at `a9e2425ded5d9ab4ca185d04d665178ee590d6a9` using a 348 CSS-pixel width at 4× resolution: 1392×1884 for the overview and 1392×2472 for expanded Health. They use new dated filenames because the previous image URLs continued showing an earlier capture after the push. Settings captures use a 1280 CSS-pixel viewport at 1.5× resolution; Resource Saver and fingerprinting focus on complete main panels. Browser chrome and scrollbars are excluded. The lossless WebP copies preserve the source pixels. Earlier feature images remain available, with the two poor popup images replaced and five new feature images added.
 
 A local Markdown preview loaded every image. The default view has 23 visible feature images, compared with 18 in the original README. The popup, expanded Health, Settings overview, section arrangement and Resource Saver captures were inspected at their README display sizes.
 
 ### Element Zapper comparison
 
-The selection and removal images were captured with the extension at `c4feea900c065d9b23389210696f9e8f7ac70ad3` in a disposable Edge 150.0.4078.48 profile on 16 October 2026. The browser loaded `https://github.com/features/actions` directly from GitHub, using a 1280×900 CSS-pixel viewport at 2× resolution to produce 2560×1800 images. The actual `element-picker.js` was started through `chrome.scripting.executeScript`; browser mouse input outlined and hid the developer newsletter section. The first image shows the active selection, and the second shows the section missing with the tool's “One thing hidden” confirmation still open. The website content was not recreated or edited for the capture.
+The selection and removal images were captured with the extension at `fbf7231ba4c2d60336346e8af7c87ca1598d9386` in a disposable Edge 150.0.4078.48 profile on 16 October 2026. The browser loaded `https://github.com/features/actions` directly from GitHub, using a 1280×900 CSS-pixel viewport at 2× resolution to produce 2560×1800 images. The actual `element-picker.js` was started through `chrome.scripting.executeScript`; browser mouse input outlined and hid the developer newsletter section. The first image shows the active selection, and the second shows the section missing with the tool's “One thing hidden” confirmation still open. The website content was not recreated or edited for the capture.
 
 The saved rule was `section.newsletter__5-VDgZ.newsletter__vt4udc` under `github.com`. The newsletter remained hidden after reloading the live page. Both images use the same viewport and lossless WebP encoding; both appear directly in the README. They replace the three local demonstration images from the previous revision.

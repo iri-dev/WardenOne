@@ -58,12 +58,34 @@ function loadRules() {
   installSessionIo(sandbox);
   vm.runInContext(
     BG.slice(from, to)
-      + '\nthis.__api = { applyIntranetNetworkRules, INTRANET_NET_PATTERNS, intranetNetResourceTypes, locallyServedTabIds };',
+      + '\nthis.__api = { applyIntranetNetworkRules, INTRANET_NET_PATTERNS, INTRANET_LOOPBACK_PATTERNS,'
+      + ' INTRANET_NET_RULES_BUDGET, SIGN_IN_CALLBACK_PROVIDERS, intranetNetResourceTypes, locallyServedTabIds };',
     sandbox,
     { filename: 'background.js' }
   );
   return { api: sandbox.__api, state, sandbox };
 }
+
+/* Enough of Chrome's matcher for these rules. A request without an initiator, like a typed
+   address, has an opaque one, and Chrome counts that as third-party. */
+function siteOf(host) {
+  return /^[\d.]+$|:/.test(host) ? host : host.split('.').slice(-2).join('.');
+}
+function ruleMatches(rule, req) {
+  const c = rule.condition;
+  const url = new URL(req.url);
+  const initiator = req.initiator ? new URL(req.initiator).hostname : '';
+  const under = (host, list) => (list || []).some((d) => host === d || host.endsWith('.' + d));
+  if (!new RegExp(c.regexFilter, 'i').test(req.url)) return false;
+  if (c.resourceTypes && c.resourceTypes.indexOf(req.type) < 0) return false;
+  if (c.requestMethods && c.requestMethods.indexOf(req.method || 'get') < 0) return false;
+  if (c.domainType === 'thirdParty' && initiator && siteOf(initiator) === siteOf(url.hostname)) return false;
+  if (initiator && under(initiator, c.excludedInitiatorDomains)) return false;
+  if (under(url.hostname, c.excludedRequestDomains)) return false;
+  if (c.excludedTabIds && c.excludedTabIds.indexOf(req.tabId) >= 0) return false;
+  return true;
+}
+const blockedBy = (rules, req) => rules.some((r) => r.action.type === 'block' && ruleMatches(r, req));
 
 const pending = [];
 
@@ -71,20 +93,82 @@ pending.push((async function privateAddressesAreRefusedAtTheNetworkLayer() {
   const h = loadRules();
   await h.api.applyIntranetNetworkRules(true);
   const rules = h.state.updates[0].addRules;
-  check('a rule is installed per private-address pattern',
-    rules.length === h.api.INTRANET_NET_PATTERNS.length && rules.length > 0, rules.length + ' rules');
+  const pageRules = rules.filter((r) => r.condition.resourceTypes.indexOf('main_frame') < 0);
+  const formRules = rules.filter((r) => r.condition.resourceTypes.indexOf('main_frame') >= 0);
+  check('a page rule and a form-post rule are installed per private-address pattern',
+    pageRules.length === h.api.INTRANET_NET_PATTERNS.length && formRules.length === h.api.INTRANET_NET_PATTERNS.length,
+    pageRules.length + ' page rules, ' + formRules.length + ' form-post rules');
+  check('the rules fit their id budget', rules.length > 0 && rules.length <= h.api.INTRANET_NET_RULES_BUDGET
+    && rules.every((r) => r.id - rules[0].id < h.api.INTRANET_NET_RULES_BUDGET), rules.length + ' rules');
   check('every rule blocks', rules.every((r) => r.action.type === 'block'));
   check('every rule is third-party only', rules.every((r) => r.condition.domainType === 'thirdParty'));
   /* A page reaching the LAN under you is the attack. Typing the router's address
-     is you asking, and must not be refused. */
-  check('navigations are never blocked',
-    rules.every((r) => r.condition.resourceTypes.indexOf('main_frame') < 0));
+     is you asking, and must not be refused. Only a form posts a top-level page. */
+  check('a top-level rule matches only a form post, never a typed address or a link',
+    formRules.every((r) => r.condition.resourceTypes.join() === 'main_frame' && r.condition.requestMethods.join() === 'post'));
   check('every other transport is covered, workers included',
-    rules.every((r) => ['script', 'xmlhttprequest', 'websocket', 'webtransport', 'sub_frame', 'other']
+    pageRules.every((r) => ['script', 'xmlhttprequest', 'websocket', 'webtransport', 'sub_frame', 'other']
       .every((t) => r.condition.resourceTypes.indexOf(t) >= 0)));
   const loginPriority = Number(BG.match(/id: LOGIN_COMPAT_RULE_BASE \+ i,\s*priority:\s*(\d+)/)[1]);
   check('LAN security rules outrank login compatibility',
     rules.every((r) => r.priority > loginPriority));
+}()));
+
+pending.push((async function aTopLevelFormPostIsJudgedByWhoSentIt() {
+  /* The page hooks never see a form built in a child frame's realm and submitted to _top, so
+     this rule is what stops it. Field names play no part: the browser supplies the initiator. */
+  const h = loadRules();
+  await h.api.applyIntranetNetworkRules(true, ['auth.company.example']);
+  const rules = h.state.updates[0].addRules;
+  const post = (initiator, url) => ({ url, initiator, type: 'main_frame', method: 'post', tabId: 7 });
+  [
+    ['a public page posting a disguised form to a local service', post('https://evil.example/', 'http://localhost:2375/containers/create')],
+    ['the same to 127.0.0.1', post('https://evil.example/', 'http://127.0.0.1:2375/containers/create')],
+    ['the same to [::1]', post('https://evil.example/', 'http://[::1]:2375/containers/create')],
+    ['a public page posting to the router', post('https://evil.example/', 'http://192.168.1.1/apply.cgi')],
+    ['a sandboxed or data: page, which has no origin', post('', 'http://localhost:2375/containers/create')],
+    ['a sign-in provider posting to the router', post('https://login.microsoftonline.com/', 'http://192.168.1.1/apply.cgi')],
+    ['a lookalike of a sign-in provider', post('https://login.microsoftonline.com.evil.example/', 'https://localhost:5001/signin-oidc')],
+    ['a public page posting to a bare machine name', post('https://evil.example/', 'http://nas:5000/webapi/entry.cgi')],
+    ['a sign-in provider posting to a bare machine name', post('https://login.microsoftonline.com/', 'http://nas:5000/')],
+    ['a public page posting to localhost with a trailing dot', post('https://evil.example/', 'http://localhost.:2375/containers/create')],
+    ['a public page posting to a carrier-grade NAT address', post('https://evil.example/', 'http://100.64.0.1:9000/')],
+  ].forEach(([name, req]) => check('blocked: ' + name, blockedBy(rules, req)));
+  [
+    ['Microsoft posting a sign-in response to localhost', post('https://login.microsoftonline.com/', 'https://localhost:5001/signin-oidc')],
+    ['Google posting one to 127.0.0.1', post('https://accounts.google.com/', 'http://127.0.0.1:8080/auth/callback')],
+    ['an allowlisted identity provider posting to localhost', post('https://auth.company.example/', 'https://localhost:5001/signin-oidc')],
+    ['the router posting its own settings form', post('http://192.168.1.1/', 'http://192.168.1.1/apply.cgi')],
+    ['the router address typed into the address bar', { url: 'http://192.168.1.1/', type: 'main_frame', method: 'get', tabId: 7 }],
+    ['a link to the router', { url: 'http://192.168.1.1/', initiator: 'https://evil.example/', type: 'main_frame', method: 'get', tabId: 7 }],
+  ].forEach(([name, req]) => check('allowed: ' + name, !blockedBy(rules, req)));
+  check('the provider exemption is on the loopback rules alone',
+    rules.every((r) => {
+      const exempt = (r.condition.excludedInitiatorDomains || []).indexOf('login.microsoftonline.com') >= 0;
+      return exempt === (r.condition.requestMethods !== undefined && h.api.INTRANET_LOOPBACK_PATTERNS.includes(r.condition.regexFilter));
+    }));
+
+  const bare = loadRules();
+  await bare.api.applyIntranetNetworkRules(true);
+  check('an identity provider the reader has not allowlisted cannot post to localhost',
+    blockedBy(bare.state.updates[0].addRules, post('https://auth.company.example/', 'https://localhost:5001/signin-oidc')));
+  await bare.api.applyIntranetNetworkRules(true, ['auth.company.example']);
+  check('allowlisting it rewrites the rules', bare.state.updates.length === 2);
+}()));
+
+pending.push((async function theLoopbackPatternsAreLoopbackOnly() {
+  const h = loadRules();
+  const loop = h.api.INTRANET_LOOPBACK_PATTERNS.map((p) => new RegExp(p, 'i'));
+  const any = (url) => loop.some((r) => r.test(url));
+  check('loopback patterns are part of the full set',
+    h.api.INTRANET_LOOPBACK_PATTERNS.every((p) => h.api.INTRANET_NET_PATTERNS.includes(p)));
+  ['http://localhost:5001/', 'http://127.0.0.1/', 'http://127.1.2.3:8080/', 'http://[::1]:5001/',
+    'http://app.localhost:3000/', 'http://localhost.:5001/']
+    .forEach((url) => check('loopback: ' + url, any(url)));
+  ['http://10.0.0.1/', 'http://192.168.1.1/', 'http://172.16.0.1/', 'http://169.254.1.1/', 'http://0.0.0.0/',
+    'http://[fd00::1]/', 'http://[fe80::1]/', 'http://[::ffff:c0a8:101]/', 'http://router.local/', 'http://localhost.lan/',
+    'http://nas/', 'http://100.64.0.1/', 'http://[::]/']
+    .forEach((url) => check('not loopback: ' + url, !any(url)));
 }()));
 
 pending.push((async function thePatternsMatchWhatTheyShould() {
@@ -123,13 +207,31 @@ pending.push((async function thePatternsMatchWhatTheyShould() {
     'http://110.0.0.1/',
     'http://1027.0.0.1/',
     'https://mylocalhost.com/',
-    'https://notlocalhost.example/',
+    'https://notlocalhost.example.com/',
     /* The words appear, but not as the host's own suffix. */
     'https://example.com/10.0.0.1',
     'https://example.com/?next=http://192.168.1.1/',
     'https://local.example.com/',
     'https://corp.example.com/',
+    /* Public names that only begin like a private address. The address must be the whole host. */
+    'https://10.example.com/app.js',
+    'https://127.example.org/sdk.js',
+    'https://192.168.advertiser.com/sdk.js',
+    'https://169.254.example.net/',
+    'https://172.16.cdn.example.com/',
+    'https://10.0.0.1.example.com/',
+    'wss://192.168.1.1.example.com/socket',
+    'https://user@10.example.com/',
   ].forEach((url) => check('allowed: ' + url, !matches(url), 'a pattern matched it'));
+  [
+    'http://10.0.0.1:8080/',
+    'http://127.0.0.1',
+    'http://192.168.1.1:8443/admin',
+    'http://172.20.10.5/',
+    'http://169.254.169.254/latest/meta-data/',
+    'http://[::1]/',
+    'http://[fe80::1]:8080/',
+  ].forEach((url) => check('blocked with a port or bare host: ' + url, matches(url), 'no pattern matched'));
 }()));
 
 pending.push((async function aLocalDashboardStillReachesItsOwnDevices() {
@@ -174,7 +276,7 @@ pending.push((async function itCanBeTurnedOff() {
   await h.api.applyIntranetNetworkRules(false);
   const last = h.state.updates[h.state.updates.length - 1];
   check('turning it off removes every owned rule',
-    last.addRules.length === 0 && last.removeRuleIds.length === h.api.INTRANET_NET_PATTERNS.length);
+    last.addRules.length === 0 && h.state.updates[0].addRules.every((r) => last.removeRuleIds.indexOf(r.id) >= 0));
 }()));
 
 (function wiredIntoTheConfigPath() {
@@ -182,7 +284,8 @@ pending.push((async function itCanBeTurnedOff() {
   /* Off follows the master switch through the one reconcile list. (This used to count two hard
      applyIntranetNetworkRules(false) calls -- the pasted-twice fallback BUG-08 removed.) */
   check('it is torn down when the master switch is off, through the reconcile list',
-    /run\('intranet', \(\) => applyIntranetNetworkRules\(on && cfg\.intranetProtection !== false && cfg\.intranetNetworkRules !== false\)\);/.test(BG));
+    /run\('intranet', \(\) => applyIntranetNetworkRules\(on && cfg\.intranetProtection !== false && cfg\.intranetNetworkRules !== false, activeAllowlist\(cfg\)\)\);/.test(BG));
+  check('the tab re-sync passes the allowlist too', /applyIntranetNetworkRules\(on, activeAllowlist\(cfg\)\);/.test(BG));
   check('it follows the intranet switch', /cfg\.intranetProtection !== false && cfg\.intranetNetworkRules !== false/.test(BG));
   check('a tab changing local context re-syncs the rules',
     /REBIND_TAB_IS_LOCAL\.get\(tabId\) !== local/.test(BG) && /refreshIntranetNetworkRules\(\)/.test(BG));

@@ -3824,9 +3824,10 @@ const SMALL_SESSION_RULES_BUDGET = 64;
 const HTTPS_DYNAMIC_RULES_BUDGET = 1;
 // One block rule per hostname caught resolving to a private address this session.
 const REBIND_QUARANTINE_RULES_BUDGET = 128;
-// One block rule per private-address pattern, at the network layer, so the
-// guarantee holds in every JavaScript realm including workers.
-const INTRANET_NETWORK_RULES_BUDGET = 16;
+// Two block rules per private-address pattern, at the network layer, so the
+// guarantee holds in every JavaScript realm including workers: one for the
+// page's requests, one for a top-level form post.
+const INTRANET_NETWORK_RULES_BUDGET = 32;
 /* Declared here with the other bands, not beside the features that use them:
    TOTAL_DYNAMIC_BUDGET is evaluated at this point in the file, so a band defined
    further down is in the temporal dead zone and throws. */
@@ -6466,13 +6467,17 @@ function firewallSessionRuleFor(rule) {
     column: Object.keys(FIREWALL_COLUMNS).find((k) => FIREWALL_COLUMNS[k].join(',') === (c.resourceTypes || []).join(',')) || 'all',
   };
 }
-async function firewallSessionRules() {
+// strict: a failed read throws instead of reading as "no allowances", for callers that report removal.
+async function firewallSessionRules(strict) {
   if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.getSessionRules) return [];
   try {
     const existing = await chrome.declarativeNetRequest.getSessionRules();
     return (existing || [])
       .filter((r) => r.id >= FIREWALL_SESSION_RULE_BASE && r.id < FIREWALL_SESSION_RULE_BASE + FIREWALL_SESSION_RULE_MAX);
-  } catch (_) { return []; }
+  } catch (e) {
+    if (strict) throw e;
+    return [];
+  }
 }
 // The allowances active for one site, for the page to show beside the stored decisions.
 async function firewallSessionAllowances(site) {
@@ -6530,7 +6535,7 @@ async function firewallClearSession(site) {
   const host = site === undefined ? null : firewallNormalizeHost(site);
   if (host === '') return { ok: true, removed: 0 };
   try {
-    const mine = (await firewallSessionRules())
+    const mine = (await firewallSessionRules(true))
       .filter((r) => host === null || firewallSessionRuleFor(r).site === host)
       .map((r) => r.id);
     if (mine.length) await writeSessionRules({ removeRuleIds: mine, addRules: [] });
@@ -8920,7 +8925,9 @@ function isLocalOrPrivateHost(host) {
   if (!clean.includes('.')) return true;
   const labels = clean.split('.');
   const tld = labels[labels.length - 1];
-  if (/^(local|localhost|lan|home|internal|intranet|corp|test|invalid|example)$/i.test(tld)) return true;
+  if (/^(local|localdomain|localhost|lan|home|internal|intranet|corp|test|invalid|example)$/i.test(tld)) return true;
+  // RFC 8375's name for a home network.
+  if (/\.home\.arpa$/.test(clean)) return true;
   return false;
 }
 
@@ -11646,7 +11653,7 @@ function refreshExtensionState() {
       run('geolocation', () => applyGlobalLocationBlock(on && cfg.blockGeolocation === true, locationExemptHosts(cfg)), JSON.stringify([on && cfg.blockGeolocation === true, locationExemptHosts(cfg)]));
       run('locationHeaders', () => applyLocationPrivacyHeaderRule(on && cfg.blockGeolocation === true), String(on && cfg.blockGeolocation === true));
       run('ipLookup', () => applyIpLookupBlockRules(on && cfg.blockWebRTCLeak !== false));
-      run('intranet', () => applyIntranetNetworkRules(on && cfg.intranetProtection !== false && cfg.intranetNetworkRules !== false));
+      run('intranet', () => applyIntranetNetworkRules(on && cfg.intranetProtection !== false && cfg.intranetNetworkRules !== false, activeAllowlist(cfg)));
       // The reader-authored bands follow the master switch through their own appliers (BUG-02);
       // each answers {ok}, and a refusal is a degraded component like any other. Only when the
       // switch has moved, or on the first reconcile of this worker life: their own editors
@@ -16958,31 +16965,76 @@ function isDefaultPortHttpUrl(raw) {
 // DNR blocks private-address requests from every realm without rewriting
 // worker scripts, which would break CSP, module imports and service workers.
 const INTRANET_NET_RULE_BASE = 932200;
-const INTRANET_NET_RULES_BUDGET = 16;
+const INTRANET_NET_RULES_BUDGET = 32;
 
-// RE2, matched against the whole URL. The optional userinfo group matters:
+// RE2, matched against the whole URL, and held to intranetTargetHost by
+// tools/test-ip-classifier-agreement.js. The optional userinfo group matters:
 // http://x@192.168.1.1/ is the same request wearing a hat, and an anchor that
-// only allows scheme-then-host would miss it.
-const INTRANET_NET_PATTERNS = [
-  String.raw`^(https?|wss?)://([^/@]*@)?(10|127)\.`,
-  String.raw`^(https?|wss?)://([^/@]*@)?192\.168\.`,
-  String.raw`^(https?|wss?)://([^/@]*@)?169\.254\.`,
-  String.raw`^(https?|wss?)://([^/@]*@)?172\.(1[6-9]|2[0-9]|3[01])\.`,
-  String.raw`^(https?|wss?)://([^/@]*@)?0\.0\.0\.0([:/]|$)`,
-  String.raw`^(https?|wss?)://([^/@]*@)?\[?(::1|fc[0-9a-f]{2}:|fd[0-9a-f]{2}:|fe[89ab][0-9a-f]:)`,
-  // An IPv4 private address written as IPv4-mapped IPv6: [::ffff:10.0.0.1] is the URL parser's
-  // [::ffff:a00:1], which the IPv4 patterns above never see. 10/8, 127/8, 192.168/16,
-  // 169.254/16 and 172.16/12, as the first mapped group appears once leading zeros are dropped.
-  String.raw`^(https?|wss?)://([^/@]*@)?\[::ffff:(a[0-9a-f]{2}|7f[0-9a-f]{2}|c0a8|a9fe|ac1[0-9a-f]):`,
-  String.raw`^(https?|wss?)://([^/@]*@)?localhost([:/]|$)`,
-  String.raw`^(https?|wss?)://([^/@]*@)?[^/:]+\.(local|localdomain|lan|home|internal|intranet|corp)([:/]|$)`,
+// only allows scheme-then-host would miss it. Each host must end in an optional
+// DNS trailing dot, a numeric port and the path, so 10.example.com and
+// https://nas:pw@example.com/ stay public. The browser hands rules canonical
+// URLs: IPv4 is four decimal octets and IPv6 is bracketed.
+// Loopback is kept apart because a sign-in provider may post to this computer only.
+const INTRANET_LOOPBACK_PATTERNS = [
+  String.raw`^(https?|wss?)://([^/@]*@)?127(\.[0-9]{1,3}){3}\.?(:[0-9]+)?(/|$)`,
+  // Chrome answers localhost and every name under it with loopback itself.
+  String.raw`^(https?|wss?)://([^/@]*@)?([^/:@]*\.)?localhost\.?(:[0-9]+)?(/|$)`,
+  String.raw`^(https?|wss?)://([^/@]*@)?\[::1\]`,
+];
+// A bare machine name (nas, printer) is resolved on your own network.
+const INTRANET_SINGLE_LABEL_PATTERN = String.raw`^(https?|wss?)://([^/@]*@)?[^/:@.\[]+\.?(:[0-9]+)?(/|$)`;
+const INTRANET_NET_PATTERNS = INTRANET_LOOPBACK_PATTERNS.concat([
+  // 0/8 with 10/8: 0.0.0.0 reaches this computer on Linux and macOS.
+  String.raw`^(https?|wss?)://([^/@]*@)?(0|10)(\.[0-9]{1,3}){3}\.?(:[0-9]+)?(/|$)`,
+  // Carrier-grade NAT, 100.64/10: ISP equipment and mesh VPNs such as Tailscale.
+  String.raw`^(https?|wss?)://([^/@]*@)?100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])(\.[0-9]{1,3}){2}\.?(:[0-9]+)?(/|$)`,
+  String.raw`^(https?|wss?)://([^/@]*@)?192\.168(\.[0-9]{1,3}){2}\.?(:[0-9]+)?(/|$)`,
+  String.raw`^(https?|wss?)://([^/@]*@)?169\.254(\.[0-9]{1,3}){2}\.?(:[0-9]+)?(/|$)`,
+  String.raw`^(https?|wss?)://([^/@]*@)?172\.(1[6-9]|2[0-9]|3[01])(\.[0-9]{1,3}){2}\.?(:[0-9]+)?(/|$)`,
+  String.raw`^(https?|wss?)://([^/@]*@)?\[(::\]|f[cd][0-9a-f]{2}:|fe[89ab][0-9a-f]:)`,
+  // An IPv4 local address written as IPv4-mapped IPv6: [::ffff:10.0.0.1] is the URL parser's
+  // [::ffff:a00:1], which the IPv4 patterns above never see. 0/8, 10/8, 127/8, 100.64/10,
+  // 192.168/16, 169.254/16 and 172.16/12, as the first mapped group appears once leading
+  // zeros are dropped.
+  String.raw`^(https?|wss?)://([^/@]*@)?\[::ffff:([0-9a-f]{1,2}|a[0-9a-f]{2}|7f[0-9a-f]{2}|64[4-7][0-9a-f]|c0a8|a9fe|ac1[0-9a-f]):`,
+  String.raw`^(https?|wss?)://([^/@]*@)?[^/:@]+\.(local|localdomain|lan|home|internal|intranet|corp|test|invalid|example|home\.arpa)\.?(:[0-9]+)?(/|$)`,
+  INTRANET_SINGLE_LABEL_PATTERN,
+]);
+// localhost is a single label too. The loopback rule owns it, so a sign-in
+// provider's post there is judged by that rule alone.
+const INTRANET_PATTERN_EXCLUDED_HOSTS = new Map([[INTRANET_SINGLE_LABEL_PATTERN, ['localhost']]]);
+
+// Sign-in pages whose content only the provider writes, so a form they post to
+// loopback is a real sign-in response (ASP.NET's form_post, a SAML ACS) and not
+// a page dressed up as one. Form field names are page-controlled and never
+// decide this. src/content.js signInCallbackPage holds the same list.
+const SIGN_IN_CALLBACK_PROVIDERS = [
+  'login.microsoftonline.com',
+  'login.microsoft.com',
+  'login.windows.net',
+  'login.live.com',
+  'accounts.google.com',
 ];
 
-// main_frame is deliberately absent, for the same reason the mining-pool rules
-// leave it out: typing your router's address, or clicking a link to it, is the
-// user asking. The attack is a page reaching the LAN underneath them.
+// Subresource rules leave main_frame out, for the same reason the mining-pool
+// rules do: typing your router's address, or clicking a link to it, is the user
+// asking. The attack is a page reaching the LAN underneath them.
 function intranetNetResourceTypes() {
   return SECURITY_RESOURCE_TYPES.filter((type) => type !== 'main_frame');
+}
+
+// A top-level POST can only come from a form, which is a page acting, not the
+// user typing an address. The page hooks cannot cover it alone: a form built in
+// a child frame's realm submits to _top without touching them.
+function intranetFormPostCondition(regexFilter, excludedInitiatorDomains) {
+  const condition = {
+    regexFilter,
+    domainType: 'thirdParty',
+    resourceTypes: ['main_frame'],
+    requestMethods: ['post'],
+  };
+  if (excludedInitiatorDomains.length) condition.excludedInitiatorDomains = [...new Set(excludedInitiatorDomains)];
+  return condition;
 }
 
 // A page served FROM the LAN talking to the LAN is a local dashboard, not an
@@ -17004,29 +17056,38 @@ function locallyServedTabIds() {
 
 let __intranetNetRulesKey = null;
 
-async function applyIntranetNetworkRules(enabled) {
+// allowlist: activeAllowlist(cfg). An allowlisted page's own requests already
+// pass under its allowAllRequests rule; this lets its forms through too.
+async function applyIntranetNetworkRules(enabled, allowlist) {
   try {
     if (!chrome.declarativeNetRequest?.updateSessionRules) return;
     enabled = !!enabled;
     const excludedTabIds = enabled ? locallyServedTabIds() : [];
+    const trustedInitiators = enabled && Array.isArray(allowlist) ? allowlist.filter((h) => typeof h === 'string' && h) : [];
     // Rebuilding on every navigation would be a DNR write per page load. Most
     // browsing never has a local tab open, so this key is stable in practice.
-    const key = enabled ? excludedTabIds.slice().sort((a, b) => a - b).join(',') : 'off';
+    const key = enabled
+      ? excludedTabIds.slice().sort((a, b) => a - b).join(',') + '|' + trustedInitiators.join(',')
+      : 'off';
     if (__intranetNetRulesKey === key) return;
 
-    const removeRuleIds = INTRANET_NET_PATTERNS.map((_, i) => INTRANET_NET_RULE_BASE + i);
-    const addRules = enabled ? INTRANET_NET_PATTERNS.map((regexFilter, i) => {
-      const condition = {
-        regexFilter,
-        domainType: 'thirdParty',
-        resourceTypes: intranetNetResourceTypes(),
-      };
+    const conditions = INTRANET_NET_PATTERNS.map((regexFilter) => ({
+      regexFilter,
+      domainType: 'thirdParty',
+      resourceTypes: intranetNetResourceTypes(),
+    })).concat(INTRANET_NET_PATTERNS.map((regexFilter) => intranetFormPostCondition(regexFilter,
+      INTRANET_LOOPBACK_PATTERNS.includes(regexFilter)
+        ? SIGN_IN_CALLBACK_PROVIDERS.concat(trustedInitiators)
+        : trustedInitiators)));
+    const removeRuleIds = Array.from({ length: INTRANET_NET_RULES_BUDGET }, (_, i) => INTRANET_NET_RULE_BASE + i);
+    const addRules = enabled ? conditions.map((condition, i) => {
+      const excludedHosts = INTRANET_PATTERN_EXCLUDED_HOSTS.get(condition.regexFilter);
+      if (excludedHosts) condition.excludedRequestDomains = excludedHosts;
       if (excludedTabIds.length) condition.excludedTabIds = excludedTabIds;
       return {
         id: INTRANET_NET_RULE_BASE + i,
-        // Below login-compat's 96000, above ordinary blocking. A LAN address is
-        // never an identity provider, but the ordering stays consistent with
-        // every other guard rather than being special.
+        // Above login compatibility's allow rules (1900): a LAN address is never
+        // an identity provider.
         priority: 94000,
         action: { type: 'block' },
         condition,
@@ -17048,7 +17109,7 @@ function refreshIntranetNetworkRules() {
     localGet('wardenone_config').then((stored) => {
       const cfg = (stored && stored.wardenone_config) || {};
       const on = cfg.enabled !== false && cfg.intranetProtection !== false && cfg.intranetNetworkRules !== false;
-      applyIntranetNetworkRules(on);
+      applyIntranetNetworkRules(on, activeAllowlist(cfg));
     }).catch(() => {});
   } catch (_) {}
 }
@@ -17088,6 +17149,20 @@ function classifyResolvedIp(raw) {
     return 'public';
   }
   return '';
+}
+
+// The one description of what Intranet Guard refuses from a public page; the DNR
+// patterns and the engine's localAdminTarget are held to it. A name follows
+// isLocalOrPrivateHost and an address follows classifyResolvedIp, so documentation
+// and multicast addresses, which reach nothing on your network, stay out.
+function intranetTargetHost(host) {
+  const clean = String(host || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  if (!clean) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(clean) || clean.includes(':')) {
+    const cls = classifyResolvedIp(clean);
+    return !!cls && cls !== 'public';
+  }
+  return isLocalOrPrivateHost(clean);
 }
 
 function rebindQuarantineRules() {
@@ -17205,7 +17280,7 @@ function noteResolvedAddress(details) {
     if (!local) return;
     // A name that was already local by sight is Intranet Guard's business and is
     // blocked on sight; there is nothing hidden about it to quarantine.
-    if (isLocalOrPrivateHost(host)) return;
+    if (intranetTargetHost(host)) return;
     if (REBIND_TAB_IS_LOCAL.get(tabId) === true) return;
     if (REBIND_QUARANTINED.has(host)) return;
 
@@ -22662,16 +22737,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (msg.all === true) next = {};
       else if (site) { next = JSON.parse(JSON.stringify(matrix)); delete next[site]; }
       else { sendResponse({ ok: false, error: 'Nothing to reset.' }); return; }
-      // Both removals have to succeed before anything claims the rules are gone (H18).
-      // A per-site undo takes only this site's allowances; other sites keep theirs.
-      const session = await firewallClearSession(msg.all === true ? undefined : site);
+      // The stored rules go first, in one Chrome call: refused, and nothing has changed (H18).
+      // The temporary allowances follow. If only they fail, the answer says what is left; both
+      // steps repeat safely, so undoing again finishes the job.
       const result = await applyFirewallRulesFrom(firewallRulesFrom(next));
-      if (!session.ok || !result.ok) {
-        sendResponse({ ok: false, error: 'The browser refused the reset: ' + (session.ok ? result.error : session.error) + ' Your rules are still stored and still in effect.' });
+      if (!result.ok) {
+        sendResponse({ ok: false, error: 'The browser refused the reset: ' + result.error + ' Nothing was changed. Your rules are still stored and still in effect.' });
         return;
       }
-      try { await localSet({ [FIREWALL_KEY]: next }); } catch (e) {
-        sendResponse({ ok: false, error: 'The rules were removed from the browser but the stored copy could not be updated: ' + firewallErrorText(e) });
+      // A per-site undo takes only this site's allowances; other sites keep theirs.
+      const session = await firewallClearSession(msg.all === true ? undefined : site);
+      let storeError = '';
+      try { await localSet({ [FIREWALL_KEY]: next }); } catch (e) { storeError = firewallErrorText(e); }
+      const problems = [];
+      if (storeError) problems.push('Your rules were removed from the browser, but the stored copy could not be updated, so they will come back when the browser restarts: ' + storeError);
+      else if (!session.ok) problems.push('Your saved rules ' + (msg.all === true ? 'on every site' : 'for ' + site) + ' were removed.');
+      if (!session.ok) problems.push('The browser refused to clear the temporary allowances, so they still apply until you close the browser or undo again: ' + session.error);
+      if (problems.length) {
+        sendResponse({ ok: false, partial: true, rulesRemoved: !storeError, error: problems.join(' '),
+          once: site ? await firewallSessionAllowances(site) : [] });
         return;
       }
       sendResponse({ ok: true, applied: result.applied, sessionRemoved: session.removed });

@@ -1,6 +1,6 @@
 # Onboarding feature coverage
 
-Audited 16 October 2026 against `0f45d311ca0220faa38bee5665cf19d7f3180ea2` and the onboarding changes in this revision.
+Audited 16 October 2026 against `ed6606233ac1e0ff0b71cc4a6ce88d97fb09f773` and the onboarding changes in this revision.
 
 ## Coverage
 

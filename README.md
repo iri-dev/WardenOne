@@ -746,8 +746,13 @@ handled separately because routers and dev boxes often skip HTTPS on purpose.
 
 A public website has no business poking at your router, NAS, printer, dev server or any other
 private admin page. Intranet Guard checks the requests a page makes. Its network rules also block
-direct private-network targets from pages and workers, including IP addresses and local names like
-`router.local`. Keep the network rules on. They're the part the browser itself enforces.
+direct private-network targets from pages and workers, including IP addresses, local names like
+`router.local` or a bare `nas`, the `100.x` addresses Tailscale gives your devices, and forms a page
+submits to them. Keep the network rules on. They're the part the browser itself enforces.
+
+Microsoft and Google sign-in pages can still send you back to an app you're running on this
+computer. If you sign in to a local app through some other provider, add that provider's site to
+your allowlist.
 
 Pages you opened from your own network can still reach it though. What matters is who started it.
 A local tool talking to your own devices is normal. Some random public page scanning the same

@@ -90,7 +90,7 @@ function check(name, cond, detail) {
      the intranet guarantee rests on. If those rules go, worker requests stop
      being covered by anything at all. */
   check('the intranet guarantee still has its network-layer half',
-    /const INTRANET_NET_PATTERNS = \[/.test(BG),
+    /const INTRANET_NET_PATTERNS = INTRANET_LOOPBACK_PATTERNS\.concat\(\[/.test(BG),
     'the network rules are gone — nothing now covers workers');
   check('the rebinding quarantine is enforced at the network layer too',
     /condition: \{ requestDomains: \[host\], resourceTypes: SECURITY_RESOURCE_TYPES \}/.test(BG),

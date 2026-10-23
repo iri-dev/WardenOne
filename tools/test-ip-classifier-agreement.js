@@ -33,26 +33,30 @@ const sandbox = { URL };
 vm.createContext(sandbox);
 vm.runInContext(between(BG, 'function ipv4FromMappedIpv6(', 'function ipFromUrl(', 'the address helpers')
   + between(BG, 'function classifyResolvedIp(', 'function rebindQuarantineRules(', 'classifyResolvedIp')
-  + between(BG, 'const INTRANET_NET_PATTERNS = [', '];', 'the intranet patterns') + '];'
-  + '\nthis.api = { normalizeIpLiteral, isLocalOrPrivateHost, classifyResolvedIp, ipv6Range, INTRANET_NET_PATTERNS };',
+  + between(BG, 'const INTRANET_LOOPBACK_PATTERNS = [', '// Sign-in pages whose content', 'the intranet patterns')
+  + '\nthis.api = { normalizeIpLiteral, isLocalOrPrivateHost, classifyResolvedIp, intranetTargetHost, ipv6Range,'
+  + ' INTRANET_NET_PATTERNS, INTRANET_PATTERN_EXCLUDED_HOSTS };',
 sandbox, { filename: 'background.js:ip-classifiers' });
 const bg = sandbox.api;
-const intranet = bg.INTRANET_NET_PATTERNS.map((p) => new RegExp(p));
+/* DNR regex filters are case-insensitive unless a rule says otherwise. */
+const intranet = bg.INTRANET_NET_PATTERNS.map((p) => [new RegExp(p, 'i'), bg.INTRANET_PATTERN_EXCLUDED_HOSTS.get(p) || []]);
+function ruleMatchesUrl(url) {
+  const host = new URL(url).hostname;
+  return intranet.some(([re, excluded]) => re.test(url) && !excluded.some((d) => host === d || host.endsWith('.' + d)));
+}
 
-/* The engine's local-admin check: the IP lines of localAdminTarget, run on the hostname the URL
-   parser produces (which is what the engine sees). */
-const adminBlock = between(SRC, 'const localAdminTarget=raw=>{', 'if(/\\.(local|localdomain|lan|home|internal|intranet|corp)$/i.test(h))return!0;', 'localAdminTarget');
-const adminRes = (adminBlock.match(/if\(\/\^[^\n]*?\/i\.test\(h\)\)return!0;/g) || []).map((line) => {
-  const m = /if\((\/\^.*\/i)\.test\(h\)\)return!0;/.exec(line);
-  return vm.runInNewContext(m[1]);
-});
+/* The engine's whole localAdminTarget, as shipped in the source, given the URL parser it uses. */
+const engineSource = between(SRC, 'const localAdminTarget=raw=>{', 'publicPage=()=>', 'localAdminTarget').replace(/,\s*$/, ';');
+const engineSandbox = { URL, u2: (s) => { try { return new URL(s); } catch (_) { return null; } } };
+vm.createContext(engineSandbox);
+vm.runInContext(engineSource + '\nthis.localAdminTarget = localAdminTarget;', engineSandbox, { filename: 'src/content.js:localAdminTarget' });
+const engineMatchesUrl = engineSandbox.localAdminTarget;
+
 function engineSaysLocal(host) {
-  const h = new URL('http://[' + host + ']/').hostname.replace(/^\[|\]$/g, '');
-  return adminRes.some((re) => re.test(h));
+  return engineMatchesUrl(new URL('http://[' + host + ']/').href);
 }
 function ruleSaysLocal(host) {
-  const url = new URL('http://[' + host + ']/').href;
-  return intranet.some((re) => re.test(url));
+  return ruleMatchesUrl(new URL('http://[' + host + ']/').href);
 }
 
 /* [address, private-or-local?] */
@@ -82,6 +86,46 @@ console.log('the intranet network rule agrees');
 for (const [ip, local] of TABLE) check(ip, ruleSaysLocal(ip) === local, 'rule matched: ' + ruleSaysLocal(ip));
 console.log('the engine\'s local-admin check agrees');
 for (const [ip, local] of TABLE) check(ip, engineSaysLocal(ip) === local, 'engine matched: ' + engineSaysLocal(ip));
+
+/* What Intranet Guard refuses: intranetTargetHost is the policy, and the network rules and the
+   engine must give the same answer for every host. [host, refused?] */
+const TARGETS = [
+  ['localhost', true], ['localhost.', true], ['app.localhost', true], ['app.localhost.', true],
+  ['127.0.0.1', true], ['127.1.2.3', true], ['0.0.0.0', true], ['0.1.2.3', true],
+  ['10.0.0.1', true], ['100.64.0.1', true], ['100.100.100.100', true], ['100.127.255.254', true],
+  ['169.254.169.254', true], ['172.16.0.1', true], ['172.31.255.254', true], ['192.168.1.1', true],
+  ['[::1]', true], ['[::]', true], ['[fd00::1]', true], ['[fe80::1]', true],
+  ['[::ffff:100.64.0.1]', true], ['[::ffff:0.1.2.3]', true], ['[::ffff:192.168.1.1]', true],
+  ['nas', true], ['nas.', true], ['printer', true], ['router.lan', true], ['router.lan.', true],
+  ['nas.local', true], ['box.localdomain', true], ['pi.home', true], ['nas.home.arpa', true],
+  ['svc.internal', true], ['wiki.intranet', true], ['git.corp', true], ['myapp.test', true],
+  ['x.invalid', true], ['x.example', true],
+  ['example.com', false], ['example.com.', false], ['10.example.com', false], ['127.example.org', false],
+  ['192.168.advertiser.com', false], ['100.example.com', false], ['10.0.0.1.example.com', false],
+  ['100.63.255.255', false], ['100.128.0.1', false], ['172.15.0.1', false], ['172.32.0.1', false],
+  ['8.8.8.8', false], ['192.0.2.1', false], ['198.18.0.1', false], ['224.0.0.1', false],
+  ['[2606:4700:4700::1111]', false], ['[2001:db8::1]', false], ['[ff02::1]', false], ['[::ffff:8.8.8.8]', false],
+  ['local.example.com', false], ['localhost.example.com', false], ['mylocalhost.com', false],
+  ['evil-localhost.com', false], ['myapp.test.example.com', false], ['home.arpa.example.com', false],
+];
+console.log('Intranet Guard: the policy, the network rules and the engine agree');
+for (const [host, refused] of TARGETS) {
+  for (const url of ['http://' + host + '/', 'https://' + host + ':8443/app.js', 'ws://u@' + host + ':9000/socket']) {
+    const href = new URL(url).href;
+    const policy = bg.intranetTargetHost(new URL(href).hostname);
+    const rule = ruleMatchesUrl(href);
+    const engine = engineMatchesUrl(href);
+    check((refused ? 'refused  ' : 'allowed  ') + href, policy === refused && rule === refused && engine === refused,
+      'policy=' + policy + ' rule=' + rule + ' engine=' + engine);
+  }
+}
+console.log('userinfo is never mistaken for the host');
+for (const url of ['https://nas:pw@example.com/', 'https://localhost:pw@example.com/', 'https://10.0.0.1:x@example.com/',
+  'https://router.lan:1@example.com/', 'wss://printer@example.com/socket']) {
+  check(url, !ruleMatchesUrl(url) && !engineMatchesUrl(url), 'rule=' + ruleMatchesUrl(url) + ' engine=' + engineMatchesUrl(url));
+}
+check('the rebinding observer leaves to Intranet Guard exactly what it refuses',
+  /if \(intranetTargetHost\(host\)\) return;/.test(BG) && !/if \(isLocalOrPrivateHost\(host\)\) return;/.test(BG));
 
 console.log('the rest of the special ranges');
 check('multicast and documentation addresses are not public', bg.normalizeIpLiteral('ff02::1') === '' && bg.normalizeIpLiteral('2001:db8::1') === '');

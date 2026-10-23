@@ -440,31 +440,37 @@ const RISKY = 'Blocked by WardenOne Risky-site Mode';
     check('a port sweep is refused on every port but recorded once',
       sweep.every((r) => r === INTRANET) && probes() === 6, sweep.join(',') + ' / ' + probes() + ' records');
 
+    check('public page: a public name that begins like a private address is not one',
+      (await outcome(() => w.fetch('https://192.168.advertiser.com/login'))) === 'allowed'
+        && (await outcome(() => w.fetch('https://10.example.com/admin/app.js'))) === 'allowed'
+        && (await outcome(() => new w.WebSocket('wss://172.16.cdn.example.com/setup'))) === 'allowed'
+        && probes() === 6, page.types().join(','));
     check('public page: ordinary requests still go through',
       (await outcome(() => w.fetch('https://example.com/api/data'))) === 'allowed'
         && (await outcome(() => new w.Worker('https://example.com/worker.js'))) === 'allowed'
         && (await outcome(() => new w.Worker('blob:https://example.com/2f1c'))) === 'allowed'
         && (await outcome(() => new w.WebSocket('wss://example.com/live'))) === 'allowed');
 
-    /* Forms: a sign-in response posted to a loopback callback is development, not an attack. */
-    const signIn = new w.HTMLFormElement('https://localhost:5001/signin-oidc', ['code', 'state', 'id_token']);
-    signIn.submit();
-    const saml = new w.HTMLFormElement('http://127.0.0.1:8080/saml/acs', ['SAMLResponse', 'RelayState']);
-    saml.requestSubmit();
-    check('an identity provider can still post a sign-in response to localhost',
-      page.passed.includes('submit https://localhost:5001/signin-oidc')
-        && page.passed.includes('requestSubmit http://127.0.0.1:8080/saml/acs'), page.passed.join(' | '));
+    /* Forms: field names are the page's own words. A public page that names its fields like a
+       sign-in response is still a public page posting to this computer. */
     new w.HTMLFormElement('http://localhost:2375/containers/create', ['Image']).submit();
+    new w.HTMLFormElement('http://localhost:2375/containers/create', ['Image', 'code', 'state']).submit();
+    new w.HTMLFormElement('http://127.0.0.1:2375/containers/create', ['SAMLResponse', 'RelayState']).requestSubmit();
+    new w.HTMLFormElement('https://localhost:5001/signin-oidc', ['code', 'state', 'id_token']).submit();
     new w.HTMLFormElement('http://192.168.1.1/apply.cgi', ['code', 'state']).submit();
-    check('a loopback form without sign-in fields, and any form to the router, are refused',
-      !page.passed.some((p) => /localhost:2375|192\.168\.1\.1/.test(p)), page.passed.join(' | '));
+    check('a public page cannot pass a loopback form off as a sign-in response',
+      !page.passed.some((p) => /localhost|127\.0\.0\.1|192\.168\.1\.1/.test(p)), page.passed.join(' | '));
+    const disguised = new w.HTMLFormElement('http://127.0.0.1:2375/containers/create', ['code', 'state']);
+    const submitEvent = new Event('submit', { cancelable: true });
+    Object.defineProperty(submitEvent, 'target', { value: disguised });
+    w.document.dispatchEvent(submitEvent);
+    check('and neither can a user-clicked submit of one', submitEvent.defaultPrevented);
 
     const form = { tagName: 'FORM', nodeType: 1, getAttribute: () => null, removeAttribute() {} };
     w.Element.prototype.setAttribute.call(form, 'action', 'http://localhost:5001/signin-oidc');
     w.Node.prototype.appendChild.call({}, Object.assign({}, form, { action: 'http://localhost:5001/signin-oidc' }));
-    check('a loopback form keeps its action and is inserted, to be judged when it submits',
-      page.passed.includes('setAttribute FORM action=http://localhost:5001/signin-oidc') && page.passed.includes('append FORM'),
-      page.passed.join(' | '));
+    check('a loopback form on a public page is neither pointed at this computer nor inserted',
+      !page.passed.some((p) => /^setAttribute FORM|^append FORM/.test(p)), page.passed.join(' | '));
     const img = { tagName: 'IMG', nodeType: 1, getAttribute: () => null, removeAttribute() {}, remove() {} };
     w.Element.prototype.setAttribute.call(img, 'src', 'http://192.168.1.1/status.gif');
     w.Node.prototype.appendChild.call({}, Object.assign({}, img, { src: 'http://192.168.1.1/status.gif' }));
@@ -489,6 +495,44 @@ const RISKY = 'Blocked by WardenOne Risky-site Mode';
     check('Intranet Guard, Risky-site Mode and the tracker learner all started',
       !failed.some((e) => /^(intranet_guard|risky_site_mode|tracker_learner)_failed$/.test(e.type)),
       failed.map((e) => e.type + ': ' + e.detail.error).join('; '));
+  }
+
+  {
+    /* The trust comes from the page's own host, which the page cannot choose. */
+    const page = boot('https://login.microsoft.com/common/oauth2/v2.0/authorize');
+    const { w } = page;
+    new w.HTMLFormElement('https://localhost:5001/signin-oidc', ['code', 'state', 'id_token']).submit();
+    new w.HTMLFormElement('http://127.0.0.1:8080/saml/acs', ['SAMLResponse', 'RelayState']).requestSubmit();
+    check('a listed sign-in provider can post its response to an app on this computer',
+      page.passed.includes('submit https://localhost:5001/signin-oidc')
+        && page.passed.includes('requestSubmit http://127.0.0.1:8080/saml/acs'), page.passed.join(' | '));
+    const form = { tagName: 'FORM', nodeType: 1, getAttribute: () => null, removeAttribute() {} };
+    w.Element.prototype.setAttribute.call(form, 'action', 'https://localhost:5001/signin-oidc');
+    check('and its callback form keeps its action',
+      page.passed.includes('setAttribute FORM action=https://localhost:5001/signin-oidc'), page.passed.join(' | '));
+    new w.HTMLFormElement('http://192.168.1.1/apply.cgi', ['code', 'state']).submit();
+    check('but not to the router: the exemption is loopback only',
+      !page.passed.some((p) => /192\.168\.1\.1/.test(p)), page.passed.join(' | '));
+  }
+
+  for (const href of ['https://login.microsoftonline.com.evil.example.com/', 'https://evil-login.live.com.example.net/']) {
+    const page = boot(href);
+    new page.w.HTMLFormElement('https://localhost:5001/signin-oidc', ['code', 'state', 'id_token']).submit();
+    check(new URL(href).hostname + ': a lookalike host is not a sign-in provider',
+      !page.passed.some((p) => /localhost/.test(p)), page.passed.join(' | '));
+  }
+
+  {
+    /* The engine's list and the network rules' exemption must name the same providers. */
+    const BG = read('background.js');
+    const listed = (src, from) => {
+      const at = src.indexOf('[', src.indexOf(from));
+      return src.indexOf(from) < 0 ? [] : (src.slice(at, src.indexOf(']', at)).match(/"[^"]+"|'[^']+'/g) || []).map((s) => s.slice(1, -1));
+    };
+    const engine = listed(MIN, 'signInCallbackPage=');
+    const rules = listed(BG, 'const SIGN_IN_CALLBACK_PROVIDERS = [');
+    check('the engine and the network rules trust the same sign-in providers',
+      engine.length > 0 && engine.join(',') === rules.join(','), engine.join(',') + ' vs ' + rules.join(','));
   }
 
   for (const href of ['http://192.168.1.1/', 'http://localhost:3000/', 'http://router.local/']) {
