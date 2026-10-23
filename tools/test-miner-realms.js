@@ -97,7 +97,7 @@ function loadBridgeReplay(world, options = {}) {
     TOKEN: options.token || 'tok-shared',
     bridgeConfigReady: options.configReady !== false,
     bridgeConfig: options.config || {},
-    deliverKey() {
+    replayKey() {
       world.document.dispatchEvent(new CustomEventShim('wo-key', { detail: { token: sandbox.TOKEN, key: signer.key } }));
       return true;
     },

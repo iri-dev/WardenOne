@@ -177,7 +177,7 @@ function check(name, condition, extra) {
 // 2. Warnings for destinations the network rules already block.
 // ---------------------------------------------------------------------------
 {
-  const decl = /ALREADY_BLOCKED_TRACKERS=(\/[\s\S]*?\/i),/.exec(SRC);
+  const decl = /ALREADY_BLOCKED_TRACKERS=(\/[\s\S]*?\/i)[,;]/.exec(SRC);
   check('the already-blocked list exists', !!decl);
   if (decl) {
     // eslint-disable-next-line no-eval

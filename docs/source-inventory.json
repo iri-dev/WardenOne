@@ -2695,7 +2695,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "7ba1756dfd39e9618b67aeddc703c9fedb21a038bfb756974da0ecfe5f73ae00"
+      "sha256": "7f1dc36bd827cb57457da4d758c185e2532e012dd5ebbf5394f83a515fb82a54"
     },
     {
       "file": "rules-easyprivacy.json",

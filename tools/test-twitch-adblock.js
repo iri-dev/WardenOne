@@ -674,11 +674,12 @@ function executeWorkerWrapper(source, queuedMessages, nativeFetch) {
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(String(source || ''), sandbox, { filename: 'wrapped-twitch-worker.js' });
-  for (const message of queuedMessages || []) {
+  const post = (message) => {
     const event = { data: message };
     for (const listener of listeners.slice()) listener(event);
-  }
-  return { fetch: workerGlobal.fetch, state };
+  };
+  for (const message of queuedMessages || []) post(message);
+  return { fetch: workerGlobal.fetch, state, post };
 }
 
 function createWorkerFetchHarness(nativeFetch, enabled) {
@@ -2192,6 +2193,48 @@ test('a late delegating Worker wrapper composes with Twitch and non-Twitch worke
     'cached native Worker assignment bypassed Twitch interception');
   assert(customCalls.length === 3,
     'cached native assignment unexpectedly discarded the compatible custom delegate');
+});
+
+test('successive late Worker wrappers chain instead of replacing each other', () => {
+  const harness = createPageHarness();
+  const { window, state } = harness;
+  const calls = [];
+  const lateWrapper = (name) => {
+    const Inner = window.Worker;
+    return function LateWorker(url, options) {
+      calls.push(name + ' ' + String(url));
+      return new Inner(url, options);
+    };
+  };
+  const first = lateWrapper('first');
+  window.Worker = first;
+  const second = lateWrapper('second');
+  window.Worker = second;
+  assert(window.Worker !== first && window.Worker !== second,
+    'precondition: the accessor took both late wrappers as delegates');
+
+  const externalUrl = 'https://example.test/two-wrappers-worker.js';
+  const external = new window.Worker(externalUrl);
+  equal(calls, ['second ' + externalUrl, 'first ' + externalUrl],
+    'non-Twitch worker did not pass through both late wrappers, newest first, once each');
+  assert(external.url === externalUrl, 'non-Twitch worker did not reach the native Worker unchanged');
+
+  calls.length = 0;
+  const readsBefore = state.workerSourceReads;
+  const player = new window.Worker('blob:https://www.twitch.tv/two-wrappers-player');
+  assert(/^blob:wardenone-twitch-/.test(player.url), 'player worker bypassed interception behind two late wrappers');
+  equal(calls, ['second ' + player.url, 'first ' + player.url],
+    'wrapped Twitch worker did not pass through both late wrappers once each');
+  assert(state.workerSourceReads === readsBefore + 1, 'a nested wrapper call re-read the Twitch blob');
+
+  calls.length = 0;
+  window.Worker = first;
+  new window.Worker(externalUrl);
+  equal(calls, ['first ' + externalUrl], 'putting back the older wrapper did not drop the newer one');
+
+  window.Worker = second;
+  window.__wardenOneTwitchAdblockDispose();
+  assert(window.Worker === second, 'teardown did not hand back the newest late wrapper');
 });
 
 test('anonymous first-ad token proxy receives a page-scoped device id fallback', async () => {
@@ -4207,6 +4250,118 @@ test('only authenticated configuration changes Twitch protection state', () => {
   assert(!css().disabled, 'handshakes, forgery, replay and page globals cannot disable protection');
   harness.sendConfig({ enabled: false });
   assert(css().disabled, 'a rejected forgery does not prevent the next legitimate toggle');
+});
+
+/* No settings used to mean on, so a request made before the bridge answered was rewritten even
+   for a viewer who had switched Twitch blocking off. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+const GQL_FIXTURE_URL = 'https://gql.twitch.tv/gql';
+
+test('an ad request made before settings arrive waits for them and is then answered', async () => {
+  const harness = createPageHarness({ __configReady: false });
+  const css = () => mountedTwitchStyles(harness).find((node) => node.id === 'wo-twitch-adblock-css');
+  assert(css() && css().disabled, 'ad cosmetics applied before settings arrived');
+  let answered = null;
+  const held = harness.window.fetch(STANDARD_VIDEO_AD_URL).then((response) => (answered = response));
+  await settle();
+  assert(answered === null, 'the ad request was answered before settings arrived');
+  equal(harness.state.fetchCalls.length, 0, 'the ad request went out before settings arrived');
+  harness.sendConfig({ enabled: true, twitchAdBlock: true });
+  equal((await held).status, 204, 'the held ad request was not answered once settings said on');
+  equal(harness.state.fetchCalls.length, 0, 'the held ad request reached the network');
+  assert(!css().disabled, 'ad cosmetics stayed off after settings said on');
+});
+
+test('settings that say off release held requests untouched', async () => {
+  const harness = createPageHarness({ __configReady: false });
+  const adInit = { method: 'GET' };
+  const ad = harness.window.fetch(STANDARD_VIDEO_AD_URL, adInit);
+  const body = JSON.stringify([fetchAdsOperation('PREROLL')]);
+  const gqlInit = { method: 'POST', headers: { 'Client-ID': 'untouched' }, body: body };
+  const gql = harness.window.fetch(GQL_FIXTURE_URL, gqlInit);
+  await settle();
+  equal(harness.state.fetchCalls.length, 0, 'requests that would be rewritten went out before settings arrived');
+  harness.sendConfig({ enabled: true, twitchAdBlock: false });
+  equal((await ad).status, 200, 'the held ad request was answered locally with Twitch blocking off');
+  await gql;
+  const adCall = harness.state.fetchCalls.find((call) => call.input === STANDARD_VIDEO_AD_URL);
+  const gqlCall = harness.state.fetchCalls.find((call) => call.input === GQL_FIXTURE_URL);
+  equal(harness.state.fetchCalls.length, 2, 'held requests were not forwarded exactly once');
+  assert(adCall && adCall.init === adInit, 'the held ad request was not forwarded untouched');
+  assert(gqlCall && gqlCall.init === gqlInit && gqlCall.init.body === body,
+    'the held FetchAds request was not forwarded byte for byte');
+  new harness.window.Worker('blob:https://www.twitch.tv/after-settings-off');
+  equal(harness.state.blobSources.size, 0, 'a player worker was wrapped after settings said off');
+});
+
+test('requests that need no rewrite never wait for settings', async () => {
+  const harness = createPageHarness({ __configReady: false });
+  const body = JSON.stringify([playbackTokenOperation('site', 'web')]);
+  const init = { method: 'POST', headers: { 'Client-ID': 'fixture-client' }, body: body };
+  await harness.window.fetch(GQL_FIXTURE_URL, init);
+  await harness.window.fetch('https://www.twitch.tv/fixture-asset.js');
+  equal(harness.state.fetchCalls.length, 2, 'a request with nothing to rewrite waited for settings');
+  assert(harness.state.fetchCalls[0].init === init && harness.state.fetchCalls[0].init.body === body,
+    'a token request was changed before settings arrived');
+});
+
+test('without settings, held requests go out untouched at the deadline and late settings still apply', async () => {
+  const harness = createPageHarness({ __configReady: false });
+  const held = harness.window.fetch(STANDARD_VIDEO_AD_URL);
+  await settle();
+  equal(harness.state.fetchCalls.length, 0, 'precondition: the ad request is held');
+  harness.advance(2500);
+  equal((await held).status, 200, 'the held ad request did not go out untouched at the deadline');
+  equal((await harness.window.fetch(STANDARD_VIDEO_AD_URL)).status, 200,
+    'a request after the deadline was rewritten without settings');
+  equal(harness.state.fetchCalls.length, 2, 'requests after the deadline were not forwarded');
+  harness.sendConfig({ enabled: true, twitchAdBlock: true });
+  equal((await harness.window.fetch(STANDARD_VIDEO_AD_URL)).status, 204, 'late settings did not switch blocking on');
+  equal(harness.state.fetchCalls.length, 2, 'the ad request after late settings reached the network');
+});
+
+test('a player worker made before settings arrive is wrapped inactive and holds its playlists for them', async () => {
+  const page = createPageHarness({ __configReady: false });
+  const worker = new page.window.Worker('blob:https://www.twitch.tv/early-player');
+  const wrapper = page.state.blobSources.get(worker.url) || '';
+  assert(wrapper, 'a worker made before settings arrived was not wrapped, so it could never be switched on');
+  announceWorkerReady(worker, page.window.__wardenOneTwitchAdblockReady);
+  assert(!worker.messages.some((message) => message && message.type === 'config'),
+    'the page answered for settings it had not received');
+  const runtime = executeWorkerWrapper(wrapper, [], async () => new Response('#EXTM3U\n', { status: 200 }));
+  const masterUrl = 'https://usher.ttvnw.net/api/v2/channel/hls/fixturechannel.m3u8?p=early';
+  const mediaUrl = 'https://video-edge-fixture.ttvnw.net/v1/playlist/early.m3u8';
+  let mediaDone = false;
+  const media = runtime.fetch(mediaUrl).then((response) => { mediaDone = true; return response; });
+  await runtime.fetch(masterUrl);
+  await settle();
+  assert(!mediaDone, 'the worker answered a media playlist before settings arrived');
+  equal(runtime.state.calls.map((call) => call.url), [masterUrl],
+    'the worker held its master or fetched media before settings arrived');
+  page.sendConfig({ enabled: true, twitchAdBlock: false });
+  const configs = worker.messages.filter((message) => message && message.type === 'config');
+  equal(configs.map((message) => message.enabled), [false], 'the worker was not told settings said off');
+  runtime.post(configs[0]);
+  equal(await (await media).text(), '#EXTM3U\n', 'the held media playlist was not passed through');
+  equal(runtime.state.calls.map((call) => call.url), [masterUrl, mediaUrl],
+    'the held media playlist was not fetched natively once settings said off');
+});
+
+test('a player worker made before settings arrive is switched on when they say on', () => {
+  const page = createPageHarness({ __configReady: false });
+  const worker = new page.window.Worker('blob:https://www.twitch.tv/early-player-on');
+  announceWorkerReady(worker, page.window.__wardenOneTwitchAdblockReady);
+  page.sendConfig({ enabled: true, twitchAdBlock: true });
+  equal(worker.messages.filter((message) => message && message.type === 'config').map((message) => message.enabled),
+    [true], 'the early worker was not switched on by verified settings');
+});
+
+test('the remembered Low Latency answer follows the ad blocker switch', () => {
+  const { harness, window } = storageHarness({ __configReady: false, twitchSteadyPlayback: true });
+  setTwitchConfig(harness, { __configReady: true, twitchAdBlock: false, twitchSteadyPlayback: true });
+  equal(window.localStorage.getItem('__woTwitchSteadyPlayback'), '0',
+    'the next start-up would answer Low Latency off with Twitch blocking switched off');
+  equal(window.localStorage.getItem('lowLatencyModeEnabled'), null, 'the preference was answered with the ad blocker off');
 });
 
 (async () => {

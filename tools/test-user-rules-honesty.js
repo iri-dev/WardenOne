@@ -250,13 +250,31 @@ function firewallWorld({ store, failStorage, transaction } = {}) {
     const { api, dnr, storage, call } = firewallWorld({ store: { 'news.example': { 'cdn.example': { script: 'block' } }, 'shop.example': { 'x.example': { all: 'allow' } } } });
     await dnr.api.updateDynamicRules({ removeRuleIds: [], addRules: api.firewallRulesFrom(storage.wardenone_firewall) });
     await api.firewallAllowOnce('news.example', 'cdn.example', 'all');
+    await api.firewallAllowOnce('shop.example', 'pay.example', 'all');
     const r = await call(api.handleReset, { site: 'news.example', all: false });
     check('a per-site reset removes that site, its allowance, and nothing else',
-      r.ok === true && !storage.wardenone_firewall['news.example'] && storage.wardenone_firewall['shop.example'] && dnr.session.size === 0 && dnr.dynamic.size === 1, JSON.stringify(r));
+      r.ok === true && r.sessionRemoved === 1 && !storage.wardenone_firewall['news.example'] && storage.wardenone_firewall['shop.example'] && dnr.dynamic.size === 1, JSON.stringify(r));
+    const shopLeft = await api.firewallSessionAllowances('shop.example');
+    check('another site\'s temporary allowance survives a per-site reset',
+      dnr.session.size === 1 && shopLeft.length === 1 && shopLeft[0].domain === 'pay.example'
+        && (await api.firewallSessionAllowances('news.example')).length === 0, JSON.stringify([...dnr.session.values()]));
     dnr.refuse('rule count exceeded');
     const bad = await call(api.handleReset, { site: 'shop.example', all: false });
     check('a reset Chrome refuses is reported as refused', bad.ok === false && /still stored and still in effect/.test(bad.error), JSON.stringify(bad));
     check('and the stored matrix still has the site', !!storage.wardenone_firewall['shop.example']);
+  }
+  {
+    const { api, dnr, storage, call } = firewallWorld({ store: { 'shop.example': { 'x.example': { all: 'allow' } } } });
+    await api.firewallAllowOnce('news.example', 'cdn.example', 'all');
+    await api.firewallAllowOnce('shop.example', 'pay.example', 'all');
+    const only = await call(api.handleReset, { site: 'news.example', all: false });
+    check('a site with only a temporary allowance can be reset',
+      only.ok === true && only.sessionRemoved === 1 && dnr.session.size === 1 && !!storage.wardenone_firewall['shop.example'], JSON.stringify(only));
+    await api.firewallAllowOnce('news.example', 'cdn.example', 'all');
+    const junk = await api.firewallClearSession('not a host');
+    check('a site that does not normalise clears nothing rather than the whole band', junk.ok && junk.removed === 0 && dnr.session.size === 2);
+    const all = await call(api.handleReset, { all: true });
+    check('remove-everything still clears every site\'s allowances', all.ok === true && all.sessionRemoved === 2 && dnr.session.size === 0, JSON.stringify(all));
   }
 
   /* ---- PI-02 / BUG-06: the allowance, reachable and correctly allocated ------------ */

@@ -132,7 +132,13 @@
     try { clearTimeout(id); } catch (_) {}
   };
 
-  let enabled = true;
+  /* Off until verified settings arrive. The hooks install at once but only observe; a request
+     they would rewrite waits for the settings, up to CONFIG_HOLD_MS, then goes out untouched. */
+  let enabled = false;
+  const CONFIG_HOLD_MS = 2500;
+  let configHoldUntil = Date.now() + CONFIG_HOLD_MS;
+  let configWaiters = [];
+  let configHoldTimer = 0;
   let steadyPlayback = false;
   /* AUTH-BEGIN: shared by MAIN-world receivers and the isolated bridge. */
   const __woAuth=(function(){
@@ -792,6 +798,8 @@
   }
 
   function broadcastStreamConfig() {
+    /* A worker's first config message is the verified answer, so none goes out before it. */
+    if (!trustedConfig) return;
     const workerEnabled = streamInterceptionEnabled();
     for (const worker of workers) {
       try {
@@ -1053,11 +1061,37 @@
     } catch (_) {}
   }
 
+  function configPending() {
+    return !trustedConfig && !woDisposed && Date.now() < configHoldUntil;
+  }
+
+  function releaseConfigHold() {
+    configHoldUntil = 0;
+    woClearTimeout(configHoldTimer);
+    configHoldTimer = 0;
+    for (const resolve of configWaiters.splice(0, configWaiters.length)) {
+      try { resolve(); } catch (_) {}
+    }
+  }
+
+  function afterConfig() {
+    return new Promise((resolve) => {
+      configWaiters.push(resolve);
+      if (!configHoldTimer) {
+        configHoldTimer = woTimeout(releaseConfigHold, Math.max(0, configHoldUntil - Date.now()));
+      }
+    });
+  }
+
+  woHold({ disconnect: releaseConfigHold });
+
   function updateEnabled() {
     const config = trustedConfig;
-    enabled = !config || (config.enabled !== false && config.twitchAdBlock !== false);
+    enabled = !!config && config.enabled !== false && config.twitchAdBlock !== false;
+    /* Remembered only together with the ad blocker, so a start-up read cannot answer for a
+       viewer who switched Twitch blocking off. */
     if (config && config.__configReady === true) {
-      steadyPlayback = config.twitchSteadyPlayback !== false;
+      steadyPlayback = enabled && config.twitchSteadyPlayback !== false;
       rememberSteadyPlayback(steadyPlayback);
     } else {
       steadyPlayback = rememberedSteadyPlayback() === true;
@@ -1079,6 +1113,7 @@
     if (!config) return;
     trustedConfig = Object.assign({}, config, { __configReady: true });
     updateEnabled();
+    releaseConfigHold();
   });
 
   function requestUrl(input) {
@@ -1528,7 +1563,7 @@
     function getItem(key) {
       const value = nativeGetItem.apply(this, arguments);
       try {
-        if (value === null && key === LOW_LATENCY_KEY && !woDisposed && enabled && steadyPlayback &&
+        if (value === null && key === LOW_LATENCY_KEY && !woDisposed && steadyPlayback &&
             this === window.localStorage) return 'false';
       } catch (_) {}
       return value;
@@ -1543,17 +1578,37 @@
     } catch (_) {}
   }
 
+  /* The GQL bodies forwardPageGql answers or rewrites instead of forwarding byte for byte. */
+  function gqlBodyRewritten(body) {
+    const tokenPlan = playbackTokenPlan(body);
+    return !!(tokenPlan && tokenPlan.changed) || !!fetchAdsRequestInfo(body) ||
+      !!videoAdDeclineRequestInfo(body);
+  }
+
   function installFetchHook() {
     if (typeof nativeFetch !== 'function' || nativeFetch.__woTwitchCurrent === VERSION) return;
+    function fetchAfterConfig(context, args) {
+      return afterConfig().then(() => twitchFetch.apply(context, args));
+    }
+    function unconfiguredPageGql(context, args, body, hold) {
+      /* Classify even when not holding: it also keeps the token template a later backup needs. */
+      if (gqlBodyRewritten(body) && hold) return fetchAfterConfig(context, args);
+      noteAdServiceBody(body);
+      return nativeFetch.apply(context, args);
+    }
     function twitchFetch(input, init) {
       if (woDisposed) return nativeFetch.apply(this, arguments);
       const url = requestUrl(input);
+      const unconfigured = !trustedConfig;
+      const awaitingConfig = configPending();
+      if (awaitingConfig && AD_SERVICE_URL_RE.test(url)) return fetchAfterConfig(this, arguments);
       if (enabled && AD_SERVICE_URL_RE.test(url)) {
         if (VIDEO_AD_SERVICE_URL_RE.test(url)) announceAdImminent();
         try { return Promise.resolve(emptyAdResponse()); } catch (_) {}
       }
       // Mirror the page-fetched master into later workers so their media maps can resolve alternate streams.
-      if (enabled && MASTER_URL_RE.test(url)) {
+      // Passive and byte-preserving, so it also runs before settings arrive.
+      if ((enabled || unconfigured) && MASTER_URL_RE.test(url)) {
         const pending = nativeFetch.apply(this, arguments);
         try {
           return Promise.resolve(pending).then(async (response) => {
@@ -1571,15 +1626,18 @@
       // Token/header capture is passive and byte-preserving, so keep it alive
       // during the short media recovery window. Otherwise the replacement worker
       // resumes with stale identity state and every clean-token attempt can fail.
-      if (!enabled || !GQL_URL_RE.test(url)) return nativeFetch.apply(this, arguments);
+      if (!(enabled || unconfigured) || !GQL_URL_RE.test(url)) return nativeFetch.apply(this, arguments);
       captureClientState(input, init);
       if (init && typeof init.body === 'string') {
+        if (unconfigured) return unconfiguredPageGql(this, arguments, init.body, awaitingConfig);
         return forwardPageGql(this, input, init, init.body, false);
       } else if (typeof Request !== 'undefined' && input instanceof Request &&
                  String(init && init.method || input.method || '').toUpperCase() === 'POST') {
         const context = this;
+        const args = arguments;
         const originalInit = init;
         return input.clone().text().then((body) => {
+          if (unconfigured) return unconfiguredPageGql(context, args, body, awaitingConfig);
           return forwardPageGql(context, input, originalInit, body, true);
         }, () => nativeFetch.call(context, input, originalInit));
       }
@@ -1599,7 +1657,7 @@
     if (typeof nativeXhrOpen !== 'function' || nativeXhrOpen.__woTwitchCurrent === VERSION) return;
     function twitchXhrOpen(method, url) {
       const target = String(url || '');
-      if (!woDisposed && enabled && AD_SERVICE_URL_RE.test(target)) {
+      if (!woDisposed && (enabled || !trustedConfig) && AD_SERVICE_URL_RE.test(target)) {
         if (VIDEO_AD_SERVICE_URL_RE.test(target)) announceAdImminent();
       }
       return nativeXhrOpen.apply(this, arguments);
@@ -1895,6 +1953,8 @@
     }
   }
 
+  /* Synchronous because Worker() must return a worker whose script already holds the original
+     source. Twitch's blob is only an importScripts() stub, so this reads about 100 bytes. */
   function readWorkerSource(url) {
     try {
       const xhr = new XMLHttpRequest();
@@ -1958,7 +2018,7 @@
   }
 
   function twitchWorkerRuntime(originalSource, initialState, runtimeVersion, initiallyEnabled,
-      initialMaster, initialAdWarning) {
+      initialMaster, initialAdWarning, settingsHoldMs) {
     'use strict';
 
     const FLAG = '__woTwitchAdblock';
@@ -2036,6 +2096,20 @@
     // first playlist request can repeat the transform that just failed.
     let active = initiallyEnabled !== false;
     let nativeRecovery = false;
+    /* settingsHoldMs is null once the page has verified settings. Until its first config message
+       this worker stays inactive, maps the master passively and holds what it would rewrite for
+       at most settingsHoldMs. */
+    let configured = settingsHoldMs == null;
+    let configWaiters = !configured && Number(settingsHoldMs) > 0 ? [] : null;
+    const configHoldTimer = configWaiters ? setTimeout(releaseConfigHold, Number(settingsHoldMs)) : 0;
+    function releaseConfigHold() {
+      const waiters = configWaiters || [];
+      configWaiters = null;
+      clearTimeout(configHoldTimer);
+      for (const resolve of waiters) {
+        try { resolve(); } catch (_) {}
+      }
+    }
     let client = Object.assign({}, EMPTY_STATE, initialState || {});
     const realFetch = self.fetch.bind(self);
     const media = new Map();
@@ -5007,6 +5081,8 @@
              this player. A user disable still restores exact native pass-through. */
           invalidateBackupWork(!nativeRecovery);
         }
+        configured = true;
+        releaseConfigHold();
       } else if (message.type === 'client-state' && message.state) {
         client = Object.assign({}, client, message.state);
       } else if (message.type === 'ad-imminent') {
@@ -5050,6 +5126,13 @@
     };
 
     async function routeWorkerFetch(input, init, url) {
+      if (!configured) {
+        if (masterPlaylistUrl(url)) return handleMaster(input, init, url);
+        if (configWaiters && (GQL_RE.test(url) || (playlistUrl(url) &&
+            (twitchMediaUrl(url) || media.has(url) || media.has(canonical(url)))))) {
+          await new Promise((resolve) => configWaiters.push(resolve));
+        }
+      }
       if (!active) {
         if (nativeRecovery && masterPlaylistUrl(url)) return handleMaster(input, init, url);
         if (nativeRecovery && playlistUrl(url) && !masterPlaylistUrl(url) &&
@@ -5099,15 +5182,14 @@
        is one nothing accounts for; layering over it would double the worker runtime, so decline. */
     if (typeof NativeWorker !== 'function' || NativeWorker.__woTwitchCurrent) return;
 
-    let workerDelegate = NativeWorker;
+    /* Late wrappers, oldest first. Each caches this hook as its inner Worker, so a nested call goes
+       on to the next older one and the chain matches what plain assignments would have built. */
+    const workerDelegates = [];
     let workerDelegateDepth = 0;
 
     function constructWorker(scriptUrl, options) {
-      const Delegate = workerDelegate;
-      if (workerDelegateDepth || typeof Delegate !== 'function' ||
-          Delegate === TwitchWorker || Delegate === NativeWorker) {
-        return new NativeWorker(scriptUrl, options);
-      }
+      const Delegate = workerDelegates[workerDelegates.length - 1 - workerDelegateDepth];
+      if (typeof Delegate !== 'function') return new NativeWorker(scriptUrl, options);
       workerDelegateDepth++;
       try {
         return new Delegate(scriptUrl, options);
@@ -5122,17 +5204,19 @@
       // browser's Worker: routing through the delegate or window.Worker again could
       // loop back into whichever wrapper made the call.
       if (woDisposed) return new NativeWorker(scriptUrl, options);
-      // A compatible late wrapper may call a cached copy of this constructor (or
-      // window.Worker) as its delegate. Bypass our hook only for that nested call
-      // so wrappers compose without recursively re-wrapping the Twitch blob.
-      if (workerDelegateDepth) return new NativeWorker(scriptUrl, options);
+      // A late wrapper calls a cached copy of this constructor (or window.Worker) as
+      // its inner one. Continue that nested call down the chain without re-wrapping
+      // the Twitch blob.
+      if (workerDelegateDepth) return constructWorker(scriptUrl, options);
       let protocol = '';
       try { protocol = new URL(String(scriptUrl), location.href).protocol; } catch (_) {}
       // Twitch can create either classic or module blob workers. The bootstrap is
       // valid in both worker modes and the original options are preserved, so
       // skipping module workers silently bypasses every playlist interception.
       var woTwitchBlob = protocol === 'blob:' && workerOriginIsTwitch(scriptUrl);
-      if (!enabled || !woTwitchBlob) {
+      /* A worker made before settings arrive is wrapped but starts inactive, so it can still be
+         switched on; once they say off, workers stay native. */
+      if ((trustedConfig && !enabled) || !woTwitchBlob) {
         if (WO_TWITCH_DEBUG && woTwitchBlob) { try { console.log('[WO-Twitch] worker skipped (adblock disabled)'); } catch (_) {} }
         return constructWorker(scriptUrl, options);
       }
@@ -5149,7 +5233,8 @@
         const bootstrap = '(' + twitchWorkerRuntime.toString() + ')(' +
           'null,' + JSON.stringify(publicClientState()) + ',' + JSON.stringify(VERSION) + ',' +
           JSON.stringify(streamInterceptionEnabled()) + ',' + JSON.stringify(initialMaster) + ',' +
-          JSON.stringify(initialAdWarning) + ');\n';
+          JSON.stringify(initialAdWarning) + ',' +
+          JSON.stringify(trustedConfig ? null : Math.max(0, configHoldUntil - Date.now())) + ');\n';
         wrapperUrl = URL.createObjectURL(new Blob([bootstrap, originalSource], { type: 'application/javascript' }));
         const worker = constructWorker(wrapperUrl, options);
         if (WO_TWITCH_DEBUG) { try { console.log('[WO-Twitch] worker HOOKED — ad interception active'); } catch (_) {} }
@@ -5184,7 +5269,9 @@
             revokeTimer = 0;
             try { URL.revokeObjectURL(wrapperUrl); } catch (_) {}
             try {
-              worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: streamInterceptionEnabled() });
+              if (trustedConfig) {
+                worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'config', enabled: streamInterceptionEnabled() });
+              }
               worker.postMessage({ [MESSAGE_FLAG]: VERSION, type: 'client-state', revision: revision, state: publicClientState() });
               const warning = currentAdWarningSnapshot();
               if (warning) {
@@ -5238,12 +5325,14 @@
       configurable: true,
       enumerable: enumerable,
       get() { return TwitchWorker; },
-      // Cached native/current assignments must not bypass the Twitch hook.
-      // Preserve compatible late wrappers as a mutable delegate, with the
-      // recursion guard above handling wrappers that call window.Worker again.
+      // Cached native/current assignments must not bypass the Twitch hook. Another
+      // wrapper joins the chain; putting back one already in it drops those added
+      // after it, as a plain property would.
       set(value) {
-        if (value === TwitchWorker || value === NativeWorker) return;
-        if (typeof value === 'function') workerDelegate = value;
+        if (value === TwitchWorker || value === NativeWorker || typeof value !== 'function') return;
+        const at = workerDelegates.indexOf(value);
+        if (at >= 0) workerDelegates.length = at + 1;
+        else workerDelegates.push(value);
       }
     };
     try {
@@ -5251,15 +5340,15 @@
     } catch (_) {
       window.Worker = TwitchWorker;
     }
-    // Put back what was there, unless the page has moved on. A late wrapper the
-    // setter took as a delegate is the page's latest Worker, so it is what the
-    // page gets back.
+    // Put back what was there, unless the page has moved on. The newest late
+    // wrapper is the page's latest Worker, so it is what the page gets back.
     woRestore.push(() => {
       const current = Object.getOwnPropertyDescriptor(window, 'Worker');
+      const newest = workerDelegates[workerDelegates.length - 1];
       if (current && current.get === accessor.get) {
-        if (workerDelegate !== NativeWorker) {
+        if (newest) {
           Object.defineProperty(window, 'Worker', {
-            configurable: true, enumerable: enumerable, writable: true, value: workerDelegate
+            configurable: true, enumerable: enumerable, writable: true, value: newest
           });
         } else if (!replaced) {
           delete window.Worker;

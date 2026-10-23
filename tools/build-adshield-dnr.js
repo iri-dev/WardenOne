@@ -19,6 +19,13 @@ const PINNED_ALLOW_RULES = [
   { action: { type: 'allow' }, condition: { urlFilter: '||github-production-*.s3.amazonaws.com^' }, priority: 4, kind: 'allow' },
   { action: { type: 'allow' }, condition: { urlFilter: '||github-user-attachments.s3.amazonaws.com^' }, priority: 4, kind: 'allow' },
   { action: { type: 'allow' }, condition: { urlFilter: '||github-repository-files.s3.amazonaws.com^' }, priority: 4, kind: 'allow' },
+  // EasyList blocks GoDaddy's whole parking lander, which leaves parked domains blank. Load the
+  // lander and block only its ad feed (PINNED_BLOCK_RULES); its trackers stay on EasyPrivacy.
+  { action: { type: 'allow' }, condition: { urlFilter: '||wsimg.com/parking-lander/' }, priority: 4, kind: 'allow' },
+];
+
+const PINNED_BLOCK_RULES = [
+  { action: { type: 'block' }, condition: { urlFilter: '/d/search/p/godaddy/', resourceTypes: ['xmlhttprequest'] }, priority: 1, kind: 'block' },
 ];
 
 // EasyList option key -> DNR resource type. null = recognised but unsupported
@@ -178,7 +185,7 @@ function main() {
   };
   const blocks = [];
   const allows = PINNED_ALLOW_RULES.slice();
-  const seen = new Set(allows.map((rule) => JSON.stringify([rule.action.type, rule.condition])));
+  const seen = new Set(allows.concat(PINNED_BLOCK_RULES).map((rule) => JSON.stringify([rule.action.type, rule.condition])));
   for (const line of text.split(/\r?\n/)) {
     const rule = convertLine(line, stats);
     if (!rule) continue;
@@ -197,7 +204,7 @@ function main() {
     && !r.condition.initiatorDomains && !r.condition.excludedInitiatorDomains;
   const pathBlocks = blocks.filter((r) => !isPureHost(r));
   const hostBlocks = blocks.filter(isPureHost);
-  const orderedBlocks = pathBlocks.concat(hostBlocks);
+  const orderedBlocks = PINNED_BLOCK_RULES.concat(pathBlocks, hostBlocks);
   const budgetForBlocks = MAX_RULES - allows.length;
   const trimmedBlocks = orderedBlocks.slice(0, Math.max(0, budgetForBlocks));
   const rules = allows.concat(trimmedBlocks).map((r, i) => ({

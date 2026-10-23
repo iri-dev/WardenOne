@@ -37,8 +37,9 @@ const tick = () => new Promise((r) => setImmediate(r));
 
 /* Just enough of a DOM for the seal: tag names, attributes, and every descendant of <html>. */
 function element(localName, attrs, children) {
-  const el = { localName, attributes: Object.keys(attrs || {}).map((name) => ({ name, value: attrs[name] })), children: children || [] };
+  const el = { nodeType: 1, localName, attributes: Object.keys(attrs || {}).map((name) => ({ name, value: attrs[name] })), children: children || [] };
   Object.defineProperty(el, 'firstElementChild', { get() { return el.children[0] || null; } });
+  el.getElementsByTagName = (q) => { if (q !== '*') throw new Error('the seal asks for every element'); return descendants(el, []); };
   return el;
 }
 function descendants(el, out) { (el.children || []).forEach((c) => { out.push(c); descendants(c, out); }); return out; }
@@ -90,7 +91,27 @@ function makeWorlds() {
     w.top = w; w.self = w; w.window = w;
     return w;
   }
-  return { document, events, posted, mainWindow: makeWindow('main'), isolatedWindow: makeWindow('isolated') };
+  /* Node insertions queue records for every observer, as the parser's do; removing a node later
+     never takes a record back. flushMutations is the microtask checkpoint. */
+  const observers = [];
+  class MutationObserver {
+    constructor(cb) { this.cb = cb; this.queue = []; }
+    observe() { if (!observers.includes(this)) observers.push(this); }
+    disconnect() { const i = observers.indexOf(this); if (i >= 0) observers.splice(i, 1); this.queue = []; }
+    takeRecords() { return this.queue.splice(0); }
+  }
+  const insert = (parent, node) => {
+    parent.children.push(node);
+    observers.forEach((o) => o.queue.push({ type: 'childList', addedNodes: [node], removedNodes: [] }));
+  };
+  const remove = (parent, node) => {
+    const i = parent.children.indexOf(node);
+    if (i >= 0) parent.children.splice(i, 1);
+    observers.forEach((o) => o.queue.push({ type: 'childList', addedNodes: [], removedNodes: [node] }));
+  };
+  const flushMutations = () => observers.slice().forEach((o) => { const r = o.takeRecords(); if (r.length) o.cb(r, o); });
+  return { document, events, posted, mainWindow: makeWindow('main'), isolatedWindow: makeWindow('isolated'),
+    MutationObserver, insert, remove, flushMutations, observing: () => observers.length };
 }
 function CustomEventShim(type, init) { this.type = type; this.detail = init && init.detail; }
 
@@ -117,6 +138,7 @@ function loadBridge(worlds, options) {
     document: worlds.document,
     location: { protocol: 'https:', hostname: 'victim.example', href: 'https://victim.example/' },
     CustomEvent: CustomEventShim,
+    woObserver: (cb) => new worlds.MutationObserver(cb),
     Uint8Array, Uint32Array, Array, Object, String, Number, JSON, Math, Date, Set, Map, RegExp, parseInt, Promise, URL,
     crypto: { getRandomValues: (a) => require('crypto').randomFillSync(a) },
     console: { warn() {}, log() {} },
@@ -150,8 +172,9 @@ function loadBridge(worlds, options) {
     BRIDGE_AUTH, BRIDGE_RATE, BRIDGE_POST,
     'const sendConfig = (clean, hostLists = null) => {\n' + SEND_TAIL + '\n};',
     BRIDGE_REPLAY, BRIDGE_WATCHDOG, BRIDGE_REPUTATION, BRIDGE_RELAY,
-    'globalThis.api = { deliverKey, sendConfig, engineAnswers, bridgeVerifyEngine, signed, TOKEN, KEY,'
-    + ' seen: () => bridgeEngineSeen, fresh: () => BRIDGE_FRESH, checks: () => bridgeEngineChecks };',
+    'globalThis.api = { deliverKey: handOffKey, sendConfig, engineAnswers, bridgeVerifyEngine, signed, TOKEN, KEY,'
+    + ' seen: () => bridgeEngineSeen, fresh: () => BRIDGE_FRESH, checks: () => bridgeEngineChecks,'
+    + ' snapshotFresh: () => !pageCouldHaveRun() };',
   ].join('\n'), sandbox, { filename: 'bridge-authority.js' });
   return { api: sandbox.api, state, sandbox };
 }
@@ -292,6 +315,79 @@ function holdsKey(pads, hex) {
     const bridge = loadBridge(worlds);
     bridge.api.deliverKey();
     check(label + ' seals the bridge', bridge.api.fresh() === false && engine.api.key() === null);
+  }
+
+  /* ---- 1c. a page script that deletes itself, then asks for the key ------------------ */
+  for (const [label, cleanUp] of [
+    ['before the next microtask checkpoint', () => {}],
+    ['after the checkpoint delivered the records', (worlds) => worlds.flushMutations()],
+    ['with <head> removed as well', (worlds) => { worlds.remove(worlds.document.documentElement, worlds.document.head); worlds.document.head = null; }],
+  ]) {
+    const worlds = makeWorlds();
+    const engine = loadEngine(worlds);
+    const bridge = loadBridge(worlds);
+    bridge.api.deliverKey();
+    /* The parser builds <head><script>; the script listens for wo-key, deletes itself and
+       asks for a replay while the document is still loading. */
+    const head = element('head', {});
+    const script = element('script', {});
+    worlds.insert(worlds.document.documentElement, head);
+    worlds.document.head = head;
+    worlds.insert(head, script);
+    const page = attachPage(worlds);
+    worlds.remove(head, script);
+    cleanUp(worlds);
+    check('the DOM snapshot alone takes that page for fresh (' + label + ')', bridge.api.snapshotFresh() === true);
+    page.dispatch('wo-bridge-replay');
+    check('a page script that deleted itself never receives the key (' + label + ')',
+      !page.seen.events.some((e) => e.type === 'wo-key') && holdsKey(engine.api.key(), bridge.api.KEY));
+  }
+  {
+    /* What MAIN modules that start after the bridge still need: inert style preludes from
+       sibling modules do not seal, and their replay delivers. */
+    const worlds = makeWorlds();
+    const bridge = loadBridge(worlds);
+    bridge.api.deliverKey();
+    worlds.insert(worlds.document.documentElement, element('style', { id: 'wo-eyeshield-preload' }));
+    worlds.flushMutations();
+    const engine = loadEngine(worlds);
+    check('a module that starts after the bridge and an inert style still gets the key on replay', holdsKey(engine.api.key(), bridge.api.KEY));
+    worlds.insert(worlds.document.documentElement, element('body', {}));
+    worlds.flushMutations();
+    check('the bridge stops watching once the parser has added something that runs', worlds.observing() === 0);
+  }
+  for (const [label, opener, expectKey] of [
+    ['a same-origin opener', { document: {} }, false],
+    ['a cross-origin opener', { get document() { throw new Error('SecurityError'); } }, true],
+  ]) {
+    /* Another document can listen on this one without adding a node to it. */
+    const worlds = makeWorlds();
+    worlds.isolatedWindow.opener = opener;
+    const bridge = loadBridge(worlds);
+    bridge.api.deliverKey();
+    const engine = loadEngine(worlds);
+    check('with ' + label + ' a replay ' + (expectKey ? 'still delivers' : 'never delivers') + ' the key',
+      !!holdsKey(engine.api.key(), bridge.api.KEY) === expectKey);
+  }
+  for (const [label, parent, replays] of [
+    ['a same-origin parent', { document: {} }, false],
+    ['a cross-origin parent', { get document() { throw new Error('SecurityError'); } }, true],
+  ]) {
+    /* Same-origin player frames need their guards configured, so the start-up hand-off goes out;
+       only a later replay is refused while a same-origin parent can reach the frame. */
+    const worlds = makeWorlds();
+    worlds.isolatedWindow.parent = parent;
+    const engine = loadEngine(worlds);
+    const bridge = loadBridge(worlds);
+    bridge.api.deliverKey();
+    check('a frame with ' + label + ' gets the key at start-up', holdsKey(engine.api.key(), bridge.api.KEY));
+    const late = makeWorlds();
+    late.isolatedWindow.parent = parent;
+    const lateBridge = loadBridge(late);
+    lateBridge.api.deliverKey();
+    const lateEngine = loadEngine(late);
+    check('with ' + label + ' a replay ' + (replays ? 'still delivers' : 'never delivers') + ' the key',
+      !!holdsKey(lateEngine.api.key(), lateBridge.api.KEY) === replays);
   }
   {
     /* Bridge first, engine second: the order of manifest entries is not promised across
@@ -561,8 +657,11 @@ function holdsKey(pads, hex) {
       return src.indexOf("new CustomEvent('wo-bridge-replay')") > src.indexOf("woOn(document, 'wo-key'");
     }));
   check('the bridge hands the key over last, after every listener exists',
-    BRIDGE.lastIndexOf('  deliverKey();') > BRIDGE.indexOf("woOn(window, 'wo-event', (e) => {")
-    && BRIDGE.lastIndexOf('  deliverKey();') > BRIDGE.indexOf("woOn(document, 'wo-safe-browsing-check'"));
+    BRIDGE.lastIndexOf('  handOffKey();') > BRIDGE.indexOf("woOn(window, 'wo-event', (e) => {")
+    && BRIDGE.lastIndexOf('  handOffKey();') > BRIDGE.indexOf("woOn(document, 'wo-safe-browsing-check'"));
+  check('a replay can only reach the key through the guarded replay path',
+    /const bridgeReplay = \(\) => \{[\s\S]*?\n    replayKey\(\);/.test(BRIDGE)
+    && !/\bdeliverKey\(\)/.test(between(BRIDGE, '  const bridgeReplay = () => {', '\n  };', 'the replay')));
 
   console.log('');
   if (failures) { console.log(failures + ' check(s) failed'); process.exit(1); }

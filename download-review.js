@@ -246,9 +246,14 @@ function startCriticalCountdown() {
 function render(review) {
   currentReview = review;
   const grade = String(review.grade || '?').toUpperCase();
+  /* A file that finished before WardenOne acted was identified, not stopped; say which. */
+  const finished = !!review.finishedBeforeStop;
+  const deleted = !!(review.removed && review.removed.removedFile);
   document.body.className = 'grade-' + grade.toLowerCase() + (grade === 'C' ? ' compact' : '');
-  byId('title').textContent = review.autoBlocked ? 'Download blocked and removed'
-    : (grade === 'C' ? 'Review recommended' : 'Download paused for review');
+  byId('title').textContent = review.autoBlocked
+    ? (!finished ? 'Download blocked before it finished' : (deleted ? 'Dangerous file deleted' : 'Dangerous file already downloaded'))
+    : (finished ? 'Downloaded before it could be paused'
+      : (grade === 'C' ? 'Review recommended' : 'Download paused for review'));
   byId('grade').textContent = grade;
   byId('status').textContent = grade + ' - ' + (review.status || 'Review');
   byId('score').textContent = typeof review.score === 'number'
@@ -311,8 +316,14 @@ function render(review) {
   byId('recommendation').textContent = review.recommendation || 'Review this download before continuing.';
 
   const pauseNote = byId('pause-note');
-  if (review.autoBlocked) {
-    pauseNote.textContent = 'WardenOne blocked this critical download and removed it from your computer. No further action is needed.';
+  if (review.autoBlocked && !finished) {
+    pauseNote.textContent = 'WardenOne stopped this critical download before it finished and removed it. No further action is needed.';
+  } else if (review.autoBlocked) {
+    pauseNote.textContent = 'This file finished downloading before WardenOne could stop it. ' + (deleted
+      ? 'WardenOne deleted it afterwards. If you opened it in the meantime, run a full antivirus scan.'
+      : 'WardenOne could not confirm it was deleted; your antivirus may already have removed it. Check your Downloads folder and delete it without opening it.');
+  } else if (finished) {
+    pauseNote.textContent = 'This file finished downloading before WardenOne could pause it, so it is already saved on your computer. Delete File removes it.';
   } else if (review.paused) {
     pauseNote.textContent = 'This download is paused until you choose Continue or Cancel.';
   } else {
@@ -336,14 +347,16 @@ function render(review) {
   delete advancedBtn.dataset.counting;
   continueAnyway.hidden = true;
   continueAnyway.disabled = false;
+  continueAnyway.textContent = finished ? 'Keep Anyway' : 'Continue Anyway';
   byId('advanced-panel').classList.remove('show');
 
+  cancelBtn.textContent = finished ? 'Delete File' : 'Cancel Download';
   if (grade === 'C') {
     cancelBtn.className = 'quiet';
-    continueBtn.textContent = 'Continue';
+    continueBtn.textContent = finished ? 'Keep File' : 'Continue';
   } else {
     cancelBtn.className = 'danger';
-    continueBtn.textContent = 'Continue Download';
+    continueBtn.textContent = finished ? 'Keep File' : 'Continue Download';
   }
 
   if (grade === 'F') {
@@ -366,7 +379,7 @@ function render(review) {
     // every time, which is the habit that gets people hurt. Only reachable now that trustHost is an
     // exact host on shared CDNs and raw IPs rather than the whole platform.
     trustBtn.hidden = !((grade === 'C' || grade === 'D') && review.trustAllowed && !review.trusted && review.trustHost);
-    if (!trustBtn.hidden) trustBtn.textContent = 'Trust ' + review.trustHost + ' & Continue';
+    if (!trustBtn.hidden) trustBtn.textContent = 'Trust ' + review.trustHost + (finished ? ' & Keep' : ' & Continue');
   }
 }
 
@@ -392,12 +405,13 @@ function loadReview() {
 
 function decide(decision) {
   if (busy || !currentReview) return;
+  const finished = !!currentReview.finishedBeforeStop;
   setBusy(true);
   setResult(decision === 'cancel'
-    ? 'Cancelling download...'
+    ? (finished ? 'Deleting file...' : 'Cancelling download...')
     : decision === 'trust-continue'
-      ? 'Trusting this site and continuing...'
-      : 'Continuing download...');
+      ? 'Trusting this site...'
+      : (finished ? 'Keeping file...' : 'Continuing download...'));
   chrome.runtime.sendMessage({ kind: 'download-review-decision', id: reviewId, decision }, (res) => {
     const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
     if (err || !res || !res.ok) {
@@ -405,11 +419,15 @@ function decide(decision) {
       setResult((res && res.error) || err || 'Could not apply that decision.', 'var(--red)');
       return;
     }
-    setResult(decision === 'cancel'
-      ? 'Download cancelled.'
-      : decision === 'trust-continue'
-        ? 'Site trusted. Download continued.'
-        : 'Download continued.', decision === 'cancel' ? 'var(--red)' : 'var(--green)');
+    if (decision === 'cancel' && finished && !res.deleted) {
+      /* Stays open: the background leaves this window up so the instruction can be read. */
+      setResult('WardenOne could not confirm the file was deleted. Check your Downloads folder and delete it without opening it.', 'var(--red)');
+      return;
+    }
+    const outcome = finished ? (decision === 'cancel' ? 'File deleted.' : 'File kept.')
+      : (decision === 'cancel' ? 'Download cancelled.' : 'Download continued.');
+    setResult((decision === 'trust-continue' ? 'Site trusted. ' : '') + outcome,
+      decision === 'cancel' ? 'var(--red)' : 'var(--green)');
     setTimeout(() => window.close(), 900);
   });
 }

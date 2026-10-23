@@ -78,4 +78,29 @@ for (const canary of ['sensitive.bank.example', 'shop.example', 'private.health.
 }
 assert(/mainWorldConfigForHost\(clean, location\.hostname, !BRIDGE_TOP_FRAME\)/.test(source),
   'the frame-only projection is not used for child frames');
+
+/* Site mutes and "shown recently" memory are keyed type|host, so the whole maps are a list of
+   sites the reader visited. A page gets its own entries, by type, and the global mutes. */
+const toasts = {
+  toastMutes: {
+    blocked_popup: 0,
+    warned_phishing: 4102444800000,
+    'warned_phishing|shop.example': 0,
+    'blocked_popup|shop.example': 1700000000000,
+    'warned_clickfix|private.health.example': 0,
+  },
+  toastMemory: { 'warned_phishing|shop.example': 111, 'warned_fake_update|private.mail.example': 222 },
+};
+const here = ctx.project(toasts, 'www.shop.example');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(here.toastMutes)),
+  { blocked_popup: 0, warned_phishing: 0 },
+  'this site\'s mutes are not merged by type, with a forever mute winning');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(here.toastMemory)), { 'warned_phishing|shop.example': 111 });
+const elsewhere = ctx.project(toasts, 'unrelated.example');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(elsewhere.toastMutes)), { blocked_popup: 0, warned_phishing: 4102444800000 },
+  'another site\'s mute reached an unrelated page');
+assert.deepStrictEqual(JSON.parse(JSON.stringify(elsewhere.toastMemory)), {});
+for (const canary of ['shop.example', 'private.health.example', 'private.mail.example']) {
+  assert(!JSON.stringify(elsewhere).includes(canary), canary + ' leaked through toast mutes or memory');
+}
 console.log('MAIN config minimisation tests passed');

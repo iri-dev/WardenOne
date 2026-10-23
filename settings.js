@@ -2900,6 +2900,8 @@ async function resetEyeAdjustments() {
    The popup's names for them: popup.js TOAST_TITLES, through settings-data.js. */
 const TOAST_TITLES = DATA.toastTitles;
 function toastName(type) {
+  const bar = String(type || '').indexOf('|');
+  if (bar > 0) return toastName(type.slice(0, bar)) + ' on ' + type.slice(bar + 1);
   if (Object.prototype.hasOwnProperty.call(TOAST_TITLES, type)) return TOAST_TITLES[type];
   const label = String(type || '').replace(/^(blocked|warned|detected|gated|cleaned)_/, '').replace(/_/g, ' ');
   return label ? label.charAt(0).toUpperCase() + label.slice(1) : String(type);
