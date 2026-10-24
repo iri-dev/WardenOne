@@ -117,6 +117,7 @@
 
 ### Fixed
 
+- Download Guard keeps Chrome's download entry when cancellation succeeds but file deletion is unconfirmed, so a surviving partial file retains its recovery handle. Failed state lookups now record that verification failed and preserve successful deletion results.
 - Download Guard now pauses archives (.zip, .rar, .7z and similar) and macro-enabled Office files the moment they start, as it already did for programs and disk images. It also pauses as soon as the site supplies a risky file name, which is how most download links name their files, and checks the address against its local malware lists straight away. A small or cached risky file is much less likely to finish before it can be stopped.
 - When a risky file finishes before Download Guard can pause it, the review window now says the file is already on your computer and offers Delete File or Keep File instead of describing a paused download. That window no longer closes itself a moment after opening, and neither does the notice for a critical download WardenOne removed, which now says whether it was stopped part-way or deleted after it finished.
 - "Trust site & Continue" now works on Unverified Source (D) downloads. The button was shown there but always failed with "Only lower-risk review downloads can be trusted", so a file you get every week could not be remembered as promised.

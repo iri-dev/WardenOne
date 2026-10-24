@@ -553,15 +553,21 @@ function downloadRecommendation(grade, finished) {
   return 'No action needed.';
 }
 
-function downloadSearch(query) {
-  return new Promise((resolve) => {
+function downloadSearch(query, strict = false) {
+  return new Promise((resolve, reject) => {
     try {
       chrome.downloads.search(query || {}, (items) => {
-        if (chrome.runtime.lastError) { resolve([]); return; }
+        const err = chrome.runtime.lastError;
+        if (err) {
+          if (strict) reject(new Error(err.message || 'Download lookup failed'));
+          else resolve([]);
+          return;
+        }
         resolve(Array.isArray(items) ? items : []);
       });
-    } catch (_) {
-      resolve([]);
+    } catch (e) {
+      if (strict) reject(e);
+      else resolve([]);
     }
   });
 }
@@ -1629,20 +1635,25 @@ function downloadErase(id) {
   });
 }
 
-/* A successful cancel callback can also mean the file already completed. Confirm its state;
-   keep the downloads entry for recovery unless cancellation or file deletion is established. */
+/* Confirm state: a successful cancel callback may mean the file already completed.
+   Neither interruption nor exists:false proves partial cleanup; retain the entry until deletion succeeds. */
 async function hardRemoveDownload(id) {
-  const out = { cancelled: false, removedFile: false, erased: false, state: '', paused: false };
+  const out = { cancelled: false, removedFile: false, erased: false, state: '', paused: false, verificationFailed: false };
   const cancel = await downloadApiCall('cancel', id);
   try { const r = await downloadApiCall('removeFile', id); out.removedFile = !!(r && r.ok); } catch (_) {}
-  const items = await downloadSearch({ id: Number(id) });
-  const item = items && items[0];
-  if (item) {
-    out.state = item.state;
-    out.paused = item.state === 'in_progress' && !!item.paused;
-    out.cancelled = !!(cancel.ok && item.state === 'interrupted');
+  try {
+    const items = await downloadSearch({ id: Number(id) }, true);
+    const item = items && items[0];
+    out.verificationFailed = !item;
+    if (item) {
+      out.state = item.state;
+      out.paused = item.state === 'in_progress' && !!item.paused;
+      out.cancelled = !!(cancel.ok && item.state === 'interrupted');
+    }
+  } catch (_) {
+    out.verificationFailed = true;
   }
-  if (out.cancelled || out.removedFile) {
+  if (out.removedFile) {
     try { const e = await downloadErase(id); out.erased = !!(e && e.ok); } catch (_) {}
   }
   return out;
