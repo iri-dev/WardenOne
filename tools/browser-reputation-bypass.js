@@ -83,8 +83,11 @@ async function run() {
     const handle = await navigateBlocked(original);
     await continueWarning();
     await until(() => pageValue(`location.href===${JSON.stringify(original)} && !!document.getElementById('fixture')`), 'continue did not reach exact address');
-    await sleep(300);
-    const state = await evaluate(`chrome.storage.session.get(['wardenone_warning:'+${JSON.stringify(handle)},SAFE_BROWSING_BYPASS_KEY])`);
+    let state;
+    await until(async () => {
+      state = await evaluate(`chrome.storage.session.get(['wardenone_warning:'+${JSON.stringify(handle)},SAFE_BROWSING_BYPASS_KEY])`);
+      return Object.keys(state).length === 0;
+    }, 'warning and one-use grant were not consumed');
     assert.deepEqual(state, {}, 'warning and one-use grant are consumed');
     await navigateBlocked(original);
     await navigateBlocked(base + '/tenant-b');
