@@ -678,6 +678,13 @@ async function testBackground() {
   assert.equal(history.at(-1).detail.observation, 'image_url_reference');
 
   enabled = ['grabbers'];
+  const requestedAt = Date.now() - 3000;
+  listeners.before({ tabId: 17, url: 'https://grabify.link/late', timeStamp: requestedAt });
+  matched = [{ rule: { rulesetId: 'grabber_navigation', ruleId: 168 }, tabId: 17, timeStamp: requestedAt }];
+  sandbox.resetEvidence();
+  assert.equal((await sandbox.navStatus({ ...sender, tab: { id: 17 } })).status, 'blocked',
+    'a navigation event handled late by a busy worker is matched by its request time');
+
   feedbackError = true;
   sandbox.resetEvidence();
   listeners.before({ tabId: 15, url: 'https://grabify.link/?secret=PRIVATE' });

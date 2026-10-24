@@ -5068,7 +5068,8 @@ chrome.webRequest.onBeforeRequest.addListener((details) => {
   if (!details || details.tabId < 0) return;
   const host = grabberHostFromUrl(details.url);
   if (!host) return;
-  GRABBER_NAV_ATTEMPTS.set(details.tabId, { host, at: Date.now() });
+  /* A busy worker can run this seconds after the DNR match; the request stamp keeps them comparable. */
+  GRABBER_NAV_ATTEMPTS.set(details.tabId, { host, at: Number(details.timeStamp) || Date.now() });
   if (GRABBER_NAV_ATTEMPTS.size > 200) GRABBER_NAV_ATTEMPTS.delete(GRABBER_NAV_ATTEMPTS.keys().next().value);
 }, { urls: ['<all_urls>'], types: ['main_frame'] });
 
