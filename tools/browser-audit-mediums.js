@@ -115,6 +115,17 @@ async function run() {
       await until(worker, `tabEngineStatus(${tabId}).then(s=>s&&s.configured)`);
       const hardeningOn = expected === 'protected';
       await until(web, `!!window.__WO_CONFIG__ && window.__WO_CONFIG__.blockSuspiciousWebRTC===${hardeningOn}`);
+      /* Settings that arrive after the 1.5 s start fallback miss the start-only WebRTC guard;
+         reload so the engine starts configured. A guard that never installs still fails. */
+      const rtcGuarded = "(()=>{const pc=new RTCPeerConnection();const own=!!Object.getOwnPropertyDescriptor(pc,'onicecandidate');pc.close();return own})()";
+      for (let reloads = 0; hardeningOn && !(await evaluate(web, rtcGuarded)); reloads++) {
+        assert(reloads < 3, label + ': the WebRTC guard never installed on the page');
+        await evaluate(web, 'window.__woStaleDocument=true');
+        await cdp.send('Page.navigate', { url }, web);
+        await until(web, `!window.__woStaleDocument&&location.href===${JSON.stringify(url)}&&document.readyState==='complete'`);
+        await until(worker, `tabEngineStatus(${tabId}).then(s=>s&&s.configured)`);
+        await until(web, '!!window.__WO_CONFIG__ && window.__WO_CONFIG__.blockSuspiciousWebRTC===true');
+      }
       const { frameTree } = await cdp.send('Page.getFrameTree', {}, web);
       const { executionContextId } = await cdp.send('Page.createIsolatedWorld', {
         frameId: frameTree.frame.id, worldName: 'native-rtc-permission',
