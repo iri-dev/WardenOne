@@ -351,9 +351,11 @@ async function main() {
     assert.equal(blocked.autoBlocked, true);
     assert.equal(blocked.finishedBeforeStop, false);
     assert.equal(blocked.removed.removedFile, false, 'an in-flight download has no finished file to remove');
+    assert.equal(blocked.removed.erased, false, 'cancellation alone does not establish disk cleanup');
+    assert(sandbox.downloadItems.includes(inFlight), 'the cancelled entry remains available in Chrome Downloads');
     assert.equal(blocked.recommendation, 'Do not download this file again.');
     await guard.cleanupDownloadReviews(true);
-    assert(pending(sandbox, 351), 'the block notice vanished once its entry was erased');
+    assert(pending(sandbox, 351), 'a confirmed cancellation keeps its notice');
     await guard.runDownloadGuardScan(351, { id: 351 }, 'changed');
     assert.equal(JSON.stringify(pending(sandbox, 351)), JSON.stringify(blocked), 'a rescan rewrote a finished notice');
 
@@ -374,22 +376,39 @@ async function main() {
     { name: 'completed cancellation is a no-op', state: 'complete', removeFileFails: true, stopped: false, finished: true },
     { name: 'completion races cancellation', completeOnCancel: true, removeFileFails: true, stopped: false, finished: true },
     { name: 'cancellation callback leaves transfer running', cancelNoOp: true, removeFileFails: true, stopped: false, paused: true },
-    { name: 'cancellation state cannot be read', searchFailsAfterCancel: true, stopped: false },
-    { name: 'cancel succeeds and erase fails', eraseFails: true, stopped: true, cancelled: true },
+    { name: 'cancellation lookup reports an error', lookupFailure: 'callback', stopped: false },
+    { name: 'cancellation lookup throws', lookupFailure: 'throw', stopped: false },
+    { name: 'cancellation lookup rejects', lookupFailure: 'reject', stopped: false },
+    { name: 'cancellation lookup has no item', lookupFailure: 'missing', stopped: false },
+    { name: 'cancelled partial file survives removal', exists: true, stopped: true, cancelled: true },
+    { name: 'cancelled entry reports no final file', exists: false, stopped: true, cancelled: true },
+    { name: 'cancelled entry has no file status', stopped: true, cancelled: true },
     { name: 'deletion succeeds despite cancel failure', state: 'complete', cancelFails: true, stopped: true, deleted: true, finished: true },
     { name: 'deletion succeeds and erase fails', state: 'complete', eraseFails: true, stopped: true, deleted: true, finished: true },
+    { name: 'deletion survives lookup callback error', state: 'complete', lookupFailure: 'callback', stopped: true, deleted: true, finished: true },
+    { name: 'deletion survives lookup throw', state: 'complete', lookupFailure: 'throw', stopped: true, deleted: true, finished: true },
+    { name: 'deletion survives lookup rejection', state: 'complete', lookupFailure: 'reject', stopped: true, deleted: true, finished: true },
   ]) {
     const { guard, sandbox } = world();
     Object.assign(sandbox, scenario);
     const search = sandbox.chrome.downloads.search;
+    const downloadSearch = sandbox.downloadSearch;
     if (scenario.completeOnCancel) sandbox.beforeCancel = (item) => { item.state = 'complete'; };
-    if (scenario.searchFailsAfterCancel) sandbox.beforeCancel = () => {
+    if (scenario.lookupFailure) sandbox.beforeCancel = () => {
+      if (scenario.lookupFailure === 'reject') {
+        sandbox.downloadSearch = async () => { throw new Error('Search rejected'); };
+        return;
+      }
       sandbox.chrome.downloads.search = (_query, cb) => {
+        if (scenario.lookupFailure === 'throw') throw new Error('Search threw');
+        if (scenario.lookupFailure === 'missing') return cb([]);
         sandbox.chrome.runtime.lastError = { message: 'Search failed' };
         try { cb(); } finally { sandbox.chrome.runtime.lastError = null; }
       };
     };
-    const item = download(361, 'https://evil.example/payload.exe', { danger: 'content', state: scenario.state || 'in_progress' });
+    const item = download(361, 'https://evil.example/payload.exe', {
+      danger: 'content', state: scenario.state || 'in_progress', exists: scenario.exists,
+    });
     sandbox.downloadItems.push(item);
     sandbox.openTabs = [{ id: 19, url: 'chrome-extension://wardenone/download-review.html?id=361' }];
     await guard.runDownloadGuardScan(361, item, 'created');
@@ -400,9 +419,12 @@ async function main() {
     assert.equal(review.finishedBeforeStop, !!scenario.finished, scenario.name);
     assert.equal(review.removed.cancelled, !!scenario.cancelled, scenario.name);
     assert.equal(review.removed.removedFile, !!scenario.deleted, scenario.name);
-    assert.equal(review.removed.erased, scenario.stopped && !scenario.eraseFails, scenario.name);
-    assert.equal(sandbox.calls.some((call) => call[0] === 'erase'), scenario.stopped,
-      scenario.name + ': erase must not destroy the recovery handle before removal succeeds');
+    assert.equal(review.removed.verificationFailed, !!scenario.lookupFailure, scenario.name);
+    assert.equal(review.removed.erased, !!scenario.deleted && !scenario.eraseFails, scenario.name);
+    assert.equal(sandbox.calls.some((call) => call[0] === 'erase'), !!scenario.deleted,
+      scenario.name + ': erase requires confirmed file deletion');
+    if (!scenario.deleted) assert(sandbox.downloadItems.includes(item), scenario.name + ': keep the recovery handle');
+    if (scenario.exists) assert.equal(item.exists, true, scenario.name + ': the partial file survived');
     assert.equal(sandbox.decisions[0], scenario.stopped
       ? (scenario.deleted ? 'deleted after it finished' : 'blocked before it finished') : 'automatic block failed', scenario.name);
     assert.equal(sandbox.store.wardenone_download_handled['361'].decision, scenario.stopped ? 'auto-blocked' : 'auto-block failed');
@@ -437,6 +459,7 @@ async function main() {
 
     Object.assign(sandbox, { cancelFails: false, removeFileFails: false, eraseFails: false, cancelNoOp: false, beforeCancel: null });
     sandbox.chrome.downloads.search = search;
+    sandbox.downloadSearch = downloadSearch;
     await guard.runDownloadGuardScan(361, { id: 361 }, 'changed');
     const recovered = pending(sandbox, 361);
     assert.equal(recovered.autoBlocked, true, scenario.name + ': subsequent scans must retry removal');
