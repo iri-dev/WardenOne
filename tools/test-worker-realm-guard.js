@@ -53,13 +53,23 @@ function loadRules() {
   const from = BG.indexOf('const INTRANET_NET_RULE_BASE');
   const to = BG.indexOf('const REBIND_QUARANTINE_RULE_BASE');
   assert(from > 0 && to > from, 'could not delimit the intranet network rules');
+  const queueFrom = BG.indexOf('const __subsystemQueues = new Map();');
+  const queueTo = BG.indexOf('/* Boot-time appliers run only now, through the queue');
+  assert(queueFrom > 0 && queueTo > queueFrom, 'could not delimit the state applier wrappers');
+  const serialization = BG.slice(queueFrom, queueTo);
+  const applierList = serialization.match(/const SERIALIZED_STATE_APPLIERS = \[([\s\S]*?)\];/);
+  assert(applierList, 'could not find the serialized applier list');
+  const otherAppliers = [...applierList[1].matchAll(/'(\w+)'/g)].map((match) => match[1])
+    .filter((name) => name !== 'applyIntranetNetworkRules')
+    .map((name) => 'function ' + name + '() {}').join('\n');
 
   vm.createContext(sandbox);
   installSessionIo(sandbox);
   vm.runInContext(
-    BG.slice(from, to)
+    otherAppliers + '\n' + serialization + '\n' + BG.slice(from, to)
       + '\nthis.__api = { applyIntranetNetworkRules, INTRANET_NET_PATTERNS, INTRANET_LOOPBACK_PATTERNS,'
-      + ' INTRANET_NET_RULES_BUDGET, SIGN_IN_CALLBACK_PROVIDERS, INTRANET_LOCAL_INITIATOR_DOMAINS, intranetNetResourceTypes, locallyServedTabIds };',
+      + ' INTRANET_NET_RULES_BUDGET, SIGN_IN_CALLBACK_PROVIDERS, INTRANET_LOCAL_INITIATOR_DOMAINS, intranetNetResourceTypes, locallyServedTabIds,'
+      + ' cacheKey: () => __intranetNetRulesKey };',
     sandbox,
     { filename: 'background.js' }
   );
@@ -297,6 +307,46 @@ pending.push((async function itCanBeTurnedOff() {
   const last = h.state.updates[h.state.updates.length - 1];
   check('turning it off removes every owned rule',
     last.addRules.length === 0 && h.state.updates[0].addRules.every((r) => last.removeRuleIds.indexOf(r.id) >= 0));
+}()));
+
+pending.push((async function overlappingRuleUpdatesUseTheProductionQueue() {
+  for (const [firstState, secondState, failFirst] of [[true, false, false], [false, true, false], [true, false, true]]) {
+    const h = loadRules();
+    h.sandbox.console = { warn() {} };
+    const completed = [];
+    let release;
+    const firstWrite = new Promise((resolve) => { release = resolve; });
+    let installed = [];
+    h.sandbox.chrome.declarativeNetRequest.updateSessionRules = async (update) => {
+      const index = h.state.updates.length;
+      h.state.updates.push(update);
+      if (index === 0) {
+        await firstWrite;
+        if (failFirst) throw new Error('Session-rule update failed');
+      }
+      installed = update.addRules;
+      completed.push(update.addRules.length > 0);
+    };
+    const first = h.api.applyIntranetNetworkRules(firstState);
+    const second = h.api.applyIntranetNetworkRules(secondState);
+    await new Promise((resolve) => setImmediate(resolve));
+    const label = firstState + ' -> ' + secondState + (failFirst ? ' after failure' : '');
+    check('only the older Intranet write can start: ' + label, h.state.updates.length === 1);
+    check('an in-flight Intranet write has not committed its cache: ' + label, h.api.cacheKey() === null);
+    release();
+    const results = await Promise.all([first, second]);
+    check('Intranet writes finish in request order: ' + label,
+      JSON.stringify(completed) === JSON.stringify(failFirst ? [secondState] : [firstState, secondState]));
+    check('the newest Intranet state is installed: ' + label, (installed.length > 0) === secondState);
+    check('the Intranet cache agrees with the installed state: ' + label,
+      secondState ? h.api.cacheKey() !== 'off' && h.api.cacheKey() !== null : h.api.cacheKey() === 'off');
+    if (failFirst) check('a failed Intranet update is reported without wedging the queue', results[0] === false);
+    await h.api.applyIntranetNetworkRules(firstState);
+    check('the next Intranet toggle is not skipped by a stale cache: ' + label,
+      h.state.updates.length === 3 && (installed.length > 0) === firstState);
+    await h.api.applyIntranetNetworkRules(firstState);
+    check('an unchanged Intranet state still skips redundant writes: ' + label, h.state.updates.length === 3);
+  }
 }()));
 
 (function wiredIntoTheConfigPath() {

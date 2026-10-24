@@ -1,15 +1,17 @@
-/* Local editor state must never be tracked, regardless of personal ignore rules. Tools keep it in
-   hidden top-level directories, so every one is refused except those the repository itself uses. */
+/* Unknown root dotfiles and hidden directories can contain credentials or private workspace state.
+   Only the repository's declared hidden files and directories may be tracked. */
 'use strict';
 const path = require('path');
 const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const TRACKED_HIDDEN_DIRS = ['.github'];
+const TRACKED_HIDDEN_FILES = ['.gitattributes', '.gitignore', '.node-version'];
 
 function localStatePath(name) {
   const top = name.split('/')[0];
-  return top.startsWith('.') && name.includes('/') && !TRACKED_HIDDEN_DIRS.includes(top);
+  if (!top.startsWith('.')) return false;
+  return name.includes('/') ? !TRACKED_HIDDEN_DIRS.includes(top) : !TRACKED_HIDDEN_FILES.includes(top);
 }
 
 function forbiddenPaths(paths) {

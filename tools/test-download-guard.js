@@ -72,7 +72,12 @@ function loadDownloadGuard() {
         },
         pause(id, callback) { calls.push(['pause', Number(id)]); if (callback) callback(); },
         resume(id, callback) { calls.push(['resume', Number(id)]); if (callback) callback(); },
-        cancel(id, callback) { calls.push(['cancel', Number(id)]); if (callback) callback(); },
+        cancel(id, callback) {
+          calls.push(['cancel', Number(id)]);
+          const item = downloadItems.find((entry) => Number(entry.id) === Number(id));
+          if (item && item.state === 'in_progress') item.state = 'interrupted';
+          if (callback) callback();
+        },
         removeFile(id, callback) { calls.push(['removeFile', Number(id)]); if (callback) callback(); },
         erase(query, callback) { calls.push(['erase', Number(query && query.id)]); if (callback) callback([query && query.id]); },
       },

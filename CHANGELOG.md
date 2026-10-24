@@ -28,6 +28,10 @@
 
 ### Changed
 
+- Trust Site & Continue now saves trust only after Chrome confirms a paused download resumed. If saving trust then fails, the review reports that the download resumed and keeps the trust decision available for retry.
+
+- Download Guard now reports critical downloads as blocked only after confirmed cancellation or file deletion. Failed automatic removal and manual file deletion retain the warning and downloads entry for retry and record the failed operation in history.
+
 - Site controls now share domain validation and tenant boundaries. Network-rule writes enforce exception authority below security rules unless the user explicitly chooses an override. Page modules share configuration verification; Twitch no longer accepts public handshakes or page globals as settings.
 
 - The off switch now reports failed dynamic-rule removal and retries it instead of caching an incomplete shutdown as successful. Applied-state caches commit only after the required operations complete, and Health identifies blocking that may remain active after switching off.
