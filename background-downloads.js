@@ -1528,10 +1528,10 @@ async function closeDownloadReviewTabs(id) {
   if (ids.length) await tabsRemove(ids);
 }
 
-/* A review lapses when its download moves on without it: erased, interrupted, or resumed elsewhere
-   and finished. Reviews of a file already saved or already removed stay until they are answered. */
+/* Reviews normally lapse when a download moves on. Removal notices, including failures, stay
+   until answered so cleanup cannot hide an unresolved intervention. */
 function downloadReviewSuperseded(review, item) {
-  if (review && review.autoBlocked) return false;
+  if (review && (review.autoBlocked || review.interventionFailed)) return false;
   if (!item || item.state === 'interrupted') return true;
   return item.state === 'complete' && !!(review && review.paused);
 }
@@ -1629,19 +1629,34 @@ function downloadErase(id) {
   });
 }
 
-// Hard-remove a download from the machine. chrome.downloads.cancel only stops an in-flight
-// transfer and is a NO-OP once the file has finished writing -- so a small/cached payload
-// that completed before our scan could pause it would survive a plain "cancel". This does
-// the full job: cancel the transfer if still running, delete any bytes already on disk
-// (removeFile), and erase the chrome://downloads entry so it can't be resumed/reopened.
-// Each step is independent and best-effort; an expected "already complete"/"already
-// removed" error on one step does not stop the others.
+/* A successful cancel callback can also mean the file already completed. Confirm its state;
+   keep the downloads entry for recovery unless cancellation or file deletion is established. */
 async function hardRemoveDownload(id) {
-  const out = { cancelled: false, removedFile: false, erased: false };
-  try { const c = await downloadApiCall('cancel', id); out.cancelled = !!(c && c.ok); } catch (_) {}
+  const out = { cancelled: false, removedFile: false, erased: false, state: '', paused: false };
+  const cancel = await downloadApiCall('cancel', id);
   try { const r = await downloadApiCall('removeFile', id); out.removedFile = !!(r && r.ok); } catch (_) {}
-  try { const e = await downloadErase(id); out.erased = !!(e && e.ok); } catch (_) {}
+  const items = await downloadSearch({ id: Number(id) });
+  const item = items && items[0];
+  if (item) {
+    out.state = item.state;
+    out.paused = item.state === 'in_progress' && !!item.paused;
+    out.cancelled = !!(cancel.ok && item.state === 'interrupted');
+  }
+  if (out.cancelled || out.removedFile) {
+    try { const e = await downloadErase(id); out.erased = !!(e && e.ok); } catch (_) {}
+  }
   return out;
+}
+
+function applyDownloadRemovalResult(review, removed) {
+  review.removed = removed;
+  const stopped = removed.cancelled || removed.removedFile;
+  review.interventionFailed = !stopped;
+  if (review.grade === 'F') review.autoBlocked = stopped;
+  review.finishedBeforeStop = review.finishedBeforeStop || removed.removedFile || removed.state === 'complete';
+  review.paused = !stopped && !review.finishedBeforeStop && removed.paused;
+  review.recommendation = stopped ? 'Do not download this file again.'
+    : downloadRecommendation(review.grade, review.finishedBeforeStop);
 }
 
 async function openDownloadReview(review) {
@@ -1805,25 +1820,39 @@ async function handleDownloadDecision(id, decision, sender) {
   const grade = String(review.grade || '').toUpperCase();
   if (decision === 'continue' || decision === 'keep' || decision === 'trust-continue') {
     if (grade === 'F') {
-      return { ok: false, error: 'Critical downloads are blocked by Download Shield and cannot be continued.' };
+      return { ok: false, error: 'Critical downloads cannot be continued through Download Shield.' };
     }
-    let trustedHost = '';
     if (decision === 'trust-continue') {
       /* The review window offers Trust on C and D; D is where a recurring work file lands. */
       if (grade !== 'C' && grade !== 'D') {
         return { ok: false, error: 'Only lower-risk review downloads can be trusted and continued.' };
       }
-      if (!review.trustAllowed || !review.trustHost) {
+      if (!review.trustAllowed || !normalizeAllowlistHost(review.trustHost)) {
         return { ok: false, error: 'This source is not eligible for trusted continuation.' };
       }
-      const trust = await addTrustedDownloadSite(review.trustHost || review.source);
-      if (!trust.ok) return trust;
-      trustedHost = trust.host;
-      review.trusted = true;
     }
+    let resumed = false;
     if (review.paused) {
       const res = await downloadApiCall('resume', review.downloadId);
       if (!res.ok) return { ok: false, error: res.error || 'Chrome could not resume this download.' };
+      review.paused = false;
+      resumed = true;
+    }
+    let trustedHost = '';
+    if (decision === 'trust-continue') {
+      let trust;
+      try { trust = await addTrustedDownloadSite(review.trustHost); }
+      catch (e) { trust = { ok: false, error: String(e && e.message || e) }; }
+      if (!trust.ok) {
+        review.trustSaveFailed = resumed || !!review.trustSaveFailed;
+        try { await rememberPendingDownload(review); } catch (_) {}
+        if (resumed) logDownloadDecision(review, 'continued; trust failed');
+        return { ok: false, continued: review.trustSaveFailed, review,
+          error: (review.trustSaveFailed ? 'Chrome resumed this download, but WardenOne could not save the trust decision. ' : '')
+            + (trust.error || 'WardenOne could not save the trust decision.') };
+      }
+      trustedHost = trust.host;
+      review.trusted = true;
     }
     const label = (decision === 'trust-continue' ? 'trusted and ' : '') + (review.finishedBeforeStop ? 'kept' : 'continued');
     logDownloadDecision(review, label);
@@ -1833,16 +1862,21 @@ async function handleDownloadDecision(id, decision, sender) {
     return { ok: true, decision: label, trustedHost };
   }
   if (decision === 'cancel') {
-    // Cancel alone does not remove already-completed downloads. Also attempt byte deletion and entry erasure
-    // for the small/cached-file race; tolerate expected already-complete/removed errors.
-    const removed = await hardRemoveDownload(review.downloadId);
-    const deleted = !!(removed.removedFile || (review.removed && review.removed.removedFile));
-    const label = review.finishedBeforeStop ? (deleted ? 'deleted' : 'delete failed') : 'cancelled';
+    const removed = review.autoBlocked ? review.removed : await hardRemoveDownload(review.downloadId);
+    applyDownloadRemovalResult(review, removed);
+    const deleted = !!removed.removedFile;
+    const label = review.finishedBeforeStop ? (deleted ? 'deleted' : 'delete failed')
+      : (removed.cancelled ? 'cancelled' : 'cancel failed');
     logDownloadDecision(review, label);
+    if (review.interventionFailed) {
+      await rememberPendingDownload(review);
+      await rememberHandledDownload(review.downloadId || id, label);
+      return { ok: false, decision: label, removed, deleted, review,
+        error: 'WardenOne could not confirm this download was stopped or deleted. Retry, or check Chrome Downloads and delete the file without opening it.' };
+    }
     await removePendingDownload(id);
     await rememberHandledDownload(review.downloadId || id, label);
-    /* Leave the window up when a saved file may still be there, so its message can be read. */
-    if (!review.finishedBeforeStop || deleted) dismissDownloadReviewPanels(id);
+    dismissDownloadReviewPanels(id);
     return { ok: true, decision: label, removed, deleted };
   }
   return { ok: false, error: 'Unknown decision.' };
@@ -2603,7 +2637,7 @@ async function runDownloadGuardScan(id, hint, reason) {
     const item = await latestDownloadItem(key, hint);
     if (!item || item.id == null) return;
 
-    if (item.state === 'interrupted') {
+    if (item.state === 'interrupted' && !(pending && pending.interventionFailed)) {
       if (pending) {
         await removePendingDownload(key);
         await rememberHandledDownload(key, 'interrupted');
@@ -2612,7 +2646,7 @@ async function runDownloadGuardScan(id, hint, reason) {
       return;
     }
 
-    if (item.state === 'complete' && pending) {
+    if (item.state === 'complete' && pending && !pending.interventionFailed) {
       /* A finished file cannot change, so its review stands until answered. */
       if (pending.finishedBeforeStop) return;
       /* Paused by WardenOne and finished anyway: it was resumed outside the review. */
@@ -2711,21 +2745,10 @@ async function runDownloadGuardScan(id, hint, reason) {
       if (!review.pauseError) review.pauseError = oldReview.pauseError || '';
     }
 
-    // Grade F = critical threat (Chrome-known-bad, on a malware/phishing blocklist, or a
-    // high-confidence filename-disguise trick). Pausing alone leaves the payload on disk,
-    // resumable from chrome://downloads outside our UI -- so "blocks malware downloads" was
-    // not literally true. For F we HARD-BLOCK by default: cancel the transfer, delete any
-    // bytes already written, and erase the entry. The review window still opens (below) as a
-    // no-Continue notification so the user learns why the file disappeared. Grades C/D/E
-    // keep pause-then-review. Set downloadHardBlockCritical:false to fall back to pause-only.
+    /* Critical files default to removal: pausing alone leaves the download resumable outside
+       this review. downloadHardBlockCritical:false retains pause-only review. */
     if (review.grade === 'F' && cfg.downloadHardBlockCritical !== false) {
-      review.removed = await hardRemoveDownload(item.id);
-      review.autoBlocked = true;
-      review.paused = false; // the file is gone, not paused
-      /* removeFile succeeds only on a finished download, which catches one that finished after the check above. */
-      if (review.removed.removedFile) review.finishedBeforeStop = true;
-      review.recommendation = review.finishedBeforeStop && !review.removed.removedFile
-        ? downloadRecommendation('F', true) : 'Do not download this file again.';
+      applyDownloadRemovalResult(review, await hardRemoveDownload(item.id));
     }
     // From here the review's own pause/removed state owns the download; drop the early-pause tag.
     EARLY_PAUSED.delete(key);
@@ -2737,10 +2760,12 @@ async function runDownloadGuardScan(id, hint, reason) {
     if (review.autoBlocked) {
       logDownloadDecision(review, !review.finishedBeforeStop ? 'blocked before it finished'
         : (review.removed.removedFile ? 'deleted after it finished' : 'finished before it could be stopped'));
+    } else if (review.interventionFailed) {
+      logDownloadDecision(review, 'automatic block failed');
     }
     // Persist handled state after pausing. Worker termination between the two can cause a duplicate
     // review; pause and storage writes cannot be atomic. Recovery must never silently resume it.
-    await rememberHandledDownload(key, review.autoBlocked ? 'auto-blocked' : 'reviewed');
+    await rememberHandledDownload(key, review.autoBlocked ? 'auto-blocked' : (review.interventionFailed ? 'auto-block failed' : 'reviewed'));
     await openDownloadReview(review);
   } catch (e) {
     queueHistory({

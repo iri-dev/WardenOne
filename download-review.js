@@ -245,14 +245,18 @@ function startCriticalCountdown() {
 
 function render(review) {
   currentReview = review;
+  setResult('');
   const grade = String(review.grade || '?').toUpperCase();
   /* A file that finished before WardenOne acted was identified, not stopped; say which. */
   const finished = !!review.finishedBeforeStop;
   const deleted = !!(review.removed && review.removed.removedFile);
+  const interventionFailed = !!review.interventionFailed;
   document.body.className = 'grade-' + grade.toLowerCase() + (grade === 'C' ? ' compact' : '');
   byId('title').textContent = review.autoBlocked
     ? (!finished ? 'Download blocked before it finished' : (deleted ? 'Dangerous file deleted' : 'Dangerous file already downloaded'))
-    : (finished ? 'Downloaded before it could be paused'
+    : (interventionFailed ? 'Download removal could not be confirmed'
+      : review.trustSaveFailed ? 'Download continued; trust was not saved'
+      : finished ? 'Downloaded before it could be paused'
       : (grade === 'C' ? 'Review recommended' : 'Download paused for review'));
   byId('grade').textContent = grade;
   byId('status').textContent = grade + ' - ' + (review.status || 'Review');
@@ -316,8 +320,14 @@ function render(review) {
   byId('recommendation').textContent = review.recommendation || 'Review this download before continuing.';
 
   const pauseNote = byId('pause-note');
-  if (review.autoBlocked && !finished) {
-    pauseNote.textContent = 'WardenOne stopped this critical download before it finished and removed it. No further action is needed.';
+  if (interventionFailed) {
+    pauseNote.textContent = (finished ? 'This file is already downloaded. '
+      : (review.paused ? 'This download is still paused. ' : 'This download may still be running. '))
+      + 'WardenOne could not confirm it was stopped or deleted. Retry removal, or check Chrome Downloads and delete the file without opening it.';
+  } else if (review.trustSaveFailed) {
+    pauseNote.textContent = 'Chrome resumed this download, but WardenOne could not save the trust decision. You can retry trusting the site or cancel the download.';
+  } else if (review.autoBlocked && !finished) {
+    pauseNote.textContent = 'WardenOne cancelled this critical download before it finished.';
   } else if (review.autoBlocked) {
     pauseNote.textContent = 'This file finished downloading before WardenOne could stop it. ' + (deleted
       ? 'WardenOne deleted it afterwards. If you opened it in the meantime, run a full antivirus scan.'
@@ -351,6 +361,7 @@ function render(review) {
   byId('advanced-panel').classList.remove('show');
 
   cancelBtn.textContent = finished ? 'Delete File' : 'Cancel Download';
+  if (interventionFailed) cancelBtn.textContent = finished ? 'Retry Delete File' : 'Retry Cancel Download';
   if (grade === 'C') {
     cancelBtn.className = 'quiet';
     continueBtn.textContent = finished ? 'Keep File' : 'Continue';
@@ -365,7 +376,7 @@ function render(review) {
     advancedBtn.hidden = true;
     continueAnyway.hidden = true;
     if (review.autoBlocked) {
-      // File is already cancelled+deleted; "Cancel" would be a no-op, so present it as Close.
+      /* Confirmed removal leaves only the notice to dismiss. */
       cancelBtn.textContent = 'Close';
       cancelBtn.className = 'quiet';
     }
@@ -415,6 +426,7 @@ function decide(decision) {
   chrome.runtime.sendMessage({ kind: 'download-review-decision', id: reviewId, decision }, (res) => {
     const err = chrome.runtime.lastError && chrome.runtime.lastError.message;
     if (err || !res || !res.ok) {
+      if (res && res.review) render(res.review);
       setBusy(false);
       setResult((res && res.error) || err || 'Could not apply that decision.', 'var(--red)');
       return;
@@ -424,8 +436,8 @@ function decide(decision) {
       setResult('WardenOne could not confirm the file was deleted. Check your Downloads folder and delete it without opening it.', 'var(--red)');
       return;
     }
-    const outcome = finished ? (decision === 'cancel' ? 'File deleted.' : 'File kept.')
-      : (decision === 'cancel' ? 'Download cancelled.' : 'Download continued.');
+    const outcome = decision === 'cancel' ? (res.deleted ? 'File deleted.' : 'Download cancelled.')
+      : (finished ? 'File kept.' : 'Download continued.');
     setResult((decision === 'trust-continue' ? 'Site trusted. ' : '') + outcome,
       decision === 'cancel' ? 'var(--red)' : 'var(--green)');
     setTimeout(() => window.close(), 900);
