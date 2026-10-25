@@ -263,7 +263,7 @@ WardenOne uses independently maintained protection lists. Their maintainers reta
 Published licenses and written permissions are separate permission grants; no personal reply is needed when the applicable license covers the use.
 The inventory records exact addresses, local processing, evidence and any specific scope exception.
 
-[40 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)
+[41 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)
 
 | Source | Runtime feeds | License or permission |
 | --- | --- | --- |
@@ -290,7 +290,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [OpenPhish Community Feed](https://openphish.com/) | 1 | LicenseRef-OpenPhish-Terms; Specific upstream/use-scope exception — see source review |
 | [PhishDestroy Destroylist](https://github.com/phishdestroy/destroylist) | 1 | MIT |
 | [uBlock-Origin-dev-filter domains](https://github.com/quenhus/uBlock-Origin-dev-filter) | 1 | Unlicense |
-| [malicious-hash SHA-256 feed](https://github.com/romainmarcoux/malicious-hash) | 1 | MIT; Written permission (2026-10-24); Specific upstream/use-scope exception — see source review |
+| [malicious-hash MalwareBazaar and URLhaus SHA-256 feeds](https://github.com/romainmarcoux/malicious-hash) | 2 | MIT; Written permission (2026-10-24) |
 | [StevenBlack porn-only hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND CC-BY-4.0 |
 | [StevenBlack unified hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND upstream terms |
 | [Anti-Grabify](https://github.com/TMAFE/anti-grabify) | 1 | MPL-2.0 |

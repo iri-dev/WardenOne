@@ -577,11 +577,11 @@ locally and sends only the hash. It cannot read the file Chrome saved, so the re
 not be the same. WhoisXML domain registration, domain reputation and threat intelligence are also
 separate choices that use the same key.
 
-Download Shield also keeps two malware feeds on your device, refreshed with the daily list update
-while it is on: URLhaus's exact payload addresses (through malware-filter) and SHA-256 hashes of
-recent samples from MalwareBazaar, URLhaus and OTX (through Romain Marcoux's
-[malicious-hash](https://github.com/romainmarcoux/malicious-hash)). Both are stored as
-truncated fingerprints and matched locally, so nothing about your downloads is sent anywhere for
+Download Shield also keeps malware feeds on your device, refreshed with the daily list update
+while it is on: URLhaus's exact payload addresses (through malware-filter) and separate SHA-256
+hashes from MalwareBazaar and URLhaus (through Romain Marcoux's
+[malicious-hash](https://github.com/romainmarcoux/malicious-hash)). Every valid hash from both source files is stored as
+a 128-bit fingerprint and matched locally, so nothing about your downloads is sent anywhere for
 them. They catch what a domain blocklist can't: a payload on GitHub, Google Drive or another
 shared host.
 
@@ -1447,7 +1447,14 @@ press Export. (And remember an export is still a list of the sites you visited.)
 
 Shows every domain the current page loads and lets you decide if each one can run scripts, make
 requests, load frames or media, or carry cookies. **On this site only.** Your choice there beats
-the lists WardenOne ships with.
+the lists WardenOne ships with when you choose Allow or Block. Allow and Allow once are explicit
+overrides, including malware and phishing lists.
+
+Enable **Include noop** to choose Script, XHR, Frame and Media decisions directly. **Default** keeps
+that row's All decision; **noop** skips All for that column and leaves other rules in control.
+For example, All = block with Script = noop lets unlisted scripts load while malware and tracker
+rules still block their matches. Cookie stripping, parent-domain rows and temporary allowances
+are independent. Noop is saved with the matrix and survives backup/export; it creates no allow rule.
 
 It's powerful enough to break a page completely so it doesn't pretend to be a friendly on/off
 switch. Undo is always one click (for this site or everywhere) and the grid shows exactly what a

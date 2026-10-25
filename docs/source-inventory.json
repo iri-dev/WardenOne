@@ -1,14 +1,14 @@
 {
   "schemaVersion": 2,
   "note": "Generated from runtime constants, embedded build provenance and docs/source-licensing.json. Edit policy metadata, not this file. Counts include optional configured feeds; license and permission counts can overlap.",
-  "checkedAt": "2026-10-20",
+  "checkedAt": "2026-10-25",
   "summary": {
-    "runtimeFeeds": 40,
+    "runtimeFeeds": 41,
     "publishers": 25,
-    "publishedLicenseCoveredFeeds": 33,
-    "writtenPermissionFeeds": 8,
-    "resolvedFeeds": 35,
-    "unresolvedFeeds": 5,
+    "publishedLicenseCoveredFeeds": 35,
+    "writtenPermissionFeeds": 9,
+    "resolvedFeeds": 37,
+    "unresolvedFeeds": 4,
     "buildOnlyInputs": 7,
     "redistributedArtifacts": 20
   },
@@ -1742,7 +1742,7 @@
       "checkedAt": "2026-10-19"
     },
     {
-      "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/full-hash-sha256-aa.txt",
+      "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/sources/bazaar.abuse.ch.sha256.txt",
       "purposes": [
         "Download Guard payload URLs and file hashes"
       ],
@@ -1751,7 +1751,7 @@
       ],
       "kind": "fetched",
       "policyId": "malicious-hash",
-      "name": "malicious-hash SHA-256 feed",
+      "name": "malicious-hash MalwareBazaar and URLhaus SHA-256 feeds",
       "publisher": "Romain Marcoux",
       "home": "https://github.com/romainmarcoux/malicious-hash",
       "license": {
@@ -1766,36 +1766,34 @@
         "evidenceRef": "permission-malicious-hash-2026-10-24",
         "evidence": "Owner-supplied screenshot of the publisher's LinkedIn reply reviewed on 24 October 2026. The owner retains the original message privately; correspondence is not reproduced."
       },
-      "attribution": "Copyright (c) 2025 Romain MARCOUX; MalwareBazaar and URLhaus / abuse.ch; AlienVault OTX community pulses.",
+      "attribution": "Copyright (c) 2025 Romain MARCOUX; MalwareBazaar and URLhaus / abuse.ch.",
       "compliance": {
-        "status": "clarification-required",
+        "status": "implemented",
         "conditions": [
           "Keep copyright and permission notices with redistributed material.",
           "Mention the publisher's GitHub repository, as the written permission requires.",
-          "The MIT grant and the written permission cover the aggregator's own work. The OTX EULA prohibits republishing any portion of OTX, so neither establishes rights to the OTX-derived hashes."
+          "Use only the publisher's separate MalwareBazaar and URLhaus source files; exclude the combined OTX-containing feed."
         ],
         "implementation": [
           "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
           "The README links https://github.com/romainmarcoux/malicious-hash where it describes the feed.",
-          "Local parsing keeps truncated SHA-256 prefixes for local lookups only; the raw runtime feed is not shipped."
+          "Local parsing merges the separate files as truncated SHA-256 prefixes for local lookups only; raw runtime feeds are not shipped."
         ],
         "noticeFiles": [
           "CREDITS.md",
           "THIRD_PARTY_NOTICES.html"
         ],
-        "issueIds": [
-          "MH-1"
-        ]
+        "issueIds": []
       },
       "evidence": [
         {
           "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/LICENSE",
           "documentSha256": "e1940949a700d0b62f9f195673d29202813f97494bfe89fb57d273eb7f004390",
-          "finding": "Repository-wide MIT grant covering the published hash files; the README names the aggregated upstream sources."
+          "finding": "Repository-wide MIT grant covering the published hash files. The combined file includes OTX, so WardenOne uses only the separate abuse.ch source files."
         },
         {
-          "url": "https://www.levelblue.com/terms/otx-eula",
-          "finding": "OTX is free for non-commercial end use. Section 2.3 prohibits republishing or distributing all or any portion of OTX and commercial exploitation; Section 8 grants no further rights. The file does not mark which hashes came from OTX, so they cannot be removed locally."
+          "url": "https://github.com/romainmarcoux/malicious-hash/tree/main/sources",
+          "finding": "The publisher provided separate MalwareBazaar and URLhaus SHA-256 source files on 25 October 2026. WardenOne reads those files rather than the combined OTX-containing file."
         },
         {
           "url": "https://abuse.ch/terms-of-use/",
@@ -1803,7 +1801,7 @@
         },
         {
           "reference": "permission-malicious-hash-2026-10-24",
-          "finding": "Direct publisher permission for WardenOne to use the list, on condition that his GitHub repository is mentioned; owner-supplied reply dated 24 October 2026. The reply did not address the OTX inputs and pointed to abuse.ch's own exports, which need an account API key."
+          "finding": "Direct publisher permission for WardenOne to use the list, on condition that his GitHub repository is mentioned; owner-supplied reply dated 24 October 2026. His follow-up pointed to the separate abuse.ch source files on 25 October 2026."
         }
       ],
       "upstream": [
@@ -1818,15 +1816,88 @@
           "url": "https://urlhaus.abuse.ch/",
           "license": "abuse.ch Terms of Use",
           "note": "Payloads fetched from malicious URLs in the last month. Free for not-for-profit use."
-        },
-        {
-          "name": "AlienVault OTX",
-          "url": "https://otx.alienvault.com/",
-          "license": "Scope clarification pending",
-          "note": "Hashes from two public community pulses, as selected by the aggregator; see MH-1."
         }
       ],
-      "checkedAt": "2026-10-24"
+      "checkedAt": "2026-10-25"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/sources/urlhaus.abuse.ch.sha256.txt",
+      "purposes": [
+        "Download Guard payload URLs and file hashes"
+      ],
+      "toggles": [
+        "downloadReputation"
+      ],
+      "kind": "fetched",
+      "policyId": "malicious-hash",
+      "name": "malicious-hash MalwareBazaar and URLhaus SHA-256 feeds",
+      "publisher": "Romain Marcoux",
+      "home": "https://github.com/romainmarcoux/malicious-hash",
+      "license": {
+        "type": "published-license",
+        "id": "MIT",
+        "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/LICENSE"
+      },
+      "permission": {
+        "status": "granted",
+        "date": "2026-10-24",
+        "scope": "The publisher confirms WardenOne may use his list, provided WardenOne mentions his GitHub repository.",
+        "evidenceRef": "permission-malicious-hash-2026-10-24",
+        "evidence": "Owner-supplied screenshot of the publisher's LinkedIn reply reviewed on 24 October 2026. The owner retains the original message privately; correspondence is not reproduced."
+      },
+      "attribution": "Copyright (c) 2025 Romain MARCOUX; MalwareBazaar and URLhaus / abuse.ch.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material.",
+          "Mention the publisher's GitHub repository, as the written permission requires.",
+          "Use only the publisher's separate MalwareBazaar and URLhaus source files; exclude the combined OTX-containing feed."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "The README links https://github.com/romainmarcoux/malicious-hash where it describes the feed.",
+          "Local parsing merges the separate files as truncated SHA-256 prefixes for local lookups only; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/LICENSE",
+          "documentSha256": "e1940949a700d0b62f9f195673d29202813f97494bfe89fb57d273eb7f004390",
+          "finding": "Repository-wide MIT grant covering the published hash files. The combined file includes OTX, so WardenOne uses only the separate abuse.ch source files."
+        },
+        {
+          "url": "https://github.com/romainmarcoux/malicious-hash/tree/main/sources",
+          "finding": "The publisher provided separate MalwareBazaar and URLhaus SHA-256 source files on 25 October 2026. WardenOne reads those files rather than the combined OTX-containing file."
+        },
+        {
+          "url": "https://abuse.ch/terms-of-use/",
+          "finding": "Current terms state CC0 only for Feodo Tracker, SSL Blacklist and YARAify. MalwareBazaar and URLhaus are free for not-for-profit use; commercial use may require a Spamhaus subscription. WardenOne's use is free and noncommercial."
+        },
+        {
+          "reference": "permission-malicious-hash-2026-10-24",
+          "finding": "Direct publisher permission for WardenOne to use the list, on condition that his GitHub repository is mentioned; owner-supplied reply dated 24 October 2026. His follow-up pointed to the separate abuse.ch source files on 25 October 2026."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "MalwareBazaar / abuse.ch",
+          "url": "https://bazaar.abuse.ch/",
+          "license": "abuse.ch Terms of Use",
+          "note": "Samples from the last 120 days. Free for not-for-profit use."
+        },
+        {
+          "name": "URLhaus / abuse.ch",
+          "url": "https://urlhaus.abuse.ch/",
+          "license": "abuse.ch Terms of Use",
+          "note": "Payloads fetched from malicious URLs in the last month. Free for not-for-profit use."
+        }
+      ],
+      "checkedAt": "2026-10-25"
     },
     {
       "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",

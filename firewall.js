@@ -34,9 +34,8 @@ let SITE = String(params.get('site') || '').toLowerCase().replace(/^www\./, '');
 /* domain -> { seen: Set(column), blocked: Set(column), sources: Set(string), requests: n } */
 const OBSERVED = new Map();
 let RULES = {};
-/* Decisions of this site's that are stored but got no rule: the firewall holds a fixed
-   number across every site, and a matrix from before that was enforced at the write can
-   hold more. The worker names them; they are drawn as not in effect, never as working. */
+/* Decisions beyond the shared saved-state limit are drawn as not in effect.
+   The worker identifies them after compiling the matrix. */
 let OMITTED = new Set();
 const omittedFrom = (res) => new Set(((res && res.omitted) || []).map((o) => String(o.domain || '') + '|' + String(o.column || '')));
 let renderTimer = 0;
@@ -94,7 +93,9 @@ function scheduleRender() {
 /* ---- decisions ---------------------------------------------------------- */
 function decisionOf(domain, column) {
   const forDomain = RULES[domain];
-  return (forDomain && forDomain[column]) || 'default';
+  const value = forDomain && forDomain[column];
+  if (column === 'cookie') return value === 'strip' ? value : 'default';
+  return value === 'allow' || value === 'block' || (column !== 'all' && value === 'noop') ? value : 'default';
 }
 
 function cycle(column, current) {
@@ -203,21 +204,38 @@ function render() {
       const inert = verdict !== 'default' && OMITTED.has(domain + '|' + column);
       if (verdict !== 'default') decided++;
       if (inert) omitted++;
-      const button = el('button', 'fw-btn is-' + verdict + (inert ? ' is-inert' : ''));
-      button.type = 'button';
-      button.textContent = verdict === 'allow' ? 'allow'
-        : verdict === 'block' ? 'block'
-          : verdict === 'strip' ? 'strip'
-            : (column !== 'cookie' && row.blocked.has(column)) ? '· blocked'
-              : (column !== 'cookie' && row.seen.has(column)) ? '· loaded'
-                : '—';
-      button.title = inert
-        ? label + ': ' + verdict + ' is stored but NOT in effect -- the firewall is over its rule limit. Set it back to Default, or reset a site you no longer need, to make room.'
+      const direct = $('noop-mode').checked && column !== 'all' && column !== 'cookie';
+      const control = el(direct ? 'select' : 'button', 'fw-btn is-' + verdict + (inert ? ' is-inert' : ''));
+      if (direct) {
+        for (const choice of ['default', 'noop', 'allow', 'block']) {
+          const option = el('option', null, choice);
+          option.value = choice;
+          control.appendChild(option);
+        }
+        control.value = verdict;
+        control.addEventListener('change', () => setCell(domain, column, control.value, control));
+      } else {
+        control.type = 'button';
+        control.textContent = verdict === 'allow' ? 'allow'
+          : verdict === 'block' ? 'block'
+            : verdict === 'strip' ? 'strip'
+              : verdict === 'noop' ? 'noop'
+                : (column !== 'cookie' && row.blocked.has(column)) ? '· blocked'
+                  : (column !== 'cookie' && row.seen.has(column)) ? '· loaded'
+                    : '—';
+        control.addEventListener('click', () => setCell(domain, column, cycle(column, verdict), control));
+      }
+      control.title = inert
+        ? label + ': ' + verdict + ' is stored but NOT in effect -- the firewall is over its decision limit. Set it back to Default, or reset a site you no longer need, to make room.'
+        : verdict === 'noop'
+          ? label + ': skips this row\'s All decision. Blocklists, other rows, cookie stripping and temporary allowances still apply.'
         : verdict === 'default'
-          ? label + ': whatever WardenOne decides. Click to set your own rule.'
+          ? label + ': no separate choice. This row\'s All decision and other rules still apply. Click to set your own rule.'
+          : verdict === 'allow'
+            ? label + ': explicit override of blocklists, including malware and phishing blocks, within this rule\'s scope.'
           : label + ': ' + verdict + ', because you said so here.';
-      button.addEventListener('click', () => setCell(domain, column, cycle(column, verdict), button));
-      td.appendChild(button);
+      control.setAttribute('aria-label', domain + ', ' + label + ': ' + verdict);
+      td.appendChild(control);
       tr.appendChild(td);
     }
     body.appendChild(tr);
@@ -225,8 +243,8 @@ function render() {
 
   $('empty').hidden = domains.length > 0;
   $('count').textContent = domains.length + ' domain' + (domains.length === 1 ? '' : 's')
-    + (decided ? ', ' + decided + ' rule' + (decided === 1 ? '' : 's') + ' of yours' : ', none of your rules yet')
-    + (omitted ? ' — ' + omitted + ' of them stored but not in effect (over the rule limit)' : '');
+    + (decided ? ', ' + decided + ' decision' + (decided === 1 ? '' : 's') + ' of yours' : ', none of your rules yet')
+    + (omitted ? ' — ' + omitted + ' of them stored but not in effect (over the decision limit)' : '');
   /* A temporary allowance is undone by the same button, so it alone keeps it enabled. */
   $('reset-site').disabled = decided === 0 && ONCE.size === 0;
 }
@@ -282,6 +300,7 @@ function reset(all) {
 }
 $('reset-site').addEventListener('click', () => reset(false));
 $('reset-all').addEventListener('click', () => reset(true));
+$('noop-mode').addEventListener('change', render);
 
 /* ---- start -------------------------------------------------------------- */
 function load() {
@@ -292,6 +311,7 @@ function load() {
       SITE = res.site || SITE;
       RULES = res.rules || {};
       OMITTED = omittedFrom(res);
+      $('noop-mode').checked = Object.values(RULES).some(cells => cells && Object.values(cells).includes('noop'));
       $('all-sites').textContent = res.sites
         ? 'You have rules on ' + res.sites + ' site' + (res.sites === 1 ? '' : 's') + '.'
         : 'No firewall rules anywhere yet.';

@@ -55,7 +55,7 @@ function loadCosmeticPolicy() {
     },
     isVideoPlatformHost() { return false; },
     __cosmeticHostCache: new Map(),
-    __cosmeticGenericSelectors: new WeakMap(),
+    __cosmeticSelectorMemo: new WeakMap(),
     COSMETIC_HOST_CACHE_MAX: 256,
     Set,
     Map,

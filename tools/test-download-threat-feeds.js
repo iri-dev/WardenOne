@@ -20,7 +20,8 @@ const DL = fs.readFileSync('background-downloads.js', 'utf8');
 const KEY = 'wardenone_download_threat_feeds';
 const META = 'wardenone_download_threat_meta';
 const URLHAUS = 'https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-online.txt';
-const HASHES = 'https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/full-hash-sha256-aa.txt';
+const BAZAAR_HASHES = 'https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/sources/bazaar.abuse.ch.sha256.txt';
+const URLHAUS_HASHES = 'https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/sources/urlhaus.abuse.ch.sha256.txt';
 const plain = (value) => JSON.parse(JSON.stringify(value));
 const sha256 = (text) => crypto.createHash('sha256').update(text).digest('hex');
 
@@ -41,13 +42,17 @@ const URL_FEED = [
 const SAMPLE = 'malware sample bytes';
 const SAMPLE_SHA = sha256(SAMPLE);
 const HASH_FEED = [SAMPLE_SHA.toUpperCase(), sha256('another sample'), 'not a hash', '', sha256('third')].join('\r\n');
+const URLHAUS_HASH_FEED = [SAMPLE_SHA, sha256('urlhaus sample')].join('\n');
+const storeHashes = (stored) => atob(stored.sha256Bytes);
 
 function world() {
   const { guard, sandbox } = loadDownloadGuard();
   sandbox.crypto = crypto.webcrypto;
   sandbox.TextEncoder = TextEncoder;
+  sandbox.atob = atob;
+  sandbox.btoa = btoa;
   sandbox.LIST_FETCH_TIMEOUT_MS = 1000;
-  sandbox.feedBodies = { [URLHAUS]: URL_FEED, [HASHES]: HASH_FEED };
+  sandbox.feedBodies = { [URLHAUS]: URL_FEED, [BAZAAR_HASHES]: HASH_FEED, [URLHAUS_HASHES]: URLHAUS_HASH_FEED };
   sandbox.feedFetches = [];
   sandbox.fetchValidatedRemoteListText = async (url) => {
     sandbox.feedFetches.push(url);
@@ -67,6 +72,7 @@ function world() {
   const api = vm.runInContext(`({
     entryKey: downloadPayloadUrlEntryKey, candidates: downloadPayloadUrlCandidates,
     pack: packSortedHex, valid: packedHexValid, has: packedHexHas, packFeed: packDownloadThreatFeed,
+    hashBytes: packedHashBytes, hashValid: packedHashBytesValid, hashHas: packedHashBytesHas,
     update: updateDownloadThreatFeeds, attach: attachDownloadThreatFeedUpdate, reset: resetDownloadThreatFeedCache,
     feeds: downloadThreatFeeds, known: knownMalwareHash, coverage: malwareHashCoverage,
     listed: listedPayloadUrl, enrichUrl: enrichDownloadWithPayloadUrlFeed, enrichHash: enrichDownloadWithLocalHash,
@@ -148,55 +154,123 @@ async function main() {
     assert(!api.valid(packed.slice(16) + packed.slice(0, 16), 16), 'an unsorted store is refused');
     assert(!api.valid(packed.slice(1), 16) && !api.valid(packed.replace(/^./, 'g'), 16) && !api.valid(null, 16));
 
-    /* The real feeds were 24,073 payload URLs and 10,515 hashes on 2026-10-22, against stored
-       lists that already used 2.83 MB of the 4 MB soft limit. */
+    /* Cover feeds at their current scale without trimming either hash publisher. */
     const urls = Array.from({ length: 24073 }, (_, i) => '||raw.githubusercontent.com/u' + i + '/r/main/p' + i + '.exe^$all').join('\n');
-    const hashes = Array.from({ length: 10515 }, (_, i) => sha256('h' + i)).join('\n');
+    const hashes = Array.from({ length: 70000 }, (_, i) => sha256('h' + i)).join('\n');
     const u = await api.packFeed('payload-urls', urls);
     const h = await api.packFeed('sha256', hashes);
     assert.equal(u.count, 24073);
-    assert.equal(h.count, 10515);
-    const stored = JSON.stringify({ sha256Prefixes: h.packed, payloadUrlKeys: u.packed }).length;
-    assert(stored < 740 * 1024, 'feeds at their current size must stay near 0.7 MB stored, got ' + stored);
-    const atCaps = api.caps.sha256 * 32 + api.caps['payload-urls'] * 16;
-    assert(atCaps <= 1050 * 1024, 'raising a cap is a storage decision, not a tweak: ' + atCaps);
-    const many = Array.from({ length: api.caps.sha256 + 500 }, (_, i) => sha256('c' + i)).join('\n');
-    const capped = await api.packFeed('sha256', many);
-    assert.equal(capped.count, api.caps.sha256);
-    assert.equal(capped.truncated, true);
-    console.log('  [ok] fingerprints pack, validate and search; current feeds store in ~0.7 MB');
+    assert.equal(h.count, 70000);
+    assert.equal(h.truncated, false);
+    const binary = api.hashBytes(h.packed);
+    assert(api.hashValid(binary));
+    assert(api.hashHas(binary, sha256('h69999').slice(0, 32)), 'the last hash survives packing');
+    assert(!api.hashHas(binary, sha256('absent').slice(0, 32)));
+    assert(!api.hashValid(binary.slice(16) + binary.slice(0, 16)), 'an unsorted hash store is refused');
+    const stored = JSON.stringify({ sha256Bytes: btoa(binary), payloadUrlKeys: u.packed }).length;
+    assert(stored < 2 * 1024 * 1024, 'one 70k hash source plus URLs should fit near 2 MB, got ' + stored);
+    console.log('  [ok] full hash feeds pack, validate and search compactly');
   }
 
   /* ---- updater ---- */
   {
     const { api, sandbox } = world();
+    sandbox.store[KEY] = { version: 1, updatedAt: 1, sha256Prefixes: SAMPLE_SHA.slice(0, 32), payloadUrlKeys: '' };
+    api.reset();
+    assert.equal((await api.feeds()).hashCount, 0, 'the previous mixed feed is ignored after the source switch');
+    sandbox.feedBodies[BAZAAR_HASHES] = undefined;
+    sandbox.feedBodies[URLHAUS_HASHES] = undefined;
+    await api.update('alarm');
+    assert.equal(sandbox.store[KEY].version, 3);
+    assert.equal(sandbox.store[KEY].sha256Bytes, '', 'failed new feeds cannot retain old mixed hashes');
+  }
+  {
+    const { api, sandbox } = world();
+    sandbox.store[KEY] = { version: 2, updatedAt: 2, sha256Prefixes: SAMPLE_SHA.slice(0, 32), payloadUrlKeys: '' };
+    sandbox.feedBodies[BAZAAR_HASHES] = undefined;
+    sandbox.feedBodies[URLHAUS_HASHES] = undefined;
+    assert.equal((await api.known(SAMPLE_SHA)).hit, true, 'the prior publisher-separated copy remains usable');
+    await api.update('alarm');
+    assert.equal(sandbox.store[KEY].version, 3);
+    api.reset();
+    assert.equal((await api.known(SAMPLE_SHA)).hit, true, 'an URL-only refresh migrates the prior hashes');
+    assert.equal((await api.feeds()).hashCount, 1);
+  }
+  {
+    const { api, sandbox } = world();
+    sandbox.feedBodies[URLHAUS_HASHES] = undefined;
+    const partial = await api.update('alarm');
+    assert.equal(partial.ok, true, 'a working source protects a fresh install even when the other fails');
+    assert.equal((await api.feeds()).hashCount, 3);
+    assert.equal(sandbox.store[META].sourceCounts[BAZAAR_HASHES], 3);
+    assert.equal(sandbox.store[META].sourceCounts[URLHAUS_HASHES], undefined);
+    sandbox.feedBodies[BAZAAR_HASHES] = undefined;
+    sandbox.feedBodies[URLHAUS_HASHES] = URLHAUS_HASH_FEED;
+    await api.update('alarm');
+    assert.equal((await api.feeds()).hashCount, 3, 'a different partial refresh keeps the prior working set');
+    sandbox.feedBodies[BAZAAR_HASHES] = HASH_FEED;
+    await api.update('alarm');
+    assert.equal((await api.feeds()).hashCount, 4, 'both recovered sources replace the partial set');
+  }
+  {
+    const { api, sandbox } = world();
     const result = await api.update('alarm');
     assert.equal(result.ok, true);
-    assert.deepEqual(sandbox.feedFetches.sort(), [HASHES, URLHAUS].sort(), 'both feeds go through the validated list fetch');
+    assert.deepEqual(sandbox.feedFetches.sort(), [BAZAAR_HASHES, URLHAUS_HASHES, URLHAUS].sort(),
+      'all three feeds go through the validated list fetch');
     const stored = sandbox.store[KEY];
-    assert.equal(stored.sha256Prefixes.length, 3 * 32, 'invalid hash lines are dropped and the rest truncated to 128 bits');
+    assert.equal(stored.version, 3);
+    assert.equal(storeHashes(stored).length, 4 * 16, 'the two hash sources merge and duplicate hashes count once');
     assert.equal(stored.payloadUrlKeys.length, 6 * 16, 'only payload addresses are kept');
-    assert.deepEqual(plain(sandbox.store[META].counts), { fileHashes: 3, payloadUrls: 6 });
+    assert.deepEqual(plain(sandbox.store[META].counts), { fileHashes: 4, payloadUrls: 6 });
     assert(!JSON.stringify(stored).includes('stage2'), 'the store holds fingerprints, not addresses');
+    const both = Array.from({ length: 70000 }, (_, i) => sha256('bazaar-' + i)).join('\n');
+    const other = Array.from({ length: 59000 }, (_, i) => sha256('urlhaus-' + i)).join('\n');
+    sandbox.feedBodies[BAZAAR_HASHES] = both;
+    sandbox.feedBodies[URLHAUS_HASHES] = other;
+    await api.update('alarm');
+    assert.equal((await api.feeds()).hashCount, 129000, 'every hash survives the two-source merge');
+    assert.equal(sandbox.store[META].sourceCounts[BAZAAR_HASHES], 70000);
+    assert.equal(sandbox.store[META].sourceCounts[URLHAUS_HASHES], 59000);
+    api.reset();
+    const full = await api.feeds();
+    for (const hash of [sha256('bazaar-0'), sha256('bazaar-69999'), sha256('urlhaus-0'), sha256('urlhaus-58999')]) {
+      assert(api.hashHas(full.hashes, hash.slice(0, 32)), 'a hash near either end matches after reloading storage');
+    }
+    assert(JSON.stringify(sandbox.store[KEY]).length < 3 * 1024 * 1024,
+      'both full hash sources and URL keys fit below 3 MB');
+    sandbox.feedBodies[BAZAAR_HASHES] = HASH_FEED;
+    sandbox.feedBodies[URLHAUS_HASHES] = URLHAUS_HASH_FEED;
+    sandbox.store[META].sourceCounts = {};
+    await api.update('alarm');
 
     sandbox.feedBodies[URLHAUS] = 'garbage';
-    sandbox.feedBodies[HASHES] = undefined;
+    sandbox.feedBodies[BAZAAR_HASHES] = undefined;
+    sandbox.feedBodies[URLHAUS_HASHES] = undefined;
     const second = await api.update('alarm');
     assert.equal(second.ok, false);
     assert.equal(sandbox.store[KEY].payloadUrlKeys, stored.payloadUrlKeys, 'an unusable feed keeps the previous copy');
-    assert.equal(sandbox.store[KEY].sha256Prefixes, stored.sha256Prefixes, 'an unreachable feed keeps the previous copy');
-    assert.equal(sandbox.store[META].failures.length, 2);
+    assert.equal(sandbox.store[KEY].sha256Bytes, stored.sha256Bytes, 'an unreachable feed keeps the previous copy');
+    assert.equal(sandbox.store[META].failures.length, 3);
     assert(sandbox.store[META].failures.every((f) => f.url && f.error), 'each failure names its feed and reason');
 
     const big = Array.from({ length: 1000 }, (_, i) => sha256('b' + i)).join('\n');
-    sandbox.feedBodies[HASHES] = big;
+    sandbox.feedBodies[BAZAAR_HASHES] = big;
+    sandbox.feedBodies[URLHAUS_HASHES] = URLHAUS_HASH_FEED;
     sandbox.feedBodies[URLHAUS] = URL_FEED;
     await api.update('alarm');
-    assert.equal(sandbox.store[KEY].sha256Prefixes.length, 1000 * 32);
-    sandbox.feedBodies[HASHES] = big.split('\n').slice(0, 100).join('\n');
+    assert.equal(storeHashes(sandbox.store[KEY]).length, 1002 * 16);
+    sandbox.feedBodies[BAZAAR_HASHES] = big.split('\n').slice(0, 100).join('\n');
     const shrunk = await api.update('alarm');
-    assert.equal(sandbox.store[KEY].sha256Prefixes.length, 1000 * 32, 'a feed that loses most of its entries is quarantined');
+    assert.equal(storeHashes(sandbox.store[KEY]).length, 1002 * 16, 'a feed that loses most of its entries is quarantined');
     assert(shrunk.meta.failures.some((f) => f.rejected && /Kept the previous copy/.test(f.error)));
+    sandbox.feedBodies[BAZAAR_HASHES] = big;
+    sandbox.feedBodies[URLHAUS_HASHES] = undefined;
+    const incomplete = await api.update('alarm');
+    assert.equal(storeHashes(sandbox.store[KEY]).length, 1002 * 16,
+      'one successful hash source cannot replace the complete prior set');
+    assert(incomplete.meta.failures.some((f) => f.url === URLHAUS_HASHES));
+    sandbox.feedBodies[URLHAUS_HASHES] = URLHAUS_HASH_FEED;
 
     sandbox.feedFetches.length = 0;
     sandbox.store.wardenone_config = Object.assign({}, sandbox.store.wardenone_config, { downloadReputation: false });
@@ -229,8 +303,8 @@ async function main() {
     await api.update('alarm');
     assert.equal(sandbox.feedReads, readsBefore, 'the updater writes the store without loading it into the lookup cache');
     const cov = await api.coverage();
-    assert.equal(cov.feedSignatureCount, 3);
-    assert.equal(cov.signatureCount, 3);
+    assert.equal(cov.feedSignatureCount, 4);
+    assert.equal(cov.signatureCount, 4);
     assert.equal(cov.diagnosticOnly, false);
     assert.equal(sandbox.feedReads, readsBefore + 1, 'the update dropped the stale cache');
     await api.coverage();
@@ -242,9 +316,12 @@ async function main() {
     const eicar = await api.known('275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f');
     assert.equal(eicar.diagnostic, true, 'EICAR stays a diagnostic result');
 
-    sandbox.store[KEY] = Object.assign({}, sandbox.store[KEY], { sha256Prefixes: 'f'.repeat(32) + '0'.repeat(32) });
+    sandbox.store[KEY] = Object.assign({}, sandbox.store[KEY], { sha256Bytes: btoa(api.hashBytes('f'.repeat(32) + '0'.repeat(32))) });
     api.reset();
     assert.equal((await api.coverage()).feedSignatureCount, 0, 'a corrupted store is ignored rather than half-searched');
+    sandbox.store[KEY].sha256Bytes = 'not-base64';
+    api.reset();
+    assert.equal((await api.coverage()).feedSignatureCount, 0, 'invalid base64 is ignored');
     await api.update('alarm');
     api.reset();
 

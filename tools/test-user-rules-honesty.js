@@ -199,6 +199,29 @@ function holdFirstSessionWrite(dnr) {
 }
 
 (async () => {
+  {
+    const { api, dnr, storage, call } = firewallWorld();
+    const set = (column, verdict) => call(api.handleSet, { site: 'news.example', domain: 'cdn.example', column, verdict });
+    await set('all', 'allow');
+    await dnr.api.updateDynamicRules({ addRules: [{ id: 10000, priority: 3000, action: { type: 'block' },
+      condition: { requestDomains: ['cdn.example'], resourceTypes: ['script'] } }] });
+    const request = { url: 'https://cdn.example/app.js', initiator: 'https://news.example', type: 'script' };
+    check('explicit Allow retains its security-list override', dnr.decide(request).outcome === 'allow');
+    const noop = await set('script', 'noop');
+    check('a noop is saved only after narrowing the installed All rule', noop.ok && noop.held === 2
+      && storage.wardenone_firewall['news.example']['cdn.example'].script === 'noop' && dnr.decide(request).outcome === 'block');
+    dnr.refuse('simulated write failure');
+    const refused = await set('script', 'default');
+    check('a failed noop edit preserves the applied matrix and security decision', !refused.ok && refused.rules['cdn.example'].script === 'noop'
+      && storage.wardenone_firewall['news.example']['cdn.example'].script === 'noop' && dnr.decide(request).outcome === 'block');
+    const restored = await set('script', 'default');
+    check('retrying Default restores the explicit All choice', restored.ok && dnr.decide(request).outcome === 'allow');
+    for (const [column, verdict] of [['all', 'noop'], ['cookie', 'noop'], ['script', 'strip'], ['cookie', 'allow']]) {
+      const before = JSON.stringify(storage.wardenone_firewall);
+      const invalid = await set(column, verdict);
+      check('invalid firewall pair is rejected: ' + column + '/' + verdict, !invalid.ok && JSON.stringify(storage.wardenone_firewall) === before);
+    }
+  }
   /* ---- H17: the cell that says block, blocks ---------------------------------------- */
   {
     const { api, dnr } = firewallWorld();

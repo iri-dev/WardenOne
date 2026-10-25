@@ -983,7 +983,7 @@ async function analyse(file, onStage, shouldContinue = () => true) {
         detail: known.diagnostic
           ? 'Its SHA-256 matches the EICAR antivirus test signature. This confirms the hash lookup works; it does not demonstrate real-world malware coverage.'
           : (fromFeed
-            ? 'Its SHA-256 is in the malware hash feed WardenOne keeps on this device (samples reported to MalwareBazaar, URLhaus and OTX).'
+            ? 'Its SHA-256 is in the malware hash feeds WardenOne keeps on this device (samples reported to MalwareBazaar and URLhaus).'
             : 'Its SHA-256 matches a configured local malware signature.')
             + ' This is the real file you picked, not a guess from its name. Delete it rather than opening it.',
       });
