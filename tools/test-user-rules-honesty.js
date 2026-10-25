@@ -20,6 +20,7 @@ const FW_JS = fs.readFileSync(path.join(ROOT, 'firewall.js'), 'utf8');
 const FW_HTML = fs.readFileSync(path.join(ROOT, 'firewall.html'), 'utf8');
 const POPUP_JS = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
 
+process.exitCode = 1;
 let failures = 0;
 function check(label, condition, extra) {
   if (condition) { console.log('  ok  ' + label); return; }
@@ -171,7 +172,7 @@ function firewallWorld({ store, failStorage, transaction } = {}) {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  vm.runInContext(FW
+  vm.runInContext(between(BG, 'const __subsystemQueues = new Map();', '\n/* Whole-store writers,', 'the subsystem queue') + '\n' + FW
     + '\nasync function handleSet(msg, sendResponse) {\n' + unwrap(FW_SET) + '\n}'
     + '\nasync function handleOnce(msg, sendResponse) {\n' + unwrap(FW_ONCE) + '\n}'
     + '\nasync function handleReset(msg, sendResponse) {\n' + unwrap(FW_RESET) + '\n}'
@@ -181,6 +182,20 @@ function firewallWorld({ store, failStorage, transaction } = {}) {
     + ' FIREWALL_SESSION_RULE_BASE, FIREWALL_SESSION_RULE_MAX };', ctx);
   const call = (fn, msg) => new Promise((resolve) => { fn(msg, resolve); });
   return { api: ctx.api, dnr, storage, call };
+}
+
+function holdFirstSessionWrite(dnr) {
+  const read = dnr.api.getSessionRules;
+  const write = dnr.api.updateSessionRules;
+  let release, entered, reads = 0, writes = 0;
+  const held = new Promise((resolve) => { release = resolve; });
+  const started = new Promise((resolve) => { entered = resolve; });
+  dnr.api.getSessionRules = async () => { reads++; return read(); };
+  dnr.api.updateSessionRules = async (change) => {
+    if (++writes === 1) { entered(); await held; }
+    return write(change);
+  };
+  return { started, release, get reads() { return reads; } };
 }
 
 (async () => {
@@ -353,6 +368,84 @@ function firewallWorld({ store, failStorage, transaction } = {}) {
   check('and the page loads the active allowances with the rules', /ONCE = new Set\(\(\(res && res\.once\) \|\| \[\]\)/.test(FW_JS));
   check('the guide explains it', /Allow once<\/strong>, under a domain/.test(FW_HTML) && /A specific column beats/.test(FW_HTML));
   check('the page redraws from the truth when a cell is refused', /if \(res && res\.rules\) RULES = res\.rules;/.test(FW_JS));
+
+  for (const failure of ['rejection', 'throw', 'missing API', 'undefined result', 'null result', 'invalid result']) {
+    const { api, dnr, call } = firewallWorld();
+    await api.firewallAllowOnce('news.example', 'existing.example', 'all');
+    const before = JSON.stringify([...dnr.session.values()]);
+    const writes = dnr.log.length;
+    const read = dnr.api.getSessionRules;
+    if (failure === 'missing API') delete dnr.api.getSessionRules;
+    else dnr.api.getSessionRules = () => {
+      if (failure === 'rejection') return Promise.reject(new Error('session lookup unavailable'));
+      if (failure === 'throw') throw new Error('session lookup unavailable');
+      return Promise.resolve(failure === 'invalid result' ? {} : failure === 'null result' ? null : undefined);
+    };
+    const result = await call(api.handleOnce, { site: 'shop.example', domain: 'new.example', column: 'script' });
+    check('Allow Once refuses ' + failure + ' with an error', result.ok === false && !!result.error, JSON.stringify(result));
+    check('Allow Once leaves existing choices untouched after ' + failure,
+      JSON.stringify([...dnr.session.values()]) === before && dnr.log.length === writes);
+    dnr.api.getSessionRules = read;
+    const retry = await call(api.handleOnce, { site: 'shop.example', domain: 'new.example', column: 'script' });
+    check('Allow Once can retry after ' + failure, retry.ok === true && dnr.session.size === 2);
+  }
+  {
+    const { api, dnr } = firewallWorld();
+    await api.firewallAllowOnce('news.example', 'existing.example', 'all');
+    const before = JSON.stringify([...dnr.session.values()]);
+    dnr.api.getSessionRules = async () => [];
+    const result = await api.firewallAllowOnce('shop.example', 'collision.example', 'all');
+    check('an unexpected ID collision fails without replacing an existing allowance',
+      result.ok === false && JSON.stringify([...dnr.session.values()]) === before);
+  }
+  {
+    const { api, dnr, call } = firewallWorld();
+    const held = holdFirstSessionWrite(dnr);
+    const first = call(api.handleOnce, { site: 'news.example', domain: 'first.example', column: 'script' });
+    await held.started;
+    const second = call(api.handleOnce, { site: 'shop.example', domain: 'second.example', column: 'xhr' });
+    await tick();
+    check('another allowance waits through allocation and the Chrome write', held.reads === 1);
+    held.release();
+    const replies = await Promise.all([first, second]);
+    check('concurrent Allow Once messages both succeed without replacing either choice',
+      replies.every((reply) => reply.ok) && dnr.session.size === 2
+        && (await api.firewallSessionAllowances('news.example')).some((rule) => rule.domain === 'first.example')
+        && (await api.firewallSessionAllowances('shop.example')).some((rule) => rule.domain === 'second.example'));
+  }
+  {
+    const { api, dnr } = firewallWorld();
+    const replies = await Promise.all([api.firewallAllowOnce('news.example', 'same.example', 'all'),
+      api.firewallAllowOnce('news.example', 'same.example', 'all')]);
+    check('simultaneous identical choices allocate once and then refresh',
+      replies[0].ok && !replies[0].refreshed && replies[1].ok && replies[1].refreshed && dnr.session.size === 1);
+    dnr.refuse('session write refused', 'session');
+    const [failed, next] = await Promise.all([api.firewallAllowOnce('news.example', 'refused.example', 'all'),
+      api.firewallAllowOnce('news.example', 'after-error.example', 'all')]);
+    check('a refused write does not stop the next allowance', !failed.ok && next.ok && dnr.session.size === 2);
+  }
+  for (const site of [undefined, 'news.example']) {
+    const { api, dnr } = firewallWorld();
+    await api.firewallAllowOnce('news.example', 'same.example', 'all');
+    const held = holdFirstSessionWrite(dnr);
+    const clear = api.firewallClearSession(site);
+    await held.started;
+    const newer = api.firewallAllowOnce('news.example', 'same.example', 'all');
+    await tick();
+    check('new allowances wait for ' + (site ? 'site' : 'all-site') + ' clearing', held.reads === 1);
+    held.release();
+    const [cleared, allowed] = await Promise.all([clear, newer]);
+    check('clearing cannot erase a newer allowance', cleared.ok && cleared.removed === 1 && allowed.ok
+      && !allowed.refreshed && dnr.session.size === 1);
+  }
+  {
+    const { api, dnr } = firewallWorld();
+    for (let i = 0; i < api.FIREWALL_SESSION_RULE_MAX - 1; i++) await api.firewallAllowOnce('news.example', 'existing' + i + '.example', 'all');
+    const [first, second] = await Promise.all([api.firewallAllowOnce('news.example', 'last-slot.example', 'all'),
+      api.firewallAllowOnce('news.example', 'overflow.example', 'all')]);
+    check('concurrent requests cannot both consume the last free slot', first.ok && !second.ok && second.full
+      && dnr.session.size === api.FIREWALL_SESSION_RULE_MAX);
+  }
 
   /* ---- M48: two quick cell changes both survive -------------------------------------- *
      The handler reads the whole matrix, changes a copy, asks Chrome, then writes it back. Two
@@ -550,4 +643,5 @@ function firewallWorld({ store, failStorage, transaction } = {}) {
   console.log('');
   if (failures) { console.log(failures + ' check(s) failed'); process.exit(1); }
   console.log('all user-rule honesty checks passed');
+  process.exitCode = 0;
 })().catch((e) => { console.error(e); process.exit(1); });

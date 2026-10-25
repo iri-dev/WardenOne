@@ -180,7 +180,7 @@ async function main() {
 
   const exe = guard.scoreDownload('https://smallvendor.example/files/tool.exe', '', 'tool.exe', 'application/octet-stream', [], '');
   assert.strictEqual(exe.grade, 'C');
-  assert.strictEqual(exe.action, 'review');
+  assert.strictEqual(exe.action, 'allow');
   assert(reasonIncludes(exe, 'This is a program, not a document'));
 
   const archive = guard.scoreDownload('https://files.example/downloads/keygen.zip', '', 'keygen.zip', 'application/zip', [], '');
@@ -246,7 +246,9 @@ async function main() {
   ]) {
     const report = guard.scoreDownload(url, '', 'payload.exe', 'application/octet-stream', [], '');
     assert.strictEqual(report.knownPublisher, false, url + ' must not inherit trust from a sibling tenant');
-    assert.notStrictEqual(report.action, 'allow', url + ' should still be reviewed');
+    assert.strictEqual(report.trustedEligible, false, url + ' must not receive a publisher rebate');
+    const disguisedTenant = guard.scoreDownload(url, '', 'invoice.pdf.exe', 'application/octet-stream', [], '');
+    assert.strictEqual(disguisedTenant.action, 'review', url + ' must still surface a disguised executable');
   }
 
   const addedOfficialPublishers = [
@@ -304,8 +306,7 @@ async function main() {
     assert.strictEqual(generatedDocument.action, 'allow');
   }
 
-  // Low prevalence can still corroborate an intrinsically risky file type. The tuning must not
-  // turn a never-seen executable into a silent download.
+  // Prevalence and file type alone do not establish malicious behavior.
   const uncommonExecutable = guard.scoreDownload(
     'https://smallvendor.example/files/tool.exe',
     '',
@@ -314,7 +315,7 @@ async function main() {
     [],
     'uncommon'
   );
-  assert.notStrictEqual(uncommonExecutable.action, 'allow', 'an uncommon executable should still be reviewed');
+  assert.strictEqual(uncommonExecutable.action, 'allow', 'a rare installer needs stronger evidence before review');
 
   const disguisedClaudeFile = guard.scoreDownload(
     'https://7dc2f9c1-61f8-4da2-a541-850fe27bb83d.claudeusercontent.com/v1/files/invoice.pdf.exe',
@@ -392,7 +393,7 @@ async function main() {
   assert.strictEqual(hostOnlyRedirect.trustAllowed, false);
 
   assert.strictEqual(guard.downloadLooksRisky({ filename: 'C:\\Downloads\\invoice.pdf.exe' }), true);
-  assert.strictEqual(guard.downloadLooksRisky({ url: 'https://example.test/disk.iso' }), true);
+  assert.strictEqual(guard.downloadLooksRisky({ url: 'https://example.test/disk.iso' }), false);
 
   const urlRefetchSource = guard.downloadHashSourceMeta({ requestedUrl: 'https://example.test/file.exe', finalUrl: 'https://cdn.example/file.exe', redirects: 1 }, guard.DOWNLOAD_HASH_SOURCE.URL_REFETCH);
   assert.strictEqual(urlRefetchSource.kind, 'url-refetch');

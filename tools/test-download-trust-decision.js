@@ -14,17 +14,20 @@ const vm = require('vm');
 const { world, download, loadReviewPage } = require('./test-download-early-pause.js');
 
 const pending = (sandbox, id) => sandbox.store.wardenone_pending_downloads && sandbox.store.wardenone_pending_downloads[String(id)];
+const reviewDownload = (id, grade = 'D', extra = {}) => grade === 'C'
+  ? download(id, 'https://smallvendor.example/files/report.pdf', { danger: 'sensitivecontentwarning', ...extra })
+  : download(id, 'https://smallvendor.example/files/%00/tool.exe', extra);
 
 async function main() {
   /* ---- a real grade-D review can be trusted, and the trust is remembered ---- */
   {
     const { guard, sandbox } = world();
     const page = loadReviewPage();
-    const first = download(401, 'http://smallvendor.example/files/tool.exe');
+    const first = reviewDownload(401);
     sandbox.downloadItems.push(first);
     await guard.runDownloadGuardScan(401, first, 'created');
     const review = pending(sandbox, 401);
-    assert.equal(review.grade, 'D', 'an insecure-transport installer from an unknown vendor is Unverified Source');
+    assert.equal(review.grade, 'D', 'an installer with URL obfuscation is Unverified Source');
     assert.equal(review.paused, true);
     assert.equal(review.trustAllowed, true);
     assert.equal(review.trustHost, 'smallvendor.example');
@@ -42,7 +45,7 @@ async function main() {
     assert.deepEqual([...sandbox.store.wardenone_download_trusted_sites], ['smallvendor.example']);
     assert(!pending(sandbox, 401), 'the answered review is withdrawn');
 
-    const next = download(402, 'http://smallvendor.example/files/tool-2.exe');
+    const next = reviewDownload(402);
     sandbox.downloadItems.push(next);
     await guard.runDownloadGuardScan(402, next, 'created');
     assert(!pending(sandbox, 402), 'the next file from a trusted site was reviewed again');
@@ -57,7 +60,7 @@ async function main() {
     { grade: 'D', sites: ['other.example'], failure: 'throw' },
   ]) {
     const { guard, sandbox } = world();
-    const item = download(403, (scenario.grade === 'C' ? 'https' : 'http') + '://smallvendor.example/files/tool.exe');
+    const item = reviewDownload(403, scenario.grade);
     sandbox.downloadItems.push(item);
     await guard.runDownloadGuardScan(403, item, 'created');
     assert.equal(pending(sandbox, 403).grade, scenario.grade);
@@ -111,7 +114,7 @@ async function main() {
 
   for (const failure of ['write', 'full']) {
     const { guard, sandbox } = world();
-    const item = download(404, 'http://smallvendor.example/files/tool.exe');
+    const item = reviewDownload(404);
     sandbox.downloadItems.push(item);
     await guard.runDownloadGuardScan(404, item, 'created');
     const page = loadReviewPage();
@@ -161,7 +164,7 @@ async function main() {
 
   {
     const { guard, sandbox } = world();
-    const item = download(405, 'https://smallvendor.example/files/tool.exe', { state: 'complete', endTime: new Date().toISOString() });
+    const item = reviewDownload(405, 'D', { state: 'complete', endTime: new Date().toISOString() });
     sandbox.downloadItems.push(item);
     await guard.runDownloadGuardScan(405, item, 'created');
     const result = await guard.handleDownloadDecision(405, 'trust-continue', {});

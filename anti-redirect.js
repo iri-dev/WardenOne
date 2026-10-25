@@ -2970,6 +2970,9 @@
     'stripe.com', 'stripe.network', 'braintreegateway.com', 'braintreepayments.com',
     'braintree-api.com', 'adyen.com', 'adyenpayments.com', 'checkout.com',
     'hcaptcha.com', 'recaptcha.net', 'arkoselabs.com', 'funcaptcha.com',
+    /* Spotify's services and audio CDN, as the top-frame engine trusts them. An embedded player
+       sends signed song links there that arrive in binary responses, so they never look "handed out". */
+    'spotify.com', 'scdn.co', 'spotifycdn.com', 'spotify.map.fastly.net',
   ]);
   const credentialFrameValues = new Map();
   const credentialFrameXhrs = new WeakMap();

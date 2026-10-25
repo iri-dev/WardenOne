@@ -165,6 +165,12 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-eyeshield-frames.js
 
+      - name: Test Memory Shield iframe drafts in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-memory-frames.js
+
       - name: Test Resource Saver previews and YouTube playback in Edge
         if: success() || failure()
         env:
@@ -285,6 +291,10 @@ jobs:
       - name: Test EyeShield site profiles in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-eyeshield-frames.js
+
+      - name: Test Memory Shield iframe drafts in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
+        run: node tools/browser-memory-frames.js
 
       - name: Test Resource Saver previews and YouTube playback in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'

@@ -153,7 +153,8 @@ const CLICKFIX_ACTIVITY_TYPES = new Set([
 ]);
 
 // category for the row icon: block (shield), warn (triangle), gate (eye)
-function iconCategory(type) {
+function iconCategory(type, detail) {
+  if (type === 'download_reputation' && detail && detail.action === 'allow') return 'gate';
   if (/^warned_/.test(type) || type === 'session_token_exposed' || type === 'login_thirdparty_scripts' || type === 'session_token_written' || type === 'skimmer_suspected' || type === 'download_reputation' || type === 'behavioral_risk' || type === 'extension_change') return 'warn';
   if (/^gated_/.test(type) || type === 'download_guard' || type === 'detected_download_gate' || type === 'memory_tab_slept' || type === 'memory_tab_slept_by_hand' || type === 'memory_free_ram' || type === 'memory_dupes_closed' || type === 'memory_group_slept' || type === 'tab_limit_slept' || type === 'tab_limit_closed' || type === 'forget_me_wiped' || type === 'reload_loop_broken') return 'gate';
   return 'block';
@@ -213,7 +214,10 @@ function detailText(e) {
   }
   if (e.type === 'download_reputation' || e.type === 'download_guard') {
     const parts = [];
-    if (d.grade || d.status) parts.push([d.grade, d.status].filter(Boolean).join(' - '));
+    if (d.action === 'allow') {
+      parts.push('Continued quietly');
+      if (typeof d.score === 'number') parts.push('Context score: ' + d.score + (d.grade ? ' (' + d.grade + ')' : ''));
+    } else if (d.grade || d.status) parts.push([d.grade, d.status].filter(Boolean).join(' - '));
     if (d.decision) parts.push('Decision: ' + d.decision);
     if (d.file) parts.push(d.file);
     if (d.source) parts.push(d.source);
@@ -515,7 +519,7 @@ function render(hist) {
   }
   hist.forEach((e) => {
     const label = LABELS[e.type] || e.type;
-    const rawCat = iconCategory(e.type);
+    const rawCat = iconCategory(e.type, e.detail);
     const cat = ICON_CATEGORIES.has(rawCat) ? rawCat : 'block';
     const detail = detailText(e);
     const page = shortUrl(e.url);

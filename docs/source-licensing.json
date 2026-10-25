@@ -566,18 +566,23 @@
         "url": "https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/LICENSE"
       },
       "permission": {
-        "status": "not-required",
-        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+        "status": "granted",
+        "date": "2026-10-24",
+        "scope": "The publisher confirms WardenOne may use his list, provided WardenOne mentions his GitHub repository.",
+        "evidenceRef": "permission-malicious-hash-2026-10-24",
+        "evidence": "Owner-supplied screenshot of the publisher's LinkedIn reply reviewed on 24 October 2026. The owner retains the original message privately; correspondence is not reproduced."
       },
       "attribution": "Copyright (c) 2025 Romain MARCOUX; MalwareBazaar and URLhaus / abuse.ch; AlienVault OTX community pulses.",
       "compliance": {
         "status": "clarification-required",
         "conditions": [
           "Keep copyright and permission notices with redistributed material.",
-          "The MIT grant covers the aggregator's own work. The OTX EULA prohibits republishing any portion of OTX, so the MIT grant does not establish rights to the OTX-derived hashes."
+          "Mention the publisher's GitHub repository, as the written permission requires.",
+          "The MIT grant and the written permission cover the aggregator's own work. The OTX EULA prohibits republishing any portion of OTX, so neither establishes rights to the OTX-derived hashes."
         ],
         "implementation": [
           "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "The README links https://github.com/romainmarcoux/malicious-hash where it describes the feed.",
           "Local parsing keeps truncated SHA-256 prefixes for local lookups only; the raw runtime feed is not shipped."
         ],
         "noticeFiles": [
@@ -601,6 +606,10 @@
         {
           "url": "https://abuse.ch/terms-of-use/",
           "finding": "Current terms state CC0 only for Feodo Tracker, SSL Blacklist and YARAify. MalwareBazaar and URLhaus are free for not-for-profit use; commercial use may require a Spamhaus subscription. WardenOne's use is free and noncommercial."
+        },
+        {
+          "reference": "permission-malicious-hash-2026-10-24",
+          "finding": "Direct publisher permission for WardenOne to use the list, on condition that his GitHub repository is mentioned; owner-supplied reply dated 24 October 2026. The reply did not address the OTX inputs and pointed to abuse.ch's own exports, which need an account API key."
         }
       ],
       "upstream": [
@@ -623,7 +632,7 @@
           "note": "Hashes from two public community pulses, as selected by the aggregator; see MH-1."
         }
       ],
-      "checkedAt": "2026-10-22"
+      "checkedAt": "2026-10-24"
     },
     "vn": {
       "name": "malware-filter VN Badsite hosts",

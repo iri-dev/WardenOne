@@ -237,6 +237,8 @@ function input(type, props) {
     ['typed text', [input('text', { value: 'hello' })]],
     ['typed into a textarea', [{ tagName: 'TEXTAREA', value: 'draft', defaultValue: '' }]],
     ['edited a pre-filled field', [input('text', { value: 'changed', defaultValue: 'original' })]],
+    ['cleared a pre-filled input', [input('text', { value: '', defaultValue: 'Important draft' })]],
+    ['cleared a pre-filled textarea', [{ tagName: 'TEXTAREA', value: '', defaultValue: 'Important draft' }]],
     ['typed a password', [input('password', { value: 'secret' })]],
     ['ticked a checkbox', [input('checkbox', { checked: true, defaultChecked: false })]],
     ['unticked a pre-ticked checkbox', [input('checkbox', { checked: false, defaultChecked: true })]],
@@ -273,6 +275,7 @@ function input(type, props) {
     ['an empty search box', [input('search')]],
     ['typed then cleared', [input('text', { value: '' })]],
     ['a pre-filled field left untouched', [input('text', { value: 'preset', defaultValue: 'preset' })]],
+    ['a non-editable element with text', [{ tagName: 'DIV', isContentEditable: false, textContent: 'Read-only', value: 'Read-only' }]],
     ['an untouched checkbox', [input('checkbox')]],
     ['an untouched dropdown', [{
       tagName: 'SELECT',

@@ -196,7 +196,9 @@ function checkContentBuild() {
   'tools/test-feed-check-coverage.js',
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
+  'tools/test-download-interruption-policy.js',
   'tools/test-download-early-pause.js',
+  'tools/test-download-review-cleanup.js',
   'tools/test-download-trust-decision.js',
   'tools/test-download-hash-redirects.js',
   'tools/test-malware-hash-reload.js',
@@ -652,7 +654,9 @@ checkCommand('shared extension theme tests', ['tools/test-theme.js']);
 checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
+checkCommand('download interruption policy tests', ['tools/test-download-interruption-policy.js']);
 checkCommand('download early-pause tests', ['tools/test-download-early-pause.js']);
+checkCommand('download review cleanup tests', ['tools/test-download-review-cleanup.js']);
 checkCommand('download trust decision tests', ['tools/test-download-trust-decision.js']);
 checkCommand('download hash redirect tests', ['tools/test-download-hash-redirects.js']);
 checkCommand('malware hash reload tests', ['tools/test-malware-hash-reload.js']);

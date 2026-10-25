@@ -28,9 +28,11 @@
 
 ### Changed
 
+- Download Guard now separates risk scores from interruption decisions. Ordinary exports, documents, archives and installers continue quietly with Activity records; meaningful file or delivery evidence opens a review. Eligible hash checks remain active, and automatic removal requires threat findings rather than an accumulated heuristic score.
+
 - Trust Site & Continue now saves trust only after Chrome confirms a paused download resumed. If saving trust then fails, the review reports that the download resumed and keeps the trust decision available for retry.
 
-- Download Guard now reports critical downloads as blocked only after confirmed cancellation or file deletion. Failed automatic removal and manual file deletion retain the warning and downloads entry for retry and record the failed operation in history.
+- Download Guard tracks transfer cancellation separately from confirmed file deletion. Unconfirmed cleanup keeps the warning, deletion retry and Chrome download entry available; subsequent scans retry removal, and Activity records the unresolved cleanup.
 
 - Site controls now share domain validation and tenant boundaries. Network-rule writes enforce exception authority below security rules unless the user explicitly chooses an override. Page modules share configuration verification; Twitch no longer accepts public handshakes or page globals as settings.
 
@@ -117,6 +119,15 @@
 
 ### Fixed
 
+- Firewall temporary allowances now fail if Chrome cannot enumerate session rules. Allow Once and allowance clearing run in order, so simultaneous requests cannot overwrite another temporary choice or erase a newer one during undo.
+
+- Memory Shield preserves edits that clear a prefilled input or textarea and detects `plaintext-only` and other valid editable-element variants. Restoring a control to its default still allows it to be considered clean.
+
+- Memory Shield checks every frame before sleeping or closing a tab. Unsaved drafts and live capture inside iframes are included, and missing replies or changing frame documents keep the tab protected.
+
+- Download Guard preserves pending reviews and their windows when Chrome cannot look up a download. Failed or invalid lookup results no longer count as confirmation that the download is gone.
+
+- Spotify players embedded on other websites play again when you are signed in to Spotify. The guard that runs inside embedded frames mistook Spotify's signed song links for leaked tokens, so the player skipped from song to song and stayed at 0:00. It now trusts Spotify's own services and audio servers there, as WardenOne already did on Spotify itself.
 - Download Guard keeps Chrome's download entry when cancellation succeeds but file deletion is unconfirmed, so a surviving partial file retains its recovery handle. Failed state lookups now record that verification failed and preserve successful deletion results.
 - Download Guard now pauses archives (.zip, .rar, .7z and similar) and macro-enabled Office files the moment they start, as it already did for programs and disk images. It also pauses as soon as the site supplies a risky file name, which is how most download links name their files, and checks the address against its local malware lists straight away. A small or cached risky file is much less likely to finish before it can be stopped.
 - When a risky file finishes before Download Guard can pause it, the review window now says the file is already on your computer and offers Delete File or Keep File instead of describing a paused download. That window no longer closes itself a moment after opening, and neither does the notice for a critical download WardenOne removed, which now says whether it was stopped part-way or deleted after it finished.

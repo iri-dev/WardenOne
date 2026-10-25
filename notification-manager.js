@@ -114,6 +114,7 @@ async function recordWardenNotification(entry) {
   if (!entry || typeof entry !== 'object') return null;
   var type = String(entry.type || '').trim();
   if (!type) return null;
+  if (type === 'download_reputation' && entry.detail && entry.detail.action === 'allow') return null;
   try {
     var cfgStore = await localGet('wardenone_config');
     var cfg = cfgStore && cfgStore.wardenone_config && typeof cfgStore.wardenone_config === 'object' ? cfgStore.wardenone_config : {};

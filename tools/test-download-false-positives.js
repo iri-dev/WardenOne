@@ -42,16 +42,16 @@ function check(name, condition, extra) {
   console.error('  FAIL - ' + name + (extra ? ' :: ' + extra : ''));
 }
 
-// Everything from the top of the file down to the end of scoreDownload, so the constants, the
+// Everything from the top of the file down to the end of applyDownloadMeta, so the constants, the
 // weight table, the publisher list and the scorer are the real ones rather than restated here.
 const end = (() => {
-  const start = DL.indexOf('function scoreDownload(');
+  const start = DL.indexOf('function applyDownloadMeta(');
   let depth = 0;
   for (let i = DL.indexOf('{', start); i < DL.length; i++) {
     if (DL[i] === '{') depth++;
     else if (DL[i] === '}') { depth--; if (depth === 0) return i + 1; }
   }
-  throw new Error('scoreDownload braces unbalanced');
+  throw new Error('applyDownloadMeta braces unbalanced');
 })();
 
 const sandbox = { console, Math, Date, Object, Array, Set, Map, Number, String, URL, JSON, RegExp, isNaN, parseInt, parseFloat };
@@ -102,9 +102,8 @@ check('the rig can still produce a critical grade',
   ];
   for (const [url, name] of SAFE) {
     const g = gradeOf(url, name);
-    check('an honest installer is no worse than "Review Recommended": ' + name,
-      g === 'A' || g === 'B' || g === 'C',
-      'graded ' + g + ' -- a first-time user is told a safe file is dangerous');
+    check('an honest installer stays quiet: ' + name,
+      score(url, name).action === 'allow', 'graded ' + g);
   }
 }
 
@@ -147,6 +146,7 @@ check('the rig can still produce a critical grade',
     const g = gradeOf(url, name);
     check('a crack/keygen name still surfaces: ' + name, g !== 'A' && g !== 'B',
       'graded ' + g + ' -- the tuning hollowed out real detection');
+    check('a crack/keygen name requires review: ' + name, score(url, name).action === 'review');
   }
 
   // Disguise and transport tricks are independent of the naming change and must be untouched.
@@ -190,43 +190,37 @@ check('the rig can still produce a critical grade',
   ]) {
     const g = gradeOf(url, name);
     check('a name that merely contains a lure word is not treated as one: ' + name,
-      g === 'A' || g === 'B' || g === 'C',
+      score(url, name).action === 'allow',
       'graded ' + g + ' -- the lure regex is unanchored again');
   }
   check('but the piracy form still counts',
     ['D', 'E', 'F'].includes(gradeOf('https://sketchy.example/dl/adobe-serial-key.exe', 'adobe-serial-key.exe')));
 }
 
-// ---------------------------------------------------------------------------
-// 6. The attack battery. Every row is a realistic delivery; none may go silent.
-//
-// This section exists because a false-positive fix DID hollow out detection once. Suppressing the
-// throwaway-TLD charge whenever the score equalled the file-type baseline read as reasonable and
-// silently exempted every archive -- a zip from a .top domain dropped to grade B and went quiet.
-// Nothing else in this file noticed. Only running the attacks did.
-// ---------------------------------------------------------------------------
+// Retain source scoring while distinguishing weak clues from actionable delivery evidence.
 {
   const ATTACKS = [
     ['cracked software', 'https://freewarez.click/dl/photoshop-crack-keygen.exe', 'photoshop-crack-keygen.exe'],
     ['KMS activator', 'https://activate-win.xyz/kmspico-setup.exe', 'kmspico-setup.exe'],
     ['double extension', 'https://invoices.example/Invoice.pdf.exe', 'Invoice.pdf.exe'],
     ['padding trick', 'https://files.example/report            .exe', 'report            .exe'],
-    ['hidden-contents archive from a throwaway TLD', 'https://share.top/invoice-docs.zip', 'invoice-docs.zip'],
-    ['encrypted archive from a throwaway TLD', 'https://mail-attach.icu/statement.7z', 'statement.7z'],
-    ['ISO smuggling', 'https://delivery.cyou/order-details.iso', 'order-details.iso'],
-    ['macro doc from a throwaway TLD', 'https://hr-forms.sbs/onboarding.docm', 'onboarding.docm'],
+    ['archive from an unusual TLD', 'https://share.top/invoice-docs.zip', 'invoice-docs.zip', false],
+    ['7z from an unusual TLD', 'https://mail-attach.icu/statement.7z', 'statement.7z', false],
+    ['disk image from an unusual TLD', 'https://delivery.cyou/order-details.iso', 'order-details.iso', false],
+    ['macro doc from an unusual TLD', 'https://hr-forms.sbs/onboarding.docm', 'onboarding.docm', false],
     ['raw public IP executable', 'http://45.147.230.11/update.exe', 'update.exe'],
-    ['punycode lookalike', 'https://xn--pypal-4ve.com/login-tool.exe', 'login-tool.exe'],
-    ['.zip TLD confusable', 'https://invoice.zip/statement.exe', 'statement.exe'],
+    ['punycode host', 'https://xn--pypal-4ve.com/login-tool.exe', 'login-tool.exe', false],
+    ['.zip TLD', 'https://invoice.zip/statement.exe', 'statement.exe', false],
     ['LAN but disguised', 'http://192.168.1.20/Invoice.pdf.exe', 'Invoice.pdf.exe'],
     ['LAN but a crack', 'http://192.168.1.20/office-activator.exe', 'office-activator.exe'],
     ['crack on a known publisher host', 'https://github.com/a/b/releases/download/v1/game-crack.exe', 'game-crack.exe'],
     ['keygen on a shared CDN', 'https://d1.cloudfront.net/x/adobe-keygen.exe', 'adobe-keygen.exe'],
   ];
-  for (const [what, url, name] of ATTACKS) {
+  for (const [what, url, name, review = true] of ATTACKS) {
     const g = gradeOf(url, name);
-    check('still surfaces: ' + what, g !== 'A' && g !== 'B',
-      'graded ' + g + ' -- this delivery would reach the user with no warning at all');
+    check('source and file context still scores: ' + what, g !== 'A' && g !== 'B', 'graded ' + g);
+    check('interruption follows evidence: ' + what,
+      score(url, name).action === (review ? 'review' : 'allow'));
   }
 }
 

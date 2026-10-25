@@ -168,6 +168,38 @@ function tabKeepReason(tab, cfg) {
 // An unreachable bridge is not a clean tab. Destructive callers must keep tabs with unknown state;
 // callers that only throttle may fail open.
 const MEMORY_LIVE_CHECK_TIMEOUT_MS = 1000;
+function memoryTabFrames(tabId) {
+  return new Promise((resolve) => {
+    try {
+      chrome.webNavigation.getAllFrames({ tabId }, (frames) => {
+        if (chrome.runtime.lastError || !Array.isArray(frames)) return resolve(null);
+        const documents = new Map();
+        for (const frame of frames) {
+          if (!frame || !Number.isInteger(frame.frameId) || frame.frameId < 0
+            || typeof frame.documentId !== 'string' || !frame.documentId || documents.has(frame.frameId)
+            || frame.errorOccurred || (frame.documentLifecycle && frame.documentLifecycle !== 'active')) return resolve(null);
+          documents.set(frame.frameId, frame.documentId);
+        }
+        resolve(documents.has(0) ? documents : null);
+      });
+    } catch (_) { resolve(null); }
+  });
+}
+
+function memoryFrameLiveState(tabId, frameId, documentId) {
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.sendMessage(tabId, { kind: 'memory-form-check' }, { frameId, documentId }, (res) => {
+        if (chrome.runtime.lastError) return resolve({ ok: false, why: 'unreachable' });
+        if (!res || typeof res.formDirty !== 'boolean' || typeof res.mediaActive !== 'boolean') {
+          return resolve({ ok: false, why: 'malformed' });
+        }
+        resolve({ ok: true, formDirty: res.formDirty, mediaActive: res.mediaActive });
+      });
+    } catch (_) { resolve({ ok: false, why: 'send-failed' }); }
+  });
+}
+
 function tabLiveState(tabId) {
   return new Promise((resolve) => {
     let done = false;
@@ -182,17 +214,26 @@ function tabLiveState(tabId) {
       resolve(v);
     };
     const unknown = (why) => finish({ ok: false, why, formDirty: false, mediaActive: false });
-    // Longer than it was. 400ms was a fair budget while a timeout meant "sleep it anyway" -- being
-    // impatient cost nothing. Now a timeout keeps the tab, so the same impatience would quietly
-    // switch the feature off on exactly the busy tabs it exists for.
     timer = setTimeout(() => unknown('timeout'), MEMORY_LIVE_CHECK_TIMEOUT_MS);
-    try {
-      chrome.tabs.sendMessage(tabId, { kind: 'memory-form-check' }, (res) => {
-        if (chrome.runtime.lastError) return unknown('unreachable');
-        if (!res || typeof res !== 'object') return unknown('malformed');
-        finish({ ok: true, why: '', formDirty: !!res.formDirty, mediaActive: !!res.mediaActive });
-      });
-    } catch (_) { unknown('send-failed'); }
+    const checkFrames = async () => {
+      const before = await memoryTabFrames(tabId);
+      if (done) return;
+      if (!before) return unknown('frames-unavailable');
+      const replies = await Promise.all(Array.from(before, ([frameId, documentId]) => memoryFrameLiveState(tabId, frameId, documentId)));
+      if (done) return;
+      const formDirty = replies.some((reply) => reply.formDirty === true);
+      const mediaActive = replies.some((reply) => reply.mediaActive === true);
+      const failed = replies.find((reply) => !reply.ok);
+      if (failed) return finish({ ok: false, why: failed.why, formDirty, mediaActive });
+      const after = await memoryTabFrames(tabId);
+      if (done) return;
+      /* A frame added or navigated during the check has not supplied a verified answer. */
+      if (!after || after.size !== before.size || Array.from(before).some(([id, documentId]) => after.get(id) !== documentId)) {
+        return finish({ ok: false, why: 'frames-changed', formDirty, mediaActive });
+      }
+      finish({ ok: true, why: '', formDirty, mediaActive });
+    };
+    checkFrames().catch(() => unknown('frames-unavailable'));
   });
 }
 
