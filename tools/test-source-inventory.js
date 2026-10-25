@@ -48,7 +48,10 @@ for (const source of [...inventory.sources, ...inventory.buildSources]) {
   assert(read('THIRD_PARTY_NOTICES.html').includes(source.name.replace(/&/g,'&amp;').replace(/’/g,'’')));
 }
 const grants = inventory.sources.filter((s) => s.permission.status === 'granted');
-assert.strictEqual(grants.length, 8);
+const maliciousHash = grants.filter((source) => source.policyId === 'malicious-hash');
+assert.strictEqual(maliciousHash.length, 2);
+assert(maliciousHash.every((source) => source.permission.date === '2026-10-24'
+  && source.compliance.status === 'implemented' && source.compliance.issueIds.length === 0));
 for (const [id, date, scope] of [['discord','2026-10-15','Direct runtime'],['peter','2026-10','direct pgl'],['army','2026-10','Chrome Web Store'],['flinteger','2026-10-16','upstream'],['hagezi','2026-10-20','GPLv3']]) {
   const source = grants.find((s) => s.policyId === id);
   assert(source && source.permission.date === date && source.permission.scope.includes(scope), id);

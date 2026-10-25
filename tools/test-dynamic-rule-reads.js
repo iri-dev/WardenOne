@@ -112,6 +112,7 @@ function browser() {
     session_storage: {},
     counts: { reads: 0, unfiltered: 0, remoteRead: 0, writes: 0, emptyWrites: 0, idsAsked: 0 },
     failNextRead: false,
+    failNextWrite: false,
     holdReads: false, held: [], holdWrites: false, heldWrites: [],
     clock: 1e12,
   };
@@ -146,6 +147,10 @@ function browser() {
       updateDynamicRules(change) {
         state.counts.writes++;
         if (!(change.removeRuleIds || []).length && !(change.addRules || []).length) state.counts.emptyWrites++;
+        if (state.failNextWrite) {
+          state.failNextWrite = false;
+          return Promise.reject(new Error('Internal error while updating dynamic rules.'));
+        }
         const apply = () => {
           for (const id of (change.removeRuleIds || [])) state.dynamic.delete(id);
           for (const r of (change.addRules || [])) state.dynamic.set(r.id, clone(r));
@@ -381,6 +386,24 @@ function startup(b) {
       await w.api.getDynamicRulesInBand(745000, 200);
     });
     check('is not kept, and is asked again filtered, never as a read of every rule', d.reads === 2 && d.unfiltered === 0, JSON.stringify(d));
+  }
+  {
+    const w = worker(b);
+    const before = JSON.stringify([...b.state.dynamic]);
+    const change = { removeRuleIds: [], addRules: [{ id: 700700, priority: 1, action: { type: 'block' }, condition: { requestDomains: ['retry.example'] } }] };
+    const d = await counting(b, async () => {
+      await w.api.getDynamicRulesInBand(700000, 2000);
+      b.state.failNextWrite = true;
+      await assert.rejects(w.api.writeDynamicRules(change), /updating dynamic rules/);
+      check('a rejected write leaves the installed rules authoritative', JSON.stringify([...b.state.dynamic]) === before);
+      const after = await w.api.getDynamicRulesInBand(700000, 2000);
+      check('a rejected write does not publish the desired rule as applied', !after.some((rule) => rule.id === 700700));
+    });
+    check('a rejected write invalidates the shared read and the next read asks Chrome again', d.reads === 2 && d.writes === 1, JSON.stringify(d));
+    await w.api.writeDynamicRules(change);
+    const retried = await w.api.getDynamicRulesInBand(700000, 2000);
+    check('the same worker can retry a rejected write and verify the installed rule', retried.some((rule) => rule.id === 700700));
+    await w.api.writeDynamicRules({ removeRuleIds: [700700], addRules: [] });
   }
   {
     const w = worker(b);

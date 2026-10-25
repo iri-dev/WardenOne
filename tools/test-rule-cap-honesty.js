@@ -174,7 +174,7 @@ function matrixOf(cells) {
   const m = matrixOf(FMAX);
   m['site0.example']['d0.example'].cookie = 'allow';
   const c = F.compile(m);
-  check('a cell that makes no rule takes no slot and is not omitted', c.rules.length === FMAX && c.omitted.length === 0);
+  check('an invalid cookie decision takes no slot and is not omitted', c.rules.length === FMAX && c.omitted.length === 0);
 }
 {
   /* The write-time refusal. The new decision is on an EARLY domain, so it takes an id in
@@ -185,7 +185,10 @@ function matrixOf(cells) {
   const after = F.compile(next);
   check('the extra decision would bump the last stored cell, not itself', after.omitted.length === 1 && after.omitted[0].domain === 'd249.example');
   const why = F.refusal(before, after);
-  check('a decision that would not fit is refused with the count', /decision 251 of a firewall that holds 250 rules/.test(why) && /Nothing was saved/.test(why), why);
+  check('a decision that would not fit is refused with the count', /decision 251 of a firewall that holds 250 decisions/.test(why) && /Nothing was saved/.test(why), why);
+  const noop = F.compile(F.matrixWith(full, 'site0.example', 'd0.example', 'script', 'noop'));
+  check('a new noop cannot bypass the decision cap by reducing DNR rules', noop.rules.length === FMAX - 1
+    && noop.decisions === FMAX && noop.omitted.length === 1 && F.refusal(before, noop) !== '');
   const changed = F.matrixWith(full, 'site0.example', 'd0.example', 'all', 'allow');
   check('changing an existing decision at the cap is not refused', F.refusal(before, F.compile(changed)) === '' && F.compile(changed).rules.length === FMAX);
   const fewer = F.matrixWith(full, 'site0.example', 'd0.example', 'all', 'default');
@@ -202,7 +205,7 @@ function matrixOf(cells) {
 check('firewall-set refuses before touching Chrome and stores nothing',
   /const before = firewallCompile\(matrix\);\s*const after = firewallCompile\(next\);\s*const refusal = firewallRefusalFor\(before, after\);\s*if \(refusal\) \{\s*sendResponse\(\{ ok: false, error: refusal/.test(BG));
 check('firewall-get names the cells stored but not in effect', /omitted: site \? firewallOmittedFor\(compiled, site\) : \[\]/.test(BG));
-check('the firewall page draws an inert cell as not in effect', /is-inert/.test(FW_JS) && /stored but NOT in effect/.test(FW_JS) && /\.fw-btn\.is-inert \{[^}]*line-through/.test(FW_HTML) && /stored but not in effect \(over the rule limit\)/.test(FW_JS));
+check('the firewall page draws an inert cell as not in effect', /is-inert/.test(FW_JS) && /stored but NOT in effect/.test(FW_JS) && /\.fw-btn\.is-inert \{[^}]*line-through/.test(FW_HTML) && /stored but not in effect \(over the decision limit\)/.test(FW_JS));
 check('the firewall page uses the page\'s own warning token', /outline: 1px dashed var\(--guide-warning\)/.test(FW_HTML));
 check('user-rules responses carry cosmetic and overflow as their own numbers',
   (BG.match(/cosmetic: parsed\.cosmetic,\s*overflow: parsed\.overflow,\s*overflowLines: parsed\.overflowLines,\s*limit: USER_RULE_MAX,/g) || []).length === 2

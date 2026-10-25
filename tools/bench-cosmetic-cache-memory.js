@@ -7,7 +7,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
+const crypto = require('crypto');
+const harness = require('./lib/cosmetic-cache-harness.js');
 const { execFileSync } = require('child_process');
 
 if (typeof global.gc !== 'function') throw new Error('run with --expose-gc');
@@ -17,36 +18,32 @@ if (revision !== 'working' && !/^[a-f0-9]{7,40}$/i.test(revision)) throw new Err
 const source = revision !== 'working'
   ? execFileSync('git', ['show', revision + ':background.js'], { cwd: root, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 })
   : fs.readFileSync(path.join(root, 'background.js'), 'utf8');
-const start = source.indexOf('function computeCosmeticForHost(');
-const end = source.indexOf('// Dynamic rule IDs live', start);
-if (start < 0 || end < 0) throw new Error('cosmetic function markers are missing');
-const sandbox = {
-  __cosmeticHostCache: new Map(),
-  __cosmeticGenericSelectors: new WeakMap(),
-  __cosmeticGeneration: 0,
-  COSMETIC_HOST_CACHE_MAX: 256,
-  normalizeAllowlistHost: (value) => String(value || '').toLowerCase(),
-  isVideoPlatformHost: () => false,
-  isXPlatformHost: () => false,
-  hostMatchesCosmeticDomainList: () => false,
-  isSafeVideoPlatformCosmeticSelector: () => true,
-  scriptletMayRunOnHost: () => true,
-};
-vm.createContext(sandbox);
-vm.runInContext(source.slice(start, end) + '\nthis.compute = computeCosmeticForHost;', sandbox);
+function measure(kind) {
+  const api = harness.load(source);
+  let mem = harness.fixture(api, kind);
+  const heap = () => { global.gc(); return process.memoryUsage().heapUsed; };
+  const before = heap();
+  const samples = [];
+  const sample = (label) => samples.push({ label, retainedHeapMiB: Math.round((heap() - before) / 1048576 * 100) / 100, ...harness.stats(api) });
+  const fill = (count, tag) => {
+    for (let i = 0; i < count; i++) api.compute(tag + '-' + i + '.example.test', mem, false);
+  };
+  fill(api.cap, 'initial');
+  sample('capacity');
+  fill(api.cap * 4, 'churn');
+  sample('four-capacities-of-new-hosts');
+  for (let i = 0; i < 5; i++) {
+    api.invalidate();
+    mem = harness.fixture(api, kind, 16000, 'replacement-' + i);
+    fill(api.cap, 'generation-' + i);
+    sample('replacement-' + (i + 1));
+  }
+  api.invalidate();
+  mem = null;
+  sample('invalidated-and-released');
+  return { kind, cap: api.cap, selectorsPerHost: 16000, samples };
+}
 
-const selectors = Array.from({ length: 16000 }, (_, i) => '.generic-ad-' + i);
-const mem = {
-  cfg: { adShield: true, scriptletEngine: true },
-  data: { generic: selectors, specific: {}, exceptions: {},
-    genericHideExclusions: [], procedural: {}, scriptlets: {} },
-};
-global.gc();
-const before = process.memoryUsage().heapUsed;
-for (let i = 0; i < 256; i++) sandbox.compute('host-' + i + '.example', mem, false);
-global.gc();
-const after = process.memoryUsage().heapUsed;
-const cached = Array.from(sandbox.__cosmeticHostCache.values());
-console.log(JSON.stringify({ revision, hosts: cached.length, selectorsPerHost: selectors.length,
-  distinctSelectorArrays: new Set(cached.map((row) => row.selectors)).size,
-  retainedHeapMiB: Math.round((after - before) / 1048576 * 100) / 100 }));
+console.log(JSON.stringify({ revision, backgroundSha256: crypto.createHash('sha256').update(source).digest('hex'),
+  note: 'Isolated Node V8 retention after GC; not browser process memory. Fixture strings are included in replacement deltas.',
+  scenarios: ['generic', 'specific', 'exceptions'].map(measure) }));

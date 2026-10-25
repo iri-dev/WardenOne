@@ -899,16 +899,14 @@ function loadMalwareHashes() {
 }
 loadMalwareHashes();
 
-/* Download Guard feeds (DOWNLOAD_THREAT_LIST_SOURCES). Each is kept as one string of sorted,
-   fixed-width SHA-256 prefixes -- about 0.7 MB where the raw lists are 3.4 MB, because stored
-   lists already sit near the 4 MB storage soft limit. Read on first use, not on worker wake. */
+/* Download Guard feeds (DOWNLOAD_THREAT_LIST_SOURCES). File hashes use sorted 128-bit prefixes
+   packed as bytes in base64, preserving both complete source lists within local storage. */
 const DOWNLOAD_THREAT_FEED_KEY = 'wardenone_download_threat_feeds';
 const DOWNLOAD_THREAT_META_KEY = 'wardenone_download_threat_meta';
 /* 128 bits per file hash and 64 per address: far past accidental collision at these sizes. */
 const DOWNLOAD_HASH_PREFIX_HEX = 32;
 const DOWNLOAD_URL_KEY_HEX = 16;
-/* The hash feed is ordered by how many sources report each sample, so a cap keeps the best. */
-const DOWNLOAD_THREAT_FEED_CAPS = { sha256: 16000, 'payload-urls': 32000 };
+const DOWNLOAD_THREAT_FEED_CAPS = { 'payload-urls': 32000 };
 const DOWNLOAD_THREAT_DRIFT = { minBaseline: 200, dropRatio: 0.25 };
 const DOWNLOAD_URL_KEY_MAX_CHARS = 2048;
 /* Directory depth checked when a store predates its depth list: shallowest first, so padding a path
@@ -983,17 +981,51 @@ function packedHexHas(packed, width, key) {
   return false;
 }
 
-async function packDownloadThreatFeed(kind, text) {
-  const cap = DOWNLOAD_THREAT_FEED_CAPS[kind] || 0;
+function packedHashBytes(hex) {
+  const chunks = [];
+  for (let at = 0; at < hex.length; at += 8192) {
+    const slice = hex.slice(at, at + 8192);
+    const bytes = new Array(slice.length / 2);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(slice.slice(i * 2, i * 2 + 2), 16);
+    chunks.push(String.fromCharCode(...bytes));
+  }
+  return chunks.join('');
+}
+function packedHashBytesValid(bytes) {
+  if (typeof bytes !== 'string' || bytes.length % (DOWNLOAD_HASH_PREFIX_HEX / 2)) return false;
+  const width = DOWNLOAD_HASH_PREFIX_HEX / 2;
+  for (let at = width; at < bytes.length; at += width) {
+    if (bytes.slice(at - width, at) >= bytes.slice(at, at + width)) return false;
+  }
+  return true;
+}
+function packedHashBytesHas(bytes, hexPrefix) {
+  if (!bytes || !/^[a-f0-9]{32}$/.test(hexPrefix)) return false;
+  const key = packedHashBytes(hexPrefix);
+  const width = DOWNLOAD_HASH_PREFIX_HEX / 2;
+  let lo = 0;
+  let hi = bytes.length / width - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >>> 1;
+    const value = bytes.slice(mid * width, mid * width + width);
+    if (value === key) return true;
+    if (value < key) lo = mid + 1;
+    else hi = mid - 1;
+  }
+  return false;
+}
+
+async function packDownloadThreatFeed(kind, text, limit) {
+  const cap = kind === 'sha256' ? 0 : (limit || DOWNLOAD_THREAT_FEED_CAPS[kind] || 0);
   const lines = String(text || '').split(/\r?\n/);
   if (kind === 'sha256') {
     const seen = new Set();
     for (const line of lines) {
       const hash = line.trim().toLowerCase();
       if (/^[a-f0-9]{64}$/.test(hash)) seen.add(hash.slice(0, DOWNLOAD_HASH_PREFIX_HEX));
-      if (seen.size >= cap) break;
+      if (cap && seen.size >= cap) break;
     }
-    return { packed: packSortedHex(seen), count: seen.size, truncated: seen.size >= cap };
+    return { packed: packSortedHex(seen), count: seen.size, truncated: false };
   }
   const keys = new Set();
   for (const line of lines) {
@@ -1012,14 +1044,23 @@ async function packDownloadThreatFeed(kind, text) {
 }
 
 function readDownloadThreatFeedStore(stored) {
-  const hashes = packedHexValid(stored && stored.sha256Prefixes, DOWNLOAD_HASH_PREFIX_HEX) ? stored.sha256Prefixes : '';
+  // Version 1 hashes came from the combined feed and may contain OTX inputs.
+  let hashes = '';
+  if (stored && stored.version === 2 && packedHexValid(stored.sha256Prefixes, DOWNLOAD_HASH_PREFIX_HEX)) {
+    hashes = packedHashBytes(stored.sha256Prefixes);
+  } else if (stored && stored.version === 3 && typeof stored.sha256Bytes === 'string') {
+    try {
+      const decoded = atob(stored.sha256Bytes);
+      if (btoa(decoded) === stored.sha256Bytes && packedHashBytesValid(decoded)) hashes = decoded;
+    } catch (_) {}
+  }
   const urls = packedHexValid(stored && stored.payloadUrlKeys, DOWNLOAD_URL_KEY_HEX) ? stored.payloadUrlKeys : '';
   const depths = stored && stored.payloadUrlDirDepths;
   const urlDirDepths = Array.isArray(depths) && depths.length <= DOWNLOAD_URL_KEY_MAX_CHARS
     && depths.every((d) => Number.isInteger(d) && d >= 2 && d <= DOWNLOAD_URL_KEY_MAX_CHARS) ? depths : null;
   return {
     hashes,
-    hashCount: hashes.length / DOWNLOAD_HASH_PREFIX_HEX,
+    hashCount: hashes.length / (DOWNLOAD_HASH_PREFIX_HEX / 2),
     urls,
     urlCount: urls.length / DOWNLOAD_URL_KEY_HEX,
     urlDirDepths,
@@ -1055,7 +1096,7 @@ async function knownMalwareHash(sha256) {
     return { hit: true, diagnostic: hash === EICAR_SHA256, source: MALWARE_HASH_SOURCES.stored.has(hash) ? 'stored' : 'bundled' };
   }
   const feeds = await downloadThreatFeeds();
-  if (packedHexHas(feeds.hashes, DOWNLOAD_HASH_PREFIX_HEX, hash.slice(0, DOWNLOAD_HASH_PREFIX_HEX))) {
+  if (packedHashBytesHas(feeds.hashes, hash.slice(0, DOWNLOAD_HASH_PREFIX_HEX))) {
     return { hit: true, diagnostic: false, source: 'feed' };
   }
   return { hit: false, diagnostic: false, source: '' };
@@ -1113,45 +1154,71 @@ async function updateDownloadThreatFeeds(reason) {
   if (cfg.autoUpdateLists === false && !forced) return { ok: false, skipped: true, error: 'Auto-update is disabled' };
 
   const held = await localGet([DOWNLOAD_THREAT_FEED_KEY, DOWNLOAD_THREAT_META_KEY]);
-  const previous = readDownloadThreatFeedStore(held && held[DOWNLOAD_THREAT_FEED_KEY]);
+  const stored = held && held[DOWNLOAD_THREAT_FEED_KEY];
+  const previous = readDownloadThreatFeedStore(stored);
   const previousMeta = (held && held[DOWNLOAD_THREAT_META_KEY]) || {};
   const packed = { sha256: previous.hashes, 'payload-urls': previous.urls };
   let urlDirDepths = previous.urlDirDepths;
-  const widths = { sha256: DOWNLOAD_HASH_PREFIX_HEX, 'payload-urls': DOWNLOAD_URL_KEY_HEX };
+  const hashSourceCount = DOWNLOAD_THREAT_LIST_SOURCES.filter((source) => source.kind === 'sha256').length;
   const results = await Promise.all(DOWNLOAD_THREAT_LIST_SOURCES.map(async (source) => {
     const fetched = await fetchValidatedRemoteListText(source.url, false, LIST_FETCH_TIMEOUT_MS);
     if (!fetched || !fetched.ok) {
       return { url: source.url, kind: source.kind, ok: false, error: String((fetched && fetched.error) || 'failed').slice(0, 180) };
     }
     const next = await packDownloadThreatFeed(source.kind, fetched.text);
-    const before = packed[source.kind].length / widths[source.kind];
+    const priorCount = Number(previousMeta.sourceCounts?.[source.url]);
+    const before = source.kind === 'sha256'
+      ? Number.isSafeInteger(priorCount) && priorCount >= 0 ? priorCount : 0
+      : previous.urlCount;
     /* A feed that suddenly loses most of its entries is far likelier broken than cleaned up. */
     if (!next.count || (before >= DOWNLOAD_THREAT_DRIFT.minBaseline && next.count < before * DOWNLOAD_THREAT_DRIFT.dropRatio)) {
       return { url: source.url, kind: source.kind, ok: false, rejected: true,
         error: 'Kept the previous copy: ' + next.count + ' usable entries, down from ' + before };
     }
-    packed[source.kind] = next.packed;
-    if (next.dirDepths) urlDirDepths = next.dirDepths;
-    return { url: source.url, kind: source.kind, ok: true, count: next.count, truncated: next.truncated };
+    return { url: source.url, kind: source.kind, ok: true, count: next.count, truncated: next.truncated, next };
   }));
+
+  const hashResults = results.filter((result) => result.kind === 'sha256');
+  const hashesReady = hashResults.length === hashSourceCount && hashResults.every((result) => result.ok);
+  const hashesAvailable = hashesReady || (!previous.hashCount && hashResults.some((result) => result.ok));
+  if (hashesAvailable) {
+    const prefixes = [];
+    for (const result of hashResults) {
+      if (!result.ok) continue;
+      for (let at = 0; at < result.next.packed.length; at += DOWNLOAD_HASH_PREFIX_HEX) {
+        prefixes.push(result.next.packed.slice(at, at + DOWNLOAD_HASH_PREFIX_HEX));
+      }
+    }
+    packed.sha256 = packedHashBytes(packSortedHex(prefixes));
+  }
+  const urlResult = results.find((result) => result.kind === 'payload-urls' && result.ok);
+  if (urlResult) {
+    packed['payload-urls'] = urlResult.next.packed;
+    urlDirDepths = urlResult.next.dirDepths;
+  }
 
   const now = Date.now();
   const succeeded = results.filter((r) => r.ok).length;
-  const store = { version: 1, updatedAt: succeeded ? now : previous.updatedAt, sha256Prefixes: packed.sha256,
+  const updated = hashesAvailable || !!urlResult;
+  const store = { version: 3, updatedAt: updated ? now : previous.updatedAt, sha256Bytes: btoa(packed.sha256),
     payloadUrlKeys: packed['payload-urls'], payloadUrlDirDepths: urlDirDepths };
   const meta = {
-    version: 1,
-    updated: succeeded ? now : (previousMeta.updated || 0),
+    version: 3,
+    updated: updated ? now : (stored && stored.version >= 2 ? previousMeta.updated || 0 : 0),
     lastAttempt: now,
     reason: String(reason || ''),
-    counts: { fileHashes: store.sha256Prefixes.length / DOWNLOAD_HASH_PREFIX_HEX, payloadUrls: store.payloadUrlKeys.length / DOWNLOAD_URL_KEY_HEX },
+    counts: { fileHashes: packed.sha256.length / (DOWNLOAD_HASH_PREFIX_HEX / 2), payloadUrls: store.payloadUrlKeys.length / DOWNLOAD_URL_KEY_HEX },
+    sourceCounts: hashesAvailable ? Object.fromEntries(hashResults.filter((result) => result.ok).map((result) => [result.url, result.count]))
+      : stored && stored.version >= 2 ? previousMeta.sourceCounts || {} : {},
     sources: { total: results.length, succeeded, failed: results.length - succeeded },
     failures: results.filter((r) => !r.ok).map((r) => ({ url: r.url, error: r.error, rejected: !!r.rejected })),
   };
-  await localSet(succeeded ? { [DOWNLOAD_THREAT_FEED_KEY]: store, [DOWNLOAD_THREAT_META_KEY]: meta } : { [DOWNLOAD_THREAT_META_KEY]: meta });
+  await localSet(updated || !stored || stored.version !== 3
+    ? { [DOWNLOAD_THREAT_FEED_KEY]: store, [DOWNLOAD_THREAT_META_KEY]: meta }
+    : { [DOWNLOAD_THREAT_META_KEY]: meta });
   resetDownloadThreatFeedCache();
-  if (succeeded && typeof pruneStorageIfNeeded === 'function') await pruneStorageIfNeeded('download-threat-feeds').catch(() => {});
-  return { ok: succeeded > 0, meta };
+  if (updated && typeof pruneStorageIfNeeded === 'function') await pruneStorageIfNeeded('download-threat-feeds').catch(() => {});
+  return { ok: updated, meta };
 }
 
 async function attachDownloadThreatFeedUpdate(result, reason) {

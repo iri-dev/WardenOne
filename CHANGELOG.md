@@ -4,6 +4,8 @@
 
 ### Added
 
+- Site Firewall has an optional noop choice for Script, XHR, Frame and Media. It skips that row's All decision for the selected column while retaining other protections. Backups preserve the choice, and the page now identifies Allow and Allow once as security-list overrides.
+
 - Third-party source records now distinguish published licenses, written permissions and specific scope exceptions. Offline attribution and license notices are available in Settings → About and are retained in both distribution profiles; the source inventory also covers historical build inputs and bundled data.
 
 - Official GitHub ZIPs now check whether their packaged build is behind the latest complete WardenOne release. A quiet popup notice appears only when GitHub confirms the installed commit is an ancestor; Settings → About WardenOne shows the comparison, manual update steps, and Check again. Source, Store, offline, and unrelated builds are not called outdated.
@@ -24,9 +26,13 @@
   global defaults and all saved profiles. Off sites are excluded from
   EyeShield's content-script registration.
 
-- Download Guard now keeps two malware feeds on your device while it is on: URLhaus's exact payload addresses and SHA-256 hashes of recent MalwareBazaar, URLhaus and OTX samples, refreshed with the daily list update. A listed address pauses the download as Dangerous, even on GitHub, Google Drive and other shared hosts that domain lists cannot block; a matching file hash blocks it. File Shield checks the files you pick against the same hashes, and the popup shows both counts.
+- Download Guard now keeps malware feeds on your device while it is on: URLhaus's exact payload addresses and separate SHA-256 feeds for MalwareBazaar and URLhaus samples, refreshed with the daily list update. A listed address pauses the download as Dangerous, even on GitHub, Google Drive and other shared hosts that domain lists cannot block; a matching file hash blocks it. File Shield checks the files you pick against the same hashes, and the popup shows both counts.
 
 ### Changed
+
+- Cosmetic host responses now share identical selector arrays for matching domain-rule scopes, reducing worker cache memory while retaining per-host procedural rules, scriptlets and exceptions.
+
+- Download Guard now keeps all valid MalwareBazaar and URLhaus hashes from the two source files instead of limiting each to 8,000. The fingerprints are packed more tightly, and the local storage cleanup threshold leaves room for the complete feeds. A fresh install can use one working hash source while the other is unavailable; later partial refreshes preserve the last saved set.
 
 - Download Guard now separates risk scores from interruption decisions. Ordinary exports, documents, archives and installers continue quietly with Activity records; meaningful file or delivery evidence opens a review. Eligible hash checks remain active, and automatic removal requires threat findings rather than an accumulated heuristic score.
 

@@ -14,6 +14,174 @@ is measured separately, under [Cold worker wakes](#cold-worker-wakes).
 machine metadata, video investigations and DevTools traces stay local; this page records
 the conclusions needed to understand release performance decisions.
 
+## Cosmetic cache and frame retention (2026-10-25)
+
+The existing generic-only sharing is effective, but each host with a matching
+specific or exception bucket retained its own full selector array, even when
+hundreds of subdomains inherited the same buckets. Responses now share that
+array when their ordered selector buckets and generic-hide mode match within
+the same loaded list. Procedural rules, scriptlets and response objects remain
+per host. Video-platform and player responses retain their separate paths.
+
+Sharing uses a scope index capped at the same 256 entries as the host cache.
+It holds host-cache keys, while a WeakMap checks that the referenced response
+belongs to the same list and scope. Missing or evicted representatives are
+recomputed. Neither index holds selector arrays or keeps evicted responses alive.
+Invalidation resets the list memo and host cache; superseded generations still
+cannot repopulate it. Different host exceptions, additional selector buckets,
+list objects and generic-hide modes do not share output.
+
+Before and after, with 256 cached hosts and 16,000 generic selectors:
+
+| Controlled workload | Before | After |
+| --- | ---: | ---: |
+| Node, inherited specific rule: retained heap at capacity | 31.33 MiB | 0.21 MiB |
+| Node, inherited exception: retained heap at capacity | 31.32 MiB | 0.20 MiB |
+| Scoped selector arrays at capacity | 256 | 1 |
+| Edge, inherited specific rule: heap above the following invalidated state | 16.22 MiB | 0.67 MiB |
+
+Node values are medians of three separate Node 24 processes per build. Its
+baseline excludes the initially allocated fixture; replacement deltas include
+new fixture strings, and the final release can fall below that baseline when
+the original fixture is also collected. These are isolated V8 measurements.
+Four capacities of new hosts never exceeded 256 entries. Five list replacements
+reached a stable retained plateau rather than accumulating prior generations.
+The baseline cache code in commit `2975f4f` matches the captured starting cache
+exactly; unrelated working-tree changes are excluded from that comparison.
+
+The native comparison used immutable runtime snapshots differing only in the
+cosmetic-cache block, Edge 150.0.4078.48, Windows 10 19045 and an i5-12400F.
+After normal remote feeds settled, the stored list had 13,999 generic selectors;
+256 synthetic subdomains of one applicable real-list parent reproduced the
+256-versus-one array count. The table's native heap row instead uses the fixed
+16,000-selector fixture to avoid changing remote data between builds. It is the
+median of five storage-driven replacements per build, each followed by forced
+GC and cache invalidation. The invalidated worker heap changed by less than
+0.01 MiB across those cycles. An attached debugger kept the worker awake.
+
+The same native run navigated five times into and out of a 30-frame page. In
+both builds, returning to the ordinary page restored one document, 31 nodes and
+147 listeners, from 31 documents, 391 nodes and 1,797 listeners. Returned renderer
+heap stayed about 2.86 MiB; loaded frames used roughly 18.1–18.7 MiB. A real
+stylesheet of 296,258 characters still hid the fixture element on every sample.
+These short, same-origin cycles show no accumulating frame retention; they do
+not establish leak freedom on arbitrary sites or long sessions.
+
+There is a small lookup tradeoff for unrelated scopes. An isolated warmed Node
+probe over 2,048 new hosts with 32 generic selectors measured median computation
+of 14.36 ms before and 19.06 ms after for unique scopes; matching inherited
+scopes measured 15.78 and 9.90 ms. The index adds roughly two microseconds per
+miss in that unique-scope fixture. Existing host-cache hits and the generic-only
+path avoid the scope lookup. These are computation timings, not whole-browser
+CPU or a page-level speedup claim.
+
+Three cold and three warm navigations per DOM-churn, player-churn, eight-frame
+and thirty-frame fixture also completed. In the final reverse-order comparison,
+renderer heap was effectively unchanged: 3.18/3.21 MiB for churn, 3.25/3.27 MiB
+beside a player, 7.24/7.24 MiB with eight frames and 19.55/19.56 MiB with thirty.
+Task timings varied by session; the final candidate-minus-baseline medians ranged
+from -74 to +7 ms across phases, which does not establish a causal DOM speedup.
+Those loopback fixtures do not exercise hostname cosmetic serving; the separate
+native memory fixture maps a public-format hostname locally and verifies applied
+CSS. No content-script traversal or scheduling change was justified.
+
+The full maintainability gate passed 310 suites using a disposable index of the
+current files. The real staging index was not changed. On the final captured
+runtime, live YouTube playback advanced from 1.59 to 17.27 seconds and a Twitch
+VOD from 11.05 to 26.53 seconds, both unpaused at ready state 4. These short
+playback checks do not measure ad-blocking accuracy or long-session retention.
+
+The lifecycle regression covers LRU recency and eviction, selector coverage and
+ordering at the 20,000-selector cap, differing exceptions, command isolation,
+player separation and repeated stale-generation rejection. Native profiling
+also checks actual storage invalidation and CSS application. Raw reports and
+source fingerprints remain local under
+`docs/perf/traces/cosmetic-memory-2026-10-25/`.
+
+Reproduce the isolated workload with
+`node --expose-gc tools/bench-cosmetic-cache-memory.js working` (or a commit SHA).
+`tools/browser-cosmetic-memory.js --extension <snapshot> --out <report.json>`
+runs five native list and frame cycles; `--cycles` accepts 1–10. It needs Edge
+and network access, fails if the cache or applied CSS is missing, and labels
+partial reports incomplete. This review does not compare another blocker or
+claim a corresponding reduction in total browser RAM.
+
+## Dynamic-rule wake review (2026-10-25)
+
+The current working tree already shares owned-band reads and skips unchanged
+replacements. Its 39-check dynamic-rule regression models unchanged browser
+startup and twenty fresh workers: one filtered read and zero writes each. It also
+checks missing-rule repair, changed settings, read/write overlap, failed reads,
+and rejected writes followed by retry. Installed browser rules remain the source
+of truth; no additional persistent rule cache was introduced in this review.
+
+Three native idle wakes per scenario, Edge 150.0.4078.48, Windows 10 19045,
+i5-12400F, 22,136 installed dynamic rules:
+
+| Per wake | Close a tab, median (range) | Open the popup, median (range) |
+| --- | ---: | ---: |
+| Browser-process CPU | 382 ms (346–527) | 532 ms (526–550) |
+| DNR background task duration | 117.33 ms (112.70–125.54) | 127.10 ms (122.29–127.44) |
+| DNR UI task duration | 8.92 ms (8.83–9.53) | 9.73 ms (9.61–9.87) |
+| UI stalls, total duration of tasks ≥16 ms | 0 ms (0–86) | 19 ms (17–19) |
+| DNR UI tasks ≥50 ms | 0 | 0 |
+
+CPU is the delta of `SystemInfo.getProcessInfo` browser-process counters over
+5.0-second windows, including ordinary browser work. Trace task durations are
+wall time, not CPU time. Each trace has one DNR background task and its UI reply;
+these are task counts, not an independent API-call counter. The model supplies
+the exact read/write assertions. Edge's nested `Edge_RunTask` wrappers are
+excluded so the thread-pool work is counted once.
+
+The harness waits for a stable installed rule count, closes onboarding, detaches
+the worker debugger and observes the worker disappear before every action. It
+does not attach to the newly woken worker. This profiles native idle termination,
+not forced termination or a complete browser restart. The local report records
+the worker-source SHA-256 (`3f0738e460a75a0520495d38174e751662b66221100407075335eb948a611d5e`),
+browser, machine and samples. Report and six raw traces are under
+`docs/perf/traces/dynamic-rule-wake-2026-10-25/` and remain local.
+The snapshot was captured at 17:17 UTC. Concurrent local edits to storage limits
+and Download Guard landed during validation; these timings do not profile those
+later changes. The original measured-source fingerprint is retained.
+
+The first measurement pass exposed that thread-pool tasks use `ThreadPool_RunTask`
+rather than `ThreadControllerImpl::RunTask`. The saved traces were reanalysed with
+both task types; the CPU deltas and UI-stall results are unchanged. The gate now
+tests that distinction, process isolation, stall thresholds and missing-counter
+or missing-UI-thread failures. This is a new baseline for the existing runtime,
+not evidence of a runtime speedup. The older 6.3-second wake windows below are
+not directly comparable to these 5.0-second CPU windows.
+
+Read ownership in the reviewed worker:
+
+| Path | Installed state needed | Current handling |
+| --- | --- | --- |
+| Learned/tracker, grabber/miner, infrastructure, user/firewall, fingerprint/search, Script Shield and HTTPS cleanup bands | Reconcile persistent rules after a wake or settings change | Owned bands share the filtered read for up to 15 seconds; every dynamic write invalidates it at dispatch and settlement. |
+| Activity logger, Site Dashboard and network tally | Determine matched rules' actual actions, including remote options that can allow or block | Reads only matched IDs, separately from reconciliation. A range alone cannot reliably identify the action. |
+| Remote-list refresh | Compare both installed remote bands with newly compiled source-aware rules | Fresh full read; identical desired rules skip the write. Source integrity and authority checks remain in the commit path. |
+| Master-off removal | Identify installed owned rules, including remote and user bands | Fresh full read; removal failures remain eligible for retry. |
+| Repair | Check whether remote domain/option bands actually exist | Fresh full read; refetches when missing. |
+| Site/full data erasure | Remove installed dynamic rules before rebuilding | Fresh full read; no cached desired-state substitute. |
+
+The measured wake path does not show redundant band reads or no-op writes to
+remove. Activity attribution and manual full-table reads are separate profiling
+targets; these quiet-page samples do not measure their cost during busy browsing
+or list updates. No protection, firewall authority, rule coverage or runtime
+cache policy changed. Live YouTube/Twitch playback and comparative cosmetic-memory
+measurements were not repeated for this tooling-only review.
+
+Reproduce with Node 24, Edge and feed network access (several minutes):
+
+```powershell
+& "C:\Program Files\nodejs\node.exe" tools/browser-cold-wake.js --runs 3 --out docs/perf/traces/cold-wake/report.json --trace-dir docs/perf/traces/cold-wake
+```
+
+Omitting `--runs` retains one wake of each kind. JSON and raw traces are optional;
+the original UI-stall gate still applies to every sample. A run refuses to report
+success without enough installed dynamic rules, browser CPU counters or browser
+UI-thread metadata. The full browser measurement remains outside the local gate;
+its deterministic analysis tests run inside it.
+
 ## Private PSL footprint review (2026-10-21)
 
 Complete private boundaries now accompany the ICANN data in both shared helpers.

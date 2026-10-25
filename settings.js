@@ -3134,7 +3134,7 @@ let includeLists = true;
 let listsBundle = { loading: true, data: null, error: '' };
 const strList = (value, max, len) => (Array.isArray(value) ? value : []).filter((s) => typeof s === 'string' && s.trim() && s.length <= len)
   .map((s) => s.trim()).filter((s, i, all) => all.indexOf(s) === i).slice(0, max);
-const VERDICTS = ['allow', 'block', 'strip'];
+const VERDICTS = ['allow', 'block', 'noop'];
 /* Untrusted on the way in, so the same shape check runs both ways. */
 function cleanLists(raw) {
   raw = isObj(raw) ? raw : {};
@@ -3147,7 +3147,11 @@ function cleanLists(raw) {
       const columns = domains[domain];
       if (!savedHost(domain) || !isObj(columns)) return;
       const cells = {};
-      Object.keys(columns).forEach((column) => { if (/^[a-z]{1,16}$/.test(column) && VERDICTS.includes(columns[column])) cells[column] = columns[column]; });
+      Object.keys(columns).forEach((column) => {
+        const verdict = columns[column];
+        if (column === 'cookie' ? verdict === 'strip'
+          : ['script', 'xhr', 'frame', 'media', 'all'].includes(column) && VERDICTS.includes(verdict) && !(column === 'all' && verdict === 'noop')) cells[column] = verdict;
+      });
       if (Object.keys(cells).length) keep[domain] = cells;
     });
     if (Object.keys(keep).length) firewall[site] = keep;

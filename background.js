@@ -3119,8 +3119,12 @@ const DOWNLOAD_THREAT_LIST_SOURCES = [
     kind: 'payload-urls',
   },
   {
-    // malicious-hash -- MalwareBazaar, URLhaus payload and OTX sample hashes, refreshed hourly
-    url: 'https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/full-hash-sha256-aa.txt',
+    // Publisher-separated MalwareBazaar hashes; the combined file also includes OTX.
+    url: 'https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/sources/bazaar.abuse.ch.sha256.txt',
+    kind: 'sha256',
+  },
+  {
+    url: 'https://raw.githubusercontent.com/romainmarcoux/malicious-hash/main/sources/urlhaus.abuse.ch.sha256.txt',
     kind: 'sha256',
   },
 ];
@@ -3587,7 +3591,7 @@ async function updateAdShieldCosmetics() {
 // Each frame should not re-read and deserialize the multi-megabyte store.
 let __cosmeticMem = null;             // { data, cfg, allow } once loaded; null = needs (re)load
 let __cosmeticHostCache = new Map();  // host -> serve result (insertion order = LRU recency)
-let __cosmeticGenericSelectors = new WeakMap(); // one generic array per loaded list, shared by ordinary hosts
+let __cosmeticSelectorMemo = new WeakMap(); // selector sharing stays within a loaded list
 const COSMETIC_HOST_CACHE_MAX = 256;  // a single page rarely spans more distinct hosts than this
 // Same two additions as the config cache above, for the same two reasons (M18): one in-flight load
 // shared by concurrent callers, and a generation so a load that started before an invalidation
@@ -3600,7 +3604,7 @@ let __cosmeticLoad = null;
 function invalidateCosmeticCache() {
   __cosmeticMem = null;
   __cosmeticHostCache.clear();
-  __cosmeticGenericSelectors = new WeakMap();
+  __cosmeticSelectorMemo = new WeakMap();
   __cosmeticGeneration++;
   __cosmeticLoad = null;
 }
@@ -3701,7 +3705,18 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
   for (let i = 0; i < hostParts.length - 1; i++) candidates.push(hostParts.slice(i).join('.'));
   const shareGeneric = !videoPlatform && !playerMode && !genericHideExcluded
     && candidates.every((d) => !specific[d] && !exceptions[d]);
-  let selectors = shareGeneric ? __cosmeticGenericSelectors.get(mem) : null;
+  let selectorMemo = __cosmeticSelectorMemo.get(mem);
+  if (!selectorMemo) {
+    selectorMemo = { generic: null, scopes: new Map(), owners: new WeakMap() };
+    __cosmeticSelectorMemo.set(mem, selectorMemo);
+  }
+  const selectorScope = !shareGeneric && !videoPlatform && !playerMode
+    ? JSON.stringify([genericHideExcluded, candidates.filter((d) => specific[d] || exceptions[d])]) : null;
+  let selectors = shareGeneric ? selectorMemo.generic : null;
+  if (selectorScope) {
+    const row = __cosmeticHostCache.get(selectorMemo.scopes.get(selectorScope));
+    if (row && selectorMemo.owners.get(row) === selectorScope) selectors = row.selectors;
+  }
   if (!selectors) {
     const sel = new Set(videoPlatform || playerMode || genericHideExcluded ? [] : (data.generic || []));
     if (!playerMode) {
@@ -3719,7 +3734,7 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
       }
     }
     selectors = Array.from(sel).slice(0, 20000);
-    if (shareGeneric) __cosmeticGenericSelectors.set(mem, selectors);
+    if (shareGeneric) selectorMemo.generic = selectors;
   }
   // collect procedural rules for this host (domain-scoped, capped per page)
   const procedural = data.procedural || {};
@@ -3749,7 +3764,7 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
     (scriptletsByDomain['*'] || []).forEach(pushScriptlet);
     candidates.forEach((d) => { (scriptletsByDomain[d] || []).forEach(pushScriptlet); });
   }
-  // Each host gets its own response object; only identical generic selector arrays are shared.
+  // Host-specific commands stay separate even when the selector buckets match.
   const result = { ok: true, selectors, procedural: procRules, scriptlets };
 
   // Answer the caller either way, but only memoise a result computed from data that is still
@@ -3757,6 +3772,12 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
   // cache the edit had just cleared, and the stale answer would then be served from memory for
   // the rest of the worker's life -- the invalidation undone twice over.
   if (mem && mem.generation !== undefined && mem.generation !== __cosmeticGeneration) return result;
+  if (selectorScope) {
+    selectorMemo.owners.set(result, selectorScope);
+    selectorMemo.scopes.delete(selectorScope);
+    selectorMemo.scopes.set(selectorScope, cacheKey);
+    if (selectorMemo.scopes.size > COSMETIC_HOST_CACHE_MAX) selectorMemo.scopes.delete(selectorMemo.scopes.keys().next().value);
+  }
   __cosmeticHostCache.set(cacheKey, result);
   if (__cosmeticHostCache.size > COSMETIC_HOST_CACHE_MAX) {
     __cosmeticHostCache.delete(__cosmeticHostCache.keys().next().value); // evict oldest
@@ -6329,81 +6350,77 @@ async function readFirewall() {
   } catch (_) { return {}; }
 }
 
-// Rebuild from the stored matrix in stable order. Report every omitted cell when the band is full
-// so writes can be refused and the UI never presents an unenforced decision as active (M46).
+function firewallVerdictAllowed(column, verdict) {
+  if (column === 'cookie') return verdict === 'strip' || verdict === 'default';
+  if (!Object.prototype.hasOwnProperty.call(FIREWALL_COLUMNS, column)) return false;
+  return verdict === 'allow' || verdict === 'block' || verdict === 'default' || (column !== 'all' && verdict === 'noop');
+}
+
+// Enforce the saved-decision limit before computing noop exclusions. Report omitted cells
+// so a write cannot silently displace an older decision (M46).
 function firewallCompile(matrix) {
-  const rules = [];
+  const cells = [];
   const omitted = [];
-  let id = FIREWALL_RULE_BASE;
-  const limit = FIREWALL_RULE_BASE + FIREWALL_RULE_MAX;
   for (const site of Object.keys(matrix || {})) {
     const host = firewallNormalizeHost(site);
     if (!host) continue;
     const domains = matrix[site] || {};
+    if (typeof domains !== 'object' || Array.isArray(domains)) continue;
     for (const domain of Object.keys(domains)) {
       const target = firewallNormalizeHost(domain);
       if (!target) continue;
       const decisions = domains[domain] || {};
+      if (typeof decisions !== 'object' || Array.isArray(decisions)) continue;
       for (const column of Object.keys(decisions)) {
         const verdict = decisions[column];
-        let rule = null;
-        if (column === 'cookie') {
-          // Not a block: the request still happens, it just stops carrying who
-          // you are. That is the useful middle setting for a domain a site
-          // genuinely needs but that does not need to recognise you.
-          if (verdict !== 'strip') continue;
-          rule = {
-            priority: FIREWALL_PRIORITY_COOKIE,
-            action: {
-              type: 'modifyHeaders',
-              requestHeaders: [{ header: 'cookie', operation: 'remove' }],
-            },
-            condition: {
-              initiatorDomains: [host],
-              requestDomains: [target],
-              resourceTypes: FIREWALL_COLUMNS.all,
-            },
-          };
-        } else {
-          const types = FIREWALL_COLUMNS[column];
-          if (!types || (verdict !== 'block' && verdict !== 'allow')) continue;
-          rule = {
-            priority: column === 'all' ? FIREWALL_PRIORITY : FIREWALL_PRIORITY_COLUMN,
-            action: { type: verdict === 'block' ? 'block' : 'allow' },
-            condition: {
-              initiatorDomains: [host],
-              requestDomains: [target],
-              resourceTypes: types,
-            },
-          };
-        }
-        if (id >= limit) {
+        if (verdict === 'default' || !firewallVerdictAllowed(column, verdict)) continue;
+        if (cells.length >= FIREWALL_RULE_MAX) {
           omitted.push({ site: host, domain: target, column });
           continue;
         }
-        rule.id = id++;
-        rules.push(rule);
+        cells.push({ site: host, domain: target, column, verdict });
       }
     }
   }
-  return { rules, omitted, limit: FIREWALL_RULE_MAX };
+  const noops = new Map();
+  for (const cell of cells) {
+    if (cell.verdict !== 'noop') continue;
+    const key = cell.site + '|' + cell.domain;
+    const types = noops.get(key) || new Set();
+    for (const type of FIREWALL_COLUMNS[cell.column]) types.add(type);
+    noops.set(key, types);
+  }
+  const rules = [];
+  for (const cell of cells) {
+    if (cell.verdict === 'noop') continue;
+    const { site, domain, column, verdict } = cell;
+    const excluded = column === 'all' && noops.get(site + '|' + domain);
+    const types = column === 'cookie' ? FIREWALL_COLUMNS.all
+      : excluded ? FIREWALL_COLUMNS.all.filter(type => !excluded.has(type)) : FIREWALL_COLUMNS[column];
+    // Noop narrows this row's All rule; it never installs an allow or changes other owners.
+    // Cookie stripping remains independent of the row's request decisions.
+    rules.push({
+      id: FIREWALL_RULE_BASE + rules.length,
+      priority: column === 'cookie' ? FIREWALL_PRIORITY_COOKIE : column === 'all' ? FIREWALL_PRIORITY : FIREWALL_PRIORITY_COLUMN,
+      action: column === 'cookie'
+        ? { type: 'modifyHeaders', requestHeaders: [{ header: 'cookie', operation: 'remove' }] }
+        : { type: verdict },
+      condition: { initiatorDomains: [site], requestDomains: [domain], resourceTypes: types },
+    });
+  }
+  return { rules, omitted, decisions: cells.length, limit: FIREWALL_RULE_MAX };
 }
 function firewallRulesFrom(matrix) {
   return firewallCompile(matrix).rules;
 }
-// Why a decision cannot be taken, or '' when it can. A change to a cell that already has a
-// rule, or a cell going back to Default, never needs a new id; only a NEW decision does. The
-// question is asked of the two compiles, before and after: if the change leaves more cells
-// without a rule than there were, it does not fit and is refused with the count. Judged that
-// way rather than by looking for the new cell among the omitted, because a new column on a
-// domain written early in the matrix takes an id in the middle and bumps the LAST decision
-// off the end -- the new cell would look fine and an old one would silently stop working.
+// A new cell can displace an older one later in the matrix. Refuse any increase in omissions;
+// noops reserve a saved-decision slot even though they do not need a DNR rule.
 function firewallRefusalFor(before, after) {
   const was = ((before && before.omitted) || []).length;
   const now = ((after && after.omitted) || []).length;
   if (now <= was) return '';
-  const wanted = ((after && after.rules) || []).length + now;
-  return 'That would be decision ' + wanted + ' of a firewall that holds ' + after.limit + ' rules across every site. Nothing was saved. Set a cell back to Default, or reset a site you no longer need, to make room.';
+  const wanted = (after.decisions === undefined ? ((after && after.rules) || []).length : after.decisions) + now;
+  return 'That would be decision ' + wanted + ' of a firewall that holds ' + after.limit + ' decisions across every site. Nothing was saved. Set a cell back to Default, or reset a site you no longer need, to make room.';
 }
 function firewallOmittedFor(compiled, site) {
   return ((compiled && compiled.omitted) || []).filter((o) => o.site === site).map((o) => ({ domain: o.domain, column: o.column }));
@@ -7654,7 +7671,7 @@ function updateStoredConfig(mutate, triesLeft, operationOrder) {
 }
 
 const STORAGE_META_KEY = 'wardenone_storage_meta';
-const STORAGE_SOFT_LIMIT_BYTES = 4 * 1024 * 1024;
+const STORAGE_SOFT_LIMIT_BYTES = 8 * 1024 * 1024;
 const BLOCKED_DOMAIN_STORAGE_MAX = 30000;
 const BLOCKED_DOMAIN_STORAGE_PRESSURE_MAX = 12000;
 const OPENPHISH_STORAGE_PRESSURE_MAX = 10000;
@@ -7663,9 +7680,9 @@ const HISTORY_STORAGE_PRESSURE_MAX = 120;
 function storageQuotaBytes() {
   try {
     const q = Number(chrome.storage.local && chrome.storage.local.QUOTA_BYTES);
-    return Number.isFinite(q) && q > 0 ? q : 5 * 1024 * 1024;
+    return Number.isFinite(q) && q > 0 ? q : 10 * 1024 * 1024;
   } catch (_) {
-    return 5 * 1024 * 1024;
+    return 10 * 1024 * 1024;
   }
 }
 
@@ -22686,7 +22703,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // Decisions of this site's that are stored but got no rule (a matrix from before the
         // limit was enforced at the write): the page draws them as not in effect.
         omitted: site ? firewallOmittedFor(compiled, site) : [],
-        held: compiled.rules.length,
+        held: compiled.decisions,
         limit: compiled.limit,
         once: site ? await firewallSessionAllowances(site) : [],
         sites: Object.keys(matrix).length,
@@ -22705,8 +22722,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (column !== 'cookie' && !Object.prototype.hasOwnProperty.call(FIREWALL_COLUMNS, column)) {
         sendResponse({ ok: false, error: 'Unknown column.' }); return;
       }
-      if (!['allow', 'block', 'strip', 'default'].includes(verdict)) {
-        sendResponse({ ok: false, error: 'Unknown decision.' }); return;
+      if (!firewallVerdictAllowed(column, verdict)) {
+        sendResponse({ ok: false, error: 'That decision is not available for this column.' }); return;
       }
       const matrix = await readFirewall();
       const next = firewallMatrixWith(matrix, site, domain, column, verdict);
@@ -22716,7 +22733,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const after = firewallCompile(next);
       const refusal = firewallRefusalFor(before, after);
       if (refusal) {
-        sendResponse({ ok: false, error: refusal, rules: matrix[site] || {}, omitted: firewallOmittedFor(before, site), held: before.rules.length, limit: before.limit });
+        sendResponse({ ok: false, error: refusal, rules: matrix[site] || {}, omitted: firewallOmittedFor(before, site), held: before.decisions, limit: before.limit });
         return;
       }
       // Chrome next. If it refuses, nothing is stored and the page is told why, with the
@@ -22732,7 +22749,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: 'The rule is in effect now but could not be saved, so it will not survive a restart: ' + firewallErrorText(e), rules: next[site] || {}, omitted: firewallOmittedFor(after, site) });
         return;
       }
-      sendResponse({ ok: true, rules: next[site] || {}, omitted: firewallOmittedFor(after, site), held: after.rules.length, limit: after.limit, applied: result.applied });
+      sendResponse({ ok: true, rules: next[site] || {}, omitted: firewallOmittedFor(after, site), held: after.decisions, limit: after.limit, applied: result.applied });
     });
     return true;
   }

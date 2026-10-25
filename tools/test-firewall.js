@@ -187,6 +187,7 @@ class FakeNode {
   set textContent(v) { this.ownText = String(v); this.children = []; }
   appendChild(c) { this.children.push(c); return c; }
   addEventListener(type, fn) { this.listeners[type] = fn; }
+  setAttribute(name, value) { this[name] = String(value); }
 }
 function firewallPage(get, answers = {}) {
   const nodes = new Map();
@@ -239,6 +240,34 @@ function firewallPage(get, answers = {}) {
 {
   const page = firewallPage({ ok: true, site: 'news.example', rules: { 'ads.example': { script: 'block' } }, omitted: [], once: [], sites: 1 });
   check('a stored decision alone still enables the undo', page.byId('reset-site').disabled === false);
+}
+{
+  const page = firewallPage({ ok: true, site: 'news.example', rules: { 'cdn.example': { all: 'block', script: 'noop' } }, omitted: [], once: [], sites: 1 },
+    { 'firewall-set': { ok: false, error: 'Browser refused the change.', rules: { 'cdn.example': { all: 'block', script: 'noop' } }, omitted: [] } });
+  check('stored noops enable direct choices when the page loads', page.byId('noop-mode').checked === true);
+  const script = page.byId('rows').children[0].children[1].children[0];
+  check('noop has a distinct value, accessible name and scope explanation', script.tag === 'select' && script.value === 'noop'
+    && /Script: noop/.test(script['aria-label']) && /this row/.test(script.title) && /Blocklists/.test(script.title));
+  script.value = 'default';
+  script.listeners.change();
+  check('Default can be selected directly', page.sent.some(m => m.kind === 'firewall-set' && m.column === 'script' && m.verdict === 'default'));
+  check('a refused noop change redraws the applied choice', page.byId('rows').children[0].children[1].children[0].value === 'noop'
+    && /Browser refused/.test(page.byId('status').textContent));
+}
+{
+  const page = firewallPage({ ok: true, site: 'news.example', rules: { 'cdn.example': { script: 'block' } }, omitted: [], once: [], sites: 1 });
+  page.byId('rows').children[0].children[1].children[0].listeners.click();
+  check('the default cell cycle stays unchanged', page.sent.some(m => m.kind === 'firewall-set' && m.verdict === 'default'));
+}
+for (const current of ['default', 'block', 'allow']) {
+  const page = firewallPage({ ok: true, site: 'news.example', rules: { 'cdn.example': { script: current, all: 'block' } }, omitted: [], once: [], sites: 1 });
+  page.byId('noop-mode').checked = true;
+  page.byId('noop-mode').listeners.change();
+  const choice = page.byId('rows').children[0].children[1].children[0];
+  choice.value = 'noop';
+  choice.listeners.change();
+  const edits = page.sent.filter(m => m.kind === 'firewall-set');
+  check('noop from ' + current + ' sends one direct decision without intermediate overrides', edits.length === 1 && edits[0].column === 'script' && edits[0].verdict === 'noop');
 }
 
 /* ---- the rows are observed, not invented -------------------------------- */

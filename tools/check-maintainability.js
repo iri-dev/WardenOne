@@ -273,6 +273,7 @@ function checkContentBuild() {
   'tools/test-file-shield.js',
   'tools/test-mail-shield.js',
   'tools/test-firewall.js',
+  'tools/test-firewall-semantics.js',
   'tools/test-extension-check.js',
   'tools/test-badge-yield.js',
   'tools/test-media-scan-timing.js',
@@ -481,6 +482,9 @@ function checkContentBuild() {
   'tools/test-reconcile-dnr-batch.js',
   'tools/test-detectability-budget.js',
   'tools/test-perf-profile.js',
+  'tools/test-cold-wake-profile.js',
+  'tools/test-cosmetic-cache-lifecycle.js',
+  'tools/browser-cold-wake.js',
   'tools/perf-profile.js',
   // Shipped root scripts. Several of these were only ever parsed incidentally, by whichever
   // behavioural test happened to read them -- and a test that regex-reads a file has not parsed it.
@@ -750,6 +754,8 @@ checkCommand('detectability budget', ['tools/test-detectability-budget.js']);
 // the gate checks its statistics, pages, report and fail-closed rules, and that a profile of the
 // candidate exists in docs/perf and was produced with the extension actually loaded.
 checkCommand('performance profile harness', ['tools/test-perf-profile.js']);
+checkCommand('cold-wake profile harness', ['tools/test-cold-wake-profile.js']);
+checkCommand('cosmetic cache lifecycle', ['tools/test-cosmetic-cache-lifecycle.js']);
 checkCommand('frame ClickFix tests', ['tools/test-frame-clickfix.js']);
 checkCommand('fingerprint realm tests', ['tools/test-fingerprint-realm.js']);
 checkCommand('confirm-bait linked overlay tests', ['tools/test-confirm-bait-linked-overlay.js']);
@@ -838,6 +844,7 @@ checkCommand('network logger', ['tools/test-network-logger.js']);
 checkCommand('file shield', ['tools/test-file-shield.js']);
 checkCommand('mail shield', ['tools/test-mail-shield.js']);
 checkCommand('site firewall', ['tools/test-firewall.js']);
+checkCommand('firewall decision semantics', ['tools/test-firewall-semantics.js']);
 checkCommand('check an extension', ['tools/test-extension-check.js']);
 checkCommand('badge yields to page controls', ['tools/test-badge-yield.js']);
 checkCommand('media scan timing', ['tools/test-media-scan-timing.js']);

@@ -34,6 +34,8 @@
   .fw-btn:focus-visible { outline:2px solid var(--guide-violet); outline-offset:1px; }
   .fw-btn.is-allow { background:var(--wo-success-bg,#dcefe4); color:var(--guide-success); border-color:var(--guide-success); }
   .fw-btn.is-block { background:var(--wo-danger-bg,#f3dbe5); color:var(--guide-danger); border-color:var(--guide-danger); }
+  .fw-btn.is-noop { background:var(--guide-mist); color:var(--guide-violet); border-color:var(--guide-violet); }
+  .fw-mode { display:flex; align-items:center; gap:6px; color:var(--guide-soft); font-size:12.5px; }
   .fw-btn.is-inert { text-decoration: line-through; opacity: .55; outline: 1px dashed var(--guide-warning); outline-offset: -1px; }
   .fw-btn.is-strip { background:var(--wo-warning-bg,#f4e4ce); color:var(--guide-warning); border-color:var(--guide-warning); }
   .fw-once-row { display:flex; gap:6px; align-items:center; margin-top:4px; font-family:var(--body); }
@@ -74,7 +76,7 @@
         <div class="guide-eyebrow">Advanced tool</div>
         <h1>Decide what each domain may do here.</h1>
         <p class="guide-lead"><strong>Every domain this site loads, and what you allow it to do &mdash; on this site
-          only.</strong> Your decisions beat every list WardenOne ships. This is the tool that can break a site
+          only.</strong> Explicit Allow and Block choices beat every list WardenOne ships. This is the tool that can break a site
           completely, so undoing it is always one click away.</p>
         <div class="guide-hero-actions">
           <a class="guide-btn primary" href="#matrix">See the domains</a>
@@ -82,7 +84,7 @@
         </div>
         <div class="guide-pills" aria-label="How the firewall behaves">
           <span>This site only</span>
-          <span>Beats every list</span>
+          <span>Explicit overrides</span>
           <span>One-click undo</span>
         </div>
       </div>
@@ -103,8 +105,10 @@
         <div><div class="guide-kicker">Dynamic filtering</div><h2>The domains this page loads.</h2></div>
         <p>A row exists because a request actually happened. Click a cell to cycle it:
           <strong>&mdash;</strong> leaves it to WardenOne, <strong>allow</strong> forces it through every
-          blocklist, <strong>block</strong> stops it here. <strong>Cookie</strong> is different: it lets the
-          request happen but strips the cookie, so the domain still works and still cannot recognise you.
+          blocklist including malware and phishing lists, <strong>block</strong> stops it here.
+          Enable <strong>Include noop</strong> to choose values directly in Script, XHR, Frame and Media.
+          <strong>Noop</strong> skips this row's All decision for that column and lets other rules decide.
+          <strong>Cookie</strong> is different: the request happens without its cookies.
           <strong>Allow once</strong>, under a domain, lets it load freely until the browser closes and stores
           nothing &mdash; the way to test whether a domain is what broke a page without making a rule.</p>
       </div>
@@ -118,6 +122,7 @@
           placeholder="Add a domain yourself, e.g. tracker.example.com"
           aria-label="Add a domain to the matrix">
         <button class="btn" id="add" type="button">Add</button>
+        <label class="fw-mode"><input id="noop-mode" type="checkbox">Include noop</label>
         <span class="fw-count" id="count"></span>
         <span style="flex:1;"></span>
         <button class="btn" id="reset-site" type="button">Undo my rules here</button>
@@ -148,7 +153,9 @@
         WardenOne blocked something, the row says which list decided. <strong>All</strong> covers everything,
         including stylesheets and the request types with no column of their own. A specific column beats
         <strong>All</strong>: allow everything and block scripts, and the scripts are blocked. <strong>Cookie</strong>
-        strip beats an allow in the same row. A temporary allowance beats every stored decision while it lasts.</p>
+        strip beats an allow in the same row. A temporary allowance beats every stored firewall decision while it lasts,
+        including security-list blocks. <strong>Noop</strong> creates no allowance: other rows, including parent-domain
+        rules, still apply. Default keeps the row's All choice; noop skips it for that column.</p>
 
       <div class="fw-danger">
         <h3>This is the tool that can break a site</h3>
@@ -166,7 +173,7 @@
 
 <footer class="guide-footer">
   <div class="guide-wrap guide-footer-inner">
-    <span><strong>Your rules beat every list WardenOne ships.</strong> They apply to this site alone.</span>
+    <span><strong>Explicit Allow and Block choices beat lists.</strong> They apply to this site alone.</span>
     <span>Nothing here leaves your computer.</span>
   </div>
 </footer>

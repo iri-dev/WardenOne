@@ -34,7 +34,8 @@ function lift(startNeedle) {
   throw new Error('could not brace-match ' + startNeedle);
 }
 
-const SOFT_LIMIT = 4 * 1024 * 1024;
+const SOFT_LIMIT = 8 * 1024 * 1024;
+assert(BG.includes('const STORAGE_SOFT_LIMIT_BYTES = 8 * 1024 * 1024;'));
 
 // Every key the ladder can touch, with a made-up size so we can watch bytes fall.
 const SIZES = {
@@ -57,6 +58,7 @@ const SIZES = {
   // Something the ladder cannot touch -- config, allowlists, onboarding state. Real pressure often
   // comes partly from keys that are not droppable, which is what makes the last rung necessary.
   wardenone_filler: 3500000,
+  wardenone_quota_filler: 7500000,
 };
 
 function load(present) {
@@ -201,8 +203,7 @@ const everything = () => {
   // 4. The ladder stops as soon as it is under the limit. Pressure from one oversized
   //    cache must not also cost the user their history.
   // -------------------------------------------------------------------------
-  // Sized so that dropping the reputation caches alone (1.8 MB of 5.2 MB) brings it under the
-  // 4 MB limit -- so the ladder must stop there and touch neither the cosmetic store nor history.
+  // Dropping the reputation caches alone brings this fixture below the soft limit.
   const cachesSuffice = load({
     wardenone_safe_browsing_cache: { data: 1 },
     wardenone_phishtank_cache: { data: 1 },
@@ -214,6 +215,7 @@ const everything = () => {
     wardenone_domain_age_cache: { data: 1 },
     wardenone_adshield_cosmetic: { data: 1 },
     wardenone_history: new Array(2000).fill('x'),
+    wardenone_filler: { data: 1 },
   });
   check('the caches-suffice fixture starts over the limit', cachesSuffice.bytes() >= SOFT_LIMIT,
     cachesSuffice.bytes() + '');
@@ -232,7 +234,7 @@ const everything = () => {
   // -------------------------------------------------------------------------
   // The pressure comes from a key the ladder cannot drop, so it has to reach the last rung.
   const onlyUserData = load({
-    wardenone_filler: { data: 1 },
+    wardenone_quota_filler: { data: 1 },
     wardenone_blocked_domains: new Array(5000).fill('example.com'),
     wardenone_history: new Array(5000).fill('x'),
     wardenone_openphish_feed_cache: { urls: new Array(5000).fill('http://x/') },
