@@ -131,7 +131,7 @@ function oddReleaseLinks(text) {
   const settings = job('browser-settings');
   check('the Settings page runs in Edge on a Windows runner, every suite',
     /runs-on: windows-2025/.test(settings)
-      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 16
+      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 17
       && /run: node tools\/browser-settings-data\.js/.test(settings)
       && /run: node tools\/browser-settings-arrange\.js/.test(settings)
       && /run: node tools\/browser-config-race\.js/.test(settings)
@@ -146,6 +146,7 @@ function oddReleaseLinks(text) {
       && /run: node tools\/browser-media-security\.js/.test(settings)
       && /run: node tools\/browser-grabber-switches\.js/.test(settings)
       && /run: node tools\/browser-eyeshield-frames\.js/.test(settings)
+      && /run: node tools\/browser-memory-frames\.js/.test(settings)
       && /run: node tools\/browser-resource-saver\.js/.test(settings)
       && /run: node tools\/browser-player-ad-layers\.js/.test(settings));
   /* Publication stays serialised while a draft is prepared and promoted. */
@@ -166,7 +167,7 @@ function oddReleaseLinks(text) {
       && /Get-FileHash -Algorithm SHA256/.test(minimum) && /-ne \$env:CHROME_MINIMUM_SHA256\) \{ throw/.test(minimum)
       && /-ne \$env:CHROME_MINIMUM_VERSION\) \{ throw/.test(minimum));
   check('it runs the popup, both Settings suites and the config race in that Chrome',
-    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-audit-highs', 'browser-audit-mediums', 'browser-dnr-reconcile', 'browser-element-zapper', 'browser-engine-smoke', 'browser-download-hash-redirects', 'browser-reputation-bypass', 'browser-image-logger-loads', 'browser-media-security', 'browser-grabber-switches', 'browser-eyeshield-frames', 'browser-resource-saver']
+    ['browser-popup-regression', 'browser-settings-data', 'browser-settings-arrange', 'browser-config-race', 'browser-audit-highs', 'browser-audit-mediums', 'browser-dnr-reconcile', 'browser-element-zapper', 'browser-engine-smoke', 'browser-download-hash-redirects', 'browser-reputation-bypass', 'browser-image-logger-loads', 'browser-media-security', 'browser-grabber-switches', 'browser-eyeshield-frames', 'browser-memory-frames', 'browser-resource-saver']
       .every((t) => new RegExp('run: node tools/' + t + '\\.js').test(minimum))
       && /WARDENONE_BROWSER_NAME: 'Google Chrome'/.test(minimum) && /WARDENONE_HEADLESS: '1'/.test(minimum));
   const browserSteps = minimum.split(/\n      - /).filter(step => /run: node tools\/browser-/.test(step));
@@ -175,7 +176,7 @@ function oddReleaseLinks(text) {
     /runs-on: windows-2022/.test(minimum) && /WARDENONE_SOFTWARE_GL: '1'/.test(minimum)
       && browserSteps[0].includes('id: runtime') && browserSteps[0].includes('browser-runtime-smoke.js'));
   check('every extension suite requires the pinned Chrome and a working graphics runtime',
-    suites.length === 16 && suites.every(step => step.includes("steps.chrome.outcome == 'success'")
+    suites.length === 17 && suites.every(step => step.includes("steps.chrome.outcome == 'success'")
       && step.includes("steps.runtime.outcome == 'success'")) && /id: chrome/.test(minimum));
   check('legacy Chrome reload scenarios use normal browser windows',
     ['browser-config-race.js', 'browser-audit-highs.js'].every(file => {

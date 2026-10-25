@@ -290,7 +290,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [OpenPhish Community Feed](https://openphish.com/) | 1 | LicenseRef-OpenPhish-Terms; Specific upstream/use-scope exception — see source review |
 | [PhishDestroy Destroylist](https://github.com/phishdestroy/destroylist) | 1 | MIT |
 | [uBlock-Origin-dev-filter domains](https://github.com/quenhus/uBlock-Origin-dev-filter) | 1 | Unlicense |
-| [malicious-hash SHA-256 feed](https://github.com/romainmarcoux/malicious-hash) | 1 | MIT; Specific upstream/use-scope exception — see source review |
+| [malicious-hash SHA-256 feed](https://github.com/romainmarcoux/malicious-hash) | 1 | MIT; Written permission (2026-10-24); Specific upstream/use-scope exception — see source review |
 | [StevenBlack porn-only hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND CC-BY-4.0 |
 | [StevenBlack unified hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND upstream terms |
 | [Anti-Grabify](https://github.com/TMAFE/anti-grabify) | 1 | MPL-2.0 |

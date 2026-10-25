@@ -13,8 +13,7 @@
  */
 
 // ---- Download Guard -------------------------------------------------------
-// Download review. A/B downloads continue quietly; C-F downloads are paused and
-// reviewed in a WardenOne window before the user chooses continue or cancel.
+// Scores describe context; evidence determines whether a download needs review.
 // External reputation is opt-in. Chrome extensions cannot read arbitrary saved
 // download bytes from disk, so hash checks use a fresh URL re-fetch fingerprint.
 // VirusTotal receives only that SHA-256; WardenOne never uploads file contents.
@@ -108,49 +107,34 @@ const DOWNLOAD_REVIEW_TTL_MS = 2 * 60 * 60 * 1000;
 const DOWNLOAD_HANDLED_TTL_MS = 24 * 60 * 60 * 1000;
 const CHROME_DANGER_STRONG = new Set(['url', 'content', 'host', 'unwanted', 'deepscannedopeneddangerous', 'sensitivecontentblock', 'accountcompromise']);
 const CHROME_DANGER_MEDIUM = new Set(['file', 'uncommon', 'passwordprotected', 'blockedtoolarge', 'sensitivecontentwarning', 'deepscannedfailed', 'blockedscanfailed']);
-// These describe prevalence or an incomplete scan, not a positive dangerous-file finding. Keep
-// them as corroboration, but never let one of them cross the review threshold on its own.
+// Prevalence and incomplete scans remain scoring context, not positive threat findings.
 const CHROME_DANGER_WEAK = new Set(['uncommon', 'blockedtoolarge', 'deepscannedfailed', 'blockedscanfailed']);
 const CHROME_DANGER_PENDING = new Set(['asyncscanning', 'asynclocalpasswordscanning', 'promptforscanning', 'promptforlocalpasswordscanning']);
 const DOWNLOAD_GRADE_META = {
-  A: { grade: 'A', status: 'Trusted', color: '#2e9e5b', action: 'allow' },
-  B: { grade: 'B', status: 'Good', color: '#2e9e5b', action: 'allow' },
-  C: { grade: 'C', status: 'Review Recommended', color: '#8b3fb0', action: 'review' },
-  // "High Risk" is a claim about the file. D's actual occupants are mostly files WardenOne could
-  // not place -- an unlisted vendor, a community mirror, a CDN. Saying High Risk for those is what
-  // wears out the word, so that E's "Dangerous" -- which really does mean it -- gets clicked past.
-  D: { grade: 'D', status: 'Unverified Source', color: '#bd7a2a', action: 'review' },
-  E: { grade: 'E', status: 'Dangerous', color: '#c0392b', action: 'review' },
-  F: { grade: 'F', status: 'Critical Threat', color: '#7f1d1d', action: 'review' },
+  A: { grade: 'A', status: 'Trusted', color: '#2e9e5b' },
+  B: { grade: 'B', status: 'Good', color: '#2e9e5b' },
+  C: { grade: 'C', status: 'Review Recommended', color: '#8b3fb0' },
+  // D describes source uncertainty; the grade alone does not require intervention.
+  D: { grade: 'D', status: 'Unverified Source', color: '#bd7a2a' },
+  E: { grade: 'E', status: 'Dangerous', color: '#c0392b' },
+  F: { grade: 'F', status: 'Critical Threat', color: '#7f1d1d' },
 };
 const PENDING_DOWNLOADS = {};
 const DOWNLOAD_SCAN_TIMERS = {};
 const DOWNLOAD_SCANNING = {};
-// Downloads we paused IMMEDIATELY in onCreated (before the async scan) because their
-// name/URL looked dangerous. The scan resumes them if they grade clean. Tracked so the
-// clean path knows to undo an early-pause even when it didn't issue the pause itself.
+// Early pauses remain owned until the scan resumes the file or persists its review.
 const EARLY_PAUSED = new Set();
 /* Listed-source checks started in onCreated. Scans wait for their download's check, so a late
    pause can never land after a scan has already resumed or reviewed that download. */
 const EARLY_SOURCE_CHECKS = new Map();
 /* Downloads created in this worker whose first scan has not finished. Only these may be paused
    by the filename event; a later pause could hold a file the reader already chose to continue. */
-const AWAITING_FIRST_SCAN = new Set();
-/* Every type the scorer charges as a file type: programs and scripts, disk images, archives and
-   macro-enabled Office files. Double-extension lures such as invoice.pdf.exe end in .exe. */
-function downloadNameLooksRisky(name) {
-  return !!name && (DANGEROUS_EXT.test(name) || CONTAINER_EXT.test(name) || ARCHIVE_EXT.test(name) || MACRO_DOC_EXT.test(name));
-}
+const AWAITING_FIRST_SCAN = new Map();
 function downloadLooksRisky(item) {
-  try {
-    const fn = item && item.filename;
-    if (fn && downloadNameLooksRisky(downloadNameFromItemish(fn))) return true;
-  } catch (_) {}
-  for (const u of [item && item.finalUrl, item && item.url]) {
-    if (!u) continue;
-    try { if (downloadNameLooksRisky(downloadNameFromItemish(u))) return true; } catch (_) {}
-  }
-  return false;
+  const url = item && (item.finalUrl || item.url) || '';
+  const name = downloadNameFromItemish(item && item.filename || url);
+  return shouldReviewDownload(scoreDownload(url, item && item.referrer, name,
+    item && item.mime, [], item && item.danger));
 }
 function earlyPauseDownload(id) {
   EARLY_PAUSED.add(String(id));
@@ -161,7 +145,9 @@ function earlyPauseDownload(id) {
 function earlyPauseNamedDownload(id, filename) {
   const key = String(id);
   if (!AWAITING_FIRST_SCAN.has(key) || EARLY_PAUSED.has(key)) return;
-  try { if (downloadNameLooksRisky(downloadNameFromItemish(filename))) earlyPauseDownload(id); } catch (_) {}
+  const item = Object.assign({}, AWAITING_FIRST_SCAN.get(key), { filename });
+  AWAITING_FIRST_SCAN.set(key, item);
+  try { if (downloadLooksRisky(item)) earlyPauseDownload(id); } catch (_) {}
 }
 function downloadHostBlocklisted(urls) {
   for (const raw of urls) {
@@ -536,7 +522,16 @@ function downloadGradeFromScore(score, critical) {
 }
 
 function shouldReviewDownload(rep) {
-  return rep && rep.action === 'review';
+  if (!rep) return false;
+  if (rep.blocklisted || rep.critical || rep.payloadUrlListed) return true;
+  const evidence = rep.reviewEvidence || {};
+  if (evidence.browserWarning || evidence.malwareDetection) return true;
+  if (!evidence.activeContent) return false;
+  if (evidence.lure) return true;
+  if (rep.trustedEligible) return false;
+  return !!(evidence.publicIp || evidence.obfuscatedUrl || evidence.hiddenProgram
+    || (evidence.flaggedRedirect && (evidence.insecure || evidence.lookalike || evidence.youngDomain || evidence.reputationWarning))
+    || (evidence.youngDomain && evidence.reputationWarning));
 }
 
 function downloadRecommendation(grade, finished) {
@@ -553,21 +548,22 @@ function downloadRecommendation(grade, finished) {
   return 'No action needed.';
 }
 
+/* Failed lookups return null; an empty array confirms no matching download. */
 function downloadSearch(query, strict = false) {
   return new Promise((resolve, reject) => {
     try {
       chrome.downloads.search(query || {}, (items) => {
         const err = chrome.runtime.lastError;
-        if (err) {
-          if (strict) reject(new Error(err.message || 'Download lookup failed'));
-          else resolve([]);
+        if (err || !Array.isArray(items)) {
+          if (strict) reject(new Error(err && err.message || 'Download lookup failed'));
+          else resolve(null);
           return;
         }
-        resolve(Array.isArray(items) ? items : []);
+        resolve(items);
       });
     } catch (e) {
       if (strict) reject(e);
-      else resolve([]);
+      else resolve(null);
     }
   });
 }
@@ -583,11 +579,13 @@ function appendExternalReputation(rep, entry) {
 function downloadNameFromItemish(filenameOrUrl) {
   const raw = String(filenameOrUrl || '');
   const slashName = raw.split(/[\\/]/).pop() || raw;
+  if (/^[a-z]:[\\/]/i.test(raw)) return slashName;
   try {
     const u = new URL(raw);
-    return (u.pathname.split('/').pop() || slashName || '').slice(0, 180);
+    const name = u.pathname.split('/').pop() || slashName || '';
+    try { return decodeURIComponent(name); } catch (_) { return name; }
   } catch (_) {
-    return slashName.slice(0, 180);
+    return slashName;
   }
 }
 
@@ -1229,10 +1227,10 @@ async function ensureDownloadHash(rep, url) {
   }
 }
 
-/* Additional local signatures are checked only for downloads already under review. */
+/* Hash eligibility is independent of whether the scan interrupts the download. */
 async function enrichDownloadWithLocalHash(rep, url, filename, cfg) {
   if (!cfg || cfg.downloadHashCheck === false) return rep;
-  if (!shouldReviewDownload(rep)) return rep;
+  if (!shouldCheckVirusTotalHash(rep, url, filename)) return rep;
   const coverage = await malwareHashCoverage();
   if (!coverage.signatureCount) {
     if (!rep.hashReputation) rep.hashReputation = {
@@ -1243,7 +1241,6 @@ async function enrichDownloadWithLocalHash(rep, url, filename, cfg) {
     };
     return rep;
   }
-  if (!shouldCheckVirusTotalHash(rep, url, filename)) return rep;
   const h = await ensureDownloadHash(rep, url);
   if (!h.ok) {
     if (!rep.hashReputation) {
@@ -1390,6 +1387,7 @@ async function enrichDownloadWithVirusTotalHash(rep, url, filename, cfg) {
       rep.blocklisted = true;
       rep.reasons.unshift('VirusTotal URL-content hash is known malicious (' + malicious + ' detections)');
     } else if (malicious >= 1 || suspicious >= 2) {
+      if (malicious >= 1) rep.reviewEvidence.malwareDetection = true;
       rep.score += 10;
       rep.reasons.unshift('VirusTotal URL-content hash has ' + malicious + ' malicious / ' + suspicious + ' suspicious detections');
     } else if (suspicious === 1) {
@@ -1441,11 +1439,14 @@ async function rememberPendingDownload(review) {
 
 async function getPendingDownload(id) {
   const key = String(id || '');
-  if (PENDING_DOWNLOADS[key]) return PENDING_DOWNLOADS[key];
-  const x = await downloadStateGet(DOWNLOAD_PENDING_KEY);
-  const store = (x && x[DOWNLOAD_PENDING_KEY]) || {};
-  if (store[key]) PENDING_DOWNLOADS[key] = store[key];
-  return store[key] || null;
+  let review = PENDING_DOWNLOADS[key];
+  if (!review) {
+    const x = await downloadStateGet(DOWNLOAD_PENDING_KEY);
+    review = ((x && x[DOWNLOAD_PENDING_KEY]) || {})[key];
+    if (review) PENDING_DOWNLOADS[key] = review;
+  }
+  if (review && review.removed) applyDownloadRemovalResult(review, review.removed);
+  return review || null;
 }
 
 async function removePendingDownload(id) {
@@ -1537,7 +1538,7 @@ async function closeDownloadReviewTabs(id) {
 /* Reviews normally lapse when a download moves on. Removal notices, including failures, stay
    until answered so cleanup cannot hide an unresolved intervention. */
 function downloadReviewSuperseded(review, item) {
-  if (review && (review.autoBlocked || review.interventionFailed)) return false;
+  if (review && (review.removed || review.autoBlocked || review.interventionFailed)) return false;
   if (!item || item.state === 'interrupted') return true;
   return item.state === 'complete' && !!(review && review.paused);
 }
@@ -1559,7 +1560,7 @@ async function cleanupDownloadReviews(closeTabs) {
         let stale = !review.createdAt || (now - review.createdAt) > DOWNLOAD_REVIEW_TTL_MS;
         if (!stale && review.downloadId != null) {
           const items = await downloadSearch({ id: Number(review.downloadId) });
-          if (downloadReviewSuperseded(review, items && items[0])) stale = true;
+          if (items !== null && downloadReviewSuperseded(review, items[0])) stale = true;
         }
         if (stale) {
           delete store[id];
@@ -1661,13 +1662,23 @@ async function hardRemoveDownload(id) {
 
 function applyDownloadRemovalResult(review, removed) {
   review.removed = removed;
-  const stopped = removed.cancelled || removed.removedFile;
-  review.interventionFailed = !stopped;
-  if (review.grade === 'F') review.autoBlocked = stopped;
-  review.finishedBeforeStop = review.finishedBeforeStop || removed.removedFile || removed.state === 'complete';
+  const deleted = removed.removedFile === true;
+  const stopped = removed.cancelled === true || deleted;
+  review.cleanupPending = !deleted;
+  review.interventionFailed = review.cleanupPending;
+  if (review.blockRequired === true || (review.blockRequired !== false && review.grade === 'F')) review.autoBlocked = !review.cleanupPending;
+  review.finishedBeforeStop = review.finishedBeforeStop || deleted || removed.state === 'complete';
   review.paused = !stopped && !review.finishedBeforeStop && removed.paused;
-  review.recommendation = stopped ? 'Do not download this file again.'
-    : downloadRecommendation(review.grade, review.finishedBeforeStop);
+  review.recommendation = review.cleanupPending ? 'Retry file removal, or check Chrome Downloads and delete the file without opening it.'
+    : 'Do not download this file again.';
+}
+
+async function recordAutomaticDownloadRemoval(review) {
+  await rememberPendingDownload(review);
+  logDownloadDecision(review, review.cleanupPending
+    ? (review.removed.cancelled === true ? 'cancelled; cleanup unconfirmed' : 'automatic block failed')
+    : (review.finishedBeforeStop ? 'deleted after it finished' : 'blocked before it finished'));
+  await rememberHandledDownload(review.downloadId, review.cleanupPending ? 'auto-block failed' : 'auto-blocked');
 }
 
 async function openDownloadReview(review) {
@@ -1756,6 +1767,8 @@ function buildDownloadReview(item, rep, pauseResult, finishedBeforeStop) {
     status: rep.status,
     color: rep.color,
     score: rep.score,
+    blockRequired: !!rep.blocklisted,
+    reviewEvidence: rep.reviewEvidence,
     reasons: rep.reasons.slice(0, 8),
     recommendation: downloadRecommendation(rep.grade, finishedBeforeStop),
     trusted: !!rep.trusted,
@@ -1783,6 +1796,8 @@ function logDownloadCheck(item, rep) {
       grade: rep.grade,
       status: rep.status,
       score: rep.score,
+      action: rep.action,
+      reviewEvidence: rep.reviewEvidence,
       source: rep.source,
       file: ((item.filename || '').split(/[\\/]/).pop() || '').slice(0, 80),
       reasons: rep.reasons.slice(0, 4),
@@ -1830,7 +1845,7 @@ async function handleDownloadDecision(id, decision, sender) {
   }
   const grade = String(review.grade || '').toUpperCase();
   if (decision === 'continue' || decision === 'keep' || decision === 'trust-continue') {
-    if (grade === 'F') {
+    if (review.blockRequired === true || (review.blockRequired !== false && grade === 'F')) {
       return { ok: false, error: 'Critical downloads cannot be continued through Download Shield.' };
     }
     if (decision === 'trust-continue') {
@@ -1873,17 +1888,19 @@ async function handleDownloadDecision(id, decision, sender) {
     return { ok: true, decision: label, trustedHost };
   }
   if (decision === 'cancel') {
-    const removed = review.autoBlocked ? review.removed : await hardRemoveDownload(review.downloadId);
+    const removed = review.removed && review.removed.removedFile === true ? review.removed : await hardRemoveDownload(review.downloadId);
     applyDownloadRemovalResult(review, removed);
-    const deleted = !!removed.removedFile;
-    const label = review.finishedBeforeStop ? (deleted ? 'deleted' : 'delete failed')
-      : (removed.cancelled ? 'cancelled' : 'cancel failed');
+    const deleted = removed.removedFile === true;
+    const label = deleted ? 'deleted' : removed.cancelled === true ? 'cancelled; cleanup unconfirmed'
+      : (review.finishedBeforeStop ? 'delete failed' : 'cancel failed');
     logDownloadDecision(review, label);
     if (review.interventionFailed) {
       await rememberPendingDownload(review);
       await rememberHandledDownload(review.downloadId || id, label);
       return { ok: false, decision: label, removed, deleted, review,
-        error: 'WardenOne could not confirm this download was stopped or deleted. Retry, or check Chrome Downloads and delete the file without opening it.' };
+        error: (removed.cancelled === true ? 'WardenOne stopped this download, but could not confirm its file data was deleted. '
+          : 'WardenOne could not confirm this download was stopped or deleted. ')
+          + 'Retry removal, or check Chrome Downloads and delete the file without opening it.' };
     }
     await removePendingDownload(id);
     await rememberHandledDownload(review.downloadId || id, label);
@@ -1988,6 +2005,17 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   } catch (_) {}
 
   let score = 0;
+  const reviewEvidence = {
+    activeContent: isDangerous || isArchive || isContainer || isMacro,
+    browserWarning: danger === 'file' || danger === 'sensitivecontentwarning',
+    lure: false,
+    publicIp: false,
+    obfuscatedUrl: false,
+    hiddenProgram: false,
+    flaggedRedirect: false,
+    insecure: httpInsecure && !privateHost,
+    lookalike: /(^|\.)xn--/i.test(host),
+  };
   if (chromeKnownBad) {
     score += W.chromeKnownBad;
     if (danger === 'url') reasons.unshift('Chrome says this download URL is known malicious');
@@ -2015,20 +2043,12 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   if (isDangerous && lureName) { score += W.executableInstaller; reasons.push('Name suggests a crack, keygen or pirated installer'); }
   if (isArchive && lureName) { score += W.archiveInstaller; reasons.push('Archive named like a crack or keygen'); }
   if (isArchive) { score += W.archive; reasons.push('Archive (contents not visible until opened)'); }
-  // A password-protected archive cannot be content-scanned by Chrome OR by our hash check --
-  // encryption is a deliberate way to smuggle malware past every scanner. Elevate it so an
-  // encrypted archive (which would otherwise sit near grade C from Chrome's flag alone) is
-  // clearly surfaced for review rather than waved through.
+  // Encryption limits inspection of archive contents; retain that uncertainty in the score.
   if ((isArchive || isContainer) && danger === 'passwordprotected') {
     score += W.passwordArchive; reasons.push('Password-protected archive cannot be scanned for malware');
   }
 
-  // No / unknown file extension. Browsers normally hand a download a sensible
-  // extension; a file that arrives with NO extension (e.g. "installer", "hidbusf")
-  // is a classic way to slip a renamed executable past extension-based checks, so it
-  // should at least get a look. "No extension + binary content type" is a stronger
-  // disguise signal and is scored higher. Recognized safe document/media types stay
-  // silent so this doesn't get noisy.
+  // An executable-specific MIME type can reveal a program with its extension removed.
   const KNOWN_SAFE_EXT = /\.(pdf|docx?|xlsx?|pptx?|txt|rtf|csv|tsv|json|xml|ya?ml|html?|md|jpe?g|png|gif|webp|svg|bmp|tiff?|ico|heic|mp3|wav|flac|ogg|m4a|aac|mp4|mkv|mov|webm|avi|wmv|m4v|epub|mobi|ttf|otf|woff2?|odt|ods|odp)$/i;
   const hasExt = /\.[a-z0-9]{1,8}$/i.test(name);
   const knownType = isDangerous || isArchive || isContainer || isMacro || KNOWN_SAFE_EXT.test(name);
@@ -2036,6 +2056,8 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   // "unspecified binary", which dumb CDNs and share hosts send for everything they do not
   // recognise. It is not an assertion that the file is a program.
   const binaryMime = /(x-msdownload|x-msdos-program|x-executable|x-mach-binary|x-elf)/i.test(String(mime || ''));
+  reviewEvidence.activeContent = reviewEvidence.activeContent || binaryMime;
+  reviewEvidence.hiddenProgram = !!(name && !hasExt && binaryMime);
   if (name && !hasExt) {
     score += W.noExtension; reasons.push('File has no extension (can hide what it really is)');
     if (binaryMime) { score += W.noExtensionBinary; reasons.push('No extension but served as a program/binary'); }
@@ -2071,6 +2093,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     score += W.redirectParam; reasons.push('Download URL hides another URL inside a redirect parameter');
   }
   const redirectRisk = normalizeDownloadRedirectRisk(redirectChain);
+  reviewEvidence.flaggedRedirect = !!(redirectRisk && (redirectRisk.flagged || redirectRisk.maxed));
   let redirectCritical = false;
   let redirectTrustBreaker = false;
   if (redirectRisk) {
@@ -2105,14 +2128,17 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   }
   // A parameter value containing ../ is not path traversal. Flag null bytes or double encoding;
   // the browser has already normalised traversal in the URL path.
-  if (/%00|%25(2e|32)|(^|[/?&=])\.\.(%2f|%5c)/i.test(urlPathQuery)) {
+  reviewEvidence.obfuscatedUrl = /%00|%25(2e|32)|(^|[/?&=])\.\.(%2f|%5c)/i.test(urlPathQuery);
+  if (reviewEvidence.obfuscatedUrl) {
     score += W.obfuscatedPath; reasons.push('Download URL contains obfuscated path characters');
   }
   // Same non-letter boundary as LURE_HINT, and for the same reason: unanchored, `crack` matched the
   // URL of firecracker.exe and nutcracker-setup.exe. This is the second copy of that pattern -- the
   // filename test is not the only place it lives, so fixing one and not the other left the grade
   // unchanged and the reason line reading "scam or piracy lure wording" over an ordinary download.
-  if ((isDangerous || isArchive || isContainer || isMacro) && /(^|[^a-z])(crack|keygen|activator|nulled|warez|free[-_%20 ]?nitro|steam[-_%20 ]?gift|wallet[-_%20 ]?(verify|update)|airdrop|claim[-_%20 ]?reward)/i.test(urlPathQuery + ' ' + host)) {
+  const urlLure = (isDangerous || isArchive || isContainer || isMacro) && /(^|[^a-z])(crack|keygen|activator|nulled|warez|free[-_%20 ]?nitro|steam[-_%20 ]?gift|wallet[-_%20 ]?(verify|update)|airdrop|claim[-_%20 ]?reward)/i.test(urlPathQuery + ' ' + host);
+  reviewEvidence.lure = lureName || urlLure;
+  if (urlLure) {
     score += W.lureWording; reasons.push('Download URL uses scam or piracy lure wording');
   }
 
@@ -2176,7 +2202,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     }
     // Only executable-specific MIME types contradict a document filename. application/octet-stream
     // means unspecified binary and is common for legitimate PDFs and other files.
-    if (m && /(x-msdownload|x-msdos-program)/.test(m) && /\.(pdf|jpg|jpeg|png|docx?|txt)$/i.test(name)) {
+    if (binaryMime && KNOWN_SAFE_EXT.test(name)) {
       score += W.mimeProgramNamedDoc; dangerousMimeMismatch = true; reasons.push('Served as a program but named like a document');
     }
   } catch (_) {}
@@ -2193,6 +2219,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
 
   // IP-address host serving an executable -- common in malware drops; worse over HTTP
   const rawIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+  reviewEvidence.publicIp = rawIp && !privateHost;
   if (isDangerous && rawIp) {
     score += W.rawIpExecutable; reasons.push('Executable served directly from a raw IP address');
     if (privateHost) lanNoise += W.rawIpExecutable;
@@ -2238,7 +2265,8 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   // A known, vetted publisher (microsoft.com, mozilla.org, github.com, ...) is
   // trusted automatically -- normal downloads from them stay silent. But critical
   // tricks STILL override: a disguised .pdf.exe from any domain gets reviewed.
-  const trustedEligible = !!((trustMatch || knownPublisher) && !critical && !redirectTrustBreaker);
+  const trustedEligible = !!((trustMatch || knownPublisher) && !critical && !redirectTrustBreaker
+    && !reviewEvidence.browserWarning && !reviewEvidence.lure);
   if (trustedEligible) {
     if (knownPublisher && !trustMatch && isMultiTenantPublisherHost(host)) {
       // github.com / sourceforge.net host arbitrary third-party binaries; being on the
@@ -2265,23 +2293,13 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
       : 'Trusted site matched, but risky redirect-chain indicators still require review');
   }
 
-  // Lone-clean-executable rebate (D->C). A single executable/script over HTTPS from an
-  // established registrable domain, with NO other risk signal (score is exactly the executable
-  // weight -- no installer/crack/lure name, no archive/container, not a raw IP or throwaway TLD,
-  // no Chrome flag), is the everyday "installer from a small/indie/FOSS vendor" case. Soften it
-  // from D (High Risk) to C (Review Recommended) so it still gets a look but a lighter one that
-  // prominently offers "always trust this site" (grade C shows the Trust button), cutting the
-  // daily friction of every niche installer being framed as high risk.
+  // Retain the lower context score for an otherwise unremarkable vendor executable.
   if (!trustedEligible && isDangerous && !critical && !isArchive && !isContainer && !isMacro
     && rd && (!httpInsecure || privateHost) && !lureName && score === W.executable) {
     score -= 1;
     reasons.push('Nothing against this file except that it is a program');
   }
-  // The same reasoning for a lone clean disk image or macro document. An .iso weighs MORE than an
-  // executable (container 3 vs executable 3, but with no rebate) so every distro ISO from a
-  // community mirror was High Risk, and the finance team's weekly .xlsm was High Risk every
-  // Monday. Gated on exact score equality, so it can only ever move 3 to 2 and can never push a
-  // file below the review line.
+  // Apply the same score adjustment to a lone disk image or macro document.
   if (!trustedEligible && !critical && !isDangerous && !isArchive
     && rd && (!httpInsecure || privateHost) && !lureName
     && ((isContainer && !isMacro && score === W.container)
@@ -2290,14 +2308,7 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     reasons.push('Nothing against this file except its type, and it came from an established site');
   }
 
-  const meta = downloadGradeFromScore(score, (critical && (onBlocklist || redirectCritical)) || chromeKnownBad);
-  return {
-    grade: meta.grade,
-    status: meta.status,
-    color: meta.color,
-    action: meta.action,
-    level: Math.max(0, 'ABCDEF'.indexOf(meta.grade)),
-    levelText: meta.grade + ' - ' + meta.status,
+  return applyDownloadMeta({
     score,
     source: host || '(unknown)',
     reasons,
@@ -2311,12 +2322,13 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
     trustAllowed: !!(downloadTrustTarget(host) && !critical && !redirectTrustBreaker),
     trustHost: trustMatch || downloadTrustTarget(host),
     critical,
+    reviewEvidence,
     blocklisted: !!(onBlocklist || chromeKnownBad || redirectCritical),
     chromeDanger: chromeDanger || '',
     redirectChain: redirectRisk || null,
     domainAge: null,
     externalReputation: [],
-  };
+  });
 }
 
 function applyDownloadMeta(rep) {
@@ -2324,7 +2336,7 @@ function applyDownloadMeta(rep) {
   rep.grade = meta.grade;
   rep.status = meta.status;
   rep.color = meta.color;
-  rep.action = meta.action;
+  rep.action = shouldReviewDownload(rep) ? 'review' : 'allow';
   rep.level = Math.max(0, 'ABCDEF'.indexOf(meta.grade));
   rep.levelText = meta.grade + ' - ' + meta.status;
   return rep;
@@ -2353,6 +2365,7 @@ async function enrichDownloadWithDomainAge(rep, cfg) {
     privacy: !!age.privacy,
     nameServers: Array.isArray(age.nameServers) ? age.nameServers.slice(0, 4) : [],
   };
+  rep.reviewEvidence.youngDomain = age.ageDays < 30;
   if (age.ageDays < 7) {
     rep.score += 3;
     rep.reasons.push('Source domain is brand new (' + age.ageDays + ' days old)');
@@ -2465,9 +2478,12 @@ async function enrichDownloadWithExternalReputation(rep, url, cfg) {
       const malicious = Number(stats.malicious || 0);
       const suspicious = Number(stats.suspicious || 0);
       if (malicious >= 2) {
+        rep.reviewEvidence.malwareDetection = true;
+        rep.blocklisted = true;
         rep.score += 10;
         rep.reasons.unshift('VirusTotal reports ' + malicious + ' malicious detections for this URL');
       } else if (malicious === 1 || suspicious >= 2) {
+        rep.reviewEvidence.malwareDetection = malicious === 1;
         // Capped on a vetted publisher. One engine out of ~70 disagreeing about a Mozilla or
         // Microsoft installer is a false positive far more often than it is a compromise, and at
         // the full weight it dragged a silent grade-A download to D or E -- publisher trust was
@@ -2506,6 +2522,9 @@ async function enrichDownloadWithExternalReputation(rep, url, cfg) {
   });
   results.forEach((result) => {
     if (!result || !result.ok || result.hit || !result.warning) return;
+    if (result.provider === 'AbuseIPDB' || result.provider === 'WhoisXML Domain Reputation' || result.provider === 'WhoisXML Threat Intelligence') {
+      rep.reviewEvidence.reputationWarning = true;
+    }
     if (result.provider === 'WhoisXML Domain Reputation') {
       rep.trustAllowed = false;
       const score = result.reputationScore != null ? Math.round(Number(result.reputationScore)) : null;
@@ -2624,8 +2643,14 @@ function isRecentCompletedDownload(item) {
 
 async function latestDownloadItem(id, hint) {
   const items = await downloadSearch({ id: Number(id) });
+  if (items === null) return null;
   if (items && items[0]) return Object.assign({}, hint || {}, items[0]);
   return hint && hint.id != null ? hint : null;
+}
+
+async function pauseDownloadForReview(item, rep, previous) {
+  if (previous || !shouldReviewDownload(rep) || item.state === 'complete' || item.state === 'interrupted') return previous;
+  return downloadApiCall('pause', item.id);
 }
 
 async function runDownloadGuardScan(id, hint, reason) {
@@ -2643,7 +2668,7 @@ async function runDownloadGuardScan(id, hint, reason) {
     let pending = await getPendingDownload(key);
     if (await isDownloadHandled(key) && !pending) return;
     /* The file is gone; nothing a rescan learns can change that notice. */
-    if (pending && pending.autoBlocked) return;
+    if (pending && pending.removed && pending.removed.removedFile === true) return;
 
     const item = await latestDownloadItem(key, hint);
     if (!item || item.id == null) return;
@@ -2688,6 +2713,12 @@ async function runDownloadGuardScan(id, hint, reason) {
       if (EARLY_PAUSED.has(key)) { Promise.resolve(downloadApiCall('resume', item.id)).catch(() => {}); EARLY_PAUSED.delete(key); }
       return;
     }
+    if (pending && pending.cleanupPending) {
+      applyDownloadRemovalResult(pending, await hardRemoveDownload(item.id));
+      await recordAutomaticDownloadRemoval(pending);
+      await openDownloadReview(pending);
+      return;
+    }
     const trustedSites = Array.isArray(cfgStore && cfgStore[DOWNLOAD_TRUSTED_KEY]) ? cfgStore[DOWNLOAD_TRUSTED_KEY] : [];
     // Await blocklist and redirect-window hydration before scoring the first download after wake (M17).
     if (typeof securityStoresReady === 'function') await securityStoresReady();
@@ -2698,21 +2729,14 @@ async function runDownloadGuardScan(id, hint, reason) {
     let rep = scoreDownload(downloadUrl, item.referrer, filename, item.mime, trustedSites, item.danger, redirectContext);
     /* Checked before the pause decision: a listed address must not finish while lookups run. */
     rep = await enrichDownloadWithPayloadUrlFeed(rep, [item.url, item.finalUrl]);
-    let pauseResult = null;
-
-    if (shouldReviewDownload(rep) && item.state !== 'complete' && item.state !== 'interrupted') {
-      pauseResult = await downloadApiCall('pause', item.id);
-    }
+    let pauseResult = await pauseDownloadForReview(item, rep, null);
 
     if (cfg.downloadDomainAge === true) rep = await enrichDownloadWithDomainAge(rep, cfg);
     rep = await enrichDownloadWithExternalReputation(rep, downloadUrl, cfg);
+    pauseResult = await pauseDownloadForReview(item, rep, pauseResult);
     /* The local check skips URL re-fetching while only diagnostic signatures are loaded. */
     rep = await enrichDownloadWithLocalHash(rep, downloadUrl, filename, cfg);
-    if (!pauseResult && shouldReviewDownload(rep) && item.state !== 'complete' && item.state !== 'interrupted'
-      && shouldCheckVirusTotalHash(rep, downloadUrl, filename)
-      && cfg.downloadVirusTotalHash === true && String(cfg.downloadVirusTotalKey || '').trim()) {
-      pauseResult = await downloadApiCall('pause', item.id);
-    }
+    pauseResult = await pauseDownloadForReview(item, rep, pauseResult);
     rep = await enrichDownloadWithVirusTotalHash(rep, downloadUrl, filename, cfg);
 
     if (!shouldReviewDownload(rep)) {
@@ -2740,9 +2764,7 @@ async function runDownloadGuardScan(id, hint, reason) {
       return;
     }
 
-    if (!pauseResult && item.state !== 'complete' && item.state !== 'interrupted') {
-      pauseResult = await downloadApiCall('pause', item.id);
-    }
+    pauseResult = await pauseDownloadForReview(item, rep, pauseResult);
     /* A refused pause usually means Chrome finished writing first. Ask Chrome, because the review
        must not claim a stop that never happened. */
     const finishedBeforeStop = !(pauseResult && pauseResult.ok)
@@ -2756,27 +2778,22 @@ async function runDownloadGuardScan(id, hint, reason) {
       if (!review.pauseError) review.pauseError = oldReview.pauseError || '';
     }
 
-    /* Critical files default to removal: pausing alone leaves the download resumable outside
-       this review. downloadHardBlockCritical:false retains pause-only review. */
-    if (review.grade === 'F' && cfg.downloadHardBlockCritical !== false) {
+    /* Threat findings default to removal; a high heuristic score alone does not.
+       downloadHardBlockCritical:false retains pause-only review. */
+    if (review.blockRequired && cfg.downloadHardBlockCritical !== false) {
       applyDownloadRemovalResult(review, await hardRemoveDownload(item.id));
     }
     // From here the review's own pause/removed state owns the download; drop the early-pause tag.
     EARLY_PAUSED.delete(key);
 
-    await rememberPendingDownload(review);
+    if (!review.removed) await rememberPendingDownload(review);
     if (!oldReview || oldReview.grade !== review.grade || oldReview.score !== review.score) {
       logDownloadCheck(item, rep);
     }
-    if (review.autoBlocked) {
-      logDownloadDecision(review, !review.finishedBeforeStop ? 'blocked before it finished'
-        : (review.removed.removedFile ? 'deleted after it finished' : 'finished before it could be stopped'));
-    } else if (review.interventionFailed) {
-      logDownloadDecision(review, 'automatic block failed');
-    }
     // Persist handled state after pausing. Worker termination between the two can cause a duplicate
     // review; pause and storage writes cannot be atomic. Recovery must never silently resume it.
-    await rememberHandledDownload(key, review.autoBlocked ? 'auto-blocked' : (review.interventionFailed ? 'auto-block failed' : 'reviewed'));
+    if (review.removed) await recordAutomaticDownloadRemoval(review);
+    else await rememberHandledDownload(key, 'reviewed');
     await openDownloadReview(review);
   } catch (e) {
     queueHistory({
@@ -2801,8 +2818,7 @@ function scheduleDownloadGuardScan(id, hint, reason, delayMs) {
   }, typeof delayMs === 'number' ? delayMs : 250);
 }
 
-/* A small or cached file can finish before the +180 ms scan pauses it, so pause a risky type at
-   once and check the local lists for any other name. A clean file resumes within about a second. */
+/* Pause actionable evidence before the scheduled scan; ordinary file types keep downloading. */
 function handleDownloadCreated(item) {
   let sourceCheck = null;
   try {
@@ -2810,7 +2826,7 @@ function handleDownloadCreated(item) {
     // pointless pause/resume cycle; a cold cache falls through and the scan resolves it).
     const guardOff = __cfgCacheValid && __cfgCache && (__cfgCache.enabled === false || __cfgCache.downloadReputation === false);
     if (!guardOff && item && item.id != null && item.state !== 'complete' && item.state !== 'interrupted') {
-      AWAITING_FIRST_SCAN.add(String(item.id));
+      AWAITING_FIRST_SCAN.set(String(item.id), item);
       if (downloadLooksRisky(item)) earlyPauseDownload(item.id);
       else sourceCheck = earlyPauseListedSource(item);
     }

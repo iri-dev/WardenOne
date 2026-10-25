@@ -6468,13 +6468,16 @@ function firewallSessionRuleFor(rule) {
     column: Object.keys(FIREWALL_COLUMNS).find((k) => FIREWALL_COLUMNS[k].join(',') === (c.resourceTypes || []).join(',')) || 'all',
   };
 }
-// strict: a failed read throws instead of reading as "no allowances", for callers that report removal.
+// Mutations require a verified rule list; display-only callers may omit unavailable allowances.
 async function firewallSessionRules(strict) {
-  if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.getSessionRules) return [];
+  if (!chrome.declarativeNetRequest || typeof chrome.declarativeNetRequest.getSessionRules !== 'function') {
+    if (strict) throw new Error('Session rules are not available in this browser.');
+    return [];
+  }
   try {
     const existing = await chrome.declarativeNetRequest.getSessionRules();
-    return (existing || [])
-      .filter((r) => r.id >= FIREWALL_SESSION_RULE_BASE && r.id < FIREWALL_SESSION_RULE_BASE + FIREWALL_SESSION_RULE_MAX);
+    if (!Array.isArray(existing)) throw new Error('The browser did not return a session rule list.');
+    return existing.filter((r) => r.id >= FIREWALL_SESSION_RULE_BASE && r.id < FIREWALL_SESSION_RULE_BASE + FIREWALL_SESSION_RULE_MAX);
   } catch (e) {
     if (strict) throw e;
     return [];
@@ -6488,60 +6491,64 @@ async function firewallSessionAllowances(site) {
     .map((d) => ({ domain: d.domain, column: d.column }));
 }
 async function firewallAllowOnce(site, domain, column) {
-  if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateSessionRules) {
-    return { ok: false, error: 'Session rules are not available in this browser.' };
-  }
-  const host = firewallNormalizeHost(site);
-  const target = firewallNormalizeHost(domain);
-  const col = Object.prototype.hasOwnProperty.call(FIREWALL_COLUMNS, column) ? column : 'all';
-  const types = FIREWALL_COLUMNS[col];
-  if (!host || !target) return { ok: false, error: 'That is not a site and domain WardenOne can write a rule for.' };
-  const mine = await firewallSessionRules();
-  const same = mine.find((r) => {
-    const d = firewallSessionRuleFor(r);
-    return d.site === host && d.domain === target && d.column === col;
+  return serializeSubsystem('firewall-session', async () => {
+    if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateSessionRules) {
+      return { ok: false, error: 'Session rules are not available in this browser.' };
+    }
+    const host = firewallNormalizeHost(site);
+    const target = firewallNormalizeHost(domain);
+    const col = Object.prototype.hasOwnProperty.call(FIREWALL_COLUMNS, column) ? column : 'all';
+    const types = FIREWALL_COLUMNS[col];
+    if (!host || !target) return { ok: false, error: 'That is not a site and domain WardenOne can write a rule for.' };
+    try {
+      const mine = await firewallSessionRules(true);
+      const same = mine.find((r) => {
+        const d = firewallSessionRuleFor(r);
+        return d.site === host && d.domain === target && d.column === col;
+      });
+      let id;
+      let refreshed = false;
+      if (same) {
+        id = same.id;
+        refreshed = true;
+      } else {
+        const used = new Set(mine.map((r) => r.id));
+        for (let i = 0; i < FIREWALL_SESSION_RULE_MAX; i++) {
+          if (!used.has(FIREWALL_SESSION_RULE_BASE + i)) { id = FIREWALL_SESSION_RULE_BASE + i; break; }
+        }
+        if (id === undefined) {
+          return { ok: false, full: true, error: 'Fifty temporary allowances are already active this session. Undo some, or restart the browser, before adding another.' };
+        }
+      }
+      await writeSessionRules({
+        removeRuleIds: refreshed ? [id] : [],
+        addRules: [{
+          id,
+          priority: FIREWALL_PRIORITY_ONCE,
+          action: { type: 'allow' },
+          condition: { initiatorDomains: [host], requestDomains: [target], resourceTypes: types },
+        }],
+      });
+      return { ok: true, refreshed, session: true, column: col };
+    } catch (e) { return { ok: false, error: firewallErrorText(e) }; }
   });
-  let id;
-  let refreshed = false;
-  if (same) {
-    id = same.id;
-    refreshed = true;
-  } else {
-    const used = new Set(mine.map((r) => r.id));
-    for (let i = 0; i < FIREWALL_SESSION_RULE_MAX; i++) {
-      if (!used.has(FIREWALL_SESSION_RULE_BASE + i)) { id = FIREWALL_SESSION_RULE_BASE + i; break; }
-    }
-    if (id === undefined) {
-      return { ok: false, full: true, error: 'Fifty temporary allowances are already active this session. Undo some, or restart the browser, before adding another.' };
-    }
-  }
-  try {
-    await writeSessionRules({
-      removeRuleIds: [id],
-      addRules: [{
-        id,
-        priority: FIREWALL_PRIORITY_ONCE,
-        action: { type: 'allow' },
-        condition: { initiatorDomains: [host], requestDomains: [target], resourceTypes: types },
-      }],
-    });
-    return { ok: true, refreshed, session: true, column: col };
-  } catch (e) { return { ok: false, error: firewallErrorText(e) }; }
 }
 
 // With no site the whole band goes; with one, only the allowances that site made. A site that
 // does not normalise removes nothing rather than falling through to the whole band.
 async function firewallClearSession(site) {
-  if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateSessionRules) return { ok: true, removed: 0 };
-  const host = site === undefined ? null : firewallNormalizeHost(site);
-  if (host === '') return { ok: true, removed: 0 };
-  try {
-    const mine = (await firewallSessionRules(true))
-      .filter((r) => host === null || firewallSessionRuleFor(r).site === host)
-      .map((r) => r.id);
-    if (mine.length) await writeSessionRules({ removeRuleIds: mine, addRules: [] });
-    return { ok: true, removed: mine.length };
-  } catch (e) { return { ok: false, removed: 0, error: firewallErrorText(e) }; }
+  return serializeSubsystem('firewall-session', async () => {
+    if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateSessionRules) return { ok: true, removed: 0 };
+    const host = site === undefined ? null : firewallNormalizeHost(site);
+    if (host === '') return { ok: true, removed: 0 };
+    try {
+      const mine = (await firewallSessionRules(true))
+        .filter((r) => host === null || firewallSessionRuleFor(r).site === host)
+        .map((r) => r.id);
+      if (mine.length) await writeSessionRules({ removeRuleIds: mine, addRules: [] });
+      return { ok: true, removed: mine.length };
+    } catch (e) { return { ok: false, removed: 0, error: firewallErrorText(e) }; }
+  });
 }
 
 // ---- Cryptojacking guard (toggle: blockCryptominers) ----

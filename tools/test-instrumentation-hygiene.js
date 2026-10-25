@@ -191,8 +191,8 @@ async function testDownloadFailuresAreOrdinary(api) {
     erased && erased.ok === false && /Invalid download id/.test(erased.error), JSON.stringify(erased));
 
   const found = await api.downloadSearch({ id: 9999 });
-  check('a failed search resolves to an empty list rather than throwing',
-    Array.isArray(found) && found.length === 0, JSON.stringify(found));
+  check('a failed search reports an unknown result without throwing',
+    found === null, JSON.stringify(found));
 }
 
 async function main() {

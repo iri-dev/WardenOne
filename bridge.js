@@ -2927,16 +2927,15 @@
       if (type === 'checkbox' || type === 'radio') return el.checked !== el.defaultChecked;
       if (type === 'file') return !!(el.files && el.files.length);
     }
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA') return false;
     const value = String(el.value == null ? '' : el.value);
-    if (!value.length) return false;
-    if (typeof el.defaultValue === 'string' && value === el.defaultValue) return false;
-    return true;
+    return typeof el.defaultValue === 'string' ? value !== el.defaultValue : value.length > 0;
   };
 
   const pageHasUnsavedInput = () => {
     try {
       const fields = document.querySelectorAll(
-        'input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+        'input, textarea, select, [contenteditable]');
       const limit = Math.min(fields.length, FORM_SCAN_CAP);
       for (let i = 0; i < limit; i++) {
         try {
@@ -3006,8 +3005,6 @@
   } catch (_) {}
   try {
     woOnMessage((msg, sender, sendResponse) => {
-      // Both answers are computed here rather than read from a flag set earlier. The reply shape
-      // is unchanged, so background needs no change.
       if (msg && msg.kind === 'memory-form-check') {
         sendResponse({
           formDirty: pageHasUnsavedInput(),

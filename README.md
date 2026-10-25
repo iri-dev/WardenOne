@@ -510,7 +510,7 @@ normal privacy cleaning because it's for emergencies, not tidying up.
 
 <sub><strong>AUTOMATIC PROTECTION · DOWNLOAD CONTEXT & REPUTATION</strong></sub>
 
-**What it does:** grades your downloads before they finish, based on where they came from and what they say they are.
+**What it does:** checks downloads in the background and interrupts when meaningful threat evidence needs your attention.
 
 Download Shield and File Shield sound alike but they look at different things. Download Shield
 knows how a file got to you. File Shield knows what's actually inside it. You kind of need both,
@@ -519,10 +519,10 @@ neither one can do the other's job.
 ```mermaid
 flowchart TB
     Start["Download begins"] --> Context["Chrome gives WardenOne context"]
-    Context --> Grade["Download Shield grades it"]
+    Context --> Grade["Download Shield checks the evidence"]
     Grade -->|Known dangerous| Block["Block"]
-    Grade -->|Suspicious| Review["Hold for review<br/>You see the evidence"]
-    Grade -->|Normal| Continue["Continue"]
+    Grade -->|Meaningful risk| Review["Hold for review<br/>You see the evidence"]
+    Grade -->|Ordinary or weak clues| Continue["Continue quietly<br/>Record in Activity"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
     class Start,Context,Grade,Block,Review,Continue warden
     linkStyle default stroke:#c45ca7
@@ -539,12 +539,14 @@ flowchart TB
 
 1. Chrome hands WardenOne the page it came from, the URL, the filename and type, plus whatever Chrome itself thinks of it.
 2. WardenOne grades it using that plus publisher trust, local lists and any optional services you turned on.
-3. Known dangerous downloads get blocked. Risky ones get held so you can look. Normal ones carry on.
-4. If it's held, the Download Review page explains the A–F grade and you decide whether to cancel it or let it finish (when finishing is allowed for that grade).
+3. Known threats get blocked. Disguised files and suspicious delivery patterns get held for review. Ordinary downloads and weak clues carry on quietly, with a check recorded in Activity when the download finishes.
+4. If it's held, the Download Review page explains the evidence and A–F score. You can cancel or deliberately continue a review; confirmed threat findings cannot be continued through Download Shield.
 
-Clean downloads straight from a publisher's own installer host can go through quietly. Big shared
-cloud and CDN hosts don't get trusted just for being big. A disguised file or a known-malware hash
-beats a legit-looking publisher every time.
+CSV exports, documents, photos, normal archives and routine installers stay quiet unless stronger
+evidence warrants intervention. An unfamiliar publisher, rare download, insecure connection,
+unusual domain or ordinary redirect chain does not trigger a window by accumulating points.
+Eligible hash and optional reputation checks continue in the background. Shared cloud and CDN
+hosts do not receive a publisher endorsement; disguises and malware findings override source trust.
 
 <details>
 <summary><strong>Optional reputation providers, URL-content hashes and the URL scanner</strong></summary>
@@ -577,7 +579,8 @@ separate choices that use the same key.
 
 Download Shield also keeps two malware feeds on your device, refreshed with the daily list update
 while it is on: URLhaus's exact payload addresses (through malware-filter) and SHA-256 hashes of
-recent samples from MalwareBazaar, URLhaus and OTX (through malicious-hash). Both are stored as
+recent samples from MalwareBazaar, URLhaus and OTX (through Romain Marcoux's
+[malicious-hash](https://github.com/romainmarcoux/malicious-hash)). Both are stored as
 truncated fingerprints and matched locally, so nothing about your downloads is sent anywhere for
 them. They catch what a domain blocklist can't: a payload on GitHub, Google Drive or another
 shared host.

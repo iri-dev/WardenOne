@@ -108,31 +108,31 @@ async function main() {
   /* ---- which names pause at creation ---- */
   {
     const { guard } = world();
-    for (const name of ['setup.exe', 'invoice.pdf.exe', 'disk.iso', 'invoice.zip', 'photos.7z', 'logs.tar.gz',
-      'backup.rar', 'contract.docm', 'budget.xlsm', 'deck.pptm', 'macros.xlsb']) {
+    for (const name of ['invoice.pdf.exe', 'game-crack.zip', 'photo\u202egpj.exe']) {
       assert.equal(guard.downloadLooksRisky({ filename: 'C:\\Downloads\\' + name }), true, name + ' pauses at creation');
     }
-    assert.equal(guard.downloadLooksRisky({ url: 'https://files.example/archive.zip?sig=1' }), true, 'the URL name counts before Chrome picks a filename');
-    for (const name of ['photo.png', 'paper.pdf', 'notes.docx', 'sheet.xlsx', 'song.mp3']) {
+    assert.equal(guard.downloadLooksRisky({ url: 'https://files.example/invoice.pdf.exe?sig=1' }), true, 'the URL name counts before Chrome picks a filename');
+    for (const name of ['photo.png', 'paper.pdf', 'notes.docx', 'sheet.xlsx', 'song.mp3', 'setup.exe', 'disk.iso',
+      'invoice.zip', 'photos.7z', 'logs.tar.gz', 'backup.rar', 'contract.docm', 'budget.xlsm', 'deck.pptm', 'macros.xlsb']) {
       assert.equal(guard.downloadLooksRisky({ filename: 'C:\\Downloads\\' + name }), false, name + ' is left to the scan');
     }
-    console.log('  [ok] archives and macro-enabled Office files pause with programs and disk images');
+    console.log('  [ok] filename evidence pauses early; ordinary file types stay quiet');
   }
 
-  /* ---- archives and macro documents pause before any await ---- */
+  /* ---- file type alone never pauses before a scan ---- */
   {
     const { guard, sandbox } = world();
     for (const [id, url] of [[101, 'https://files.example/archive.zip'], [102, 'https://files.example/report.docm']]) {
       sandbox.downloadItems.push(download(id, url));
-      assert.equal(guard.handleDownloadCreated(download(id, url, { filename: '' })), null, 'no list check needed for a risky name');
-      assert(paused(sandbox, id), url + ' was not paused synchronously in onCreated');
-      assert(guard.EARLY_PAUSED.has(String(id)));
+      await guard.handleDownloadCreated(download(id, url, { filename: '' }));
+      assert(!paused(sandbox, id), url + ' must keep downloading');
+      assert(!guard.EARLY_PAUSED.has(String(id)));
     }
 
     sandbox.__cfgCache = Object.assign({}, sandbox.__cfgCache, { downloadReputation: false });
-    guard.handleDownloadCreated(download(103, 'https://files.example/archive.zip'));
+    guard.handleDownloadCreated(download(103, 'https://files.example/invoice.pdf.exe'));
     assert(!paused(sandbox, 103), 'an off Download Guard never pauses');
-    console.log('  [ok] a risky name pauses synchronously, and only while Download Guard is on');
+    console.log('  [ok] ordinary archives and macro documents do not pause at creation');
   }
 
   /* ---- a Content-Disposition name arrives after onCreated (measured in Edge: 4-31 ms later) ---- */
@@ -142,8 +142,8 @@ async function main() {
     sandbox.downloadItems.push(named);
     await guard.handleDownloadCreated(named);
     assert(!paused(sandbox, 111), 'nothing about /get?id=1 is risky yet');
-    guard.handleDownloadChanged({ id: 111, filename: { previous: '', current: 'C:\\Downloads\\setup.exe' } });
-    assert(paused(sandbox, 111), 'the filename event did not pause a Content-Disposition setup.exe');
+    guard.handleDownloadChanged({ id: 111, filename: { previous: '', current: 'C:\\Downloads\\invoice.pdf.exe' } });
+    assert(paused(sandbox, 111), 'the filename event did not pause a disguised Content-Disposition executable');
     assert(guard.EARLY_PAUSED.has('111'), 'the scan must know to resume it if it grades clean');
 
     const doc = download(112, 'https://files.example/get?id=2', { filename: '' });
@@ -152,7 +152,7 @@ async function main() {
     guard.handleDownloadChanged({ id: 112, filename: { previous: '', current: 'C:\\Downloads\\notes.docx' } });
     assert(!paused(sandbox, 112), 'an ordinary document name is left to the scan');
 
-    named.filename = 'C:\\Downloads\\setup.exe';
+    named.filename = 'C:\\Downloads\\invoice.pdf.exe';
     await guard.runDownloadGuardScan(111, named, 'created');
     const callsAfterScan = sandbox.calls.length;
     guard.handleDownloadChanged({ id: 111, filename: { previous: '', current: 'C:\\Downloads\\setup.exe' } });
@@ -213,7 +213,7 @@ async function main() {
   /* ---- a file that finished first is reviewed as saved, and the review survives ---- */
   {
     const { guard, sandbox } = world();
-    const done = download(301, 'https://smallvendor.example/files/tool.exe', { state: 'complete', endTime: new Date().toISOString() });
+    const done = download(301, 'https://smallvendor.example/files/%00/tool.exe', { state: 'complete', endTime: new Date().toISOString() });
     sandbox.downloadItems.push(done);
     sandbox.openTabs = [{ id: 9, url: 'chrome-extension://wardenone/download-review.html?id=301' }];
     await guard.runDownloadGuardScan(301, done, 'created');
@@ -221,7 +221,7 @@ async function main() {
     assert(review, 'a finished risky file is still reviewed');
     assert.equal(review.paused, false);
     assert.equal(review.finishedBeforeStop, true);
-    assert.equal(review.recommendation, 'Review the source before opening this file.');
+    assert.equal(review.recommendation, 'WardenOne could not confirm where this came from. Keep it only if this is the file you meant to download from a site you know.');
 
     assert.equal(sandbox.focuses, 1, 'the review window opens once');
     await guard.runDownloadGuardScan(301, null, 'created-followup');
@@ -241,7 +241,7 @@ async function main() {
   {
     const { guard, sandbox } = world();
     for (const id of [311, 312]) {
-      const done = download(id, 'https://smallvendor.example/files/tool' + id + '.exe', { state: 'complete', exists: true, endTime: new Date().toISOString() });
+      const done = download(id, 'https://smallvendor.example/files/%00/tool' + id + '.exe', { state: 'complete', exists: true, endTime: new Date().toISOString() });
       sandbox.downloadItems.push(done);
       await guard.runDownloadGuardScan(id, done, 'created');
     }
@@ -297,7 +297,7 @@ async function main() {
   /* ---- a pause refused because the file just finished ---- */
   {
     const { guard, sandbox } = world();
-    const racing = download(321, 'https://smallvendor.example/files/tool.exe');
+    const racing = download(321, 'https://smallvendor.example/files/%00/tool.exe');
     sandbox.downloadItems.push(racing);
     sandbox.beforePause = (it) => { if (it) it.state = 'complete'; };
     await guard.runDownloadGuardScan(321, racing, 'created');
@@ -310,7 +310,7 @@ async function main() {
   /* ---- a pause refused mid-download, and the file finishes later ---- */
   {
     const { guard, sandbox } = world();
-    const stuck = download(331, 'https://smallvendor.example/files/tool.exe');
+    const stuck = download(331, 'https://smallvendor.example/files/%00/tool.exe');
     sandbox.downloadItems.push(stuck);
     const pause = sandbox.chrome.downloads.pause;
     sandbox.chrome.downloads.pause = (id, cb) => {
@@ -331,7 +331,7 @@ async function main() {
   /* ---- a paused review the reader resumed elsewhere still lapses ---- */
   {
     const { guard, sandbox } = world();
-    const held = download(341, 'https://smallvendor.example/files/tool.exe');
+    const held = download(341, 'https://smallvendor.example/files/%00/tool.exe');
     sandbox.downloadItems.push(held);
     await guard.runDownloadGuardScan(341, held, 'created');
     assert.equal(pending(sandbox, 341).paused, true);
@@ -348,16 +348,21 @@ async function main() {
     sandbox.downloadItems.push(inFlight);
     await guard.runDownloadGuardScan(351, inFlight, 'created');
     const blocked = pending(sandbox, 351);
-    assert.equal(blocked.autoBlocked, true);
+    assert.equal(blocked.autoBlocked, false);
+    assert.equal(blocked.cleanupPending, true);
+    assert.equal(blocked.removed.cancelled, true);
     assert.equal(blocked.finishedBeforeStop, false);
     assert.equal(blocked.removed.removedFile, false, 'an in-flight download has no finished file to remove');
     assert.equal(blocked.removed.erased, false, 'cancellation alone does not establish disk cleanup');
     assert(sandbox.downloadItems.includes(inFlight), 'the cancelled entry remains available in Chrome Downloads');
-    assert.equal(blocked.recommendation, 'Do not download this file again.');
+    assert.match(blocked.recommendation, /Retry file removal/);
     await guard.cleanupDownloadReviews(true);
-    assert(pending(sandbox, 351), 'a confirmed cancellation keeps its notice');
+    assert(pending(sandbox, 351), 'unconfirmed cleanup keeps its warning');
+    const attempts = sandbox.calls.filter(([method]) => method === 'removeFile').length;
     await guard.runDownloadGuardScan(351, { id: 351 }, 'changed');
-    assert.equal(JSON.stringify(pending(sandbox, 351)), JSON.stringify(blocked), 'a rescan rewrote a finished notice');
+    assert.equal(sandbox.calls.filter(([method]) => method === 'removeFile').length, attempts + 1,
+      'a cancelled transfer still needs a cleanup retry');
+    assert.equal(pending(sandbox, 351).cleanupPending, true);
 
     const landed = download(352, 'https://evil.example/second.exe', { danger: 'content', state: 'complete', endTime: new Date().toISOString() });
     sandbox.downloadItems.push(landed);
@@ -366,28 +371,28 @@ async function main() {
     assert.equal(removed.autoBlocked, true);
     assert.equal(removed.finishedBeforeStop, true);
     assert.equal(removed.removed.removedFile, true);
-    assert.deepEqual(sandbox.decisions, ['blocked before it finished', 'deleted after it finished']);
-    console.log('  [ok] history records whether a critical file was stopped or deleted after it finished');
+    assert.deepEqual(sandbox.decisions, ['cancelled; cleanup unconfirmed', 'cancelled; cleanup unconfirmed', 'deleted after it finished']);
+    console.log('  [ok] cancellation retains cleanup retries and history distinguishes confirmed deletion');
   }
 
   for (const scenario of [
-    { name: 'all removal APIs fail', cancelFails: true, removeFileFails: true, eraseFails: true, stopped: false, paused: true },
-    { name: 'pause and removal fail', pauseFails: true, cancelFails: true, removeFileFails: true, stopped: false, paused: false },
-    { name: 'completed cancellation is a no-op', state: 'complete', removeFileFails: true, stopped: false, finished: true },
-    { name: 'completion races cancellation', completeOnCancel: true, removeFileFails: true, stopped: false, finished: true },
-    { name: 'cancellation callback leaves transfer running', cancelNoOp: true, removeFileFails: true, stopped: false, paused: true },
-    { name: 'cancellation lookup reports an error', lookupFailure: 'callback', stopped: false },
-    { name: 'cancellation lookup throws', lookupFailure: 'throw', stopped: false },
-    { name: 'cancellation lookup rejects', lookupFailure: 'reject', stopped: false },
-    { name: 'cancellation lookup has no item', lookupFailure: 'missing', stopped: false },
-    { name: 'cancelled partial file survives removal', exists: true, stopped: true, cancelled: true },
-    { name: 'cancelled entry reports no final file', exists: false, stopped: true, cancelled: true },
-    { name: 'cancelled entry has no file status', stopped: true, cancelled: true },
-    { name: 'deletion succeeds despite cancel failure', state: 'complete', cancelFails: true, stopped: true, deleted: true, finished: true },
-    { name: 'deletion succeeds and erase fails', state: 'complete', eraseFails: true, stopped: true, deleted: true, finished: true },
-    { name: 'deletion survives lookup callback error', state: 'complete', lookupFailure: 'callback', stopped: true, deleted: true, finished: true },
-    { name: 'deletion survives lookup throw', state: 'complete', lookupFailure: 'throw', stopped: true, deleted: true, finished: true },
-    { name: 'deletion survives lookup rejection', state: 'complete', lookupFailure: 'reject', stopped: true, deleted: true, finished: true },
+    { name: 'all removal APIs fail', cancelFails: true, removeFileFails: true, eraseFails: true, paused: true },
+    { name: 'pause and removal fail', pauseFails: true, cancelFails: true, removeFileFails: true, paused: false },
+    { name: 'completed cancellation is a no-op', state: 'complete', removeFileFails: true, finished: true },
+    { name: 'completion races cancellation', completeOnCancel: true, removeFileFails: true, finished: true },
+    { name: 'cancellation callback leaves transfer running', cancelNoOp: true, removeFileFails: true, paused: true },
+    { name: 'cancellation lookup reports an error', lookupFailure: 'callback' },
+    { name: 'cancellation lookup throws', lookupFailure: 'throw' },
+    { name: 'cancellation lookup rejects', lookupFailure: 'reject' },
+    { name: 'cancellation lookup has no item', lookupFailure: 'missing' },
+    { name: 'cancelled partial file survives removal', exists: true, cancelled: true },
+    { name: 'cancelled entry reports no final file', exists: false, cancelled: true },
+    { name: 'cancelled entry has no file status', cancelled: true },
+    { name: 'deletion succeeds despite cancel failure', state: 'complete', cancelFails: true, deleted: true, finished: true },
+    { name: 'deletion succeeds and erase fails', state: 'complete', eraseFails: true, deleted: true, finished: true },
+    { name: 'deletion survives lookup callback error', state: 'complete', lookupFailure: 'callback', deleted: true, finished: true },
+    { name: 'deletion survives lookup throw', state: 'complete', lookupFailure: 'throw', deleted: true, finished: true },
+    { name: 'deletion survives lookup rejection', state: 'complete', lookupFailure: 'reject', deleted: true, finished: true },
   ]) {
     const { guard, sandbox } = world();
     Object.assign(sandbox, scenario);
@@ -413,8 +418,9 @@ async function main() {
     sandbox.openTabs = [{ id: 19, url: 'chrome-extension://wardenone/download-review.html?id=361' }];
     await guard.runDownloadGuardScan(361, item, 'created');
     const review = pending(sandbox, 361);
-    assert.equal(review.autoBlocked, scenario.stopped, scenario.name);
-    assert.equal(review.interventionFailed, !scenario.stopped, scenario.name);
+    assert.equal(review.autoBlocked, !!scenario.deleted, scenario.name);
+    assert.equal(review.cleanupPending, !scenario.deleted, scenario.name);
+    assert.equal(review.interventionFailed, !scenario.deleted, scenario.name);
     assert.equal(review.paused, !!scenario.paused, scenario.name);
     assert.equal(review.finishedBeforeStop, !!scenario.finished, scenario.name);
     assert.equal(review.removed.cancelled, !!scenario.cancelled, scenario.name);
@@ -425,9 +431,9 @@ async function main() {
       scenario.name + ': erase requires confirmed file deletion');
     if (!scenario.deleted) assert(sandbox.downloadItems.includes(item), scenario.name + ': keep the recovery handle');
     if (scenario.exists) assert.equal(item.exists, true, scenario.name + ': the partial file survived');
-    assert.equal(sandbox.decisions[0], scenario.stopped
-      ? (scenario.deleted ? 'deleted after it finished' : 'blocked before it finished') : 'automatic block failed', scenario.name);
-    assert.equal(sandbox.store.wardenone_download_handled['361'].decision, scenario.stopped ? 'auto-blocked' : 'auto-block failed');
+    assert.equal(sandbox.decisions[0], scenario.deleted ? 'deleted after it finished'
+      : scenario.cancelled ? 'cancelled; cleanup unconfirmed' : 'automatic block failed', scenario.name);
+    assert.equal(sandbox.store.wardenone_download_handled['361'].decision, scenario.deleted ? 'auto-blocked' : 'auto-block failed');
     await guard.cleanupDownloadReviews(true);
     assert(pending(sandbox, 361), scenario.name + ': cleanup discarded the notice');
     assert.deepEqual(sandbox.closedTabs, [], scenario.name);
@@ -436,18 +442,21 @@ async function main() {
     show(review);
     assert.equal(byId('continue').hidden, true, scenario.name + ': critical downloads cannot be continued');
     assert.equal(byId('trust-continue').hidden, true, scenario.name);
-    if (scenario.stopped) {
+    if (scenario.deleted) {
       assert.equal(text('cancel'), 'Close');
       const callCount = sandbox.calls.filter((call) => ['cancel', 'removeFile', 'erase'].includes(call[0])).length;
+      await guard.runDownloadGuardScan(361, { id: 361 }, 'changed');
+      assert.equal(sandbox.calls.filter((call) => ['cancel', 'removeFile', 'erase'].includes(call[0])).length, callCount,
+        scenario.name + ': confirmed deletion needs no automatic retry');
       const dismissed = await guard.handleDownloadDecision(361, 'cancel', {});
       assert.equal(dismissed.ok, true);
       assert.equal(sandbox.calls.filter((call) => ['cancel', 'removeFile', 'erase'].includes(call[0])).length, callCount,
         scenario.name + ': Close dismisses a confirmed-removal notice without retrying removal');
       continue;
     }
-    assert.equal(text('title'), 'Download removal could not be confirmed');
-    assert.equal(text('cancel'), scenario.finished ? 'Retry Delete File' : 'Retry Cancel Download');
-    assert.match(text('pause-note'), /could not confirm it was stopped or deleted/);
+    assert.equal(text('title'), scenario.cancelled ? 'Download stopped; file cleanup unconfirmed' : 'Download removal could not be confirmed');
+    assert.equal(text('cancel'), scenario.finished || scenario.cancelled ? 'Retry Delete File' : 'Retry Cancel Download');
+    assert.match(text('pause-note'), scenario.cancelled ? /could not confirm its file data was deleted/ : /could not confirm it was stopped or deleted/);
     assert.equal(sandbox.downloadItems.includes(item), true, scenario.name + ': download remains available for retry');
     assert.notEqual(review.recommendation, 'Do not download this file again.');
     const denied = await guard.handleDownloadDecision(361, 'continue', {});
@@ -460,14 +469,66 @@ async function main() {
     Object.assign(sandbox, { cancelFails: false, removeFileFails: false, eraseFails: false, cancelNoOp: false, beforeCancel: null });
     sandbox.chrome.downloads.search = search;
     sandbox.downloadSearch = downloadSearch;
+    item.state = 'complete';
     await guard.runDownloadGuardScan(361, { id: 361 }, 'changed');
     const recovered = pending(sandbox, 361);
     assert.equal(recovered.autoBlocked, true, scenario.name + ': subsequent scans must retry removal');
     assert.equal(recovered.interventionFailed, false);
     assert.equal(recovered.createdAt, review.createdAt);
-    assert.equal(sandbox.decisions[sandbox.decisions.length - 1], scenario.finished ? 'deleted after it finished' : 'blocked before it finished');
+    assert.equal(sandbox.decisions[sandbox.decisions.length - 1], 'deleted after it finished');
   }
   console.log('  [ok] critical removal failures preserve warnings, retry handles and accurate history');
+
+  for (const storedRemoval of [false, 'false']) {
+    const { guard, sandbox } = world();
+    const item = download(365, 'https://evil.example/payload.exe', { danger: 'content', exists: true });
+    sandbox.downloadItems.push(item);
+    sandbox.openTabs = [{ id: 365, url: 'chrome-extension://wardenone/download-review.html?id=365' }];
+    await guard.runDownloadGuardScan(365, item, 'created');
+    const createdAt = pending(sandbox, 365).createdAt;
+    const legacy = JSON.parse(JSON.stringify(pending(sandbox, 365)));
+    Object.assign(legacy, { autoBlocked: true, interventionFailed: false });
+    legacy.removed.removedFile = storedRemoval;
+    delete legacy.cleanupPending;
+    sandbox.store.wardenone_pending_downloads['365'] = legacy;
+    vm.runInContext('delete PENDING_DOWNLOADS["365"]', sandbox);
+    await guard.cleanupDownloadReviews(true);
+    const page = loadReviewPage();
+    page.show(legacy);
+    assert.equal(page.text('cancel'), 'Retry Delete File', 'stored flags cannot substitute for confirmed deletion');
+
+    item.danger = '';
+    sandbox.store.wardenone_config.downloadHardBlockCritical = false;
+    await guard.runDownloadGuardScan(365, { id: 365 }, 'worker-restart');
+    const restored = pending(sandbox, 365);
+    assert.equal(restored.autoBlocked, false, 'legacy cancellation must not claim confirmed cleanup');
+    assert.equal(restored.removed.cancelled, true);
+    assert.equal(restored.cleanupPending, true);
+    assert.equal(restored.createdAt, createdAt);
+    assert.equal(sandbox.calls.filter(([method]) => method === 'removeFile').length, 2,
+      'persisted cleanup retries even when a fresh score would no longer require removal');
+    assert.deepEqual(sandbox.closedTabs, []);
+
+    const failed = await guard.handleDownloadDecision(365, 'cancel', {});
+    assert.equal(failed.ok, false);
+    assert.equal(failed.deleted, false);
+    assert.equal(failed.decision, 'cancelled; cleanup unconfirmed');
+    assert.match(failed.error, /stopped this download, but could not confirm its file data was deleted/);
+    assert.equal(sandbox.calls.filter(([method]) => method === 'removeFile').length, 3);
+    assert(pending(sandbox, 365));
+    assert(sandbox.downloadItems.includes(item));
+    assert.deepEqual(sandbox.closedTabs, []);
+
+    item.state = 'complete';
+    vm.runInContext('delete PENDING_DOWNLOADS["365"]', sandbox);
+    const deleted = await guard.handleDownloadDecision(365, 'cancel', {});
+    assert.equal(deleted.ok, true);
+    assert.equal(deleted.deleted, true);
+    assert.equal(sandbox.calls.filter(([method]) => method === 'removeFile').length, 4);
+    assert(!pending(sandbox, 365));
+    assert.equal(item.exists, false);
+    console.log('  [ok] persisted cancellation stays actionable through rescans and manual retries until deletion succeeds');
+  }
 
   {
     const { guard, sandbox } = world();
@@ -510,16 +571,16 @@ async function main() {
     assert.match(text('pause-note'), /could not pause this download/);
     assert.equal(text('cancel'), 'Cancel Download', 're-rendering resets the button labels');
 
-    show({ grade: 'F', autoBlocked: true, finishedBeforeStop: false, removed: { removedFile: false } });
-    assert.equal(text('title'), 'Download blocked before it finished');
-    assert.match(text('pause-note'), /before it finished/);
-    assert.equal(text('cancel'), 'Close');
+    show({ grade: 'F', autoBlocked: true, finishedBeforeStop: false, removed: { cancelled: true, removedFile: false } });
+    assert.equal(text('title'), 'Download stopped; file cleanup unconfirmed');
+    assert.match(text('pause-note'), /could not confirm its file data was deleted/);
+    assert.equal(text('cancel'), 'Retry Delete File');
     show({ grade: 'F', autoBlocked: true, finishedBeforeStop: true, removed: { removedFile: true } });
     assert.equal(text('title'), 'Dangerous file deleted');
     assert.match(text('pause-note'), /finished downloading before WardenOne could stop it\. WardenOne deleted it/);
     show({ grade: 'F', autoBlocked: true, finishedBeforeStop: true, removed: { removedFile: false } });
-    assert.equal(text('title'), 'Dangerous file already downloaded');
-    assert.match(text('pause-note'), /could not confirm it was deleted/);
+    assert.equal(text('title'), 'Download removal could not be confirmed');
+    assert.match(text('pause-note'), /could not confirm it was stopped or deleted/);
 
     show({ paused: false, finishedBeforeStop: true });
     box.reply = { ok: false, decision: 'delete failed', deleted: false,

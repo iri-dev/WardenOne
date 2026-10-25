@@ -621,6 +621,15 @@ async function main() {
   assert(!/setInterval\([^)]*,\s*60\)/.test(pageJs),
     'toast preview went back to an off-frame 60ms repaint loop');
 
+  for (const grade of ['A', 'C', 'F']) {
+    const quiet = await context.recordWardenNotification({ type: 'download_reputation', url: 'https://example.com/export.csv',
+      at: 900, detail: { action: 'allow', grade, score: 12 } });
+    assert.strictEqual(quiet, null, 'allowed downloads must not become suspicious-download notifications at grade ' + grade);
+  }
+  assert.strictEqual(store.wardenone_notifications.length, 0, 'quiet Activity checks do not create notification records or badges');
+  assert.strictEqual(calls.messages, 0, 'quiet downloads do not send toast or sound messages');
+  assert.strictEqual(calls.notifications.length, 0, 'quiet downloads do not send system notifications');
+
   await context.recordWardenNotification({ type: 'blocked_popup', url: 'https://example.com/path', at: 1000, detail: { why: 'A popup was stopped.' } });
   await context.recordWardenNotification({ type: 'blocked_popup', url: 'https://example.com/another', at: 2000, detail: { why: 'A popup was stopped again.' } });
   assert.strictEqual(store.wardenone_notifications.length, 1, 'same event and host should group');

@@ -249,12 +249,13 @@ function render(review) {
   const grade = String(review.grade || '?').toUpperCase();
   /* A file that finished before WardenOne acted was identified, not stopped; say which. */
   const finished = !!review.finishedBeforeStop;
-  const deleted = !!(review.removed && review.removed.removedFile);
-  const interventionFailed = !!review.interventionFailed;
+  const deleted = !!review.removed && review.removed.removedFile === true;
+  const cancelled = !!review.removed && review.removed.cancelled === true;
+  const interventionFailed = !deleted && (!!review.removed || !!review.interventionFailed);
   document.body.className = 'grade-' + grade.toLowerCase() + (grade === 'C' ? ' compact' : '');
-  byId('title').textContent = review.autoBlocked
-    ? (!finished ? 'Download blocked before it finished' : (deleted ? 'Dangerous file deleted' : 'Dangerous file already downloaded'))
-    : (interventionFailed ? 'Download removal could not be confirmed'
+  byId('title').textContent = review.autoBlocked && deleted
+    ? (!finished ? 'Download blocked before it finished' : 'Dangerous file deleted')
+    : (interventionFailed ? (cancelled ? 'Download stopped; file cleanup unconfirmed' : 'Download removal could not be confirmed')
       : review.trustSaveFailed ? 'Download continued; trust was not saved'
       : finished ? 'Downloaded before it could be paused'
       : (grade === 'C' ? 'Review recommended' : 'Download paused for review'));
@@ -321,17 +322,17 @@ function render(review) {
 
   const pauseNote = byId('pause-note');
   if (interventionFailed) {
-    pauseNote.textContent = (finished ? 'This file is already downloaded. '
+    pauseNote.textContent = cancelled
+      ? 'WardenOne stopped this download, but could not confirm its file data was deleted. Retry deletion, or check Chrome Downloads and delete any remaining file data without opening it.'
+      : (finished ? 'This file is already downloaded. '
       : (review.paused ? 'This download is still paused. ' : 'This download may still be running. '))
       + 'WardenOne could not confirm it was stopped or deleted. Retry removal, or check Chrome Downloads and delete the file without opening it.';
   } else if (review.trustSaveFailed) {
     pauseNote.textContent = 'Chrome resumed this download, but WardenOne could not save the trust decision. You can retry trusting the site or cancel the download.';
-  } else if (review.autoBlocked && !finished) {
-    pauseNote.textContent = 'WardenOne cancelled this critical download before it finished.';
-  } else if (review.autoBlocked) {
-    pauseNote.textContent = 'This file finished downloading before WardenOne could stop it. ' + (deleted
-      ? 'WardenOne deleted it afterwards. If you opened it in the meantime, run a full antivirus scan.'
-      : 'WardenOne could not confirm it was deleted; your antivirus may already have removed it. Check your Downloads folder and delete it without opening it.');
+  } else if (review.autoBlocked && deleted && !finished) {
+    pauseNote.textContent = 'WardenOne cancelled this critical download before it finished and deleted its file data.';
+  } else if (review.autoBlocked && deleted) {
+    pauseNote.textContent = 'This file finished downloading before WardenOne could stop it. WardenOne deleted it afterwards. If you opened it in the meantime, run a full antivirus scan.';
   } else if (finished) {
     pauseNote.textContent = 'This file finished downloading before WardenOne could pause it, so it is already saved on your computer. Delete File removes it.';
   } else if (review.paused) {
@@ -361,7 +362,7 @@ function render(review) {
   byId('advanced-panel').classList.remove('show');
 
   cancelBtn.textContent = finished ? 'Delete File' : 'Cancel Download';
-  if (interventionFailed) cancelBtn.textContent = finished ? 'Retry Delete File' : 'Retry Cancel Download';
+  if (interventionFailed) cancelBtn.textContent = finished || cancelled ? 'Retry Delete File' : 'Retry Cancel Download';
   if (grade === 'C') {
     cancelBtn.className = 'quiet';
     continueBtn.textContent = finished ? 'Keep File' : 'Continue';
@@ -370,17 +371,18 @@ function render(review) {
     continueBtn.textContent = finished ? 'Keep File' : 'Continue Download';
   }
 
-  if (grade === 'F') {
+  const blockRequired = review.blockRequired === true || (review.blockRequired !== false && grade === 'F');
+  if (blockRequired) {
     continueBtn.hidden = true;
     trustBtn.hidden = true;
     advancedBtn.hidden = true;
     continueAnyway.hidden = true;
-    if (review.autoBlocked) {
+    if (review.autoBlocked && deleted) {
       /* Confirmed removal leaves only the notice to dismiss. */
       cancelBtn.textContent = 'Close';
       cancelBtn.className = 'quiet';
     }
-  } else if (grade === 'E') {
+  } else if (grade === 'E' || grade === 'F') {
     continueBtn.hidden = true;
     trustBtn.hidden = true;
     startCriticalCountdown();
@@ -417,9 +419,10 @@ function loadReview() {
 function decide(decision) {
   if (busy || !currentReview) return;
   const finished = !!currentReview.finishedBeforeStop;
+  const deleting = finished || !!(currentReview.removed && currentReview.removed.cancelled);
   setBusy(true);
   setResult(decision === 'cancel'
-    ? (finished ? 'Deleting file...' : 'Cancelling download...')
+    ? (deleting ? 'Deleting file...' : 'Cancelling download...')
     : decision === 'trust-continue'
       ? 'Trusting this site...'
       : (finished ? 'Keeping file...' : 'Continuing download...'));

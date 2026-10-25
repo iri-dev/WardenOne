@@ -22,6 +22,8 @@ function loadMemoryShield(options = {}) {
     queries: 0,
     gets: [],
     liveChecks: [],
+    frameChecks: [],
+    frameLists: [],
     throttled: [],
     removed: [],
     activated: [],
@@ -33,6 +35,7 @@ function loadMemoryShield(options = {}) {
     clock: Date.now(),
     alarms: new Map((options.alarms || []).map((a) => [a.name, Object.assign({}, a)])),
     liveReply: options.liveReply || (() => ({ formDirty: false, mediaActive: false })),
+    frames: options.frames || ((tabId) => [{ frameId: 0, documentId: 'document-' + tabId + '-0' }]),
     history: [],
     // Captured rather than discarded: what counts as "activity" is a listener decision, and a
     // harness that throws the listener away can only assert it from source.
@@ -65,6 +68,20 @@ function loadMemoryShield(options = {}) {
         async get(name) { return state.alarms.get(name); },
       },
       runtime: { lastError: null },
+      webNavigation: {
+        getAllFrames({ tabId }, callback) {
+          state.frameLists.push(tabId);
+          const frames = typeof state.frames === 'function' ? state.frames(tabId) : state.frames;
+          if (frames === undefined) return;
+          if (frames && frames.__throw) throw new Error('frame lookup failed');
+          if (frames && frames.__lastError) {
+            sandbox.chrome.runtime.lastError = { message: frames.__lastError };
+            try { callback(undefined); } finally { sandbox.chrome.runtime.lastError = null; }
+            return;
+          }
+          callback(frames);
+        },
+      },
       tabs: {
         onActivated: capture('onActivated'),
         onUpdated: capture('onUpdated'),
@@ -97,14 +114,16 @@ function loadMemoryShield(options = {}) {
           return reborn;
         },
         remove: async (id) => { state.removed.push(id); },
-        sendMessage(tabId, msg, callback) {
+        sendMessage(tabId, msg, target, callback) {
+          if (typeof target === 'function') { callback = target; target = undefined; }
           if (msg && msg.kind === 'memory-throttle') {
             state.throttled.push(tabId);
             if (callback) callback({ ok: true });
             return;
           }
           state.liveChecks.push(tabId);
-          const reply = state.liveReply(tabId);
+          state.frameChecks.push({ tabId, target });
+          const reply = state.liveReply(tabId, target);
           // `undefined` models a bridge that never answers: the callback simply never runs and the
           // timeout is what resolves it, which is the shape a hung tab actually has.
           if (reply === undefined) return;
@@ -224,6 +243,7 @@ async function main() {
 
   await testRecencySurvivesRestart();
   await testUnknownLiveStateKeepsTheTab();
+  await testFrameLiveState();
   await testSharedMaintenancePass();
   await testDiscardRefusals();
   await testTabLimitCloseRechecksState();
@@ -393,6 +413,65 @@ async function testUnknownLiveStateKeepsTheTab() {
     .memory.tabLiveState(1);
   assert.strictEqual(okState.ok, true);
   assert.strictEqual(okState.formDirty, true);
+}
+
+async function testFrameLiveState() {
+  const frames = [{ frameId: 0, documentId: 'main' }, { frameId: 4, documentId: 'editor' },
+    { frameId: 9, documentId: 'nested' }];
+  const clean = { formDirty: false, mediaActive: false };
+  for (const flag of ['formDirty', 'mediaActive']) {
+    const run = loadMemoryShield({ frames,
+      liveReply: (_id, target) => target && target.frameId === 9 ? { ...clean, [flag]: true } : clean });
+    const live = await run.memory.tabLiveState(1);
+    assert.strictEqual(live.ok, true);
+    assert.strictEqual(live[flag], true, 'a clean top frame must not hide ' + flag + ' in an iframe');
+    assert.deepStrictEqual(run.state.frameChecks.map(({ target }) => ({ ...target })),
+      frames.map(({ frameId, documentId }) => ({ frameId, documentId })), 'each document must be queried individually');
+  }
+
+  for (const badReply of [UNREACHABLE, MALFORMED, THROWS, {}, { formDirty: 'false', mediaActive: false }]) {
+    const run = loadMemoryShield({ frames,
+      liveReply: (_id, target) => target && target.frameId === 4 ? badReply : clean });
+    assert.strictEqual((await run.memory.tabLiveState(1)).ok, false, 'an unverified iframe must keep the tab');
+  }
+  const hung = loadMemoryShield({ frames,
+    liveReply: (_id, target) => target && target.frameId === 4 ? undefined : clean });
+  assert.strictEqual((await hung.memory.tabLiveState(1)).ok, false, 'one unanswered iframe must time out safely');
+
+  for (const frameResult of [UNREACHABLE, THROWS, [], null, {}, [{ frameId: 4, documentId: 'editor' }],
+    [{ frameId: 0 }], [frames[0], frames[0]], [{ ...frames[0], errorOccurred: true }]]) {
+    const run = loadMemoryShield({ frames: () => frameResult });
+    assert.strictEqual((await run.memory.tabLiveState(1)).ok, false, 'unreliable frame enumeration must keep the tab');
+    assert.strictEqual(run.state.frameChecks.length, 0);
+  }
+  for (const changed of [[...frames, { frameId: 10, documentId: 'new' }], frames.slice(0, 2),
+    frames.map((frame) => frame.frameId === 4 ? { ...frame, documentId: 'replacement' } : frame), UNREACHABLE]) {
+    let reads = 0;
+    const run = loadMemoryShield({ frames: () => ++reads === 1 ? frames : changed });
+    assert.strictEqual((await run.memory.tabLiveState(1)).ok, false, 'a changed or unknown frame snapshot must keep the tab');
+  }
+
+  const paths = [
+    ['scheduled sweep', (run) => run.sandbox.memorySweep('alarm')],
+    ['Free RAM Now', (run) => run.sandbox.freeRamNow()],
+    ['Tab Limit close', (run) => run.sandbox.enforceTabLimit(1)],
+    ['manual close', (run) => run.sandbox.memoryActOnTab(1, 'close')],
+    ['group sleep', (run) => { run.sandbox.chrome.tabGroups = {}; return run.sandbox.sleepIdleGroups(); }],
+  ];
+  for (const [label, act] of paths) {
+    for (const child of [{ ...clean, formDirty: true }, UNREACHABLE]) {
+      const run = loadMemoryShield({ frames, config: { memoryShield: true, tabLimitGuard: true,
+        tabLimitMax: 2, tabLimitClose: true, tabLimitWarn: false },
+      tabs: [sleepableTab(1, 120, { groupId: 7 }), sleepableTab(2, 120, { active: true }),
+        sleepableTab(3, 120, { pinned: true })],
+      liveReply: (_id, target) => target && target.frameId === 4 ? child : clean });
+      await act(run);
+      assert.deepStrictEqual(run.state.discarded, [], label + ' must preserve an iframe draft or unverified frame');
+      assert.deepStrictEqual(run.state.removed, [], label + ' must preserve an iframe draft or unverified frame');
+    }
+  }
+  const safe = loadMemoryShield({ frames, config: { memoryShield: true }, tabs: [sleepableTab(1, 120)] });
+  assert.strictEqual((await safe.sandbox.memorySweep('alarm')).slept, 1, 'all-clean frames must remain sleepable');
 }
 
 async function testSharedMaintenancePass() {
