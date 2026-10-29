@@ -58,7 +58,7 @@ function fakeSession() {
 /* A worker: the shipped config cache and orchestrator, with every applier replaced by a stub
    whose behaviour the scenario chooses. `session` is shared across workers to model a worker
    that died and came back. */
-function worker({ session, config, configUnreadable, behaviour }) {
+function worker({ session, config, configUnreadable, behaviour, grabberFeedReady }) {
   const calls = [];
   const alarms = new Map();
   const ctx = {
@@ -116,12 +116,14 @@ function worker({ session, config, configUnreadable, behaviour }) {
       calls.push(name);
       const b = behaviour && behaviour[name];
       if (b === 'false') return Promise.resolve(false);
+      if (b === 'false-once') { behaviour[name] = undefined; return Promise.resolve(false); }
       if (b === 'reject') return Promise.reject(new Error('chrome said no'));
       if (b === 'sync-false') return false;
       if (b === 'stall') return new Promise(() => {});
       return Promise.resolve(undefined);
     };
   }
+  ctx.__grabberFeedReady = grabberFeedReady === true;
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(CONFIG_CACHE + '\n' + ORCHESTRATOR + '\nglobalThis.api = { refreshExtensionState,'
@@ -284,6 +286,22 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 40));
     check('no marker, no retry', (await w.api.retryDegradedReconcileOnWake()) === false);
     check('and the worker start hook is at top level, not inside a listener',
       /\nretryDegradedReconcileOnWake\(\)\.catch\(\(\) => \{\}\);/.test(BG));
+  }
+
+  /* A feed that finished loading during a failed pass has already looked for a pass to retry. */
+  {
+    const session = fakeSession();
+    const w = worker({ session, config: {}, behaviour: { grabberFeed: 'false-once' }, grabberFeedReady: true });
+    w.api.refreshExtensionState();
+    await settle(400);
+    const passes = w.calls.filter((c) => c === 'grabberFeed').length;
+    check('a grabber feed that became ready during the pass is retried without waiting for a wake',
+      passes === 2 && w.api.key() !== '' && !session.__store.wardenone_reconcile_degraded, passes + ' grabber passes');
+    const loading = worker({ session: fakeSession(), config: {}, behaviour: { grabberFeed: 'false-once' } });
+    loading.api.refreshExtensionState();
+    await settle(400);
+    check('a feed still loading leaves the retry to its loader',
+      loading.calls.filter((c) => c === 'grabberFeed').length === 1 && loading.api.key() === '');
   }
 
   /* ---- 5. an unreadable config is unknown, not empty ----------------------------- */

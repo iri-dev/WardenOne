@@ -41,7 +41,7 @@
         },
         {
           "file": "background.js",
-          "line": 21330
+          "line": 21333
         }
       ]
     },
@@ -85,7 +85,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 19760
+          "line": 19763
         }
       ]
     },
@@ -105,7 +105,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21331
+          "line": 21334
         }
       ]
     },
@@ -294,7 +294,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21341
+          "line": 21344
         },
         {
           "file": "popup-scroll-memory.js",
@@ -390,7 +390,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 20305
+          "line": 20308
         }
       ]
     },
@@ -515,7 +515,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21333
+          "line": 21336
         },
         {
           "file": "build-update.js",
@@ -543,7 +543,7 @@
         },
         {
           "file": "background.js",
-          "line": 21281
+          "line": 21284
         }
       ]
     },
@@ -567,7 +567,7 @@
         },
         {
           "file": "background.js",
-          "line": 21284
+          "line": 21287
         }
       ]
     },
@@ -667,7 +667,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21357
+          "line": 21360
         },
         {
           "file": "config-lock.js",
@@ -691,7 +691,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21354
+          "line": 21357
         },
         {
           "file": "config-lock.js",
@@ -715,7 +715,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 20966
+          "line": 20969
         }
       ]
     },
@@ -828,7 +828,7 @@
         },
         {
           "file": "background.js",
-          "line": 21326
+          "line": 21329
         }
       ]
     },
@@ -852,7 +852,7 @@
         },
         {
           "file": "background.js",
-          "line": 21326
+          "line": 21329
         },
         {
           "file": "popup-health.js",
@@ -912,7 +912,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 12032
+          "line": 12035
         }
       ]
     },
@@ -936,7 +936,7 @@
         },
         {
           "file": "background.js",
-          "line": 21307
+          "line": 21310
         },
         {
           "file": "extensions.js",
@@ -972,7 +972,7 @@
         },
         {
           "file": "background.js",
-          "line": 21307
+          "line": 21310
         }
       ]
     },
@@ -996,7 +996,7 @@
         },
         {
           "file": "background.js",
-          "line": 21278
+          "line": 21281
         },
         {
           "file": "extensions.js",
@@ -1028,7 +1028,7 @@
         },
         {
           "file": "background.js",
-          "line": 21308
+          "line": 21311
         }
       ]
     },
@@ -1052,7 +1052,7 @@
         },
         {
           "file": "background.js",
-          "line": 21307
+          "line": 21310
         },
         {
           "file": "extensions.js",
@@ -1084,7 +1084,7 @@
         },
         {
           "file": "background.js",
-          "line": 21308
+          "line": 21311
         },
         {
           "file": "settings.js",
@@ -1172,7 +1172,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 13958
+          "line": 13961
         }
       ]
     },
@@ -1296,7 +1296,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21277
+          "line": 21280
         }
       ]
     },
@@ -1316,7 +1316,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21314
+          "line": 21317
         },
         {
           "file": "popup-diagnostics.js",
@@ -1368,7 +1368,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 16029
+          "line": 16032
         }
       ]
     },
@@ -1388,7 +1388,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 15989
+          "line": 15992
         },
         {
           "file": "popup-health.js",
@@ -1420,7 +1420,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 13725
+          "line": 13728
         }
       ]
     },
@@ -1484,7 +1484,7 @@
         },
         {
           "file": "background.js",
-          "line": 13648
+          "line": 13651
         }
       ]
     },
@@ -1504,7 +1504,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 20037
+          "line": 20040
         }
       ]
     },
@@ -1560,7 +1560,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21343
+          "line": 21346
         },
         {
           "file": "onboarding.js",
@@ -1584,7 +1584,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21343
+          "line": 21346
         },
         {
           "file": "onboarding.js",
@@ -1608,7 +1608,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21344
+          "line": 21347
         },
         {
           "file": "onboarding.js",
@@ -1652,7 +1652,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 19512
+          "line": 19515
         }
       ]
     },
@@ -1696,7 +1696,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 18642
+          "line": 18645
         }
       ]
     },
@@ -1737,7 +1737,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21344
+          "line": 21347
         },
         {
           "file": "popup-scroll-memory.js",
@@ -1761,7 +1761,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21345
+          "line": 21348
         },
         {
           "file": "popup-scroll-memory.js",
@@ -1785,7 +1785,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21345
+          "line": 21348
         },
         {
           "file": "popup.js",
@@ -1813,7 +1813,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 17831
+          "line": 17834
         }
       ]
     },
@@ -2030,7 +2030,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21346
+          "line": 21349
         },
         {
           "file": "settings.js",
@@ -2054,7 +2054,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21346
+          "line": 21349
         },
         {
           "file": "settings.js",
@@ -2078,7 +2078,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21346
+          "line": 21349
         },
         {
           "file": "settings.js",
@@ -2102,7 +2102,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 13500
+          "line": 13503
         },
         {
           "file": "settings.js",
@@ -2126,7 +2126,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21345
+          "line": 21348
         },
         {
           "file": "popup.js",
@@ -2150,7 +2150,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21345
+          "line": 21348
         },
         {
           "file": "onboarding.js",
@@ -2258,7 +2258,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21071
+          "line": 21074
         }
       ]
     },
@@ -2278,7 +2278,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21346
+          "line": 21349
         },
         {
           "file": "popup.js",
@@ -2501,43 +2501,43 @@
     },
     {
       "file": "background.js",
-      "line": 12369,
+      "line": 12372,
       "operation": "localStorage.removeItem",
       "expression": "localStorage.removeItem('__woEyeShieldMode'); } catch (_) {} } },"
     },
     {
       "file": "background.js",
-      "line": 23810,
+      "line": 23813,
       "operation": "localStorage.getItem",
       "expression": "localStorage.getItem(k) !== null) { localStorage.removeItem(k); n++; } } catch (_) {} }"
     },
     {
       "file": "background.js",
-      "line": 23810,
+      "line": 23813,
       "operation": "localStorage.removeItem",
       "expression": "localStorage.removeItem(k); n++; } } catch (_) {} }"
     },
     {
       "file": "background.js",
-      "line": 23811,
+      "line": 23814,
       "operation": "sessionStorage.getItem",
       "expression": "sessionStorage.getItem(k) !== null) { sessionStorage.removeItem(k); n++; } } catch (_) {} }"
     },
     {
       "file": "background.js",
-      "line": 23811,
+      "line": 23814,
       "operation": "sessionStorage.removeItem",
       "expression": "sessionStorage.removeItem(k); n++; } } catch (_) {} }"
     },
     {
       "file": "background.js",
-      "line": 23945,
+      "line": 23948,
       "operation": "sessionStorage.clear",
       "expression": "sessionStorage.clear(); localStorage.clear(); } catch (_) {} },"
     },
     {
       "file": "background.js",
-      "line": 23945,
+      "line": 23948,
       "operation": "localStorage.clear",
       "expression": "localStorage.clear(); } catch (_) {} },"
     },
@@ -3071,7 +3071,7 @@
     "background-memory.js": "d8c0ea303917b2d6c6747944d3ae228da4a1174df3da589cc4ecb3371568e3b1",
     "background-privacy-cleaner.js": "e8a546d219fe522fb875a51551c09e126366e0176c8d92163ae37eab3bd97785",
     "background-startup.js": "e0e1bbd12f9b3b14fbbc1aed9e6b1b58a84140e9c080ec6621d3e1e9d93bad4d",
-    "background.js": "95861a5794f6eb48a1be43e4fe451443e551ae8d151ab7fa34501b13885fe23b",
+    "background.js": "5682d0b1ddf6b311cd39535e144c0c88242b5ea5179bc6aad5ea1f1ae90f1107",
     "bridge.js": "e85c88310fa1ba96917991e0b01f38ca8fa60cb286816b4ae2ad9441859d45e2",
     "build-profile.js": "830644487d588ab6e1a2408aef8168f330beb715cfaca516625e9b89f9963957",
     "build-update.js": "ece2d9874b6db7fe0eb0016d01cd25218f11092f21921dcefe2db1e5c429b9c8",
@@ -3120,6 +3120,7 @@
     "onboarding.js": "4ab1c8fa879e9d3d4d1bdd688711c9823b6bae9531911719a64647e3aff3e0ce",
     "permission-chain.js": "c47abd30b27674bb64c7dda08e9a9542a61dc12aef9a08cc36d1788b5b8b2f17",
     "popup-diagnostics.js": "7b289b15a602bd88abcc7043caa016469275f73110cd8c1c5837060208853b9c",
+    "popup-first-paint.js": "c58714b35daf8ae358b174500cfbf26b14ee45a4b66faed4f903e6b75bd40c08",
     "popup-health.js": "5fed69a40df89668cfe717acd3cef7c0a806c23d1691625e255d6189a1c2342d",
     "popup-privacy-cleaner.js": "5cc1eee1a0d2c0ff8fe7cf9673b2e230aafb0f01e1baedb3cad74356c793d6d5",
     "popup-scroll-memory.js": "1bb89cff7905920ddc5be80f9fbe92c847f733f3f11cf6930a749fe390d1efdd",

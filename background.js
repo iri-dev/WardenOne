@@ -11697,6 +11697,7 @@ async function noteReconcileDegraded(failed, stateKey) {
     stateKey: String(stateKey || ''),
   };
   try { await area.set({ [RECONCILE_DEGRADED_KEY]: marker }); } catch (_) {}
+  return marker;
 }
 async function clearReconcileDegraded() {
   const area = sessionArea();
@@ -11976,8 +11977,10 @@ function refreshExtensionState() {
         });
         if (failed.length) {
           __refreshExtensionStateLastKey = '';
-          await noteReconcileDegraded(failed, stateKey);
+          const marker = await noteReconcileDegraded(failed, stateKey);
           await clearReconcilePending();
+          /* The feed can finish loading during this pass, after its loader looked for a degraded pass to retry. */
+          if (failed.includes('grabberFeed') && __grabberFeedReady && marker && marker.attempts < RECONCILE_RETRY_MAX) scheduleExtensionStateRefresh();
           return;
         }
         await clearReconcileDegraded();
@@ -23962,7 +23965,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           CORE_FILES.push('rules-grabber-resources.json', 'rules-grabber-navigation.json',
             'rules-grabber-malware-navigation.json', 'rules-grabber-compat.json',
             'rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
-            'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'upgrade-config.js', 'build-update.js', 'network-policy.js');
+            'popup-first-paint.js', 'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'upgrade-config.js', 'build-update.js', 'network-policy.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
           // would report a package that is exactly as built as missing pieces.
           for (const omitted of woOmittedFiles()) {

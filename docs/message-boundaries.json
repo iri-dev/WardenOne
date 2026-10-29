@@ -15,7 +15,7 @@
     },
     {
       "file": "background.js",
-      "sha256": "95861a5794f6eb48a1be43e4fe451443e551ae8d151ab7fa34501b13885fe23b",
+      "sha256": "5682d0b1ddf6b311cd39535e144c0c88242b5ea5179bc6aad5ea1f1ae90f1107",
       "world": "WORKER",
       "endpoints": 8
     },
@@ -223,7 +223,7 @@
     },
     {
       "file": "background.js",
-      "line": 21679,
+      "line": 21682,
       "operation": "runtime-message",
       "policy": "worker-router",
       "sourceFile": "background.js"
@@ -1345,7 +1345,7 @@
   "messages": [
     {
       "kind": "ack-extension-alerts",
-      "line": 22340,
+      "line": 22343,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1359,7 +1359,7 @@
     },
     {
       "kind": "adshield-cosmetic",
-      "line": 23112,
+      "line": 23115,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1379,7 +1379,7 @@
     },
     {
       "kind": "apply-onboarding-max-privacy",
-      "line": 22044,
+      "line": 22047,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1393,7 +1393,7 @@
     },
     {
       "kind": "apply-onboarding-recommended",
-      "line": 22036,
+      "line": 22039,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1407,7 +1407,7 @@
     },
     {
       "kind": "blocklist-add",
-      "line": 23189,
+      "line": 23192,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1424,7 +1424,7 @@
     },
     {
       "kind": "blocklist-clear",
-      "line": 23261,
+      "line": 23264,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1438,7 +1438,7 @@
     },
     {
       "kind": "blocklist-get",
-      "line": 23181,
+      "line": 23184,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1452,7 +1452,7 @@
     },
     {
       "kind": "blocklist-remove",
-      "line": 23243,
+      "line": 23246,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1468,7 +1468,7 @@
     },
     {
       "kind": "clean-browser",
-      "line": 22234,
+      "line": 22237,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1484,7 +1484,7 @@
     },
     {
       "kind": "clean-browser-preview",
-      "line": 22230,
+      "line": 22233,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1500,7 +1500,7 @@
     },
     {
       "kind": "clean-current-address",
-      "line": 21793,
+      "line": 21796,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1528,7 +1528,7 @@
     },
     {
       "kind": "clear-exposed-tokens",
-      "line": 23783,
+      "line": 23786,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1545,7 +1545,7 @@
     },
     {
       "kind": "clear-extension-alerts",
-      "line": 22328,
+      "line": 22331,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1559,7 +1559,7 @@
     },
     {
       "kind": "clear-imported-extension-reputation",
-      "line": 22302,
+      "line": 22305,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1573,7 +1573,7 @@
     },
     {
       "kind": "clear-learned",
-      "line": 23625,
+      "line": 23628,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1587,7 +1587,7 @@
     },
     {
       "kind": "clear-site-data",
-      "line": 23915,
+      "line": 23918,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1603,7 +1603,7 @@
     },
     {
       "kind": "clear-startup-report",
-      "line": 22366,
+      "line": 22369,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1617,7 +1617,7 @@
     },
     {
       "kind": "consent-accepted",
-      "line": 21973,
+      "line": 21976,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1636,7 +1636,7 @@
     },
     {
       "kind": "content-config-get",
-      "line": 21875,
+      "line": 21878,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1655,7 +1655,7 @@
     },
     {
       "kind": "cookie-audit",
-      "line": 23881,
+      "line": 23884,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1671,7 +1671,7 @@
     },
     {
       "kind": "custom-list-add",
-      "line": 23492,
+      "line": 23495,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1687,7 +1687,7 @@
     },
     {
       "kind": "custom-list-remove",
-      "line": 23550,
+      "line": 23553,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1703,7 +1703,7 @@
     },
     {
       "kind": "custom-list-toggle",
-      "line": 23534,
+      "line": 23537,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1720,7 +1720,7 @@
     },
     {
       "kind": "custom-list-update",
-      "line": 23526,
+      "line": 23529,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1736,7 +1736,7 @@
     },
     {
       "kind": "custom-lists-get",
-      "line": 23483,
+      "line": 23486,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1750,7 +1750,7 @@
     },
     {
       "kind": "domain-age",
-      "line": 23662,
+      "line": 23665,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1769,7 +1769,7 @@
     },
     {
       "kind": "download-review-decision",
-      "line": 22071,
+      "line": 22074,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1786,7 +1786,7 @@
     },
     {
       "kind": "download-review-get",
-      "line": 22060,
+      "line": 22063,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1802,7 +1802,7 @@
     },
     {
       "kind": "download-trust-add",
-      "line": 22199,
+      "line": 22202,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1818,7 +1818,7 @@
     },
     {
       "kind": "download-trust-list",
-      "line": 22192,
+      "line": 22195,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1832,7 +1832,7 @@
     },
     {
       "kind": "download-trust-remove",
-      "line": 22206,
+      "line": 22209,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1848,7 +1848,7 @@
     },
     {
       "kind": "extension-check",
-      "line": 23149,
+      "line": 23152,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1865,7 +1865,7 @@
     },
     {
       "kind": "extension-check-store",
-      "line": 23163,
+      "line": 23166,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1881,7 +1881,7 @@
     },
     {
       "kind": "extension-security-report",
-      "line": 22242,
+      "line": 22245,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1898,7 +1898,7 @@
     },
     {
       "kind": "eyeshield-bootstrap",
-      "line": 21858,
+      "line": 21861,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1915,7 +1915,7 @@
     },
     {
       "kind": "file-scan-known",
-      "line": 23379,
+      "line": 23382,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1931,7 +1931,7 @@
     },
     {
       "kind": "file-scan-vt",
-      "line": 23394,
+      "line": 23397,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1947,7 +1947,7 @@
     },
     {
       "kind": "firewall-allow-once",
-      "line": 23336,
+      "line": 23339,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1965,7 +1965,7 @@
     },
     {
       "kind": "firewall-get",
-      "line": 23274,
+      "line": 23277,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1981,7 +1981,7 @@
     },
     {
       "kind": "firewall-reset",
-      "line": 23343,
+      "line": 23346,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -1998,7 +1998,7 @@
     },
     {
       "kind": "firewall-set",
-      "line": 23295,
+      "line": 23298,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2017,7 +2017,7 @@
     },
     {
       "kind": "force-list-update",
-      "line": 22053,
+      "line": 22056,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2031,7 +2031,7 @@
     },
     {
       "kind": "forget-extension-review",
-      "line": 22280,
+      "line": 22283,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2047,7 +2047,7 @@
     },
     {
       "kind": "forget-site-now",
-      "line": 23090,
+      "line": 23093,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2064,7 +2064,7 @@
     },
     {
       "kind": "get-javascript-state",
-      "line": 22753,
+      "line": 22756,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2080,7 +2080,7 @@
     },
     {
       "kind": "get-startup-report",
-      "line": 22353,
+      "line": 22356,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2094,7 +2094,7 @@
     },
     {
       "kind": "grabber-navigation-status",
-      "line": 21682,
+      "line": 21685,
       "sender": "own exact top-level IP-logger warning page and browser warning record",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2108,7 +2108,7 @@
     },
     {
       "kind": "harden-site-cookies",
-      "line": 23837,
+      "line": 23840,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2124,7 +2124,7 @@
     },
     {
       "kind": "hidden-add",
-      "line": 23560,
+      "line": 23563,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2144,7 +2144,7 @@
     },
     {
       "kind": "hidden-clear",
-      "line": 23568,
+      "line": 23571,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2160,7 +2160,7 @@
     },
     {
       "kind": "hidden-list",
-      "line": 23581,
+      "line": 23584,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2179,7 +2179,7 @@
     },
     {
       "kind": "hidden-remove",
-      "line": 23564,
+      "line": 23567,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2199,7 +2199,7 @@
     },
     {
       "kind": "history-clear",
-      "line": 21746,
+      "line": 21749,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2215,7 +2215,7 @@
     },
     {
       "kind": "history-get",
-      "line": 21742,
+      "line": 21745,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2229,7 +2229,7 @@
     },
     {
       "kind": "history-mode-set",
-      "line": 21750,
+      "line": 21753,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2245,7 +2245,7 @@
     },
     {
       "kind": "import-extension-reputation",
-      "line": 22291,
+      "line": 22294,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2261,7 +2261,7 @@
     },
     {
       "kind": "list-learned",
-      "line": 23601,
+      "line": 23604,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2275,7 +2275,7 @@
     },
     {
       "kind": "login-domain-age",
-      "line": 23034,
+      "line": 23037,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2295,7 +2295,7 @@
     },
     {
       "kind": "memory-close-duplicates",
-      "line": 23002,
+      "line": 23005,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2309,7 +2309,7 @@
     },
     {
       "kind": "memory-close-tab",
-      "line": 23030,
+      "line": 23033,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2325,7 +2325,7 @@
     },
     {
       "kind": "memory-duplicates",
-      "line": 22998,
+      "line": 23001,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2339,7 +2339,7 @@
     },
     {
       "kind": "memory-free-ram",
-      "line": 22994,
+      "line": 22997,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2353,7 +2353,7 @@
     },
     {
       "kind": "memory-heavy-tabs",
-      "line": 23006,
+      "line": 23009,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2367,7 +2367,7 @@
     },
     {
       "kind": "memory-never-sleep-list",
-      "line": 22983,
+      "line": 22986,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2381,7 +2381,7 @@
     },
     {
       "kind": "memory-never-sleep-set",
-      "line": 22987,
+      "line": 22990,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2398,7 +2398,7 @@
     },
     {
       "kind": "memory-never-sleep-state",
-      "line": 22978,
+      "line": 22981,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2414,7 +2414,7 @@
     },
     {
       "kind": "memory-score",
-      "line": 22974,
+      "line": 22977,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2428,7 +2428,7 @@
     },
     {
       "kind": "memory-sleep-tab",
-      "line": 23022,
+      "line": 23025,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2444,7 +2444,7 @@
     },
     {
       "kind": "memory-sleep-tab-now",
-      "line": 23026,
+      "line": 23029,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2460,7 +2460,7 @@
     },
     {
       "kind": "memory-tabs",
-      "line": 23010,
+      "line": 23013,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2474,7 +2474,7 @@
     },
     {
       "kind": "memory-zombie-tabs",
-      "line": 23014,
+      "line": 23017,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2490,7 +2490,7 @@
     },
     {
       "kind": "menu-opening",
-      "line": 23575,
+      "line": 23578,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2509,7 +2509,7 @@
     },
     {
       "kind": "mute-toast",
-      "line": 21968,
+      "line": 21971,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2529,7 +2529,7 @@
     },
     {
       "kind": "notification-sound-preview",
-      "line": 21957,
+      "line": 21960,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2546,7 +2546,7 @@
     },
     {
       "kind": "notifications-update",
-      "line": 22254,
+      "line": 22257,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2563,7 +2563,7 @@
     },
     {
       "kind": "oauth-grant",
-      "line": 22008,
+      "line": 22011,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2580,7 +2580,7 @@
     },
     {
       "kind": "open-installed-extension-details",
-      "line": 22313,
+      "line": 22316,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2596,7 +2596,7 @@
     },
     {
       "kind": "open-site-settings",
-      "line": 22032,
+      "line": 22035,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2613,7 +2613,7 @@
     },
     {
       "kind": "palette-open",
-      "line": 21893,
+      "line": 21896,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2627,7 +2627,7 @@
     },
     {
       "kind": "palette-run",
-      "line": 21911,
+      "line": 21914,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2647,7 +2647,7 @@
     },
     {
       "kind": "panic-logout",
-      "line": 23753,
+      "line": 23756,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2664,7 +2664,7 @@
     },
     {
       "kind": "permission-chain",
-      "line": 22563,
+      "line": 22566,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2683,7 +2683,7 @@
     },
     {
       "kind": "privacy-cleaner-clear-history",
-      "line": 22222,
+      "line": 22225,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2697,7 +2697,7 @@
     },
     {
       "kind": "privacy-cleaner-get",
-      "line": 22218,
+      "line": 22221,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2711,7 +2711,7 @@
     },
     {
       "kind": "privacy-cleaner-save",
-      "line": 22226,
+      "line": 22229,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2727,7 +2727,7 @@
     },
     {
       "kind": "privacy-data-erase",
-      "line": 22000,
+      "line": 22003,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2743,7 +2743,7 @@
     },
     {
       "kind": "privacy-data-erase-site",
-      "line": 22004,
+      "line": 22007,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2760,7 +2760,7 @@
     },
     {
       "kind": "privacy-data-inspect",
-      "line": 21996,
+      "line": 21999,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2774,7 +2774,7 @@
     },
     {
       "kind": "privacy-test-run",
-      "line": 21813,
+      "line": 21816,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2790,7 +2790,7 @@
     },
     {
       "kind": "protection-health",
-      "line": 21754,
+      "line": 21757,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2806,7 +2806,7 @@
     },
     {
       "kind": "redirect-bootstrap-get",
-      "line": 21887,
+      "line": 21890,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2823,7 +2823,7 @@
     },
     {
       "kind": "redirect-warning",
-      "line": 21987,
+      "line": 21990,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2842,7 +2842,7 @@
     },
     {
       "kind": "remove-learned",
-      "line": 23612,
+      "line": 23615,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2858,7 +2858,7 @@
     },
     {
       "kind": "reset-site-permissions",
-      "line": 22953,
+      "line": 22956,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2877,7 +2877,7 @@
     },
     {
       "kind": "resource-saver-state",
-      "line": 21862,
+      "line": 21865,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2894,7 +2894,7 @@
     },
     {
       "kind": "review-extension-snapshot",
-      "line": 22267,
+      "line": 22270,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2951,7 +2951,7 @@
     },
     {
       "kind": "run-startup-check",
-      "line": 22357,
+      "line": 22360,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2965,7 +2965,7 @@
     },
     {
       "kind": "safe-browsing-allow-once",
-      "line": 22361,
+      "line": 22364,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -2981,7 +2981,7 @@
     },
     {
       "kind": "safe-browsing-check",
-      "line": 22103,
+      "line": 22106,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3001,7 +3001,7 @@
     },
     {
       "kind": "scan-site-permissions",
-      "line": 22576,
+      "line": 22579,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3017,7 +3017,7 @@
     },
     {
       "kind": "scan-url-virustotal",
-      "line": 22160,
+      "line": 22163,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3033,7 +3033,7 @@
     },
     {
       "kind": "script-drift-scan",
-      "line": 22012,
+      "line": 22015,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3050,7 +3050,7 @@
     },
     {
       "kind": "script-trust-add",
-      "line": 22813,
+      "line": 22816,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3066,7 +3066,7 @@
     },
     {
       "kind": "script-trust-list",
-      "line": 22806,
+      "line": 22809,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3080,7 +3080,7 @@
     },
     {
       "kind": "script-trust-remove",
-      "line": 22820,
+      "line": 22823,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3096,7 +3096,7 @@
     },
     {
       "kind": "search-result-check",
-      "line": 21931,
+      "line": 21934,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3115,7 +3115,7 @@
     },
     {
       "kind": "set-javascript-state",
-      "line": 22827,
+      "line": 22830,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3133,7 +3133,7 @@
     },
     {
       "kind": "set-script-shield-mode",
-      "line": 22786,
+      "line": 22789,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3150,7 +3150,7 @@
     },
     {
       "kind": "set-site-permission",
-      "line": 22877,
+      "line": 22880,
       "sender": "private UI; top isolated same-origin tab only for cookies=allow",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3171,7 +3171,7 @@
     },
     {
       "kind": "site-breach",
-      "line": 23676,
+      "line": 23679,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3187,7 +3187,7 @@
     },
     {
       "kind": "site-dashboard",
-      "line": 21771,
+      "line": 21774,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3203,7 +3203,7 @@
     },
     {
       "kind": "site-recovery",
-      "line": 21785,
+      "line": 21788,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3217,7 +3217,7 @@
     },
     {
       "kind": "smart-player-context",
-      "line": 22016,
+      "line": 22019,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3234,7 +3234,7 @@
     },
     {
       "kind": "smart-player-intent",
-      "line": 22020,
+      "line": 22023,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3251,7 +3251,7 @@
     },
     {
       "kind": "smart-script-status",
-      "line": 22024,
+      "line": 22027,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3268,7 +3268,7 @@
     },
     {
       "kind": "smart-script-trust-site",
-      "line": 22028,
+      "line": 22031,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3285,7 +3285,7 @@
     },
     {
       "kind": "test-reputation-provider-key",
-      "line": 22096,
+      "line": 22099,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3302,7 +3302,7 @@
     },
     {
       "kind": "test-safe-browsing-key",
-      "line": 22089,
+      "line": 22092,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3318,7 +3318,7 @@
     },
     {
       "kind": "test-virustotal-key",
-      "line": 22082,
+      "line": 22085,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3334,7 +3334,7 @@
     },
     {
       "kind": "toast-shown",
-      "line": 21950,
+      "line": 21953,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3353,7 +3353,7 @@
     },
     {
       "kind": "tracker-learner-decide",
-      "line": 23648,
+      "line": 23651,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3370,7 +3370,7 @@
     },
     {
       "kind": "tracker-learner-decide-all",
-      "line": 23652,
+      "line": 23655,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3386,7 +3386,7 @@
     },
     {
       "kind": "tracker-learner-proposals",
-      "line": 23644,
+      "line": 23647,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3400,7 +3400,7 @@
     },
     {
       "kind": "tracker-learner-set-site",
-      "line": 23638,
+      "line": 23641,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3418,7 +3418,7 @@
     },
     {
       "kind": "tracker-learner-status",
-      "line": 23633,
+      "line": 23636,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3434,7 +3434,7 @@
     },
     {
       "kind": "user-rules-get",
-      "line": 23416,
+      "line": 23419,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3448,7 +3448,7 @@
     },
     {
       "kind": "user-rules-set",
-      "line": 23435,
+      "line": 23438,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3466,7 +3466,7 @@
     },
     {
       "kind": "verify-repair",
-      "line": 23958,
+      "line": 23961,
       "sender": "own private extension origin; WAR denied",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3480,7 +3480,7 @@
     },
     {
       "kind": "warning-ui-compromised",
-      "line": 21991,
+      "line": 21994,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3497,7 +3497,7 @@
     },
     {
       "kind": "wo-engine-check",
-      "line": 21978,
+      "line": 21981,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",
@@ -3514,7 +3514,7 @@
     },
     {
       "kind": "wo-nav-signal",
-      "line": 21982,
+      "line": 21985,
       "sender": "own isolated tab; handler scope and grants apply",
       "schema": {
         "envelope": "own kind string; control keys rejected",

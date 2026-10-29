@@ -98,6 +98,7 @@
   "permission-chain.js",
   "permissions.html",
   "popup-diagnostics.js",
+  "popup-first-paint.js",
   "popup-health.js",
   "popup-scroll-memory.js",
   "popup-settings-search.js",

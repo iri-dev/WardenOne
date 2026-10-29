@@ -36,7 +36,7 @@ async function run() {
     };
     const warmup = await evaluate(`(async () => {
       globalThis.__woDnrAwaitGeneration=async after=>{
-        const deadline=Date.now()+30000;
+        const deadline=Date.now()+60000;
         while(Date.now()<deadline){
           if(__refreshExtensionStateGeneration>after&&__refreshExtensionStateLastKey
             &&!__refreshExtensionStateInFlightKey&&!__refreshExtensionStateQueued
@@ -44,7 +44,8 @@ async function run() {
           await new Promise(r=>setTimeout(r,50));
         }
         throw Error('DNR reconcile did not settle: '+JSON.stringify({after,generation:__refreshExtensionStateGeneration,
-          inFlight:__refreshExtensionStateInFlightKey,queued:__refreshExtensionStateQueued,
+          inFlight:__refreshExtensionStateInFlightKey,queued:__refreshExtensionStateQueued,lastKey:!!__refreshExtensionStateLastKey,
+          timer:!!__refreshExtensionStateTimer,listUpdate:!!__remoteListUpdateInFlight,listQueued:__remoteListUpdateQueuedReason||'',
           degraded:await readReconcileDegraded()}));
       };
       const deadline=Date.now()+15000;

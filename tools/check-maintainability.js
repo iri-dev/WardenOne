@@ -161,6 +161,7 @@ function checkContentBuild() {
   'popup-privacy-cleaner.js',
   'popup-health.js',
   'popup-scroll-memory.js',
+  'popup-first-paint.js',
   'popup-diagnostics.js',
   'popup-settings-search.js',
   'site-dashboard-shared.js',

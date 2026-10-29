@@ -5635,152 +5635,152 @@
     {
       "type": "search_junk_seed_unavailable",
       "file": "background.js",
-      "line": 12235
+      "line": 12238
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 12997
+      "line": 13000
     },
     {
       "type": "forget_me_wiped",
       "file": "background.js",
-      "line": 13936
+      "line": 13939
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 14096
+      "line": 14099
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 14418
+      "line": 14421
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 14429
+      "line": 14432
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 14446
+      "line": 14449
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 15222
+      "line": 15225
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 15235
+      "line": 15238
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 15365
+      "line": 15368
     },
     {
       "type": "redirect",
       "file": "background.js",
-      "line": 15367
+      "line": 15370
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 15428
+      "line": 15431
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 15437
+      "line": 15440
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 15561
+      "line": 15564
     },
     {
       "type": "warned_list_integrity",
       "file": "background.js",
-      "line": 16277
+      "line": 16280
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 17630
+      "line": 17633
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 17714
+      "line": 17717
     },
     {
       "type": "dns_rebind_quarantine",
       "file": "background.js",
-      "line": 17765
+      "line": 17768
     },
     {
       "type": "warned_permission_chain",
       "file": "background.js",
-      "line": 18862
+      "line": 18865
     },
     {
       "type": "warned_oauth_grant",
       "file": "background.js",
-      "line": 18975
+      "line": 18978
     },
     {
       "type": "warned_script_drift",
       "file": "background.js",
-      "line": 19217
+      "line": 19220
     },
     {
       "type": "separator",
       "file": "background.js",
-      "line": 19807
+      "line": 19810
     },
     {
       "type": "basic",
       "file": "background.js",
-      "line": 19864
+      "line": 19867
     },
     {
       "type": "cleaned_site_storage",
       "file": "background.js",
-      "line": 21020
+      "line": 21023
     },
     {
       "type": "cleaned_site_service_worker",
       "file": "background.js",
-      "line": 21124
+      "line": 21127
     },
     {
       "type": "cleaned_site_cookies",
       "file": "background.js",
-      "line": 21212
+      "line": 21215
     },
     {
       "type": "warned_new_domain_login",
       "file": "background.js",
-      "line": 23055
+      "line": 23058
     },
     {
       "type": "blocked_phishing",
       "file": "background.js",
-      "line": 23059
+      "line": 23062
     },
     {
       "type": "gated_tokens_cleared",
       "file": "background.js",
-      "line": 23825
+      "line": 23828
     },
     {
       "type": "gated_cookies_hardened",
       "file": "background.js",
-      "line": 23872
+      "line": 23875
     },
     {
       "type": "block",
@@ -6042,7 +6042,7 @@
     "background-memory.js": "d8c0ea303917b2d6c6747944d3ae228da4a1174df3da589cc4ecb3371568e3b1",
     "background-privacy-cleaner.js": "e8a546d219fe522fb875a51551c09e126366e0176c8d92163ae37eab3bd97785",
     "background-startup.js": "e0e1bbd12f9b3b14fbbc1aed9e6b1b58a84140e9c080ec6621d3e1e9d93bad4d",
-    "background.js": "95861a5794f6eb48a1be43e4fe451443e551ae8d151ab7fa34501b13885fe23b",
+    "background.js": "5682d0b1ddf6b311cd39535e144c0c88242b5ea5179bc6aad5ea1f1ae90f1107",
     "bridge.js": "e85c88310fa1ba96917991e0b01f38ca8fa60cb286816b4ae2ad9441859d45e2",
     "build-profile.js": "830644487d588ab6e1a2408aef8168f330beb715cfaca516625e9b89f9963957",
     "build-update.js": "ece2d9874b6db7fe0eb0016d01cd25218f11092f21921dcefe2db1e5c429b9c8",
@@ -6091,6 +6091,7 @@
     "onboarding.js": "4ab1c8fa879e9d3d4d1bdd688711c9823b6bae9531911719a64647e3aff3e0ce",
     "permission-chain.js": "c47abd30b27674bb64c7dda08e9a9542a61dc12aef9a08cc36d1788b5b8b2f17",
     "popup-diagnostics.js": "7b289b15a602bd88abcc7043caa016469275f73110cd8c1c5837060208853b9c",
+    "popup-first-paint.js": "c58714b35daf8ae358b174500cfbf26b14ee45a4b66faed4f903e6b75bd40c08",
     "popup-health.js": "5fed69a40df89668cfe717acd3cef7c0a806c23d1691625e255d6189a1c2342d",
     "popup-privacy-cleaner.js": "5cc1eee1a0d2c0ff8fe7cf9673b2e230aafb0f01e1baedb3cad74356c793d6d5",
     "popup-scroll-memory.js": "1bb89cff7905920ddc5be80f9fbe92c847f733f3f11cf6930a749fe390d1efdd",
