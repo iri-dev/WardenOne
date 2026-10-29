@@ -92,8 +92,8 @@ async function run() {
     await prepare();
 
     /* The page shows what is saved, and its overview counts come from it. */
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(!!d.wardenone_config && typeof d.wardenone_config === 'object')))", 'the worker to write a config on install');
     const config = await stored('wardenone_config');
-    ok(config && typeof config === 'object', 'the worker wrote a config on install');
     ok(await value("document.querySelector('#ov-title').textContent === 'Protection is on.'"), 'the overview says protection is on');
     const facts = await value("[...document.querySelectorAll('#ov-facts .ft')].map(e => e.textContent)");
     const health = await value("ask({ kind: 'protection-health', tabId: -1 })");

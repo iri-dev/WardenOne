@@ -268,9 +268,9 @@ class Cdp {
       ws.addEventListener('message', (ev) => {
         let msg; try { msg = JSON.parse(ev.data); } catch (_) { return; }
         if (msg.id && this.pending.has(msg.id)) {
-          const { resolve: ok, reject: no } = this.pending.get(msg.id);
+          const pending = this.pending.get(msg.id);
           this.pending.delete(msg.id);
-          if (msg.error) no(new Error(msg.error.message)); else ok(msg.result);
+          if (msg.error) pending.reject(this.commandError(pending, msg.error.message)); else pending.resolve(msg.result);
         } else if (msg.method) {
           const detachedSession = msg.method === 'Target.detachedFromTarget' ? msg.params && msg.params.sessionId
             : msg.method === 'Inspector.detached' ? msg.sessionId : null;

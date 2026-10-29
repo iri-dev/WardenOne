@@ -24,7 +24,9 @@ async function run() {
   let page;
   try {
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', ROOT, port, dir,
-      ['--host-resolver-rules=MAP music-site.wardenone-smoke.com 127.0.0.1']);
+      /* A CI window can count as occluded; the popup records nothing while it is hidden. */
+      ['--host-resolver-rules=MAP music-site.wardenone-smoke.com 127.0.0.1',
+        '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding']);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
@@ -74,13 +76,20 @@ async function run() {
         requestAnimationFrame(sample);
       })();` }, sessionId);
       await cdp.send('Page.navigate', { url: `chrome-extension://${extension.id}/popup.html` }, sessionId);
-      await cdp.send('Page.bringToFront', {}, sessionId);
+      /* The blank tab swaps into the extension process here; Chrome 121 refuses commands mid-swap. */
+      for (let attempt = 0; ; attempt++) {
+        try { await cdp.send('Page.bringToFront', {}, sessionId); break; }
+        catch (error) { if (attempt >= 40 || !/Not attached to an active page/i.test(error.message)) throw error; await sleep(50); }
+      }
       try {
-        await until("document.readyState === 'complete' && !!document.getElementById('wo-settings-search')", 'popup load', 30000);
+        await until("document.readyState === 'complete' && !!document.getElementById('wo-settings-search')", 'popup load', 30000, true);
       } catch (error) {
         const state = await value("({ url: location.href, readyState: document.readyState, hasSearch: !!document.getElementById('wo-settings-search') })").catch(() => null);
         throw new Error(error.message + ': ' + JSON.stringify(state));
       }
+      /* A tab the extension opens late can take the foreground, and a hidden popup records nothing. */
+      if (await value('document.visibilityState') !== 'visible') await cdp.send('Page.bringToFront', {}, sessionId);
+      await until("document.visibilityState === 'visible'", 'the popup to be in the foreground', 10000);
       return page;
     }
     async function value(expression) {
@@ -90,10 +99,14 @@ async function run() {
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
       return result.result && result.result.value;
     }
-    async function until(expression, label, timeout = 15000) {
+    async function until(expression, label, timeout = 15000, navigating = false) {
       const deadline = Date.now() + timeout;
       while (Date.now() < deadline) {
-        if (await value(expression)) return;
+        const ready = await value(expression).catch((error) => {
+          if (navigating && /Not attached to an active page|context was destroyed|Cannot find context/i.test(error.message)) return false;
+          throw error;
+        });
+        if (ready) return;
         await sleep(100);
       }
       throw new Error(`Timed out waiting for ${label}`);
@@ -116,7 +129,10 @@ async function run() {
       document.querySelector('.advanced-providers').open = true;
       scrollTo(0, ${reopenY});
     })()`);
-    await until(`JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))?.y === ${reopenY} && JSON.parse(localStorage.getItem('wardenone_advanced_providers_open'))?.open`, 'scroll and disclosure recorded by their events');
+    /* Sections filling in above can shift the page a few pixels after the scroll; the record follows. */
+    await until(`scrollY > ${reopenY - 200} && JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))?.y === Math.round(scrollY) && JSON.parse(localStorage.getItem('wardenone_advanced_providers_open'))?.open`, 'scroll and disclosure recorded by their events').catch(async (error) => {
+      throw new Error(error.message + ': ' + JSON.stringify(await value("({ visible: document.visibilityState, y: scrollY, max: document.scrollingElement.scrollHeight - innerHeight, scroll: localStorage.getItem('wardenone_popup_scroll_memory'), providers: localStorage.getItem('wardenone_advanced_providers_open') })").catch(String)));
+    });
     const reopenPosition = await value("JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))");
     await cdp.send('Target.closeTarget', { targetId: page.targetId });
     await openPopup(1200);

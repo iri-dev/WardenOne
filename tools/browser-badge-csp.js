@@ -33,8 +33,8 @@ async function run() {
     } else if (request.url === '/fixture.js') {
       response.setHeader('Content-Type', 'text/javascript');
       response.end('window.fixtureViolations=[];document.addEventListener("securitypolicyviolation",e=>'
-        + 'fixtureViolations.push(e.effectiveDirective));document.getElementById("play").onclick=()=>'
-        + 'document.getElementById("player").play();window.fixtureReady=true;');
+        + 'fixtureViolations.push(e.effectiveDirective));document.getElementById("play").onclick=()=>{window.fixturePlay="pending";'
+        + 'document.getElementById("player").play().then(()=>fixturePlay="playing",e=>fixturePlay=e.name+": "+e.message)};window.fixtureReady=true;');
     } else if (request.url === '/fixture.css') {
       response.setHeader('Content-Type', 'text/css');
       response.end('body{margin:24px;min-height:1800px}.panel{color:rgb(10,20,30)}'
@@ -53,7 +53,8 @@ async function run() {
   let cdp;
   try {
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir,
-      ['--ignore-certificate-errors', '--host-resolver-rules=MAP badge.wardenone-compat.example.net 127.0.0.1']);
+      ['--ignore-certificate-errors', '--host-resolver-rules=MAP badge.wardenone-compat.example.net 127.0.0.1',
+        '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding']);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const extension = await profile.extensionReady(cdp, port, require('../manifest.json').version);
@@ -73,6 +74,8 @@ async function run() {
     const { sessionId: page } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
     await cdp.send('Runtime.enable', {}, page);
     await cdp.send('Page.enable', {}, page);
+    /* CI can leave a new tab in the background, where Chrome defers media until it is shown. */
+    await cdp.send('Page.bringToFront', {}, page);
     const state = `(() => {
       const host=document.getElementById('rg-badge-host'),root=host?.shadowRoot;
       const badge=root?.getElementById('rg-b'),panel=root?.getElementById('rg-p');
@@ -112,8 +115,17 @@ async function run() {
       const dimensions = await evaluate(page, state);
       assert.equal(dimensions.bodyWidth, before.bodyWidth);
       assert.equal(dimensions.scrollWidth, before.scrollWidth);
+      /* A tab the extension opens late can take the foreground; hidden pages defer media. */
+      const front = async () => { if (await evaluate(page, 'document.visibilityState') !== 'visible') await cdp.send('Page.bringToFront', {}, page); return false; };
+      await front();
       await click('document.getElementById("play")');
-      await until(page, 'document.getElementById("player").currentTime>0.05&&!document.getElementById("player").paused');
+      await until(page, 'document.getElementById("player").currentTime>0.05&&!document.getElementById("player").paused').catch(() => front().then(() =>
+        until(page, 'document.getElementById("player").currentTime>0.05&&!document.getElementById("player").paused'))).catch(async (error) => {
+        const media = await evaluate(page, `(() => {const v=document.getElementById('player'),b=document.getElementById('play').getBoundingClientRect(),hit=document.elementFromPoint(b.x+b.width/2,b.y+b.height/2);
+          return {play:window.fixturePlay||'not clicked',paused:v.paused,time:v.currentTime,ready:v.readyState,network:v.networkState,error:v.error&&v.error.code,
+            hit:hit&&(hit.id||hit.tagName),viewport:innerWidth+'x'+innerHeight,visible:document.visibilityState,violations:fixtureViolations}})()`).catch((e) => String(e));
+        throw Error(name + ' playback: ' + error.message + ' ' + JSON.stringify(media));
+      });
       assert(!(await evaluate(page, 'fixtureViolations')).includes('style-src-attr'), name + ' adds no inline attribute violations');
       if (name === 'nonce') {
         const violationsBeforeLegacy = await evaluate(page, 'fixtureViolations.length');

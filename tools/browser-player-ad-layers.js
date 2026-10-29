@@ -193,7 +193,12 @@ async function run() {
     if (!loaded || !loaded.square || !loaded.cover || !loaded.video || loaded.duration !== MEDIA_SECONDS) {
       assert.fail('the player and ad layers to arrive: ' + JSON.stringify({ loaded, browser: browser.Browser, requests: hits.slice(-12) }));
     }
-    const duration = await inPlayer("w.document.getElementById('v').duration");
+    /* A slow engine start can earn the tab one repair reload, so read until the frame is back. */
+    let duration;
+    for (const deadline = Date.now() + 10000; Date.now() < deadline; await sleep(100)) {
+      duration = await inPlayer("w.document.getElementById('v').duration");
+      if (duration === MEDIA_SECONDS) break;
+    }
     assert.equal(duration, MEDIA_SECONDS, 'the timeline has the expected duration');
     const tabsAtStart = pages.size;
 
