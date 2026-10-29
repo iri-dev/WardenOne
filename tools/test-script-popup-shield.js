@@ -363,7 +363,7 @@ test('manifest runs the lightweight popup guard in all frames without widening t
   const popupEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('anti-redirect.js'));
   assert(popupEntry && popupEntry.world === 'MAIN' && popupEntry.run_at === 'document_start' && popupEntry.all_frames === true,
     'anti-redirect does not have a dedicated all-frame MAIN-world entry');
-  assert(JSON.stringify(popupEntry.js.slice(-2)) === JSON.stringify(['domain-utils.js', 'anti-redirect.js']),
+  assert(popupEntry.js.indexOf('domain-utils.js') >= 0 && popupEntry.js.indexOf('domain-utils.js') < popupEntry.js.indexOf('anti-redirect.js'),
     'anti-redirect no longer receives the shared site-identity policy first');
   const fullEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('content.min.js'));
   assert(fullEntry && fullEntry.all_frames === false && !fullEntry.js.includes('anti-redirect.js'),

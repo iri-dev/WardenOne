@@ -164,7 +164,6 @@ function scan(frames, pageHost) {
     !!engine && engine.all_frames !== true);
 }());
 
-// ---------------------------------------------------------------------------
 
 if (failures.length) {
   console.error('FAIL (' + failures.length + ')');

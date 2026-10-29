@@ -9,7 +9,7 @@
 (function () {
   'use strict';
 
-  const WO_GUARD_VERSION = '1.0.2';
+  const WO_GUARD_VERSION = '1.0.3';
   /* Dispose an older version before replacing it. Same-version reinjection still refreshes the current theme. */
   if (window.__wardenOneEyeShieldInstalled === WO_GUARD_VERSION) {
     try {
@@ -76,12 +76,8 @@
   };
   window.__wardenOneEyeShieldVersion = 'chroma+bgtent+selection+clipguard+varrole-darksite+semantic-controls+managed-chatgpt+twitch-managed+google-autocomplete-light+google-frame-light-native-nav+google-native-search+yt-native-subscribe-join-notifications+twitch-native-player-range+comments+popup-eye+force-cleanup+twitch-player-surface-guard+reddit-managed+reddit-inbox-search-fix+amazon-managed+amazon-polish+amazon-specificity-is-wrapper+amazon-dcl-navassistant+skip-ext-twitch-overlay+github-cta-green+github-floatlabel-placeholder+suppress-nonfocus-outlines+no-invented-surface-box+flatten-shell-app+discord-native-theme-all-elements+spotify-encore-vars-theme+spotify-light-shell-repair+spotify-light-polish+spotify-player-gap-fade-fix+spotify-blank-revert+spotify-player-shadow-rightwash+spotify-right-art-shadow+spotify-right-text-bg+spotify-right-title-overlay+spotify-light-home-filters+spotify-light-root-shell-gaps+common-site-contrast-fixes+yt-consent-x-auth-fixes+spotify-sidebar-legal-light+site-profile-lazy-eyeshield+skip-wardenone-owned-ui+readability-guard-v2+twitch-video-scoped-adjust+yt-native-player-controls+contrast-guard-skips-player-chrome+yt-player-keeps-own-pills+ytmusic-own-profile+github-native-theme+chatgpt-keeps-own-buttons+github-loads-theme-sheet+chatgpt-native-theme+ytmusic-native-light+chatgpt-flips-every-scope+chatgpt-pins-color-scheme+chatgpt-data-theme+chatgpt-dark-surfaces+native-theme-fallback';
 
-  // Twitch EXTENSION overlay iframes (*.ext-twitch.tv) sit transparently ON TOP of the
-  // stream <video>. They are NOT matched by isTwitchHost() (the "-twitch.tv" suffix), so
-  // they fell through to the GENERIC remap, whose forced html/body background made the
-  // overlay OPAQUE and covered the stream with black — but only on streams that actually
-  // run an overlay extension, hence "not every stream". Never theme these frames: bail so
-  // EyeShield is a complete no-op here and the overlay stays transparent over the video.
+  // Twitch extension frames (*.ext-twitch.tv) overlay the stream transparently. Skip them entirely; generic html/body
+  // backgrounds would cover the video.
   if (/(^|\.)ext-twitch\.tv$/i.test(String(location.hostname || '').toLowerCase())) return;
   const compatibilityHost = String(location.hostname || '').toLowerCase();
   if (/^(drive|docs|mail|calendar|classroom|meet|chat|myaccount)\.google\.com$/i.test(compatibilityHost)
@@ -202,11 +198,8 @@
     return false;
   }
 
-  /* Set when a site whose OWN theme is switched (GitHub, ChatGPT, YouTube Music) was asked for
-     a mode and visibly did not switch -- the site renamed the attribute, the class or the
-     stylesheets the switch relies on. The page is then themed by the general engine, as any
-     unprofiled site is, rather than left as it was (see scheduleNativeThemeCheck). For this
-     page only; the next load tries the site's own theme again. */
+  /* If a native site-theme switch fails visibly, use generic theming for this page. Retry the native theme on the next
+     load. */
   let nativeThemeFallback = false;
 
   function managedThemeHostName() {
@@ -350,12 +343,8 @@
     const l0 = hsl[2];
     let l;
     if (mode === 'light') {
-      // Identity-preserving: a page that is already light is left essentially
-      // untouched — links keep their colour, white stays white. Only colours
-      // that are wrong for a light theme get pulled in: light / on-dark text is
-      // darkened, and dark surfaces are lightened. (The old `l0*0.22` crushed
-      // every foreground — incl. blue links — to near-black, which made a
-      // search page of links look broken.)
+      // Preserve colors already suitable for light mode; adjust on-dark text and dark surfaces without crushing link
+      // colors.
       if (role === 'fg') l = l0 > 0.58 ? 0.10 + (1 - l0) * 0.18 : Math.min(l0, 0.36);
       else if (role === 'bg') l = l0 > 0.70 ? Math.max(l0, 0.94) : 0.965 - l0 * 0.10;
       else l = l0 > 0.60 ? Math.max(l0, 0.84) : 0.82 + l0 * 0.12; // subtle light borders
@@ -369,13 +358,7 @@
         l = l0 <= 0.5 ? top - l0 * slope : mid + (l0 - 0.5) * slope;
       }
       else if (role === 'bg') {
-        // Tent curve, NOT a straight crush. The old `l0*0.05` flattened EVERY surface
-        // to near-black, so on already-dark pages cards, buttons, chips and Google's
-        // AI-Overview highlight all merged into the background (the "flat, not clean
-        // like Dark Reader" look). This keeps near-white page surfaces dark while
-        // lifting genuinely dark / coloured surfaces into a visible band, so the
-        // surface hierarchy survives. The page base is still forced to BASE_BG, so
-        // ultra stays OLED-black overall — only sub-surfaces lift slightly.
+        // Use a tent curve to preserve dark surface hierarchy while the page base stays OLED-black.
         l = mode === 'ultra'
           ? (l0 <= 0.5 ? 0.012 + l0 * 0.30 : 0.162 - (l0 - 0.5) * 0.30)
           : (l0 <= 0.5 ? 0.035 + l0 * 0.34 : 0.205 - (l0 - 0.5) * 0.28);
@@ -404,11 +387,7 @@
   const FUNC = /(?:rgba?|hsla?)\((?:[^()]+|\([^()]*\))*\)/gi; // allows one nested ( ) e.g. var()
   const NAMEDRE = new RegExp('(?<![\\w-])(' + Object.keys(NAMED).join('|') + ')(?![\\w-])', 'gi');
 
-  // Memoise the colour transform. replaceColors runs for every colour in every CSS rule on every
-  // (re)build, and CSS repeats the same values constantly (e.g. dozens of rules use `#fff`/`#333`).
-  // transform() is a pure function of (val, mode, role), so caching its output is always correct;
-  // the key includes mode+role so switching themes never returns a stale colour. Capped so it
-  // can't grow without bound. This is the single biggest CPU cost of the engine on heavy pages.
+  // Cache pure color transforms by value, mode and role. Bound the cache to avoid retaining unbounded stylesheet values.
   let colorMemo = new Map();
   function cssStringEnd(value, start) {
     const quote = value[start];
@@ -635,13 +614,8 @@
     const c = clean(parseFunc(value)) || clean(hexToRgb((value.match(HEX) || [])[0] || ''));
     if (c) {
       const lightVal = rgbToHsl(c[0], c[1], c[2])[2] > 0.5;
-      // Value-lightness is only a guess for orphan vars (no usage, no name hint), and
-      // its correct DIRECTION depends on the theme being built. When darkening a page
-      // (dark/ultra), a dark orphan value is almost always a surface — keep it dark
-      // (bg) — and a light value is almost always text — keep it bright (fg). In light
-      // mode the opposite holds. The old code always assumed the light-mode direction
-      // (dark = text), which inverted every dark-native surface var -> the washed-out
-      // Twitch chrome. Mode-awareness fixes it without per-site rules.
+      // For orphan variables, infer foreground/background from lightness and the target mode; dark-native surfaces need the
+      // opposite assumption from light mode.
       if (mode === 'light') return lightVal ? 'bg' : 'fg';
       return lightVal ? 'fg' : 'bg';
     }
@@ -655,11 +629,8 @@
     const e = varRoles.get(name);
     return !!(e && e.fg > 0 && e.bg === 0 && e.border === 0);
   }
-  /* textOnly: rewrite only the colours of text and icons, leaving every surface to the site --
-     except translucent white washes on backgrounds, which become faint dark ones (role 'tint').
-     Used where a site's own theme is switched natively and only what it hard-codes for a dark
-     page is wrong for the new theme (YouTube Music in light: its white text, and chips lifted
-     with rgba(255,255,255,.1) that vanish on a white page). */
+  /* textOnly leaves surfaces to the native site theme, except translucent white washes remapped as tint. This covers
+     hard-coded dark-page text/icons. */
   function transformDecl(style, mode, textOnly) {
     let css = '';
     const seen = new Set();
@@ -1104,12 +1075,8 @@
     }
   }
 
-  // Generic dark/ultra FALLBACK: force any element whose COMPUTED background is light
-  // to a dark surface (+ lighten dark text on it). Catches backgrounds the CSSOM remap
-  // + applyForeignCSS + applyInline can't reach — most importantly CROSS-ORIGIN CDN CSS
-  // whose re-theme fetch yields nothing (e.g. Amazon's white .dcl-* deal cards). Non-
-  // managed hosts only; budget-capped; mirrors applyGoogleLightInline. Sets background-
-  // COLOR only (never the shorthand or background-image) so thumbnails/sprites survive.
+  // Bounded computed-color fallback covers inaccessible CSS on unmanaged hosts. Set background-color only so images and
+  // sprites survive.
   function applyComputedBgFix(mode, root) {
     if (isManagedThemeHost() || (mode !== 'dark' && mode !== 'ultra')) return;
     const pal = paletteFor(mode);
@@ -1196,12 +1163,8 @@
     const filter = 'brightness(' + bright + '%) contrast(' + contrast + '%) saturate(' + saturation + '%) grayscale(' + grayscale + '%) sepia(' + warmth + '%)';
     if (isTwitchHost()) {
       de.style.removeProperty('filter');
-      // EyeShield's own Twitch dark theme forces `filter:none !important` on the
-      // player media (its `media`/`playerMedia` rules, specificity ~0,1,1) to keep
-      // the remap off the stream. This adjustment must out-specify that, so scope
-      // it to the player video with an html-prefixed, player-scoped selector
-      // (specificity 0,1,2) — it wins the cascade and reaches the stream and
-      // separately marked replay surfaces while staying a cheap per-video GPU shader.
+      // Outrank Twitch's filter:none player rule with an html-prefixed player selector. Include marked replay surfaces
+      // without filtering unrelated video.
       const sel = 'html :is(.persistent-player,.video-player,.video-player__container,'
         + '[data-a-target="video-player"],[data-a-target="video-ref"],.live-video-player,'
         + '.channel-root__player,.twilight-player-root) video, html video[data-wardenone-replay]';
@@ -1217,12 +1180,8 @@
   let observer = null, rebuildTimer = 0, activeRemap = null;
   let pendingSheet = false, pendingNodes = [];
   let observedRoots = new WeakSet();
-  // Throttle the FULL re-theme. A full re-theme re-walks the entire DOM + every
-  // shadow root (rootsList -> querySelectorAll('*') per root). Sites whose web
-  // components lazy-load their own (shadow/adopted) stylesheets on hydration and
-  // infinite scroll (Reddit) would otherwise trigger this every 250ms -> the page
-  // spins / takes forever to load. Cap full re-themes to once per window; cheap
-  // incremental node theming still runs on the normal cadence.
+  // Throttle full DOM/shadow-root re-themes during hydration and infinite scroll. Incremental node theming retains its
+  // normal cadence.
   let lastFullTheme = 0;
   const FULL_THEME_MIN_MS = 1500;
   // A document observer can't see mutations inside shadow roots, so we point the
@@ -1683,13 +1642,8 @@
       // remap darkens the nav's own background, so forcing p.surface just made a lighter bar
       // + a border line at the top. Recolour text only; real nav bg comes from the remap.
       + shell + '{color:' + p.text + ' !important;}'
-      // surface: DON'T invent a background/border on generic content containers (section,
-      // article, role-regions, card/panel/chat/message classes). That painted a visible
-      // box on every transparent layout container (GitHub hero band, Discord content
-      // panels). The main colour-remap already darkens any background a site actually has,
-      // and applyComputedBgFix catches light ones, so we only recolour the TEXT here and
-      // let real surfaces keep their (remapped) own background. Overlays (raised) + shells
-      // (nav/sidebar) still get a background below so they stay defined.
+      // Recolor text in generic content containers without inventing surfaces. Keep backgrounds for raised overlays and
+      // navigation shells.
       + surface + '{color:' + p.text + ' !important;}'
       + raised + '{background-color:' + p.raised + ' !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;}'
       + text + '{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
@@ -1715,11 +1669,7 @@
       + mediaControl + '{background-color:transparent !important;background-image:none !important;color:inherit !important;-webkit-text-fill-color:currentColor !important;border-color:transparent !important;box-shadow:none !important;filter:none !important;}'
       + code + '{background-color:' + p.raised + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:' + p.border + ' !important;}'
       + 'hr{border-color:' + p.border + ' !important;}'
-      // Suppress PERSISTENT (non-focus) outlines. Sites (e.g. GitHub's landing page) put a
-      // light outline on layout containers that is invisible on their native background but
-      // shows as lines-around-everything once EyeShield darkens the page; the colour-remap can
-      // miss it (outline set via the shorthand / cross-origin CSS). Real focus rings are kept
-      // (:focus / :focus-visible are excluded), so accessibility is unaffected.
+      // Suppress persistent layout outlines missed by color remapping. Preserve :focus and :focus-visible rings.
       + '*:not(:focus):not(:focus-visible){outline-color:transparent !important;}'
       + 'img,picture,video,canvas,svg,iframe,embed,object{filter:none !important;}'
       // GitHub fallback repairs: outrank buttonSafe to preserve branded primary controls.
@@ -1904,12 +1854,7 @@
 
 
 
-  // A clean, consistent text-selection colour in EVERY mode. Previously only light
-  // mode set one; dark/ultra fell back to the page's native ::selection run through
-  // the remap, which produced a muddy, low-contrast highlight (the "weird highlighted
-  // text" over Google's AI Overview). Light keeps the familiar blue; dark/ultra get a
-  // slightly brighter blue that stays crisp on a near-black surface. Forcing white
-  // text + no text-shadow keeps the selected words readable over the highlight.
+  // Set readable selection colors in every mode; native selection remapping can produce low-contrast highlights.
   function selectionCSS(mode) {
     const bg = mode === 'light' ? '#285fbd' : '#2f5fb0';
     return '::selection,*::selection,#search ::selection,#search *::selection,#rso ::selection,#rso *::selection{background:' + bg + ' !important;background-color:' + bg + ' !important;color:#ffffff !important;-webkit-text-fill-color:#ffffff !important;text-shadow:none !important;}'
@@ -1922,11 +1867,8 @@
       + 'img,picture,video,canvas,svg,iframe,embed,object{filter:none !important;}'
       + '@media print{#' + SCRIM_ID + '{display:none !important;}}';
   }
-  /* Per-site themes live in eyeshield-sites.js, which is registered top-frame-only so
-     the ten managed stylesheets are not compiled into every iframe on every site
-     (COST-03). Resolved on first use rather than at load, so the two registrations can
-     arrive in either order. A frame without the file themes generically, which is the
-     intended behaviour there and also the safe failure if the file is ever missing. */
+  /* COST-03: top-frame-only site themes resolve lazily because registration order varies. Frames without them use generic
+     theming. */
   var __eyeSitesResolved = false;
   var __eyeSites = null;
   /* Cache found builders only; a sites file loaded later must recover an earlier miss. */
@@ -2330,13 +2272,8 @@
   let chatgptWant = null;
   let chatgptObserver = null;
   let chatgptRescanTimer = 0;
-  /* The signed-in app does not theme itself with the class at all: it uses a `data-theme`
-     attribute ("dark"/"light") on <html>, and every colour it draws -- a grey ramp, the surface
-     tokens, lightningcss's light-dark() switch and color-scheme -- hangs off that attribute.
-     Measured on a signed-in page: with the class flipped and the switch variables pinned, the
-     page stayed rgb(0,0,0) with rgb(237,237,237) text; with data-theme="light" it was
-     rgb(252,252,252) with rgb(13,13,13) text, sidebar included. So both are switched: the class
-     for the builds that use it, the attribute for the one that does. */
+  /* Switch both the theme class and data-theme attribute: signed-in builds can use the attribute to select all color
+     tokens. */
   const chatgptFlipped = new Map(); // inner element -> { cls, attr }: what it had before
   function chatgptOther() { return chatgptWant === 'light' ? 'dark' : 'light'; }
   function chatgptScopeSelector(which) { return '.' + which + ',[data-theme="' + which + '"]'; }
@@ -2450,11 +2387,8 @@
     } catch (_) {}
   }
 
-  /* YouTube Music: the colours it shares with YouTube (--yt-sys-color-baseline--*) come in light
-     and dark sets, and the dark set applies while <html> carries a `dark` attribute. YouTube
-     Music always sets it; in light it is removed so YouTube's own light colours apply -- chips,
-     menus, buttons and the inverted "Sign in" pill included. What the app hard-codes for a dark
-     page is handled by the text-only remap (managedRemapsOwnText). */
+  /* Remove YouTube Music's dark attribute in light mode to select native light tokens. textOnly remapping covers remaining
+     hard-coded dark-page colors. */
   let ytmLight = false;
   let ytmObserver = null;
   function ytmAssertLight() {
@@ -2680,12 +2614,8 @@
     try { chrome.runtime.sendMessage({ kind: 'content-config-get', need: need }, cb); } catch (_) { try { cb(null); } catch (__) {} }
   }
 
-  /* When the popup last pushed settings straight to this tab. A change reaches a tab two ways:
-     pushed ('config-update'), and then pulled again when the popup re-runs this script to
-     refresh it. The pull is answered from a snapshot, and one built before the push is older
-     than what the push already applied -- taking it put the previous mode back, so a new mode
-     "would not apply" until Save was pressed again. A snapshot carries its build time (`rev`);
-     one older than the last push is set aside. */
+  /* Reject pulled snapshots older than the last pushed settings update; otherwise re-injection can restore the previous
+     theme. */
   let lastPushAt = 0;
   function loadConfig() {
     askContentConfig(['overrides'], (res) => {

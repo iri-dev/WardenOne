@@ -143,7 +143,7 @@ async function runUpdate(initial) {
   let handler = null;
   const resolved = { catch() { return resolved; } };
   const sandbox = {
-    DEFAULT_CONFIG: defaults, Object, RegExp, String, Array,
+    DEFAULT_CONFIG: defaults, migrateStoredConfig: require('../upgrade-config.js').migrateStoredConfig, Object, RegExp, String, Array,
     chrome: {
       runtime: { onInstalled: { addListener(fn) { handler = fn; } }, getURL: (v) => 'chrome-extension://test/' + v },
       storage: { local: { get(_k, cb) { cb({ wardenone_config: stored }); } } },

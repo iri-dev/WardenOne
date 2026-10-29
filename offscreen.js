@@ -100,6 +100,8 @@ async function playTone(sound, volume) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || message.target !== 'wardenone-offscreen' || message.type !== 'play-notification-sound') return false;
+  if (!sender || sender.id !== chrome.runtime.id || sender.tab
+      || sender.url !== chrome.runtime.getURL('background.js')) return false;
   const volume = Math.max(0, Math.min(1, Number(message.volume) || 0));
   playTone(message.sound, volume).then(
     (played) => sendResponse(played === true ? { ok: true } : { ok: false, error: 'Audio is unavailable.' }),

@@ -431,6 +431,7 @@ async function main() {
     },
   };
   vm.createContext(context);
+  require('./lib/history-store-harness.js').install(context);
   vm.runInContext(read('notification-manager.js'), context, { filename: 'notification-manager.js' });
 
   const ipRule = { ruleId: 'ip_privacy', mode: 'toast', settings: { groupSimilar: true },
@@ -815,6 +816,7 @@ async function main() {
         offscreen: { createDocument: async () => {} }, notifications: { create: (i, o, cb) => cb && cb() } },
     };
     vm.createContext(ctx);
+    require('./lib/history-store-harness.js').install(ctx);
     vm.runInContext(read('notification-manager.js'), ctx, { filename: 'notification-manager.js' });
 
     await new Promise((r) => setTimeout(r, 20));

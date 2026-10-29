@@ -8,7 +8,7 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const profile = require('./perf-profile.js');
-const root = path.resolve(__dirname, '..');
+const root = process.env.WARDENONE_EXTENSION_DIR ? path.resolve(process.env.WARDENONE_EXTENSION_DIR) : path.resolve(__dirname, '..');
 const HOST = 'reputation.wardenone-grant.example.com';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -44,6 +44,7 @@ async function run() {
       urlReputationConfig=async()=>({enabled:true});
       locallyBlockedReputationHost=async()=>'';
       urlReputationLookupUrl=async()=>({ok:true,hit:true,provider:'Fixture',threats:['MALWARE']});
+      chrome.runtime.onMessage.addListener((m,s)=>{if(m?.kind==='safe-browsing-allow-once')globalThis.__warningSender=s;});
     })()`);
     const tab = await evaluate(`chrome.tabs.create({url:'about:blank#reputation-grant-fixture'})`);
     const { targetInfos } = await cdp.send('Target.getTargets');
@@ -57,7 +58,10 @@ async function run() {
         try { if (await predicate()) return; } catch (_) {}
         await sleep(100);
       }
-      throw new Error(description + ': ' + await pageValue('location.href'));
+      const state = await evaluate(`(async()=>{const s=globalThis.__warningSender;if(!s)return null;
+        let frame;try{frame=await chrome.webNavigation.getFrame({tabId:s.tab.id,frameId:0});}catch(e){frame=String(e);}
+        return {sender:s,tab:await chrome.tabs.get(s.tab.id),frame,contexts:await chrome.runtime.getContexts({documentIds:[s.documentId]})};})()`);
+      throw new Error(description + ': ' + await pageValue('location.href') + ' ' + JSON.stringify(state));
     }
     async function warningFor(url) {
       let handle;

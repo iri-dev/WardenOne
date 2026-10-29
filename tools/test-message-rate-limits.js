@@ -45,9 +45,10 @@ function area() {
 /* Declared before the stub that reports them. */
 const DRIVEN_TAB_IDS = [7001, 7002, 7003];
 
-function loadBackground() {
+function loadBackground(options = {}) {
   const badge = [];
   const chrome = {
+    extension: { inIncognitoContext: options.incognito === true },
     runtime: {
       id: 'ratelimittestid',
       getURL: (p) => 'chrome-extension://ratelimittestid/' + String(p || '').replace(/^\/+/, ''),
@@ -139,6 +140,8 @@ function loadBackground() {
   return { chrome, badge, ctx };
 }
 
+module.exports = { loadBackground };
+if (require.main === module) {
 let failures = 0;
 /* Checks that cannot run until the worker's badge-count recovery has settled. */
 const deferred = [];
@@ -172,7 +175,7 @@ function deliver(msg, sender) {
   return refused;
 }
 function drive(kind, tabId, count, extra) {
-  const sender = { tab: { id: tabId, url: 'https://ad-heavy.example/p' }, url: 'https://ad-heavy.example/p', frameId: 0 };
+  const sender = { id: H.chrome.runtime.id, tab: { id: tabId, url: 'https://ad-heavy.example/p' }, url: 'https://ad-heavy.example/p', frameId: 0 };
   let refusals = 0;
   for (let i = 0; i < count; i++) {
     if (deliver(Object.assign({ kind }, extra || {}), sender)) refusals++;
@@ -255,3 +258,4 @@ setTimeout(() => {
   }
   console.log('[ok] message rate limit tests');
 }, 150);
+}

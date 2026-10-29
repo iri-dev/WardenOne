@@ -69,6 +69,9 @@ async function run() {
     await sleep(1600);
     /* Keep the extension ID across runtime.reload. Attaching to the worker while
        it is shutting down can leave a DevTools command without a reply. */
+    const reloaded = await profile.extensionReady(cdp, port, version);
+    if (reloaded.id !== extension.id) throw new Error('Extension identity changed after site erase');
+    extension = reloaded;
     page = await attachPopup();
     console.log('[site erase] reloaded popup ready');
     const after = await evaluate(page, `Promise.all([chrome.storage.local.get(null),chrome.storage.session.get(null)]).then(([l,s])=>({

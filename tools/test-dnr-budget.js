@@ -229,10 +229,12 @@ function runBands() {
   const FAMILIES = [
     ["LEARNED_RULE_BASE", "LEARNED_RULES_BUDGET", "learned malicious domains"],
     ["TRACKER_RULE_BASE", "TRACKER_RULES_BUDGET", "tracker learner"],
+    ["CNAME_RULE_BASE", "CNAME_RULES_BUDGET", "CNAME blocking"],
+    ["TRACKER_COOKIE_ALIAS_RULE_BASE", "TRACKER_COOKIE_ALIAS_RULES_BUDGET", "CNAME cookie isolation"],
   ];
   // Single ids reserved outside the families. A band must never grow far enough to reach them.
-  const RESERVED = ["PRIVACY_HEADER_RULE_ID", "THIRD_PARTY_COOKIE_RULE_ID",
-    "LOCATION_PRIVACY_HEADER_RULE_ID", "HTTPS_UPGRADE_RULE_ID", "HTTPS_UPGRADE_DYNAMIC_RULE_ID"];
+  const RESERVED = ["PRIVACY_HEADER_RULE_ID", "PRIVACY_HEADER_NAV_RULE_ID", "THIRD_PARTY_COOKIE_RULE_ID",
+    "LOCATION_PRIVACY_HEADER_RULE_ID", "TRACKER_COOKIE_RULE_ID", "HTTPS_UPGRADE_RULE_ID", "HTTPS_UPGRADE_DYNAMIC_RULE_ID"];
 
   const ranges = FAMILIES.map(([baseName, capName, label]) => {
     const base = num(baseName);
@@ -253,6 +255,7 @@ function runBands() {
     console.log("  gap after " + prev.label + ": " + (cur.base - prev.end - 1));
   }
 
+  assert.strictEqual(new Set(RESERVED.map(num)).size, RESERVED.length, 'reserved DNR rule IDs must be distinct');
   for (const name of RESERVED) {
     const id = num(name);
     assert(Number.isFinite(id), "could not read " + name);

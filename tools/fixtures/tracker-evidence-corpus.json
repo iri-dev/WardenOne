@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "purpose": "Pinned synthetic proposal corpus, including ambiguous false proposals and uncovered trackers; not a population accuracy estimate.",
+  "cases": [
+    { "id": "curated-ad-tracker", "kind": "network", "host": "g.doubleclick.net", "positive": true },
+    { "id": "curated-analytics", "kind": "network", "host": "google-analytics.com", "positive": true },
+    { "id": "fingerprint-library", "kind": "network", "host": "fpjs.io", "type": "script", "positive": true },
+    { "id": "confirmed-cloaked-tracker", "kind": "network", "host": "a.trowow.de", "positive": true },
+    { "id": "cookie-identifier-observation", "kind": "page", "host": "identifier.fixture-tracker.test", "signal": "tracking-params", "positive": true },
+    { "id": "beacon-api-observation", "kind": "page", "host": "beacon.fixture-tracker.test", "signal": "beacon-api", "positive": true },
+    { "id": "tracking-path-observation", "kind": "page", "host": "collector.fixture-tracker.test", "signal": "tracking-path", "positive": true },
+    { "id": "unlisted-tracker-without-page-evidence", "kind": "network", "host": "unlisted.fixture-tracker.test", "positive": true },
+    { "id": "federated-login", "kind": "page", "host": "accounts.google.com", "signal": "tracking-path", "positive": false },
+    { "id": "checkout-payment", "kind": "page", "host": "checkout.stripe.com", "signal": "tracking-params", "positive": false },
+    { "id": "payment-network", "kind": "network", "host": "paypal.com", "positive": false },
+    { "id": "video-cdn", "kind": "page", "host": "fixture.googlevideo.com", "signal": "tracking-path", "positive": false },
+    { "id": "shared-cdn-resource", "kind": "page", "host": "cdn.jsdelivr.net", "signal": "resource-url", "positive": false },
+    { "id": "shared-host-forged-signal", "kind": "page", "host": "shared-tenant.cloudfront.net", "signal": "invented-fingerprint-claim", "positive": false },
+    { "id": "essential-analytics-forged-source", "kind": "page", "host": "analytics.fixture-essential.test", "signal": "curated-feed", "positive": false },
+    { "id": "fake-cname-authority", "kind": "page", "host": "cdn.fixture-essential.test", "signal": "curated-cname", "positive": false },
+    { "id": "ambiguous-essential-analytics", "kind": "page", "host": "metrics.fixture-essential.test", "signal": "tracking-path", "positive": false },
+    { "id": "ambiguous-checkout-antibot", "kind": "page", "host": "datadome.co", "signal": "tracking-path", "positive": false },
+    { "id": "antibot-network-is-not-fingerprint-library", "kind": "network", "host": "datadome.co", "type": "script", "positive": false },
+    { "id": "lookalike-library-host", "kind": "network", "host": "fpjs.io.attacker.test", "type": "script", "positive": false },
+    { "id": "library-image-is-not-script-evidence", "kind": "network", "host": "fpjs.io", "type": "image", "positive": false },
+    { "id": "site-scoped-feed-outside-its-site", "kind": "network", "host": "blockadsnot.com", "type": "script", "positive": false }
+  ]
+}

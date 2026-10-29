@@ -19,9 +19,19 @@ const source = background.slice(start, end);
 function harness(fail) {
   const calls = [];
   const timers = [];
+  const state = { dynamic: new Map(), session: new Map() };
   const update = async (kind, change) => {
     calls.push({ kind, change });
     if (fail && fail(kind, change)) throw new Error('simulated Chrome rejection');
+    const next = new Map(state[kind]);
+    for (const id of change.removeRuleIds || []) next.delete(id);
+    for (const rule of change.addRules || []) {
+      if (next.has(rule.id) || rule.condition?.requestDomains?.some((host) => host.includes('..'))) {
+        throw new Error('simulated invalid DNR candidate');
+      }
+      next.set(rule.id, rule);
+    }
+    state[kind] = next;
   };
   const context = {
     chrome: { declarativeNetRequest: {
@@ -37,7 +47,8 @@ function harness(fail) {
   vm.createContext(context);
   installSessionIo(context);
   vm.runInContext(source + '\nthis.make = createReconcileDnrBatch;', context);
-  return { make: context.make, calls, timers, flushTimer: async () => { const timer = timers.shift(); assert(timer); await timer.fn(); await tick(); } };
+  return { make: context.make, calls, timers, state,
+    flushTimer: async () => { const timer = timers.shift(); assert(timer); await timer.fn(); await tick(); } };
 }
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
@@ -75,6 +86,30 @@ process.exitCode = 1;
   assert.strictEqual(statuses[0].status, 'rejected');
   assert.strictEqual(statuses[1].status, 'fulfilled');
   assert.strictEqual(h.calls.length, 3, 'combined failure falls back to separate owner writes');
+
+  h = harness();
+  h.state.dynamic.set(40, { id: 40, priority: 9000, action: { type: 'block' } });
+  batch = h.make('dynamic');
+  const invalid = batch.collect((submit) => submit({ removeRuleIds: [40], addRules: [
+    { id: 40, condition: { requestDomains: ['bad..example'] } },
+  ] }));
+  const valid = batch.collect((submit) => submit(change(50)));
+  const isolated = Promise.allSettled([invalid, valid]);
+  await batch.seal();
+  const isolatedStatuses = await isolated;
+  assert.deepStrictEqual(isolatedStatuses.map((result) => result.status), ['rejected', 'fulfilled']);
+  assert.strictEqual(h.state.dynamic.get(40).priority, 9000, 'invalid owner retains the installed security rule');
+  assert.ok(h.state.dynamic.has(50), 'another owner still commits after combined rejection');
+  assert.strictEqual(h.calls.length, 3, 'combined write rejection retries isolated owner transactions');
+
+  h = harness();
+  h.state.dynamic.set(45, { id: 45, priority: 9000, action: { type: 'block' } });
+  batch = h.make('dynamic');
+  const collision = batch.collect((submit) => submit({ removeRuleIds: [46], addRules: [{ id: 45 }] }));
+  const collisionResult = Promise.allSettled([collision]);
+  await batch.seal();
+  assert.strictEqual((await collisionResult)[0].status, 'rejected');
+  assert.strictEqual(h.state.dynamic.get(45).priority, 9000, 'ID collision leaves the installed security rule');
 
   h = harness();
   batch = h.make('session');

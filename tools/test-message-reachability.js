@@ -10,10 +10,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
-const tracked = execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' }).split(/\r?\n/).filter(Boolean);
+const tracked = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/package-allowlist.json'), 'utf8'));
 const shipped = tracked.filter((f) => /\.(js|html)$/.test(f) && !/^(tools|site|docs)\//.test(f));
 const WORKERS = shipped.filter((f) => /^background.*\.js$/.test(f));
 const SURFACES = shipped.filter((f) => !WORKERS.includes(f));
@@ -67,7 +66,8 @@ check('the group sleeper still runs from the Memory Shield alarm', /runMemoryMai
   && /async function runMemoryMaintenance\(cfgArg\)/.test(MEMORY)
   && /await memorySweep\('alarm', cfg, snapshot\)/.test(MEMORY)
   && /await sleepIdleGroups\(cfg, snapshot\)/.test(MEMORY));
-check('the permission sweep is still reachable through the cleaner', /if \(t\.sitePermissions\) perms = await resetSensitiveSitePermissionsGlobally\(\);/.test(BG));
+const cleaner = fs.readFileSync(path.join(ROOT, 'background-privacy-cleaner.js'), 'utf8');
+check('the permission sweep is still reachable through the cleaner', /key === 'sitePermissions'[\s\S]{0,120}resetSensitiveSitePermissionsGlobally\(\)/.test(cleaner));
 
 console.log('');
 console.log('  handled ' + handled.size + ' kinds in ' + WORKERS.join(', ') + '; ' + emitted.size + ' kinds sent from ' + SURFACES.length + ' surface files');

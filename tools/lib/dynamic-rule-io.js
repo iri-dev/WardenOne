@@ -4,17 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * background.js's dynamic-rule I/O, as source a sandbox can evaluate.
- *
- * Every band read in the worker goes through getDynamicRulesInBand, and the bands it lists
- * share one read per wake; every write goes through writeDynamicRules, which drops that read.
- * A harness that lifts an applier needs both in scope. `prelude(source, bands)` returns them,
- * with ownDynamicRuleBands answering `bands` -- the bands the harness models, as [first id,
- * size] -- in place of the shipped list, whose constants a sandbox rarely has. With no bands,
- * each read is the band's own filtered read. tools/test-dynamic-rule-reads.js runs the shipped
- * list.
- */
+/* Lift worker dynamic-rule reads/writes into VM harnesses. prelude(source, bands) substitutes modeled [first id, size]
+   bands; without them, reads filter independently. */
 'use strict';
 
 const assert = require('assert');

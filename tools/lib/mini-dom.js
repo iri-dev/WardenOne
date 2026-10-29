@@ -6,12 +6,8 @@
    with the date, and to keep these notices intact. */
 'use strict';
 
-/* A very small DOM for suites that need to drive a content script against a page shape:
-   elements with a tag, id, classes and attributes; a tree; and enough of the selector
-   language to run the real code's queries -- tag, #id, .class, [attr], [attr="v"],
-   [attr^="v"], [attr$="v"], [attr*="v"], compound selectors, descendant and child
-   combinators, and selector lists. Not a browser: no layout, no styles, no events beyond
-   a listener registry. Build a page with h(), hand it to makeDocument(). */
+/* Minimal tree/selector support for content-script suites, built with h() and makeDocument(). No layout, styles or browser
+   events beyond listener registration. */
 
 function splitTop(text, sep) {
   const out = [];

@@ -79,6 +79,20 @@ function popupSwitches(html) {
   return rows;
 }
 
+function popupSections(html, popupJs) {
+  const from = html.indexOf('id="groups"');
+  const to = html.indexOf('id="site-controls-group"', from);
+  const ids = popupJs.indexOf('const POPUP_SECTION_IDS = {');
+  const end = popupJs.indexOf('\nfunction popupSectionRuns()', ids);
+  if (from < 0 || to < from || ids < 0 || end < ids) throw new Error('Cannot find popup section definitions.');
+  const context = {};
+  vm.runInNewContext(popupJs.slice(ids, end) + '\nthis.sectionId = popupSectionId;', context);
+  return Array.from(html.slice(from, to).matchAll(/<h2\b[^>]*>([\s\S]*?)<\/h2>/g), match => {
+    const name = text(match[1]);
+    return { id: context.sectionId({ textContent: name }), name };
+  });
+}
+
 function sourceSummary(inventory) {
   const sources = Array.isArray(inventory.sources) ? inventory.sources : [];
   const byPurpose = new Map();
@@ -139,8 +153,8 @@ function build() {
   if (defaultsAt < 0 || schemaAt < defaultsAt) throw new Error('popup.js: DEFAULTS and IMPORT_SCHEMA have moved');
   vm.runInNewContext(popupJs.slice(defaultsAt, schemaAt).replace(/^const /gm, 'var '), popupCtx);
   const [popupDefaults, carriedPopupDefaults] = split(JSON.parse(JSON.stringify(popupCtx.DEFAULTS)));
-  /* Which protections can be turned off for one site, and how far: page, mixed (the page part
-     only) or coordinated. A left-out utility's keys travel with its rows. */
+  /* Per-site scopes include page, mixed, coordinated and supported network owners.
+     A left-out utility's keys travel with its rows. */
   const siteOverrideScope = {}, carriedScope = {};
   const scope = literal(popupJs, 'const SITE_OVERRIDE_SCOPE = {', 'popup.js');
   Object.keys(scope).forEach((kind) => {
@@ -150,6 +164,7 @@ function build() {
   });
 
   const data = {
+    popupSections: popupSections(popupHtml, popupJs),
     sections,
     defaults,
     recommended: literal(background, 'const ONBOARDING_RECOMMENDED = {', 'background.js'),
@@ -193,5 +208,5 @@ function main() {
   console.log('wrote settings-data.js (' + next.length + ' bytes)');
 }
 
-module.exports = { build, popupSwitches, text };
+module.exports = { build, popupSwitches, popupSections, text };
 if (require.main === module) main();

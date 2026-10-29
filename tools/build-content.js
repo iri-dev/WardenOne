@@ -263,9 +263,8 @@ function formatRuntime(source) {
   return out.join('').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trimStart() + '\n';
 }
 
-// The source text of one marked region of src/content.js, from the opening of its BEGIN comment
-// through its END comment. Exactly one of each, in order, or the build refuses: a region that
-// silently came out empty or doubled would ship a frame module that patches nothing, or twice.
+// Marked regions must have exactly one BEGIN and END, in order; missing or repeated regions would silently omit or
+// duplicate frame patches.
 function region(source, name) {
   const begin = '/* ' + name + '-BEGIN';
   const end = '/* ' + name + '-END */';

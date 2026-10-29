@@ -194,7 +194,6 @@ const el = (o) => Object.assign({ className: '', id: '', attrs: '', text: '' }, 
     (SOURCE.match(/structuralBlob/g) || []).length === (CONTENT.match(/structuralBlob/g) || []).length);
 }());
 
-// ---------------------------------------------------------------------------
 
 if (failures.length) {
   console.error('FAIL (' + failures.length + ')');

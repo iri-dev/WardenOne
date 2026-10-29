@@ -104,7 +104,8 @@ check('the content configuration channel is tab-only, rate-limited, and handled'
   assert(/msg\.kind === 'content-config-get' && messageSenderIsTab\(sender\)/.test(BG), 'handler does not require a tab sender');
   /* the snapshot takes the asking frame's host so the reader's hidden-element rules ride along
      with the config instead of costing every frame a second channel (PERF-02) */
-  assert(/respond\(buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\), topHost\), sendResponse\)/.test(BG), 'handler does not use the sanitizer snapshot');
+  assert(/await buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\), topHost\)/.test(BG), 'handler does not use the sanitizer snapshot');
+  assert(/snapshot\.overrides\.frameCookieIsolation = await frameCookieIsolationFor\(sender, snapshot\.overrides\)/.test(BG), 'frame cookie policy must use browser-supplied sender identity');
 });
 
 check('all manifest isolated-world scripts remain free of direct storage access', () => {

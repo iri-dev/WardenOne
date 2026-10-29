@@ -155,4 +155,42 @@ check('the classifier can say yes to something', disposable('_ga', 'example.com'
 }
 
 if (failed) { console.error('\n' + failed + ' cookie-cleaner check(s) failed'); process.exit(1); }
-console.log('\nthe sweep removes consent and tracking cookies and cannot sign anyone out');
+async function testFilteredSweep() {
+  const start = BG.indexOf('async function cleanConsentAndTrackingCookies(options = {}) {');
+  const end = BG.indexOf('\nfunction privacyStoreTimestamp', start);
+  const urlStart = BG.indexOf('function cookieRemovalUrl(cookie) {');
+  const urlEnd = BG.indexOf('\n\n', urlStart);
+  const removed = [];
+  const cookies = [
+    { name: '_ga', domain: '.example.com', hostOnly: false },
+    { name: 'sessionid', domain: 'other.test', hostOnly: true },
+    { name: '_gid', domain: 'other.test', hostOnly: true },
+    { name: '_ga', domain: 'tracker.test', partitionKey: { topLevelSite: 'https://example.com', hasCrossSiteAncestor: true } },
+    { name: '_ga', domain: 'tracker.test', partitionKey: { topLevelSite: 'https://free.test', hasCrossSiteAncestor: true } },
+    { name: '_ga', domain: 'failed.test', hostOnly: true },
+  ].map(cookie => ({ path: '/', secure: true, storeId: '0', ...cookie }));
+  const ctx = { URL, cookieIsDisposable: sandbox.__disposable, chrome: { cookies: {
+    getAll: async filter => { assert.equal(JSON.stringify(filter.partitionKey), '{}'); return cookies; },
+    remove: async details => { if (details.url.includes('failed.test')) return null; removed.push(details); return details; },
+  } } };
+  vm.createContext(ctx);
+  vm.runInContext(BG.slice(urlStart, urlEnd) + '\n' + BG.slice(start, end), ctx);
+  let result = await ctx.cleanConsentAndTrackingCookies({ protectedOrigins: ['https://mail.example.com'] });
+  assert.equal(result.removed, 2); assert.equal(result.failed, 1);
+  assert(!removed.some(cookie => cookie.url.includes('example.com')), 'parent-domain cookies on a protected site remain');
+  assert(!removed.some(cookie => cookie.name === 'sessionid'), 'the shipped classifier protects recognized authentication');
+  assert(removed.some(cookie => cookie.partitionKey && cookie.partitionKey.topLevelSite === 'https://free.test'));
+  assert(!removed.some(cookie => cookie.partitionKey && cookie.partitionKey.topLevelSite === 'https://example.com'));
+  removed.length = 0;
+  result = await ctx.cleanConsentAndTrackingCookies({ protectedOrigins: ['https://mail.example.com.'] });
+  assert.equal(result.removed, 2, 'DNS trailing dots cannot bypass protected-cookie matching');
+  assert(!removed.some(cookie => cookie.url.includes('example.com')));
+  removed.length = 0;
+  result = await ctx.cleanConsentAndTrackingCookies({ protectedOrigins: ['https://example.com'], origin: 'https://other.test' });
+  assert.equal(result.removed, 1); assert.equal(removed[0].url, 'https://other.test/');
+  ctx.chrome.cookies.getAll = async () => { throw Error('Not available'); };
+  await assert.rejects(() => ctx.cleanConsentAndTrackingCookies(), /Not available/);
+}
+const assert = require('assert/strict');
+testFilteredSweep().then(() => console.log('\n[ok] shared classifier, protected domains, scoped/partitioned removal and verified failure counts'))
+  .catch(error => { console.error(error); process.exitCode = 1; });

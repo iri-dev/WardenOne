@@ -1,9 +1,14 @@
 {
   "schema": 1,
-  "datasetVersion": "2026.10.04.477",
-  "generatedAt": "2026-10-04T18:20:42Z",
+  "datasetVersion": "2026.10.29.473",
+  "generatedAt": "2026-10-29",
   "description": "Local exact-ID extension intelligence with three deliberately separate states: documented incidents, publisher-verified identities with explicit capability contracts, and catalogue-only Chrome Web Store listings. A catalogue match identifies a listing name only; it never proves safety or excuses access. Runtime lookups and reviews stay on this device.",
   "sources": {
+    "buster-official": {
+      "label": "Buster official project and Chrome Web Store listing by Armin Sebastian",
+      "reference": "https://chromewebstore.google.com/detail/buster-captcha-solver-for/mpbjkejclgfgadiemmefgebjfooflfhl",
+      "retrievedAt": "2026-10-29"
+    },
     "chatgpt-chrome-official": {
       "label": "OpenAI ChatGPT Chrome Web Store listing",
       "reference": "https://chromewebstore.google.com/detail/chatgpt/hehggadaopoacecdllhhajmbjkdcmajg",
@@ -572,6 +577,20 @@
         "script-injection"
       ]
     },
+    "buster_captcha_solver": {
+      "label": "Buster's CAPTCHA accessibility tool",
+      "needs": "interact with CAPTCHA frames and communicate with its optional desktop client",
+      "expected": [
+        "native-program-bridge",
+        "all-site-data",
+        "script-everywhere",
+        "script-injection",
+        "network-observation",
+        "network-everywhere"
+      ],
+      "evidence": "Buster's official README links this exact Chrome Web Store ID and documents an optional client app that simulates user interactions. Its Chrome manifest declares nativeMessaging, scripting, webRequest, webNavigation and all-site host access.",
+      "reference": "https://github.com/dessant/buster"
+    },
     "browser_agent": {
       "label": "a browser assistant that acts for you",
       "needs": "read the page you are on, click, type and navigate on your behalf, and talk to its desktop app — the whole point of it, and the most access on this list",
@@ -705,6 +724,16 @@
     }
   ],
   "entries": {
+    "mpbjkejclgfgadiemmefgebjfooflfhl": {
+      "name": "Buster: Captcha Solver for Humans",
+      "status": "recognized_identity",
+      "reason": "The official project links this exact Chrome Web Store ID. Native messaging supports its optional companion client; recognition does not establish that any particular version is safe.",
+      "categories": ["accessibility"],
+      "affected": { "kind": "all_versions" },
+      "source": "buster-official",
+      "reviewedAt": "2026-10-29",
+      "capabilityProfile": "buster_captcha_solver"
+    },
     "hehggadaopoacecdllhhajmbjkdcmajg": {
       "name": "ChatGPT",
       "status": "recognized_identity",

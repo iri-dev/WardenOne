@@ -39,6 +39,7 @@ function constLine(name) {
   return m[0];
 }
 const BAND_CONSTS = ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX', 'TRACKER_RULES_BUDGET', 'USER_RULES_BUDGET',
+  'CNAME_RULE_BASE', 'CNAME_RULES_BUDGET',
   'FIREWALL_RULES_BUDGET', 'FIREWALL_SESSION_RULES_BUDGET', 'USER_BLOCKLIST_RULES_BUDGET', 'NEVER_BLOCK_ALLOW_RULE_BASE', 'NEVER_BLOCK_ALLOW_MAX',
   'SCRIPT_SHIELD_RULE_BASE', 'SCRIPT_SHIELD_RULE_MAX', 'FINGERPRINT_SCRIPT_RULE_BASE', 'FINGERPRINT_SCRIPT_RULE_MAX',
   'GOOGLE_SEARCH_ALLOW_RULE_BASE', 'GOOGLE_SEARCH_ALLOW_RULE_MAX', 'LEARNED_RULE_BASE', 'LEARNED_MAX', 'GRABBER_FEED_RULE_BASE', 'GRABBER_FEED_MAX', 'GRABBER_NAV_RULE_ID', 'GRABBER_MALWARE_NAV_RULE_ID',
@@ -88,7 +89,7 @@ function rig(options) {
     + ' userFiltersFrom: applyUserFilterRulesFrom, firewall: applyFirewallRules, firewallFrom: applyFirewallRulesFrom, blocklist: applyUserBlocklistRules, allowlist: applyAllowlistRules };', ctx);
   return { api: ctx.api, state, band: (base, max) => state.dnr.filter((r) => r.id >= base && r.id < base + max).length };
 }
-const BANDS = { 'My rules + custom lists': [750000, 500], 'Per-site firewall': [950000, 250], 'Firewall allow-once': [960000, 50], 'User blocklist': [970000, 64] };
+const BANDS = { 'CNAME tracker rules': [730000, 300], 'My rules + custom lists': [750000, 500], 'Per-site firewall': [950000, 250], 'Firewall allow-once': [960000, 50], 'User blocklist': [970000, 64] };
 
 (async () => {
   console.log('\nmaster switch\n');

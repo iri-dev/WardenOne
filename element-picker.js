@@ -158,12 +158,8 @@
   const MEANINGFUL_ATTRS = ['data-testid', 'data-test-id', 'data-qa', 'data-a-target',
     'aria-label', 'role', 'name', 'data-ad-slot', 'alt', 'title'];
 
-  /* href is the strongest identifier a list item has: it says WHICH thing this
-     card is about, and it survives the list being reordered, which nothing about
-     the element's position does. Kept separate from the list above because its
-     value needs its own bounds -- a URL is longer and has more punctuation than
-     a test id, and one carrying a character the worker's selector validator
-     rejects would produce a rule that is silently never saved. */
+  /* Prefer href identity over list position. Validate it separately with URL-sized bounds and the worker's
+     selector-character restrictions. */
   function stableHref(el) {
     const raw = String(el.getAttribute('href') || '').trim();
     if (!raw || raw.length > 120) return '';
@@ -181,13 +177,8 @@
     return !!sel && sel !== tag && (sel.indexOf('#') === 0 || sel.indexOf('[') >= 0);
   }
 
-  /* The fix for a list that reorders. Find the nearest ancestor that NAMES
-     itself, then describe the target inside it -- "[data-who=bob] .avatar"
-     rather than "div:nth-child(2) > img". Both are unique on the page as it
-     stands; only the first is still about the same thing after the page reorders
-     itself, which a Twitch sidebar does on every load. Position was the previous
-     answer here and it silently retargeted: a rule saved against slot two came
-     back after a restart hiding whoever was in slot two now. */
+  /* Anchor to the nearest named ancestor, then describe the target within it; positional selectors can retarget after list
+     reordering. */
   function anchoredSelector(el) {
     const own = ownSelector(el);
     let node = el.parentElement;
@@ -219,13 +210,8 @@
     const href = stableHref(el);
     if (href) return tag + '[href="' + href + '"]';
 
-    /* Any data-* attribute whose value looks like a name rather than a number or
-       a build hash. An allowlist of the seven attribute names we happened to
-       think of does not generalise -- sites label their list items with
-       data-who, data-user, data-channel, data-item and a hundred other things,
-       and every one of those is a better anchor than the element's position.
-       Numeric values are refused because data-index="2" is the same fragility as
-       nth-child wearing a different hat. */
+    /* Use name-like data-* values as stable anchors. Reject numbers and build hashes; data-index is no more stable than
+       nth-child. */
     const attrs = el.attributes;
     for (let i = 0; attrs && i < attrs.length; i++) {
       const name = String(attrs[i].name || '');
@@ -302,12 +288,7 @@
     return sel.indexOf(':nth-child(') >= 0 || /(^|\s|>)(div|span|li|section|p)$/.test(sel.trim());
   }
 
-  /* A positional rule inside a list of near-identical siblings is a different and
-     worse problem from a positional rule in general. A fixed header at
-     :nth-child(2) stays where it is; the second card in a feed does not. When the
-     list reorders, the rule keeps pointing at the SLOT, so it comes back hiding
-     whoever moved into it -- which looks like the zap was forgotten, and is
-     actually the zap landing on somebody else. Worth saying in those words. */
+  /* Warn for positional rules among similar siblings: reordered feeds can make the saved rule hide a different item. */
   function looksLikeListItem(el) {
     try {
       const parent = el.parentElement && el.parentElement.parentElement;
@@ -333,13 +314,7 @@
     /* Do not transition the highlight: its position and size must follow the pointer together. */
     '.box{position:fixed;left:0;top:0;border:2px solid #9d54c9;background:rgba(157,84,201,.14);pointer-events:none;border-radius:4px;will-change:transform;contain:strict;}',
     '.box.zap{border-color:#df6ca9;background:rgba(223,108,169,.15);}',
-    /* The same card the engine's own toasts use: pale lavender, a plum rail down
-       the left, Quicksand for the line that matters. It was a dark panel with an
-       uppercase two-part eyebrow and a green status dot, which is the language of
-       the extension's OWN pages -- wrong here, because this appears on somebody
-       else's page exactly as a toast does, and the status dot in particular was
-       reporting nothing. Matching the toast means the reader has seen this shape
-       before and does not have to work out whose it is. */
+    /* Use the shared toast appearance for this on-page confirmation. */
     '.bar{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;pointer-events:auto;',
     'background:linear-gradient(135deg,#faf2fe,#f4e9fb);border-left:4px solid #9d54c9;',
     'border-radius:14px;padding:13px 15px;box-shadow:0 8px 28px rgba(120,55,160,.26);',
@@ -666,12 +641,8 @@
     if (e.key === 'ArrowUp') { widen(); e.preventDefault(); }
     if (e.key === 'ArrowDown') { narrow(); e.preventDefault(); }
     if (e.key === 'Enter') {
-      /* Confirms whatever the arrows have framed, so the whole tool can be driven from
-         the keyboard: arrows to walk up and down the tree, Enter to take it. It goes
-         through the same path as a click rather than calling zap() directly, so the
-         "that covers most of the page" second press still applies -- a confirmation that
-         the mouse gets and the keyboard skips is a trapdoor, not a shortcut.
-         Nothing framed means nothing to confirm; Enter is not a way to hide the body. */
+      /* Keyboard confirmation follows the click path, including the second press for page-sized selections. Enter with no
+         selection must not hide the body. */
       if (!current || current === document.body || current === document.documentElement) return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -703,12 +674,8 @@
      the outermost node there is -- so a page that registered its own capture
      listener on document before the zapper was injected no longer gets the event
      first. On YouTube it did, which is why clicking a video played it. */
-  /* Take the caret off any text field the page had focused. Undo deliberately
-     stands aside for inputs so it cannot eat someone's half-typed message, and
-     on a site that keeps the caret in a chat box that guard swallowed every
-     Ctrl+Z: the first press landed while the body still had focus and worked,
-     and every one after it went to the chat box and did nothing. Nothing here
-     types, so the tool takes the caret for as long as it is open. */
+  /* Take focus while the picker is open so its undo shortcut does not reach the page's text inputs. Outside the tool, input
+     editing retains native undo. */
   try {
     if (undoTargetIsEditable(document.activeElement)) document.activeElement.blur();
   } catch (_) {}

@@ -1,5 +1,15 @@
 # Release performance profiles
 
+Phase 09 adds [release-quality-audit.md](../release-quality-audit.md),
+[protection ownership](../protection-contracts.json) and the
+[fixed-corpus rematch](../privacy-rematch.md). Prepare immutable source/runtime
+pairs with `tools/prepare-release-review.js`, run five alternating profiles with
+`tools/browser-release-rematch.js`, and validate them with
+`tools/summarize-release-rematch.js`. Set `WARDENONE_RELEASE_REPORT` to that report
+when running the maintainability gate to include native release acceptance.
+Timing runs must be serial and separate from other tests. The linked audit
+documents the baseline-derived budget, browser setup, smoke commands and limits.
+
 CI also records the package footprint after each passing gate: staged-tree ZIP and unpacked bytes,
 bundled DNR rules, manifest-injected scripts, and content and worker source bytes. The
 limits in [`static-budget.json`](static-budget.json) are compared with the staged package
@@ -13,6 +23,147 @@ is measured separately, under [Cold worker wakes](#cold-worker-wakes).
 `node tools/perf-profile.js` measures the extension in a real browser. Per-run profiles,
 machine metadata, video investigations and DevTools traces stay local; this page records
 the conclusions needed to understand release performance decisions.
+
+The [Ghostery matched performance audit](../ghostery-performance-audit.md) records
+the five-arm updated-data benchmark, exact presets, controlled/public corpora,
+serial repeated blocks, profiler attribution and worker-lifecycle measurements.
+
+## Privacy engineering baseline (2026-10-26)
+
+The 29 October cookie follow-up adds one MAIN-world script entry for authenticated
+frame cookie-API isolation, raising the reviewed entry limit from 18 to 19.
+Top-level documents return before installing its authentication and API wrappers.
+Byte, unique-file and rule-count limits remain unchanged. The service-cookie rules
+also no longer need path-complement regexes. Runtime measurements and comparison
+limits are recorded in [the cookie parity audit](../cookie-stateful-parity-audit.md).
+
+The [Phase 06 recovery audit](../feed-recovery-audit.md) records durable feed
+loading, timer classifications, native forced worker termination and alarm recovery.
+
+The [Phase 05 performance audit](../browser-performance-audit.md) records the
+profiled rectangle-allocation optimization, native editing/frame checks, worker
+wakes and near-quota DNR review. JS heap and browser/native memory are reported
+separately.
+
+The [Phase 04 fingerprint audit](../fingerprint-consistency-audit.md) records
+audio integrity, API consistency, worker/CSP limits, and enabled/disabled/excluded
+hook measurements. Fingerprint noise remains opt-in.
+
+The [Phase 03 learner audit](../tracker-evidence-audit.md) records evidence
+provenance, proposal calibration, sketch collision measurements, native approval
+checks and resource costs against the final Phase 02 runtime.
+
+The [Phase 02 cookie isolation audit](../tracker-cookie-isolation-audit.md)
+records bidirectional server-header evidence, existing-switch behavior,
+exceptions, firewall precedence and recovery checks.
+
+The [default CNAME policy audit](../cname-default-policy-audit.md) records the
+later default-on decision, conservative target selection, immediate exceptions,
+and measurements with the same build's CNAME switch off and on.
+
+The [Phase 01 CNAME audit](../cname-protection-audit.md) records the subsequent
+five-run native alias/exception checks, opt-in resource profiles, package costs
+and live playback checks. It distinguishes exact local mapping coverage from
+live DNS discovery and records the remaining measurement limits.
+
+The [Phase 00 audit](../privacy-baseline-audit.md) records five-run native network,
+cookie and worker-lifecycle cases, plus cold/warm article, DOM-churn and 8/30-frame
+profiles against an immutable release reference. It includes source fingerprints,
+reproduction commands and measurement limits. Remote-feed coverage is unavailable
+in that offline lab. The supplied Privacy Badger archive could not initialize in
+the available browsers, so its runtime comparison remains unscored.
+
+## Filter parsing and compiler allocations (2026-10-25)
+
+The release compiler and its offline source check now pass source chunks directly
+to the existing runtime cosmetic parser. Runtime refreshes already did this.
+Joining all sources first allocated a combined string that parsed selectors could
+keep alive. No parser grammar, rule budget, source authority or packaged data changed.
+
+Reproduce offline with Node from `.node-version`:
+
+```powershell
+& "C:\Program Files\nodejs\node.exe" tools/bench-filter-parsing.js --runs 3 --out docs/perf/traces/filter-parsing/report.json
+```
+
+The default corpus is the ten cosmetic-source subsets in
+`docs/filter-source-snapshot.json.gz`. Add `--cache-dir .publish/feed-cache` to
+measure the original full lists too. Each cached body must match its original
+SHA-256 in the snapshot; a missing or changed body fails instead of fetching a
+replacement. The benchmark verifies chunked/combined cosmetic equality and
+packaged scriptlet/procedural equality before measuring. Network parsers and
+public-suffix checks are lifted from the shipped source, without permissive stubs.
+
+Measured on Windows x64, Node 24.18.0 / V8 13.6.233.17-node.50, Intel i5-12400F.
+These are fixed historical inputs captured on 2026-08-13, not current upstream
+feeds: 6,580,826 UTF-8 bytes for the supplied subsets and 18,047,616 for the full
+cached inputs. The capture uses the AdGuard URLs recorded in the snapshot;
+current runtime source URLs differ. No feeds were refreshed for this investigation.
+
+Medians of three independent, warmed Node processes per cell:
+
+| Cosmetic workload | Parse time | Observed heap high-water | Retained result heap | GC events / pause time |
+| --- | ---: | ---: | ---: | ---: |
+| Source subsets, joined | 149 ms | 83.03 MiB | 11.33 MiB | 2 / 4.05 ms |
+| Source subsets, chunks | 142 ms | 60.16 MiB | 11.32 MiB | 4 / 5.10 ms |
+| Full sources, joined | 308 ms | 144.92 MiB | 45.76 MiB | 3 / 5.04 ms |
+| Full sources, chunks | 306 ms | 83.55 MiB | 11.37 MiB | 6 / 6.45 ms |
+
+Timing does not establish a speedup. The repeatable saving is the combined input
+allocation: about 34.39 MiB less retained result heap on the full corpus, and a
+lower observed high-water in both corpora. More frequent small collections did
+not establish a GC-time improvement. Setup, source loading, coverage accounting
+and result hashing are outside the timed window. The live inputs are included in
+absolute heap readings but excluded from retained-result deltas. V8 GC counters
+and heap at return provide an observed high-water, a lower bound that can miss
+transient peaks between observations. Trace timestamps have millisecond precision.
+These are isolated Node measurements, not browser RAM or page-startup results.
+
+The same full corpus also exercises the existing network parsing paths:
+
+| Workload | Wall time | Process CPU | Retained result heap | GC events / pause time |
+| --- | ---: | ---: | ---: | ---: |
+| Whole-host extraction, synchronous | 1,372 ms | 1,532 ms | 21.43 MiB | 9 / 44.37 ms |
+| Whole-host extraction, existing sliced path | 2,747 ms | 1,625 ms | 21.48 MiB | 15 / 42.08 ms |
+| Option-bearing network rules | 47 ms | 78 ms | 2.94 MiB | 0 / 0 ms |
+
+Both host paths emit the same 223,706 per-source domain entries, in the same order;
+duplicates across sources remain until the updater merges them. Slicing includes
+Node timer waits and had a longest synchronous segment of 29–41 ms across runs.
+This confirms why the yielding path remains useful, without measuring browser
+responsiveness. Option parsing emits 10,428 records with the runtime per-source
+cap; this is before source authority, cross-source merging, global rule budgets
+and Chrome DNR validation. No installed rules are changed by the benchmark.
+
+For acceptance accounting, the benchmark separately parses each nonempty,
+non-header, non-`!`-comment record alone. The subsets have 105,649 such records:
+92,770 emit cosmetic data and 12,879 do not. The full sources have 488,734:
+93,812 emit cosmetic data and 394,922 do not. Non-emitting records include network
+filters and unsupported syntax; they are not all malformed. Standalone acceptance
+does not apply aggregate budgets or cross-record deduplication. The final output
+is checked separately: both corpora emit 13,831 generic selectors, 54,644 specific
+entries, 3,335 selector exceptions, 7,655 procedural entries and 12,000 scriptlet
+entries. Full lists also retain 853 generic-hide exclusions; those network-form
+records are absent from the command-only source subset and do not affect its
+packaged commands.
+
+The source-snapshot rebuild retained the exact packaged-command SHA-256
+`194518e2a597f72ae22dacc1bbb443b38284cf9626a1949cd9436641df38dbd5`
+and source-snapshot SHA-256
+`868ec0d4062e5802f90cc51d0c54ab856f99d2ab38f8cd92e90706854a18d68b`.
+`tools/test-filter-parsing-benchmark.js` covers source mismatch refusal, supported
+and rejected syntax, storage-mutating scriptlet rejection, scoped network
+exceptions, public-suffix boundaries, packaged command equality and GC accounting.
+The existing cosmetic chunk and provenance suites remain in the gate.
+The full maintainability gate passed all 312 suites, including package checks.
+
+Raw measurements are local at
+`docs/perf/traces/filter-parsing-2026-10-25/report.json`; they record each input hash,
+the worker source hash, benchmark hash, output hashes and individual samples.
+The worker SHA-256 measured was
+`80281a1972bf75bfeb07ba9998a4ad4d67e993c88313f1df8c7091abadd83637`.
+The worker and content scripts were unchanged. This investigation does not compare
+against uBlock Origin or justify replacing the parser with a numeric syntax tree.
 
 ## Cosmetic cache and frame retention (2026-10-25)
 

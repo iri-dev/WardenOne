@@ -328,7 +328,9 @@ section('same-origin child adopts synchronously', () => {
   check('Maximum Privacy runs before the page can borrow APIs', wrapped(c));
   check('toDataURL stays native', c.HTMLCanvasElement.prototype.toDataURL === c.__native.toDataURL);
   check('getImageData stays native', c.CanvasRenderingContext2D.prototype.getImageData === c.__native.getImageData);
-  check('getClientRects retains its native collection contract', c.Element.prototype.getClientRects === c.__native.getClientRects);
+  const rects = new c.Element().getClientRects();
+  check('getClientRects retains its native collection contract', Array.isArray(rects) && rects.length === 0
+    && Object.getPrototypeOf(rects) === Object.getPrototypeOf(c.__native.getClientRects.call(new c.Element())) && rects.item === undefined);
   check('core count and memory agree with the worker realm',
     c.navigator.hardwareConcurrency === c.workerNavigator.hardwareConcurrency
       && c.navigator.deviceMemory === c.workerNavigator.deviceMemory);

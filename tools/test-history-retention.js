@@ -93,6 +93,7 @@ function realm() {
     pruneStorageIfNeeded: async () => {},
   };
   const ctx = vm.createContext(sandbox);
+  require('./lib/history-store-harness.js').install(sandbox);
   vm.runInContext(LIFTED + '\nthis.api = { queueHistory, flushHistory, pruneHistoryStore, pruneHistoryEntries, safeUrlForLog, safeLogSegment, sanitizeHistoryDetail };', ctx, { filename: 'history-retention.js' });
   const fire = async () => { for (let round = 0; round < 6; round++) { const due = state.timers.splice(0); for (const t of due) t.fn(); for (let i = 0; i < 6; i++) await new Promise((r) => setImmediate(r)); } };
   return { state, api: sandbox.api, fire, stored: () => state.local.wardenone_history || [] };

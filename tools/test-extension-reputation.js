@@ -368,7 +368,7 @@ async function main() {
     assert(!/malicious/i.test(assessment.verdict.label), 'permissions must not be turned into a malware accusation');
 
     const low = api.buildExtensionAssessment(extension(ID_B), database, {}, [], []);
-    assert.strictEqual(low.verdict.label, 'NO KNOWN WARNING');
+    assert.strictEqual(low.verdict.label, 'NO CURRENT CONCERNS IDENTIFIED');
     assert(!/safe|clean/i.test(low.verdict.label), 'unknown must never be rendered as safe or clean');
 
     const reviewed = api.buildExtensionAssessment(powerful, database, {
@@ -466,6 +466,27 @@ async function main() {
   }
 
   {
+    const h = createHarness({ extensions: [extension(ID_A)], storage: {
+      wardenone_config: { enabled: true, watchExtensionPermissions: false },
+      wardenone_ext_alerts: [
+        { id: ID_A, eventId: 'old-gain', kind: 'permissions_changed', severity: 'high',
+          toVersion: '0.9.0', installType: 'development', when: 1, reviewedAt: null },
+        { id: ID_A, eventId: 'concurrent-gain', kind: 'permissions_changed', severity: 'critical',
+          when: Date.now() + 60000, reviewedAt: null },
+        { id: ID_A, eventId: 'legacy-enable', kind: 'enabled', severity: 'high', when: 1, reviewedAt: null },
+      ],
+    } });
+    const report = await h.rep.buildExtensionSecurityReport({ reconcileWatch: false });
+    assert.strictEqual(report.recentChanges.find((event) => event.eventId === 'legacy-enable').severity, 'low',
+      'legacy routine alerts must be informational even while the watcher is disabled');
+    await h.rep.reviewExtensionSnapshotById(ID_A);
+    assert(h.state.storage.wardenone_ext_alerts[0].reviewedAt,
+      'reviewing current access acknowledges older changes across version and source transitions');
+    assert.strictEqual(h.state.storage.wardenone_ext_alerts[1].reviewedAt, null,
+      'reviewing a snapshot must not acknowledge a change recorded after review started');
+  }
+
+  {
     const importHarness = createHarness();
     const imported = await importHarness.rep.importExtensionReputationDatabase(customDatabase(ID_A, 'reported_harmful'));
     assert.strictEqual(imported.imported, 1);
@@ -547,7 +568,7 @@ async function main() {
     assert(/not that it is safe/i.test(page) || /not [“"]safe/.test(html),
       'the "no local record does not mean safe" wording was lost');
     assert(html.includes('Mark change alerts reviewed'));
-    assert(page.includes('Accept current access'));
+    assert(page.includes('Mark current access reviewed'));
     assert(page.includes("chrome.management.setEnabled(id, false, done)"));
     assert(page.includes("chrome.management.uninstall(id, { showConfirmDialog: true }, done)"));
     assert(page.includes('View evidence source'));

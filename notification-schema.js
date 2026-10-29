@@ -231,24 +231,14 @@ function wardenNotificationRuleForType(type) {
   if (Object.prototype.hasOwnProperty.call(WARDEN_NOTIFICATION_RULES, value)) return value;
   if (/download/.test(value)) return 'suspicious_download';
   if (/extension|permission_change/.test(value)) return 'extension_changed';
-  /* list_integrity moved OUT of protection_failure.
-     It is raised when an upstream list looks off -- bigger than its cap, drifted
-     a long way from last time, or simply stale -- and in every one of those
-     cases WardenOne keeps the list it already had and carries on. Protection is
-     not failing; an update was refused. Filed under protection_failure it
-     inherited critical + persistent, so one refused update from a filter host
-     put "Protection failure or degraded state" on screen and left it there. */
+  /* List-integrity failures retain the last good list, so classify them as refused updates rather than persistent
+     protection failures. */
   if (/engine_disabled|protection_failure|degraded|repair_failed|component_error/.test(value)) return 'protection_failure';
   if (/list_integrity|protection_list_updated|list_updated|rules_updated/.test(value)) return 'protection_list_updated';
   if (/manual_check|manual-check/.test(value)) return 'manual_check';
   if (/experimental/.test(value)) return 'experimental_warning';
   if (/clipboard|clickfix|command_paste|paste_protection/.test(value)) return 'clickfix_clipboard';
-  /* The additions below are not cosmetic. Anything that reaches the fallback is
-     filed as a system message, and system messages are history-only -- so every
-     type that fell through here stopped being shown at all the day the centre
-     shipped. Fifteen did, four of them High: a fake sign-in window, a spoofed
-     address bar, hardware read without a prompt, and file access carried over
-     from an earlier visit. They were all ordinary toasts before. */
+  /* Map these security events explicitly; the system fallback is history-only and would suppress their notices. */
   if (/password|credential|token|skimmer|payment|honeytoken|insecure_login|new_domain_login|login_thirdparty/.test(value)) return 'password_exposure';
   if (/safe_browsing_(link|form|paste)|dangerous_link|url_reputation|shortener/.test(value)) return 'dangerous_link';
   if (/phish|malware|cryptominer|techsupport|fake_update|fake_window|fullscreen_spoof|notification_scam|abuseipdb|form_trap|xss|behavioral_risk|certificate|http_only/.test(value)) return 'dangerous_site';

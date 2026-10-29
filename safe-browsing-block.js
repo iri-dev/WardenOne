@@ -7,12 +7,8 @@
 (function () {
   'use strict';
 
-  // This page's URL carries one thing: a handle. The blocked address lives in a
-  // storage.session record the worker wrote just before sending the tab here, so it never
-  // enters the tab's URL -- and from there browser history, session restore or a screenshot.
-  // The record is read directly, without the worker, so it works after a worker eviction; it
-  // is consumed when the reader continues anyway, and a page whose record is gone offers only
-  // the way back (PRIV-04).
+  // PRIV-04: keep the blocked URL in storage.session behind an opaque handle. Read without the worker, consume on Continue,
+  // and offer only Back if missing.
   const handle = new URLSearchParams(location.search || '').get('w') || '';
   const RECORD_KEY = /^[0-9a-f]{32}$/.test(handle) ? 'wardenone_warning:' + handle : '';
 
@@ -82,11 +78,7 @@
     const proceed = document.getElementById('proceed');
     const foot = document.getElementById('foot');
 
-    // The escape route is revealed rather than shown, and the button that uses it stays
-    // disabled for a few seconds. Someone who genuinely knows this site is a false
-    // positive will wait; someone clicking through a malware warning on reflex will not.
-    // No safe destination means there is nothing to continue TO, so the escape hatch is not offered
-    // at all rather than being offered and then failing at the last step.
+    // Reveal and delay the bypass to discourage reflex clicks. Offer it only when a safe continuation destination exists.
     if (!url) {
       const wrongBtn = document.getElementById('wrong');
       if (wrongBtn) wrongBtn.hidden = true;

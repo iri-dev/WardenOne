@@ -471,8 +471,9 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert.strictEqual(sandbox.visibleControls(roots)[0], reject, 'the same shadow root supplies its controls');
   assert.strictEqual(rootWalks, 1, 'one scan should collect document and shadow roots once');
   const scan = consent.slice(consent.indexOf('function scan()'), consent.indexOf('function queueScan('));
-  assert(/const roots = collectRoots\(document\);\s*const containers = getContainers\(roots(?:, \w+)?\);/.test(scan)
-    && /tryGenericReject\(roots(?:, \w+)?\)/.test(scan), 'scan must pass the shared roots to both searches');
+  assert(/const roots = collectRoots\(document\);/.test(scan) && (scan.match(/collectRoots\(document\)/g) || []).length === 1
+    && /const containers = getContainers\(roots(?:, \w+)?\);/.test(scan) && /tryKnownCmp\(roots\)/.test(scan)
+    && /tryGenericReject\(roots(?:, \w+)?\)/.test(scan), 'scan must collect shared roots once and pass them to all consent searches');
 }
 {
   const declarations = [
@@ -556,9 +557,13 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert(/clearInterval\(slowTimer\)/.test(finish),
     'finishing consent work must stop the fallback poll too');
   const calls = (code(consent).match(/finishConsentWork\(\)/g) || []).length;
-  assert.strictEqual(calls, 5,
-    'all four terminal choices (Twitch reject, generic reject, banner reject, saved choices) '
-    + 'must finish scanning; the fifth occurrence is the function declaration');
+  assert.strictEqual(calls, 2, 'terminal choices share one finish call plus its declaration');
+  const terminal = consent.slice(consent.indexOf('function performChoice('), consent.indexOf('function tryKnownCmp('));
+  assert(/finishConsentWork\(\)/.test(terminal), 'the shared terminal choice must finish scanning');
+  for (const [name, end] of [['tryTwitchReject', 'function safeRejectCandidate('], ['tryGenericReject', 'function settingsCandidate('], ['tryKnownCmp', 'let acceptReported'], ['scan', 'function idleScan(']]) {
+    const body = consent.slice(consent.indexOf('function ' + name + '('), consent.indexOf(end, consent.indexOf('function ' + name + '(') + name.length));
+    assert(/performChoice\(/.test(body), name + ' must use the shared terminal choice');
+  }
   const start = code(consent.slice(consent.indexOf('function start()'),
     consent.indexOf('const refreshConfigState')));
   assert(/scanFinished/.test(start),

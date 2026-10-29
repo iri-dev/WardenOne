@@ -41,6 +41,16 @@ function parseArgs(argv) {
     else if (a === '--image-frames') out.imageFrames = true;
     else if (a === '--paired-logger') out.pairedLogger = true;
     else if (a === '--baseline') out.baseline = path.resolve(String(next() || ''));
+    else if (a === '--candidate') out.candidate = path.resolve(String(next() || ''));
+    else if (a === '--offline') out.offline = true;
+    else if (a === '--first-party-trackers') out.firstPartyTrackers = true;
+    else if (a === '--cname-trackers') out.cnameTrackers = true;
+    else if (a === '--baseline-cname-off') out.baselineCnameOff = true;
+    else if (a === '--fingerprint-noise') {
+      const value=next();
+      if(value!=='on'&&value!=='off')throw new Error('--fingerprint-noise must be on or off');
+      out.fingerprintNoise=value==='on';
+    }
     else if (a === '--help' || a === '-h') { out.help = true; }
     else throw new Error('unknown argument ' + a);
   }
@@ -344,7 +354,7 @@ async function killBrowser(cdp, port) {
 /* The long-task observer, installed before any page script so buffered entries are ours. */
 const LONGTASK_SCRIPT = '(() => { try { window.__wo_perf = { longTasks: [] }; const o = new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__wo_perf.longTasks.push(Math.round(e.duration)); }); o.observe({ type: "longtask", buffered: true }); } catch (_) {} })();';
 
-async function extensionReady(cdp, port, expectedVersion, browserContextId) {
+async function extensionReady(cdp, port, expectedVersion, browserContextId, pollIntervalMs = 500) {
   /* Edge ships component extensions of its own (background pages and a worker or two), so the
      extension under test is found by asking each MV3 worker for its manifest, never by taking
      the first chrome-extension:// target. The worker may start a moment after the endpoint is
@@ -392,7 +402,7 @@ async function extensionReady(cdp, port, expectedVersion, browserContextId) {
         wakeTarget = created.targetId;
       }
     }
-    await sleep(500);
+    await sleep(pollIntervalMs);
   }
 }
 /* Let the worker sleep again: drop extensionReady's session and resolve once the worker target
@@ -483,6 +493,18 @@ async function measureOnce(cdp, page, workerSession, origin, pagePath, phase, op
   await cdp.send('Page.navigate', { url }, page);
   await waitDone(cdp, page, RUN_TIMEOUT_MS);
   await sleep(600);  /* let the extension's post-load work land */
+  let noiseState=null;
+  if(opts&&typeof opts.fingerprintNoise==='boolean'){
+    const started=Date.now();
+    for(;;){
+      const state=await cdp.send('Runtime.evaluate',{expression:'({top:window.__wardenOneRealm?.noise,frames:[...document.querySelectorAll("iframe")].map(f=>f.contentWindow.__wardenOneRealm?.noise)})',returnByValue:true},page);
+      noiseState=state.result.value;
+      if(!state.exceptionDetails&&noiseState?.top===opts.fingerprintNoise&&noiseState.frames.every(x=>x===opts.fingerprintNoise))break;
+      if(Date.now()-started>15000)throw new Error('Fingerprint noise did not reach every measured realm: '+JSON.stringify({expected:opts.fingerprintNoise,state:noiseState,error:state.exceptionDetails}));
+      await sleep(50);
+    }
+    noiseState.extraWaitMs=Date.now()-started;
+  }
   const wall = Date.now() - t0;
   const nav = await cdp.send('Runtime.evaluate', { expression: '(() => { const n = performance.getEntriesByType("navigation")[0] || {}; const lt = (window.__wo_perf && window.__wo_perf.longTasks) || []; const frames = Array.from(document.querySelectorAll("iframe")); const frameBatchMs = frames.length && frames.every((f) => Number.isFinite(f.contentWindow.__frameBatchMs)) ? frames.reduce((sum, f) => sum + f.contentWindow.__frameBatchMs, 0) : null; return { dcl: n.domContentLoadedEventEnd || 0, load: n.loadEventEnd || 0, longTasks: lt.length, longTaskMs: lt.reduce((a, b) => a + b, 0), nodes: document.getElementsByTagName("*").length, frameBatchMs }; })()', returnByValue: true }, page);
   const after = await metricsOf(cdp, page);
@@ -492,6 +514,7 @@ async function measureOnce(cdp, page, workerSession, origin, pagePath, phase, op
   const workerAfter = workerSession ? await metricsOf(cdp, workerSession).catch(() => ({})) : {};
   const v = (nav && nav.result && nav.result.value) || {};
   return {
+    fingerprintNoise:noiseState,
     taskMs: delta(after, before, 'TaskDuration'),
     scriptMs: delta(after, before, 'ScriptDuration'),
     layoutMs: delta(after, before, 'LayoutDuration'),
@@ -564,8 +587,13 @@ async function runVariant(variant, ctx) {
     if (!ctx.baseline || !fs.existsSync(path.join(ctx.baseline, 'manifest.json'))) throw new Error('the base variant needs --baseline <extension directory>');
     extensionDir = ctx.baseline;
   }
+  if (variant === 'on' && ctx.candidate) {
+    if (!fs.existsSync(path.join(ctx.candidate, 'manifest.json'))) throw new Error('the candidate needs an extension directory');
+    extensionDir = ctx.candidate;
+  }
   const port = await freePort();
-  const version = await launch(edge, variant, extensionDir, port, profileDir, PERF_BROWSER_ARGS);
+  const browserArgs = ctx.offline ? PERF_BROWSER_ARGS.concat('--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1') : PERF_BROWSER_ARGS;
+  const version = await launch(edge, variant, extensionDir, port, profileDir, browserArgs);
   const cdp = new Cdp(version.webSocketDebuggerUrl);
   await cdp.connect();
   const result = { variant, browser: version.Browser, userAgent: version['User-Agent'], pages: {}, readiness: null };
@@ -584,10 +612,61 @@ async function runVariant(variant, ctx) {
       ext = await extensionReady(cdp, port, expectedVersion);
       await closeExtensionTabs(cdp, port, ext.id);
       if (variant === 'on:logger-off' || variant === 'on') await setFrameLogger(variant === 'on');
-      const remoteLists = await remoteListsLoaded(cdp, ext.attachedSession, REMOTE_LISTS_WAIT_MS);
-      process.stdout.write('  remote host lists: ' + (remoteLists.loaded ? remoteLists.hosts + ' hosts' : 'not loaded within ' + (REMOTE_LISTS_WAIT_MS / 1000) + ' s; measuring without them') + '\n');
+      if(typeof ctx.fingerprintNoise==='boolean'){
+        const configured=await cdp.send('Runtime.evaluate',{expression:`updateStoredConfig(c=>{c.antiFingerprintNoise=${ctx.fingerprintNoise};}).then(()=>true)`,awaitPromise:true,returnByValue:true},ext.attachedSession);
+        if(configured.exceptionDetails)throw new Error('Fingerprint profile configuration failed');
+      }
+      let firstPartyTrackers = null;
+      const cnameChoice = variant === 'base' && ctx.baselineCnameOff ? false : ctx.cnameTrackers;
+      if (ctx.firstPartyTrackers || typeof cnameChoice === 'boolean') {
+        const configured = await cdp.send('Runtime.evaluate', {
+          expression: `(async()=>{
+            const dedicated=Object.prototype.hasOwnProperty.call(DEFAULT_CONFIG,'blockCnameTrackers');
+            await updateStoredConfig(cfg=>{
+              if(${!!ctx.firstPartyTrackers})cfg.blockFirstPartyTrackers=true;
+              if(${typeof cnameChoice === 'boolean'})cfg[dedicated?'blockCnameTrackers':'blockFirstPartyTrackers']=${!!cnameChoice};
+            });
+            const end=Date.now()+30000;
+            while(Date.now()<end){
+              await new Promise(resolve=>setTimeout(resolve,50));
+              if(!__refreshExtensionStateLastKey||__refreshExtensionStateInFlightKey||__refreshExtensionStateTimer||__refreshExtensionStateQueued)continue;
+              const rules=typeof CNAME_RULE_BASE==='undefined'?null:await getDynamicRulesInBand(CNAME_RULE_BASE,CNAME_RULES_BUDGET);
+              if((${cnameChoice === true}||(!dedicated&&${!!ctx.firstPartyTrackers}))&&rules&&!rules.length)throw new Error('CNAME policy did not install');
+              if(${cnameChoice === false}&&rules&&rules.length)throw new Error('CNAME policy did not turn off');
+              return {enabled:true,cnameRules:rules?rules.length:null};
+            }
+            throw new Error('First-party tracker policy did not reconcile');
+          })()`, awaitPromise: true, returnByValue: true,
+        }, ext.attachedSession);
+        if (configured.exceptionDetails || !configured.result.value?.enabled) throw new Error('first-party tracker profile is not ready');
+        firstPartyTrackers = configured.result.value;
+      }
+      const remoteLists = ctx.offline ? { loaded: false, hosts: null, counts: null, reason: 'offline fixture; remote coverage not measured' }
+        : await remoteListsLoaded(cdp, ext.attachedSession, REMOTE_LISTS_WAIT_MS);
+      process.stdout.write('  remote host lists: ' + (ctx.offline ? remoteLists.reason : remoteLists.loaded ? remoteLists.hosts + ' hosts' : 'not loaded within ' + (REMOTE_LISTS_WAIT_MS / 1000) + ' s; measuring without them') + '\n');
       const consentRegistered = await consentScriptReady(cdp, ext.attachedSession);
-      result.readiness = { extensionId: ext.id, workerVersion: expectedVersion, workerMetrics: ext.workerMetrics, remoteLists, consentRegistered };
+      const cookiePolicy = await cdp.send('Runtime.evaluate', {
+        expression: `(async()=>{const rows=await chrome.declarativeNetRequest.getSessionRules();
+          const rule=rows.find(row=>row.id===TRACKER_COOKIE_RULE_ID);
+          return {responseRule:!!rule,bidirectional:!!rule?.action.requestHeaders?.some(header=>header.header==='cookie'&&header.operation==='remove'),
+            aliasRules:typeof TRACKER_COOKIE_ALIAS_RULE_BASE==='undefined'?null:rows.filter(row=>row.id>=TRACKER_COOKIE_ALIAS_RULE_BASE&&row.id<TRACKER_COOKIE_ALIAS_RULE_BASE+TRACKER_COOKIE_ALIAS_RULES_BUDGET).length};})()`,
+        awaitPromise: true, returnByValue: true,
+      }, ext.attachedSession);
+      if (cookiePolicy.exceptionDetails) throw new Error('Tracker cookie policy readiness unavailable');
+      const trackerObserver = await cdp.send('Runtime.evaluate', { expression: `typeof trackerNetworkListener==='function'
+        ? {supported:true,registered:chrome.webRequest.onBeforeRequest.hasListener(trackerNetworkListener),patterns:trackerNetworkFilter().urls.length}
+        : {supported:false}`, returnByValue: true }, ext.attachedSession);
+      if (trackerObserver.exceptionDetails) throw new Error('Tracker observer readiness unavailable');
+      await cdp.send('HeapProfiler.collectGarbage', {}, ext.attachedSession);
+      const workerHeapAfterGcBytes = (await cdp.send('Runtime.getHeapUsage', {}, ext.attachedSession)).usedSize;
+      result.readiness = { extensionId: ext.id, workerVersion: expectedVersion, workerMetrics: ext.workerMetrics, remoteLists, consentRegistered,
+        workerHeapAfterGcBytes,
+        trackerCookiePolicy: cookiePolicy.result.value,
+        trackerObserver: trackerObserver.result.value,
+        ...(ctx.firstPartyTrackers ? { firstPartyTrackers } : {}),
+        ...(typeof cnameChoice === 'boolean' ? { cnameTrackers: { ...firstPartyTrackers,
+          enabled: firstPartyTrackers.cnameRules !== null && firstPartyTrackers.cnameRules > 0,
+          supported: firstPartyTrackers.cnameRules !== null } } : {}) };
     }
     const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
     const { sessionId: page } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
@@ -663,8 +742,18 @@ async function runVariant(variant, ctx) {
       }
       const rec = { cold: [], warm: [] };
       for (let i = 0; i < runs; i++) {
-        rec.cold.push(await measureOnce(cdp, page, ext && ext.workerSession, origin, pagePath, 'cold'));
-        rec.warm.push(await measureOnce(cdp, page, ext && ext.workerSession, origin, pagePath, 'warm'));
+        let measuredPage=page,pairTarget=null;
+        if(typeof ctx.fingerprintNoise==='boolean'){
+          pairTarget=(await cdp.send('Target.createTarget',{url:'about:blank'})).targetId;
+          measuredPage=(await cdp.send('Target.attachToTarget',{targetId:pairTarget,flatten:true})).sessionId;
+          for(const domain of ['Page','Runtime','Network','Performance','HeapProfiler'])await cdp.send(domain+'.enable',{},measuredPage);
+          await cdp.send('Page.addScriptToEvaluateOnNewDocument',{source:LONGTASK_SCRIPT},measuredPage);
+          if(throttle>1)await cdp.send('Emulation.setCPUThrottlingRate',{rate:throttle},measuredPage);
+        }
+        try{
+          rec.cold.push(await measureOnce(cdp, measuredPage, ext && ext.workerSession, origin, pagePath, 'cold',{fingerprintNoise:ctx.fingerprintNoise}));
+          rec.warm.push(await measureOnce(cdp, measuredPage, ext && ext.workerSession, origin, pagePath, 'warm',{fingerprintNoise:ctx.fingerprintNoise}));
+        }finally{if(pairTarget)await cdp.send('Target.closeTarget',{targetId:pairTarget});}
       }
       result.pages[pagePath] = rec;
       process.stdout.write('  ' + variant + ' ' + pagePath + ': ' + runs + ' cold + ' + runs + ' warm runs, cold task median ' + round(median(rec.cold.map((r) => r.taskMs))) + ' ms\n');
@@ -838,7 +927,8 @@ async function main() {
       console.log('variant ' + variant + ':');
       const measured = await runVariant(variant, { edge, runs: args.runs, throttle: args.throttle, origin,
         expectedVersion: manifest.version, trace: args.trace, cpuProfile: args.cpuProfile, traceDir, keepProfiles: args.keepProfiles,
-        pages, pairedLogger: args.pairedLogger, baseline: args.baseline });
+        pages, pairedLogger: args.pairedLogger, baseline: args.baseline, candidate: args.candidate, offline: args.offline,
+        firstPartyTrackers: args.firstPartyTrackers, cnameTrackers: args.cnameTrackers, baselineCnameOff: args.baselineCnameOff, fingerprintNoise:args.fingerprintNoise });
       results.push(...(Array.isArray(measured) ? measured : [measured]));
     }
   } finally {
@@ -877,14 +967,22 @@ async function main() {
     console.log(seen ? 'the harness sees the known regression on the churn page (' + bad.cold.taskMs.median + ' ms vs ' + on.cold.taskMs.median + ' ms)' : 'FAIL: the known regression was not visible on the churn page; the harness is not sensitive enough to serve as a gate');
     if (!seen) failed = true;
   }
-  if (args.assertOverheadMs > 0 && profile.deltas.on) {
-    for (const pagePath of pages) {
-      const d = profile.deltas.on[pagePath] && profile.deltas.on[pagePath].cold.taskMs;
-      if (d && d.medianDelta > args.assertOverheadMs) { console.log('FAIL: ' + pagePath + ' cold task-time overhead ' + d.medianDelta + ' ms exceeds ' + args.assertOverheadMs + ' ms'); failed = true; }
-    }
-    if (!failed) console.log('overhead within ' + args.assertOverheadMs + ' ms on every page');
+  if (args.assertOverheadMs > 0) {
+    const failures = overheadFailures(profile, pages, args.assertOverheadMs);
+    for (const failure of failures) console.log('FAIL: ' + failure);
+    if (failures.length) failed = true;
+    else console.log('overhead within ' + args.assertOverheadMs + ' ms on every page');
   }
   process.exit(failed ? 1 : 0);
+}
+
+function overheadFailures(profile, pages, maximumMs) {
+  const comparison = profile.featureDeltas || profile.deltas?.on;
+  return pages.flatMap(page => {
+    const delta = comparison?.[page]?.cold?.taskMs?.medianDelta;
+    if (!Number.isFinite(delta)) return [page + ' has no measured cold task-time comparison'];
+    return delta > maximumMs ? [page + ' cold task-time overhead ' + delta + ' ms exceeds ' + maximumMs + ' ms'] : [];
+  });
 }
 
 /* Runs a browser test and fails it if Node exits first. A browser call that is never answered --
@@ -900,7 +998,7 @@ function mustFinish(run, name) {
   return Promise.resolve().then(run).finally(() => { settled = true; });
 }
 
-module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, LONGTASK_SCRIPT, Cdp, launch, killBrowser, extensionReady, releaseWorker, closeExtensionTabs, freePort, edgePath, mustFinish };
+module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, overheadFailures, LONGTASK_SCRIPT, Cdp, launch, killBrowser, extensionReady, releaseWorker, closeExtensionTabs, freePort, edgePath, mustFinish };
 
 if (require.main === module) {
   main().catch((e) => { console.error('perf profile: ' + (e && e.stack || e)); process.exit(2); });

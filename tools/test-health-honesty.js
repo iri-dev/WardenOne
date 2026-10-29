@@ -45,9 +45,9 @@ async function decide({ answer, throws, cfg, rulesetError, unregistered }) {
   // eslint-disable-next-line no-new-func
   // Listeners that did not register this worker life (LIFE-04) are read in the same block.
   const run = new Function('chrome', 'cfg', 'addIssue', '__blocklistRulesetError',
-    'readReconcileDegraded', 'RECONCILE_COMPONENT_LABELS', 'RECONCILE_RETRY_MAX', 'LISTENERS_NOT_REGISTERED',
+    'readReconcileDegraded', 'RECONCILE_COMPONENT_LABELS', 'RECONCILE_RETRY_MAX', 'LISTENERS_NOT_REGISTERED', 'readFeedLoadFailures',
     '"use strict";return (async()=>{' + BLOCK + '\nreturn true;})();');
-  await run(chrome, cfg, addIssue, __blocklistRulesetError, async () => null, {}, 6, unregistered || []);
+  await run(chrome, cfg, addIssue, __blocklistRulesetError, async () => null, {}, 6, unregistered || [], async () => []);
   return {
     issues,
     worst: issues.some((i) => i.severity === 'danger') ? 'danger'

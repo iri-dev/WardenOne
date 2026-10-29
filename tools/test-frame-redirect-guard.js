@@ -515,6 +515,17 @@ async function main() {
   const auctionSrc = BG.slice(BG.indexOf('function adAuctionClickUrl'),
     BG.indexOf('async function maybeBlockForcedTopRedirect(details) {'));
   const adAuction = vm.runInNewContext(auctionSrc + ';adAuctionClickUrl', { URL });
+  const regional = vm.runInNewContext(auctionSrc + ';knownRegionalRedirect', { URL });
+  for (const [source, target, expected] of [
+    ['https://www.bbc.co.uk/', 'https://www.bbc.com/', true],
+    ['https://bbc.co.uk/news', 'https://bbc.com/news', true],
+    ['https://www.bbc.com/', 'https://unrelated.example/', false],
+    ['https://bbc.co.uk.evil.example/', 'https://bbc.com/', false],
+    ['https://bbc.co.uk/', 'https://bbc.com.evil.example/', false],
+    ['https://bbc.co.uk/', 'http://bbc.com/', false],
+    ['https://bbc.co.uk/', 'https://bbc.com:8443/', false],
+    ['https://bbc.co.uk/', 'https://user@bbc.com/', false],
+  ]) check('regional redirect scope: ' + source + ' to ' + target, regional(source, target) === expected);
   const LANDERS = [
     ['https://boost-you-browser.com/preland/storage/sf/operaone/5/index.html?p1=x', true, 'the real one'],
     ['https://boost-you-browser.com/', true, 'a hostname that is a pitch for a browser'],

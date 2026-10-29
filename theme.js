@@ -104,6 +104,12 @@
         if (storedTheme && !THEMES.has(storedTheme)) chrome.storage.local.set({ [STORAGE_KEY]: selected });
       });
       chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === 'local' && changes.wardenone_config && changes.wardenone_config.newValue === undefined) {
+          try { localStorage.clear(); } catch (_) {}
+          try { sessionStorage.clear(); } catch (_) {}
+          applyTheme(null);
+          return;
+        }
         if (area === 'local' && changes[STORAGE_KEY]) {
           applyTheme(changes[STORAGE_KEY].newValue);
           writeMirror(selected);

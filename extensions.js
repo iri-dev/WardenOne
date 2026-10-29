@@ -97,8 +97,6 @@ function summaryWhy(report) {
   const unexpected = count((i) => i.verdict && i.verdict.code === 'unexpected_capability');
   const incidents = count((i) => i.reputation
     && ['known_harmful', 'reported_harmful', 'historical_incident'].indexOf(i.reputation.status) >= 0);
-  const unknownPowerful = count((i) => i.verdict && i.verdict.code === 'powerful_access');
-  const cataloguePowerful = count((i) => i.verdict && i.verdict.code === 'catalogued_powerful');
   const sourceMismatch = count((i) => i.verdict && i.verdict.code === 'identity_source_mismatch');
   const accessChanged = count((i) => i.verdict && i.verdict.code === 'access_changed');
   const unknown = Number(summary.unknown) || 0;
@@ -111,14 +109,11 @@ function summaryWhy(report) {
   if (incidents) attention.push(plural(incidents, 'has a documented incident', 'have documented incidents'));
   if (unexpected) attention.push(plural(unexpected, 'can do something its kind normally does not',
     'can do things their kind normally does not'));
-  if (unknownPowerful) attention.push(plural(unknownPowerful, 'is unidentified and powerful', 'are unidentified and powerful'));
-  if (cataloguePowerful) attention.push(plural(cataloguePowerful,
-    'has only catalogue identity evidence for powerful access', 'have only catalogue identity evidence for powerful access'));
   if (sourceMismatch) attention.push(plural(sourceMismatch,
     'was loaded from a non-standard source', 'were loaded from non-standard sources'));
   if (accessChanged) attention.push(plural(accessChanged,
     'has an unreviewed access change', 'have unreviewed access changes'));
-  const describedAttention = incidents + unexpected + unknownPowerful + cataloguePowerful + sourceMismatch + accessChanged;
+  const describedAttention = incidents + unexpected + sourceMismatch + accessChanged;
   const otherAttention = Math.max(0, (Number(summary.attention) || 0) - describedAttention);
   if (otherAttention) attention.push(plural(otherAttention, 'needs an access decision', 'need access decisions'));
 
@@ -134,7 +129,7 @@ function summaryWhy(report) {
       : 'Nothing has changed since the last snapshot',
     'sum-reviewed': (Number(summary.reviewed) || 0)
       ? 'Re-opens automatically if permissions change'
-      : 'Marking one reviewed silences it until its access changes',
+      : 'Review applies to this access snapshot; documented incident warnings remain visible',
     disabled,
   };
 }
@@ -164,14 +159,14 @@ function renderSummary(report) {
   banner.classList.toggle('warning', !incidents && attention > 0);
   title.textContent = incidents
     ? incidents + ' documented incident match' + (incidents === 1 ? '' : 'es')
-    : (attention ? attention + ' decision' + (attention === 1 ? ' needs' : 's need') + ' you' : 'No action needed');
+    : (attention ? attention + ' decision' + (attention === 1 ? ' needs' : 's need') + ' you' : 'No current concerns identified');
   mark.textContent = attention ? '!' : '✓';
   copy.textContent = attention
     ? why['sum-attention'] + '. Each item below says what changed and why it matters.'
     : ((Number(summary.recognized) || 0)
       ? (Number(summary.recognized) || 0) + ' verified extension' + ((Number(summary.recognized) || 0) === 1 ? '' : 's')
         + ' match their evidence-backed access contract. Changes continue to be watched locally.'
-      : 'No incident, unexpected powerful capability, or unreviewed risky change was found.');
+      : 'No actionable findings in the current local evidence. Powerful permissions remain visible; this is not a safety guarantee.');
 
   const database = report.database || {};
   const dbCopy = $('db-copy');
@@ -201,13 +196,13 @@ function renderSummary(report) {
 
 
 function changeTitle(item) {
-  const change = item.latestChange;
+  const change = item.pendingChange || item.latestChange;
   if (!change) return 'No recorded change';
   return change.summary || 'Extension changed';
 }
 
 function changeDetail(item) {
-  const change = item.latestChange;
+  const change = item.pendingChange || item.latestChange;
   if (!change) return 'WardenOne will flag a version, access, source or state change.';
   return (change.reviewed ? 'Reviewed' : 'Unreviewed') + ' · ' + formatAge(change.when)
     + (change.fromVersion && change.toVersion && change.fromVersion !== change.toVersion
@@ -236,6 +231,9 @@ function makeExtensionCard(item) {
 
 
   appendText(card, 'p', item.recommendedAction || item.reputation.label, 'ext-answer');
+  const exposure = { low: 'Limited', medium: 'Moderate', high: 'Broad', critical: 'Extensive' };
+  appendText(card, 'p', 'Permission exposure: ' + (exposure[item.access.level] || 'Unknown')
+    + ' · Trust evidence: ' + item.reputation.label, 'ext-quiet');
 
   /* Then what it can actually do, said plainly and framed by whether it is
      expected. The same capability is reassuring or alarming depending only on
@@ -264,7 +262,7 @@ function makeExtensionCard(item) {
     };
     /* Unexpected first: it is the only part that asks anything of the reader. */
     group(unexpected, 'cap-unexpected', caps.profile
-      ? 'Not what ' + caps.profile.label + ' would normally need'
+      ? (item.review.reviewed ? 'Reviewed access outside the documented purpose' : 'Access not covered by the publisher evidence')
       : 'Worth a look');
     group(expected, 'cap-expected', caps.profile
       ? 'Expected for ' + caps.profile.label
@@ -331,7 +329,7 @@ function makeExtensionCard(item) {
 
   if (item.reputation.status !== 'known_harmful'
       && (item.verdict.needsAttention || item.review.reviewed || item.reputation.status !== 'recognized_identity')) {
-    const review = appendText(actions, 'button', item.review.reviewed ? 'Forget access decision' : 'Accept current access', 'btn small');
+    const review = appendText(actions, 'button', item.review.reviewed ? 'Forget access decision' : 'Mark current access reviewed', 'btn small');
     review.type = 'button';
     review.dataset.action = item.review.reviewed ? 'forget-review' : 'review';
     review.dataset.id = item.id;
@@ -358,7 +356,7 @@ function makeExtensionCard(item) {
 
 function itemMatchesFilter(item) {
   if (centreState.filter === 'attention' && !item.verdict.needsAttention) return false;
-  if (centreState.filter === 'changed' && !(item.latestChange && !item.latestChange.reviewed)) return false;
+  if (centreState.filter === 'changed' && !item.pendingChange) return false;
   if (centreState.filter === 'verified' && item.reputation.status !== 'recognized_identity') return false;
   if (centreState.filter === 'catalogued' && item.reputation.status !== 'catalogued_listing') return false;
   if (centreState.filter === 'unknown' && item.reputation.status !== 'no_record') return false;
@@ -414,7 +412,7 @@ function renderExtensionList() {
       items.forEach((item) => section.appendChild(makeExtensionCard(item)));
       list.appendChild(section);
     };
-    addSection('Needs your decision', 'Unexpected access, identity evidence or a risky unreviewed change.', decisions);
+    addSection('Needs security review', 'Documented incidents, access outside the publisher evidence or material changes.', decisions);
     addSection('Recent changes', 'Visible here without being dressed as an emergency.', recent);
     addSection('Other installed extensions', 'Known listing context or access that has not been fully modelled yet.', other);
   } else {

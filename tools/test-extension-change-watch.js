@@ -208,6 +208,38 @@ async function main() {
     assert(/waiting for approval/.test(permissionApproval.summary));
   }
 
+  {
+    const h = createHarness({ extensions: [makeExtension('powerful', {
+      enabled: false, permissions: ['debugger', 'nativeMessaging'], hostPermissions: ['<all_urls>'],
+    })] });
+    await h.watch.reconcileExtensionChanges('initial');
+    const before = h.context.extensionDescriptor(h.state.extensions[0]);
+    const changes = [
+      { enabled: true, permissions: before.permissions.concat('cookies') },
+      { enabled: true, installType: 'sideload' },
+      { enabled: true, name: 'New publisher' },
+      { enabled: true, version: '2.0.0', installType: 'sideload' },
+      { enabled: true, version: '2.0.0', name: 'New publisher' },
+    ];
+    for (const fields of changes) {
+      const change = h.watch.describeExtensionDelta(before, Object.assign({}, before, fields), Date.now());
+      assert(change && change.severity !== 'low' && change.reviewedAt === null,
+        're-enabling must not swallow a concurrent access, source or identity change: ' + JSON.stringify(fields));
+    }
+    h.state.storage.wardenone_ext_alerts = [
+      { id: 'powerful', kind: 'enabled', severity: 'high', when: 1, reviewedAt: null, gainedPermissions: [] },
+      { id: 'powerful', kind: 'installed', severity: 'critical', when: 2, reviewedAt: null,
+        installType: 'normal', gainedPermissions: ['debugger', '<all_urls>'] },
+      { id: 'powerful', kind: 'permissions_changed', severity: 'critical', when: 3,
+        reviewedAt: null, gainedPermissions: ['debugger'] },
+    ];
+    await h.watch.reconcileExtensionChanges('legacy-alerts');
+    assert(alerts(h).slice(0, 2).every((event) => event.severity === 'low' && event.reviewedAt),
+      'existing permission-only install and enable warnings must become informational');
+    assert.strictEqual(alerts(h)[2].severity, 'critical', 'migration must preserve an actual access increase');
+    assert.strictEqual(alerts(h)[2].reviewedAt, null);
+  }
+
   /* WardenOne must never appear in its own Security Centre.
      It is skipped when the current inventory is taken, but the removal pass
      walks the stored BASELINE -- so a baseline written before that exclusion
@@ -310,7 +342,9 @@ async function main() {
     h.events.enabled.fire(h.state.extensions[1]);
     await flushScheduled(h);
     assert.strictEqual(alerts(h)[0].kind, 'enabled');
-    assert.strictEqual(alerts(h)[0].severity, 'high', 're-enabling a critical-capability extension deserves attention');
+    assert.strictEqual(alerts(h)[0].severity, 'low', 're-enabling unchanged access is informational');
+    assert(alerts(h)[0].reviewedAt, 'a routine re-enable must not leave a pending review');
+    assert.strictEqual(h.state.notifications.length, 1, 're-enabling must not send another notification');
 
     h.state.extensions = h.state.extensions.filter((item) => item.id !== 'benign');
     h.events.uninstalled.fire('benign');

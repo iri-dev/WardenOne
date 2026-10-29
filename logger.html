@@ -8,10 +8,7 @@
 <link rel="stylesheet" href="guide-shell.css">
 <script src="theme.js"></script>
 <style>
-  /* Colours come from the guide shell, never from names invented here: an
-     undefined custom property makes the whole declaration invalid, so a wrong
-     variable name does not fall back to a default -- it silently deletes the
-     border, and the pressed filter chip becomes indistinguishable from the rest. */
+  /* Use existing guide-shell color variables; undefined custom properties invalidate declarations. */
   .log-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:12px; }
   .log-filters { display:flex; flex-wrap:wrap; gap:5px; }
   .log-search { flex:1; min-width:180px; border:1px solid var(--guide-line); border-radius:10px;
@@ -117,6 +114,7 @@
         <span class="log-count" id="count"></span>
         <button class="btn" id="pause" type="button">Pause</button>
         <button class="btn" id="clear" type="button">Clear</button>
+        <button class="btn" id="refresh-tracker-names" type="button">Refresh tracker names</button>
         <button class="btn" id="export" type="button">Export</button>
       </div>
       <div class="log-filters" id="type-filters" role="group" aria-label="Filter by request type" style="margin-bottom:12px;">
@@ -147,6 +145,7 @@
       </div>
 
       <p class="log-note" style="margin-top:14px;" id="exact-note"></p>
+      <p class="log-note" id="tracker-catalog-status"></p>
       <p class="log-note">Sign-in details, query values, the fragment and any part of a path that is not plain route vocabulary are removed
         before the request is stored, so this log can never become the leak. What stays is the scheme, the host, the route
         and the parameter names, plus a value only when it is a flag, a small number or a plain word.
@@ -161,6 +160,9 @@
     <span>Last <span id="cap">1000</span> requests.</span>
   </div>
 </footer>
+<script src="domain-utils.js"></script>
+<script src="psl-private.js"></script>
+<script src="tracker-attribution.js"></script>
 <script src="logger.js"></script>
 </body>
 </html>

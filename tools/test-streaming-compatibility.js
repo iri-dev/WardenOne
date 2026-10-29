@@ -182,58 +182,9 @@ function loadRemoteSourceKindHelper() {
 
 
 async function observeTracker(detail) {
-  const state = {
-    learner: { domains: {}, siteControls: {} },
-    saves: 0,
-    history: [],
-  };
-  const normalize = (value) => {
-    let host = String(value || '').toLowerCase();
-    try { if (host.includes('://')) host = new URL(host).hostname; } catch (_) {}
-    host = host.replace(/^www\./, '');
-    const labels = host.split('.').filter(Boolean);
-    return labels.length > 2 ? labels.slice(-2).join('.') : labels.join('.');
-  };
-  const sandbox = {
-    DEFAULT_CONFIG: { enabled: true, trackerLearner: true },
-    TRACKER_LEARN_MIN_HITS: 3,
-    TRACKER_LEARN_MIN_SITES: 3,
-    TRACKER_LEARNER: state.learner,
-    localGet: async () => ({ wardenone_config: { enabled: true, trackerLearner: true } }),
-    normalizeTrackerDomain: normalize,
-    isProtectedTrackerDomain: () => false,
-    loadTrackerLearner: async () => state.learner,
-    /* The store keeps counts and a sketch, not names (PRIV-01); stand-ins for the pieces the
-       observation path calls, so this suite keeps asking only its own question. */
-    trackerDistinctSiteCount: (entry) => Number((entry && entry.sites) || 0),
-    trackerDistinctSessionCount: (entry) => Number((entry && entry.sessions) || 0),
-    TRACKER_LEARN_MIN_SESSIONS: 2,
-    TRACKER_LEARN_MAX_SESSIONS: 4,
-    trackerDay: (ms) => Number(ms) || 0,
-    trackerLearnerSalt: () => '0'.repeat(32),
-    trackerMarkHas: () => false,
-    trackerMarkAdd: (marks) => (Number(marks) || 0) + 1,
-    noteTrackerSiteView: async () => {},
-    noteTrackerSessionSeen: async () => true,
-    looksLikeKnownTrackerHost: () => false,
-    queueHistory: (entry) => state.history.push(entry),
-    saveTrackerLearner: async () => { state.saves++; },
-    Date,
-    URL,
-    Object,
-    String,
-    Number,
-    Math,
-  };
-  vm.createContext(sandbox);
-  installEngineAmbient(sandbox);
-  vm.runInContext(
-    sourceBetween(BACKGROUND, 'async function noteTrackerObservation', '\nasync function trackerLearnerStatus')
-      + '\nthis.__observe = noteTrackerObservation;',
-    sandbox,
-  );
-  await sandbox.__observe('https://stream.example/watch/1', detail || {});
-  return state;
+  const rig = require('./lib/tracker-learner-harness.js').create();
+  await rig.api.note('https://stream.example/watch/1', detail || {});
+  return { learner: rig.api.learner(), saves: rig.state.writes.length, history: rig.state.history };
 }
 
 function loadOverlayClassifier() {

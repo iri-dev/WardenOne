@@ -7,7 +7,7 @@
 (function () {
   'use strict';
 
-  const CONSENT_REJECT_VERSION = '1.0.2';
+  const CONSENT_REJECT_VERSION = '1.0.3';
   if (window.__wardenOneConsentRejectReadyVersion === CONSENT_REJECT_VERSION) return;
   /* A different version means this frame holds an older copy -- after an update, or because
      Repair reinstalled over it. Release what that copy held first, or both stay live and both
@@ -54,6 +54,7 @@
   };
 
   window.__wardenOneConsentRejectDispose = () => {
+    outcomeGeneration++;
     try { woAbort.abort(); } catch (_) {}
     woPending.forEach((id) => { try { clearTimeout(id); } catch (_) {} });
     woPending.clear();
@@ -100,9 +101,11 @@
   let lastLogAt = 0;
   let scanFinished = false;
   let needsTimedScan = true;
+  let outcomeGeneration = 0;
 
   const clicked = new WeakSet();
   const opened = new WeakSet();
+  const changedChoices = new WeakSet();
 
   // Broad substrings cover cookieyes/cookielaw/cookiehub, qc-cmp and privacy-manager.
   const CONTAINER_SELECTOR = [
@@ -173,24 +176,17 @@
   const STRONG_CONSENT_TEXT_RE = /\b(cookie|cookies|consent|gdpr|ccpa|cpra|cmp|onetrust|didomi|usercentrics|trustarc|truste|sourcepoint|quantcast|iubenda|cookiebot|cookieyes|osano|termly|axeptio|civic|crownpeak|cookielaw|cookiehub|ketch|advertising choices|personal(?:ized|ised) ads?|legitimate interest|vendors?|partners?|tracking|do not sell|do not share)\b/i;
   const WEAK_CONSENT_TEXT_RE = /\b(privacy|preferences?)\b/i;
   const CONSENT_ACTION_TEXT_RE = /\b(reject(?:\s+all)?|decline(?:\s+all)?|deny(?:\s+all)?|refuse(?:\s+all)?|accept(?:\s+all)?|manage(?:\s+(?:options|choices|settings|privacy|consent))?|cookie\s+settings|privacy\s+settings|necessary\s+only|essential\s+only|opt\s*out|object\s+to\s+all|do\s+not\s+(?:sell|share|consent)|don'?t\s+consent|vendors?|partners?|tracking|advertising choices?|alle ablehnen|tout refuser|rechazar todo|rifiuta|afwijzen|weigeren|odrzu|rejeitar)\b/i;
-  const REJECT_RE = /\b(reject(?:\s+all)?|reject\s+optional|decline(?:\s+all)?|deny(?:\s+all)?|refuse(?:\s+all)?|disagree|do\s+not\s+(?:accept|agree|consent|sell|share)|don'?t\s+consent|(?:strictly\s+)?(?:necessary|essential|required)(?:\s+cookies?)?\s+only|only\s+(?:strictly\s+)?(?:necessary|essential|required)(?:\s+cookies?)?|use\s+(?:strictly\s+)?(?:necessary|essential|required)(?:\s+cookies?)?|save\s+without\s+accepting|continue\s+without\s+accepting|opt\s*out|object\s+to\s+all|disable\s+all|turn\s+off\s+all|withdraw\s+consent|alle ablehnen|tout refuser|rechazar todo|rifiuta tutt|afwijzen|alles weigeren|odrzu|rejeitar tudo|avvisa alla)\b/i;
+  const REJECT_RE = /\b(reject(?:\s+all)?|reject\s+optional|decline(?:\s+all)?|deny(?:\s+all)?|refuse(?:\s+all)?|disagree|do\s+not\s+(?:accept|agree|consent|sell|share)|don'?t\s+consent|(?:strictly\s+)?(?:necessary|essential|required)(?:\s+cookies?)?\s+only|only\s+(?:strictly\s+)?(?:necessary|essential|required)(?:\s+cookies?)?|use\s+(?:strictly\s+)?(?:necessary|essential|required)(?:\s+cookies?)?|save\s+without\s+accepting|continue\s+without\s+accepting|opt\s*out|object\s+to\s+all|disable\s+all|turn\s+off\s+all|withdraw\s+consent|alle ablehnen|tout refuser|rechazar todo|rifiuta(?:\s+tutt[oi])?|afwijzen|alles weigeren|odrzu|rejeitar tudo|avvisa alla)\b/i;
   const OPEN_SETTINGS_RE = /\b(customi[sz]e|manage(?:\s+(?:options|choices|settings|privacy|consent|preferences))?|cookie\s+settings|privacy\s+settings|privacy\s+choices|preferences?|settings|options|choices|more\s+options|configure|set\s+preferences)\b/i;
   const SAVE_CHOICES_RE = /\b(save|confirm|apply|submit|store|update|finish|done)\b.*\b(choices?|preferences?|settings?|selection|privacy|consent)\b|\b(confirm|save|apply)\s+my\s+choices?\b|\b(save|confirm|apply)\s+selection\b|\bclose\s+and\s+save\b/i;
   const OPTIONAL_PURPOSE_RE = /\b(advertis(?:e|ing|ement)|marketing|personal(?:ization|isation|ized|ised)|target(?:ed|ing)?|analytics?|statistics?|measurement|performance|social\s+media|social\s+networks?|vendors?|partners?|third[\s-]?part(?:y|ies)|legitimate\s+interest|profiling|sale|share|tracking|remarketing|recommendations?|experiments?|audience|commercial|optional|non[\s-]?essential)\b/i;
   const REQUIRED_PURPOSE_RE = /\b(strictly\s+necessary|necessary|essential|required|security|fraud|authentication|session|login|sign[\s-]?in|payment|billing|checkout|cart|basket|order|functional|preferences?\s+only)\b/i;
   const ACCEPT_RE = /\b(accept(?:\s+all)?|agree|allow(?:\s+all)?|ok(?:ay)?|got\s+it|yes|enable(?:\s+all)?|i\s+understand)\b/i;
-  // Account / login / payment / destructive-action context. We NEVER synthesize a click on a
-  // control OR inside a container whose own text matches this -- even if it also looks like a
-  // consent banner (e.g. an account "Privacy settings" modal that happens to carry a "Disable
-  // all" toggle, a checkout step, or a "Sign in to manage" prompt). Checked against the
-  // element's OWN text only, never the page-wide body (almost every site's header says "Sign
-  // in"/"Account"). Erring toward NOT clicking is the safe direction for an automated click.
+  // Veto account, payment and destructive contexts using bounded element text, never the whole page. Automated clicks must
+  // fail toward leaving the control alone.
   const PROTECT_RE = /\b(sign[\s-]?in|signed[\s-]?in|sign[\s-]?out|signed[\s-]?out|log[\s-]?in|log[\s-]?on|log[\s-]?out|logged[\s-]?out|logout|sign[\s-]?up|register|create\s+account|account\s+settings|your\s+account|my\s+account|profile|subscription|wallet|bank\s+account|sort\s+code|routing\s+number|iban|transfer|withdraw|deposit|password|passcode|2fa|two[\s-]?factor|verification\s+code|one[\s-]?time\s+code|payment|billing|checkout|secure\s+checkout|purchase|place\s+order|buy\s+now|pay\s+now|donate|card\s+number|shipping|delivery\s+address|refund|delete\s+account|deactivate|close\s+account|unsubscribe|confirm\s+your)\b/i;
-  // A consent surface may contain an unrelated account link in its header. Treating that one
-  // label as the context of the entire dialog causes an otherwise unambiguous reject/accept
-  // choice to be missed. High-risk account, payment, and destructive language remains a hard
-  // veto. Authentication-only language is ignored only when the same bounded surface exposes
-  // an explicit reject/accept pair and strong consent language.
+  // An unrelated sign-in link may coexist with consent controls. Ignore authentication-only text only with strong consent
+  // language and an explicit reject/accept pair; retain high-risk vetoes.
   const HARD_PROTECT_RE = /\b(create\s+account|account\s+settings|(?:account|user)\s+profile|profile\s+settings|subscription\s+(?:settings|plan)|wallet|bank\s+account|sort\s+code|routing\s+number|iban|(?:bank|wire)\s+transfer|transfer\s+(?:funds|money)|withdraw\s+(?:funds|money|cash)|deposit\s+(?:funds|money|cash)|password|passcode|2fa|two[\s-]?factor|verification\s+code|one[\s-]?time\s+code|payment|billing|checkout|secure\s+checkout|purchase|place\s+order|buy\s+now|pay\s+now|donate|card\s+number|shipping|delivery\s+address|refund|delete\s+account|deactivate|close\s+account|unsubscribe|confirm\s+your\s+(?:order|purchase|payment|account|identity|password|email|address))\b/i;
   const EXPLICIT_REJECT_RE = /^\s*(?:reject|decline|deny|refuse)(?:\s+(?:all|optional))?[.!]?\s*$/i;
   const EXPLICIT_ACCEPT_RE = /^\s*(?:accept|allow)(?:\s+all)?[.!]?\s*$/i;
@@ -226,11 +222,21 @@
     try { chrome.runtime.sendMessage({ kind: 'content-config-get', need: need }, cb); } catch (_) { try { cb(null); } catch (__) {} }
   }
 
+  function validConsentConfig(value) {
+    return !!value && typeof value === 'object' && !Array.isArray(value) && typeof value.enabled === 'boolean'
+      && [true, false, 'true', 'false', 1, 0].includes(value.autoRejectConsent);
+  }
   function loadConfig(done) {
     askContentConfig(['overrides'], (res) => {
       void chrome.runtime.lastError;
-      config = Object.assign({}, DEFAULTS, (!chrome.runtime.lastError && res && res.ok && res.overrides) || {});
+      if (chrome.runtime.lastError || !res || res.ok !== true || !validConsentConfig(res.overrides)) {
+        active = false; outcomeGeneration++;
+        if (typeof done === 'function') done();
+        return;
+      }
+      config = Object.assign({}, DEFAULTS, res.overrides);
       updateActive();
+      if (!active) outcomeGeneration++;
       if (typeof done === 'function') done();
     });
   }
@@ -238,12 +244,8 @@
   function elementText(el) {
     try {
       const bits = [
-        // innerText is deliberately NOT read here. It forces a synchronous layout, it
-        // was read for every candidate on every scan, and textContent on the next line
-        // carries the same words into the same joined string -- the whitespace
-        // difference is erased by the normalise at the end. It was pure cost.
-        // controlLabel() still reads it, because that one takes the FIRST truthy bit
-        // rather than joining, so dropping it there would change which label wins.
+        // Use textContent here to avoid layout; joined labels normalize the same whitespace. controlLabel retains innerText
+        // because its first-truthy selection differs.
         el.textContent,
         el.getAttribute && el.getAttribute('aria-label'),
         el.getAttribute && el.getAttribute('title'),
@@ -285,12 +287,7 @@
   function isVisible(el) {
     try {
       if (!el || !el.isConnected) return false;
-      // Cheap test first. Both conditions have to hold, so the order does not change a
-      // single answer -- but getComputedStyle is the expensive half and this runs on up
-      // to 500 candidates per scan. Most of them are off-screen (anything in a scrolled
-      // list), and the rect rejects those outright, so style is now computed only for
-      // elements actually on screen. Measured as the top cost in the whole extension
-      // while dragging Spotify's volume slider.
+      // Reject off-screen rectangles before getComputedStyle; both checks remain required for visible candidates.
       const rect = el.getBoundingClientRect();
       if (!(rect.width >= 8 && rect.height >= 8 && rect.bottom > 0 && rect.right > 0
         && rect.top < innerHeight && rect.left < innerWidth)) return false;
@@ -304,16 +301,18 @@
   function collectRoots(root) {
     const roots = [root];
     try {
-      const start = root && root.nodeType === 9 ? root.documentElement : root;
-      if (!start) return roots;
       let seen = 0;
-      const addShadow = (el) => { if (el && el.shadowRoot) roots.push(el.shadowRoot); };
-      if (start.nodeType === 1) { addShadow(start); seen++; }
-      const walker = document.createTreeWalker(start, 1);
-      let el;
-      while (seen < 1800 && (el = walker.nextNode())) {
-        seen++;
-        addShadow(el);
+      for (let index = 0; index < roots.length && seen < 1800; index++) {
+        const part = roots[index], start = part && part.nodeType === 9 ? part.documentElement : part;
+        if (!start) continue;
+        const addShadow = (el) => { if (el && el.shadowRoot) roots.push(el.shadowRoot); };
+        if (start.nodeType === 1) { addShadow(start); seen++; }
+        const walker = document.createTreeWalker(start, 1);
+        let el;
+        while (seen < 1800 && (el = walker.nextNode())) {
+          seen++;
+          addShadow(el);
+        }
       }
     } catch (_) {}
     return roots;
@@ -357,6 +356,9 @@
   }
 
   function protectedContainerContext(container, rejectControl) {
+    try {
+      if (container.querySelector('input[type="password"],input[autocomplete="current-password"],input[autocomplete="one-time-code"],input[autocomplete^="cc-"]')) return true;
+    } catch (_) {}
     const text = elementText(container);
     if (!PROTECT_RE.test(text)) return false;
     if (HARD_PROTECT_RE.test(text)) return true;
@@ -419,7 +421,7 @@
     return Array.from(new Set(out)).sort((a, b) => containerScore(b) - containerScore(a)).slice(0, 20);
   }
 
-  function getControls(container) {
+  function getControls(container, includeHidden) {
     const roots = collectRoots(container);
     const out = [];
     const seen = new Set();
@@ -429,7 +431,7 @@
         const list = root.querySelectorAll(CONTROL_SELECTOR);
         for (let i = 0; i < list.length && out.length < 240; i++) {
           const el = list[i];
-          if (!seen.has(el) && isVisible(el)) {
+          if (!seen.has(el) && (includeHidden || isVisible(el))) {
             seen.add(el);
             out.push(el);
           }
@@ -534,21 +536,34 @@
           if (seen.has(el) || !isVisible(el)) continue;
           seen.add(el);
           if (!optionalToggleCandidate(el, container)) continue;
-          if (clickControl(el)) changed++;
+          if (clickControl(el) && !toggleIsOn(el)) changed++;
         }
       }
     } catch (_) {}
+    if (changed) changedChoices.add(container);
     return changed;
   }
 
   function saveChoicesCandidate(el, container, changed) {
-    const label = elementText(el);
+    const label = controlLabel(el);
     if (!changed || !label || !SAVE_CHOICES_RE.test(label)) return false;
     if (isUnsafeAutoClickLink(el)) return false;
-    if (PROTECT_RE.test(label)) return false;
+    if (PROTECT_RE.test(elementText(el))) return false;
     if (!hasConsentLanguage(elementText(container))) return false;
     if (ACCEPT_RE.test(label) && !/without\s+accepting|reject|decline|deny|refuse|necessary|essential|required|opt\s*out|save|confirm|apply/i.test(label)) return false;
     return true;
+  }
+
+  function choicesAreOff(container) {
+    return !getControls(container, true).some(el => {
+      if (!isConsentToggle(el) || !toggleIsOn(el)) return false;
+      const label = associatedText(el, container);
+      return !REQUIRED_PURPOSE_RE.test(label) || OPTIONAL_PURPOSE_RE.test(label);
+    });
+  }
+
+  function choicesReadyToSave(container, changed) {
+    return (changed || (openSettingsUntil > 0 && getControls(container).some(isConsentToggle))) && choicesAreOff(container);
   }
 
   function visibleControlsInDocument(roots, candidate) {
@@ -578,9 +593,7 @@
       if (!/Cookies and Advertising Choices|Twitch uses personal data|trusted third party partners/i.test(pageText)) return false;
       const buttons = visibleControlsInDocument();
       const reject = buttons.find((el) => /^reject(?:\s+all)?$/i.test(controlLabel(el)) && !isUnsafeAutoClickLink(el));
-      if (reject && clickControl(reject)) {
-        logAction('reject', 'Twitch cookie banner: Reject');
-        finishConsentWork();
+      if (reject && performChoice(reject, consentBannerAncestor(reject))) {
         return true;
       }
     } catch (_) {}
@@ -588,11 +601,11 @@
   }
 
   function safeRejectCandidate(el) {
-    const label = elementText(el);
+    const label = controlLabel(el);
     if (!label) return false;
     if (!REJECT_RE.test(label)) return false;
     if (isUnsafeAutoClickLink(el)) return false;
-    if (PROTECT_RE.test(label)) return false; // never click a control that is also an account/payment/destructive action
+    if (PROTECT_RE.test(elementText(el))) return false; // never click a control that is also an account/payment/destructive action
     if (ACCEPT_RE.test(label) && !/without\s+accepting|do\s+not\s+consent|don'?t\s+consent|reject|decline|deny|refuse|disable|turn\s+off|opt\s*out/i.test(label)) return false;
     return true;
   }
@@ -618,11 +631,8 @@
     return null;
   }
 
-  // Fallback for consent bars that expose no cookie/consent id/class/role (e.g. X/Twitter's
-  // obfuscated `css-*` "BottomBar", where getContainers() finds nothing): scan visible controls
-  // document-wide for a genuine reject button sitting inside a real consent banner. The
-  // safeRejectCandidate + strong-consent-language + PROTECT guards keep this from firing on
-  // unrelated "Decline"/"Deny" buttons, and it never clicks an accept-only control.
+  // For banners with obfuscated identifiers, find reject controls through strong consent language and existing safety
+  // vetoes. Never click accept-only controls.
   function tryGenericReject(roots, noteCandidate) {
     try {
       const controls = visibleControlsInDocument(roots, (el) => {
@@ -631,10 +641,9 @@
         return true;
       });
       for (const el of controls) {
-        if (!consentBannerAncestor(el)) continue;
-        if (clickControl(el)) {
-          logAction('reject', elementText(el));
-          finishConsentWork();
+        const container = consentBannerAncestor(el);
+        if (!container) continue;
+        if (performChoice(el, container)) {
           return true;
         }
       }
@@ -643,10 +652,11 @@
   }
 
   function settingsCandidate(el, container) {
-    const label = elementText(el);
+    const label = controlLabel(el);
     if (!label || !OPEN_SETTINGS_RE.test(label)) return false;
+    if (SAVE_CHOICES_RE.test(label)) return false;
     if (isUnsafeAutoClickLink(el)) return false;
-    if (PROTECT_RE.test(label)) return false; // don't open an account/billing "settings" control
+    if (PROTECT_RE.test(elementText(el))) return false; // don't open an account/billing "settings" control
     if (!hasConsentLanguage(elementText(container))) return false;
     if (/^\s*(settings|preferences?|privacy)\s*$/i.test(controlLabel(el)) && !hasStrongConsentLanguage(elementText(container))) return false;
     return !ACCEPT_RE.test(label);
@@ -654,11 +664,83 @@
 
   function clickControl(el) {
     if (!el || clicked.has(el)) return false;
+    if (el.disabled || el.getAttribute && el.getAttribute('aria-disabled') === 'true') return false;
     if (isUnsafeAutoClickLink(el)) return false;
     clicked.add(el);
     try { el.focus({ preventScroll: true }); } catch (_) {}
-    try { el.click(); } catch (_) {}
+    try { el.click(); return true; } catch (_) { return false; }
+  }
+
+  function consentCookie(profile) {
+    try { return profile && typeof WOConsentState !== 'undefined' ? WOConsentState.cookie(document.cookie, profile.cookie) : ''; }
+    catch (_) { return ''; }
+  }
+  function profileFor(container) {
+    if (typeof WOConsentState === 'undefined') return null;
+    for (const profile of WOConsentState.profiles) {
+      try { if (container.matches(profile.container) || container.querySelector(profile.container)) return profile; } catch (_) {}
+    }
+    return null;
+  }
+  function reportOutcome(status, action, profile) {
+    everActed = true;
+    try {
+      chrome.runtime.sendMessage({ kind: 'rg-block', type: 'consent_outcome', detail: {
+        status, action, cmp: profile ? profile.name : 'Generic consent banner',
+        evidence: status === 'rejected' ? 'changed-saved-cookie-state' : 'none',
+        why: status === 'rejected' ? 'The consent manager saved a state with optional categories off.'
+          : status === 'failed' ? 'The consent control could not be clicked.'
+          : action === 'settings' ? 'Consent settings opened; no opt-out is verified.' : 'Consent action dispatched; saved opt-out is unverified.',
+      } });
+    } catch (_) {}
+  }
+  function performChoice(el, container, profile) {
+    if (!el || clicked.has(el)) return false;
+    profile ||= profileFor(container);
+    const before = consentCookie(profile), generation = outcomeGeneration;
+    if (!clickControl(el)) { reportOutcome('failed', 'reject', profile); return false; }
+    finishConsentWork();
+    const check = final => {
+      if (!active || generation !== outcomeGeneration) return;
+      if (profile && WOConsentState.verify(profile, before, consentCookie(profile))) {
+        outcomeGeneration++; reportOutcome('rejected', 'reject', profile);
+      } else if (final) { outcomeGeneration++; reportOutcome('unverified', 'reject', profile); }
+    };
+    check(false);
+    if (generation === outcomeGeneration) for (const ms of [100, 400, 1200, 2500]) woTimeout(() => check(ms === 2500), ms);
     return true;
+  }
+  function tryKnownCmp(roots) {
+    if (typeof WOConsentState === 'undefined') return false;
+    for (const profile of WOConsentState.profiles) for (const root of roots) {
+      let containers = [];
+      try { containers = root.querySelectorAll(profile.container); } catch (_) {}
+      for (const container of containers) {
+        if (!isVisible(container) || !looksLikeConsentContainer(container) || protectedContainerContext(container, null)) continue;
+        const find = selector => {
+          for (const part of collectRoots(container)) {
+            let list = []; try { list = part.querySelectorAll(selector); } catch (_) {}
+            for (const el of list) if (isVisible(el) && !clicked.has(el)) return el;
+          }
+          return null;
+        };
+        const reject = find(profile.reject);
+        if (reject && safeRejectCandidate(reject) && performChoice(reject, container, profile)) return true;
+        const changed = turnOffOptionalToggles(container) || changedChoices.has(container), save = find(profile.save);
+        const selectionSave = save && profile.id === 'cookiebot' && /^(?:allow|use)\s+selection$/i.test(controlLabel(save))
+          && !isUnsafeAutoClickLink(save) && !PROTECT_RE.test(elementText(save));
+        if (save && choicesReadyToSave(container, changed) && (selectionSave || saveChoicesCandidate(save, container, true))
+          && performChoice(save, container, profile)) return true;
+        const settings = find(profile.settings);
+        if (!opened.has(container) && settings && settingsCandidate(settings, container) && clickControl(settings)) {
+          opened.add(container); openSettingsUntil = Date.now() + 900;
+          reportOutcome('dispatched', 'settings', profile);
+          for (const ms of [180, 700, 1600]) woTimeout(queueScan, ms);
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   // The one case auto-reject cannot help with: a banner offering no way to say no,
@@ -760,14 +842,7 @@
     if (now - lastLogAt < 1200) return;
     lastLogAt = now;
     try {
-      chrome.runtime.sendMessage({
-        kind: 'rg-block',
-        type: 'blocked_overlay',
-        detail: {
-          matched: 'cookie consent: ' + String(label || kind).slice(0, 80),
-          why: kind === 'reject' ? 'auto-rejected consent prompt' : 'opened consent choices to reject tracking',
-        },
-      });
+      reportOutcome('dispatched', 'settings', null);
     } catch (_) {}
   }
 
@@ -781,12 +856,7 @@
     if (!everActed && observer && Date.now() - firstScanAt > SCAN_GIVE_UP_MS) {
       try { observer.disconnect(); } catch (_) {}
       observer = null;
-      // Step DOWN to a slow poll rather than stopping. Coverage must not shrink: this
-      // still sees a banner that reveals late, and it also covers the one case the
-      // attributeFilter no longer watches (a reveal by inline style alone) -- which a
-      // MutationObserver on 'class' would have missed anyway. ~40 scans spread over the
-      // rest of the window instead of one per DOM change, so the cost is bounded
-      // without giving anything up. It ends with the same 120s deadline as the observer.
+      // Slow polling covers late and inline-style reveals after observation quiets down. Retain the same 120s deadline.
       if (!slowTimer) {
         slowTimer = woInterval(() => {
           if (!active || everActed || Date.now() - firstScanAt > OBSERVER_LIFETIME_MS) {
@@ -794,13 +864,7 @@
             slowTimer = null;
             return;
           }
-          // Run it in IDLE time, not on the next frame. A full scan costs tens of
-          // milliseconds, and queueScan would put that inside a rAF callback -- i.e.
-          // right in the middle of frame production. Polling that way replaced a
-          // per-frame cost with a ~50ms hitch every few seconds, which during a drag is
-          // worse, not better. Idle work waits for a gap instead, so a reader who is
-          // dragging something never pays for it; the timeout keeps it from being
-          // starved forever on a genuinely busy page.
+          // Schedule full scans in idle time to avoid frame hitches during interaction; a timeout bounds starvation.
           idleScan();
         }, SLOW_SCAN_MS);
       }
@@ -811,13 +875,15 @@
     let possibleSurface = everActed || /(^|\.)twitch\.tv$/i.test(location.hostname);
     const noteCandidate = () => { possibleSurface = true; };
     const roots = collectRoots(document);
+    if (observer) for (const root of roots) if (root !== document) {
+      try { observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-hidden', 'inert', 'open'] }); } catch (_) {}
+    }
+    if (tryKnownCmp(roots)) return;
     const containers = getContainers(roots, noteCandidate);
     for (const container of containers) {
       const controls = getControls(container);
       const reject = controls.find(safeRejectCandidate);
-      if (reject && clickControl(reject)) {
-        logAction('reject', elementText(reject));
-        finishConsentWork();
+      if (reject && performChoice(reject, container)) {
         return;
       }
     }
@@ -827,12 +893,10 @@
     needsTimedScan = possibleSurface;
 
     for (const container of containers) {
-      const changed = turnOffOptionalToggles(container);
-      if (!changed) continue;
-      const save = getControls(container).find((el) => saveChoicesCandidate(el, container, changed));
-      if (save && clickControl(save)) {
-        logAction('reject', 'disabled optional consent choices');
-        finishConsentWork();
+      const changed = turnOffOptionalToggles(container) || changedChoices.has(container);
+      if (!choicesReadyToSave(container, changed)) continue;
+      const save = getControls(container).find((el) => saveChoicesCandidate(el, container, true));
+      if (save && performChoice(save, container)) {
         return;
       }
       woTimeout(queueScan, 220);
@@ -871,12 +935,8 @@
   let everActed = false;
   let slowTimer = null;
 
-  /* A reject button or a saved set of disabled choices is terminal. Keeping the
-     document-wide observer and the 95 ms startup poll alive after that point made a
-     successful Spotify rejection the expensive case: its ordinary class churn kept
-     buying another full consent scan while the reader dragged the volume slider.
-     Opening Settings is deliberately not terminal; that path still scans until it
-     reaches the save button above. */
+  /* Stop observing after rejection or saving disabled choices. Opening Settings is nonterminal and must keep scanning for
+     Save. */
   function finishConsentWork() {
     scanFinished = true;
     scanQueued = false;
@@ -932,6 +992,7 @@
       if (!node) return false;
       if (node.nodeType === 3) return hasConsentLanguage(String(node.nodeValue || ''));
       if (node.nodeType !== 1) return false;
+      if (node.shadowRoot && node.shadowRoot.querySelector(CONTAINER_SELECTOR)) return true;
       const attributed = typeof node.hasAttributes !== 'function' || node.hasAttributes();
       const read = attributed && !!node.getAttribute;
       const role = read ? node.getAttribute('role') : null;
@@ -1064,26 +1125,26 @@
     loadConfig(() => {
       if (!active) return;
       startObserver();
-      // Dismiss banners the instant they become clickable so they barely flash. The
-      // MutationObserver catches DOM insertions, but a banner that mounts at opacity:0 and
-      // CSS-fades in produces no further mutations while it animates -- so without polling we
-      // would not act until the next sparse tick (the ~1s "banner shows for a second" lag on
-      // Twitch/X). A short high-frequency burst for the first ~2.4s closes that gap; a few
-      // sparse late passes still catch slow or deferred banners.
+      // Short startup polling catches controls fading into visibility without mutations. Sparse follow-ups cover late
+      // banners.
       [0, 50, 140, 260].forEach((ms) => woTimeout(queueScan, ms));
+      /* An open shadow root can attach without a document mutation after the first scan. */
+      woTimeout(() => queueScan(true), 800);
       let fastPolls = 0;
       const fastTimer = woInterval(() => {
         if (!active || scanFinished || fastPolls++ >= 24) { clearInterval(fastTimer); return; }
         queueScan();
       }, 95);
-      [3000, 4500, 7000, 11000].forEach((ms) => woTimeout(queueScan, ms));
+      [3000, 4500, 7000, 11000].forEach((ms) => woTimeout(() => queueScan(ms === 4500), ms));
     });
   }
 
   const refreshConfigState = (overrides) => {
+      if (!validConsentConfig(overrides)) { active = false; outcomeGeneration++; return; }
       config = Object.assign({}, DEFAULTS, overrides || {});
       const wasActive = active;
       updateActive();
+      if (!active) outcomeGeneration++;
       if (active) {
         if (!wasActive) {
           scanFinished = false;
@@ -1102,6 +1163,7 @@
   try {
     woOnMessage((msg) => {
       if (!msg) return;
+      if (msg.kind === 'consent-reset') { outcomeGeneration++; return; }
       if (msg.kind === 'config-update') refreshConfigState(msg.overrides);
       if (msg.kind === 'content-config-refresh') loadConfig(() => {
         if (active) {

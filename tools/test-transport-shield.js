@@ -252,7 +252,6 @@ const sorted = (a) => a.slice().sort().join(',');
     wraps.every((tail) => tail.slice(0, 700).indexOf('setPrototypeOf') >= 0));
 }());
 
-// ---------------------------------------------------------------------------
 
 if (failures.length) {
   console.error('FAIL (' + failures.length + ')');

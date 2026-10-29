@@ -95,11 +95,8 @@ function tidyConfig(next, before, patch) {
   }
 }
 let writeChain = Promise.resolve();
-/* Read-modify-write, one at a time. The stored config is read again at the moment of writing and
-   only the keys changed here are laid on top, so a change the popup made a second ago survives;
-   the read and the write hold the config lock (config-lock.js), so one made at the same moment
-   does too. A private window's pages and worker have their own lock; if one of them wrote over
-   this change without seeing it, the same patch is applied again (confirmConfigWrite). */
+/* Read and patch only changed keys under config-lock. confirmConfigWrite reapplies overlapping writes from contexts with a
+   separate lock. */
 function writeConfig(patch, triesLeft, operationOrder) {
   let id = '';
   let order = operationOrder;
@@ -139,8 +136,9 @@ const ask = (message) => new Promise((resolve) => {
 /* Privacy is the one page with hand-shortened names and lines; everything else uses the popup's own words. */
 const COPY = {
   blockTrackers: ['Block trackers & ad analytics', 'rec', 'Blocks known analytics and tracking networks before they load.'],
-  blockFirstPartyTrackers: ['First-party trackers', 'risk', 'Catches analytics routed through the site’s own domain.'],
-  trackerLearner: ['Tracker learner', '', 'Suggests trackers it keeps seeing. Never blocks without you.'],
+  blockFirstPartyTrackers: ['First-party trackers', 'risk', 'Catches known analytics paths served from a site’s own domain.'],
+  blockCnameTrackers: ['Block CNAME-cloaked trackers', 'risk', 'On by default. Blocks confirmed tracking aliases from a local list; can be turned off for one site.'],
+  trackerLearner: ['Tracker learner', '', 'Suggests repeated trackers and suspected URL identifiers locally. Never blocks without you.'],
   socialWidgetGuard: ['Click to load social embeds', '', 'Facebook, X, Instagram and TikTok embeds wait for your click.'],
   trackerCacheProtection: ['Block cache-tag tracking', 'adv', 'Stops trackers rebuilding an ID from your browser cache.'],
   stripTrackingParams: ['Strip tracking from addresses', 'rec', 'Removes utm, fbclid and friends when a site rewrites its address.'],
@@ -148,7 +146,7 @@ const COPY = {
   unshimLinks: ['Remove click-tracking pings', '', 'Stops links reporting your click to another address.'],
   deAmp: ['Skip AMP pages', '', 'Opens the real article instead of the AMP copy.'],
   capReferrer: ['Strict referrer protection', 'risk', 'Other sites stop seeing which page sent you there.'],
-  blockThirdPartyCookies: ['Block third-party cookies', 'rec', 'Trackers can’t store new cookies while you’re on other sites.'],
+  blockThirdPartyCookies: ['Block third-party cookies', 'rec', 'Removes cookie headers for known trackers, confirmed tracking aliases and reviewed Google, Stripe, Spotify and Facebook resources. Supported protected frames also lose cookie API access before their scripts run. Direct visits, first-party service use, media workarounds and immediate site exceptions remain supported.'],
   blockSupercookies: ['Clear tracker supercookies', '', 'Wipes the storage trackers use to come back after a cookie clear.'],
   autoRejectConsent: ['Reject cookie banners', 'rec', 'Picks “reject” for you and never clicks Accept.'],
   removeConsentWalls: ['Lift cookie walls', '', 'Removes walls with no way to say no, without consenting to anything.'],
@@ -265,7 +263,7 @@ const PAGES = [
     G('i-puzzle', 'Extensions & startup', 'Keeps an eye on what else runs in your browser.', ['watchExtensionPermissions', 'startupCheck', 'permissionChainGuard']),
     G('i-eye-off', 'Adult-site safety', 'Warnings and safe search.', ['gateAdultSites', 'adultHeuristics', 'safeSearch']) ] },
   { id: 'privacy', title: 'Privacy', icon: 'i-lock', nav: 1, desc: 'Stops trackers, strips tracking out of links, and keeps sites from fingerprinting your browser.', groups: [
-    G('i-eye-off', 'Tracking', 'Block trackers and limit how sites follow you around the web.', ['blockTrackers', 'blockFirstPartyTrackers', 'trackerLearner', 'socialWidgetGuard', 'trackerCacheProtection']),
+    G('i-eye-off', 'Tracking', 'Block trackers and limit how sites follow you around the web.', ['blockTrackers', 'blockFirstPartyTrackers', 'blockCnameTrackers', 'trackerLearner', 'socialWidgetGuard', 'trackerCacheProtection']),
     G('i-link', 'Links', 'Keep shared links and navigation private.', ['stripTrackingParams', 'cleanCopyLinks', 'unshimLinks', 'deAmp', 'capReferrer']),
     G('i-cookie', 'Cookies & storage', 'Control what sites store on your device.', ['blockThirdPartyCookies', 'blockSupercookies', 'autoRejectConsent', 'removeConsentWalls', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'blockAllCookies']),
     G('i-fingerprint', 'Fingerprinting', 'Make it harder for sites to recognise your browser or device.', ['blockFingerprintScripts', 'fingerprintProbeDetection', 'clientHintProtection', 'antiFingerprintNoise', 'blockFraudVendorScripts', 'sendPrivacySignals']),
@@ -279,7 +277,7 @@ const PAGES = [
     G('i-popup', 'Pop-ups', 'New windows and overlays.', ['blockForcedPopups', 'strictPopupShield', 'blockPopupTricks', 'removeOverlays']),
     G('i-refresh', 'Redirects', 'Pages that move you on without asking.', ['blockGesturelessNav', 'backTrapGuard', 'detectRedirectChains', 'blockMetaRefresh', 'autoSkipDownloadAds']) ] },
   { id: 'downloads', title: 'Downloads', icon: 'i-download', nav: 1, desc: 'Checks a file and where it came from before you open it.', groups: [
-    G('i-download', 'Download checks', 'Run on every download.', ['downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing']),
+    G('i-download', 'Download checks', 'File safety and unexpected downloads.', ['downloadReputation', 'forcedDownloadProtection', 'downloadDomainAge', 'downloadSafeBrowsing']),
     G('i-key', 'Reputation services', 'Optional outside services. Some need an API key you add yourself.', ['downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel']) ] },
   { id: 'signin', title: 'Sign-in & sessions', icon: 'i-user', nav: 1, desc: 'SessionShield protects the tokens that keep you signed in, your card details and your clipboard.', groups: [
     G('i-key', 'Sign-ins & tokens', 'Session theft and fake sign-in prompts.', ['sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'oauthGuard', 'breachCheck', 'honeytokenMode']),
@@ -363,7 +361,15 @@ const PAGES = [
       action('Clean now', 'Nothing is cleared until you press the button and confirm.', [{ label: 'Clean selected', primary: true, act: 'clean' }]),
       custom('result-clean', '', () => resultHTML('clean')) ]),
     G('i-pulse', 'History & diagnostics', 'Records kept on this device only.', [
+      pick('historyMode', 'Activity and notification history', 'Keep normal retention, keep records only until the browser closes, or save none. Changing this clears both histories. Live protection stays on.',
+        [['normal', 'Normal retention'], ['session', 'Until browser closes'], ['off', 'Do not save']],
+        () => config.historyMode || 'normal', async mode => {
+          const result = await ask({ kind: 'history-mode-set', mode });
+          if (!result || !result.ok) throw new Error(result && result.error || 'Could not change history mode.');
+        }),
       custom('activity', 'activity history clear history events log', activityHTML),
+      action('Clear history and learned observations', 'Clears Activity, notifications, tracker observations, script baselines and site counts. Your approved blocks, firewall rules and site preferences stay.',
+        [{ label: 'Clear observations', icon: 'i-trash', act: 'clear-observations' }]),
       custom('repair', 'verify repair check fix problems broken health', repairHTML),
       custom('diagnostics', 'diagnostics report support counts', diagnosticsHTML) ]),
     G('i-refresh', 'Reset', 'Start from a known place.', [
@@ -412,11 +418,8 @@ const switchKeysOf = (p) => groupsOf(p).flatMap((g) => g.items.filter((i) => i.t
 const ALL_KEYS = [...new Set(PAGES.flatMap(switchKeysOf))];
 const pageOfKey = {};
 PAGES.forEach((p) => switchKeysOf(p).forEach((k) => { pageOfKey[k] = p; }));
-/* What counts as a protection is the worker's call, not this page's: the switches in its
-   HEALTH_SHIELD_KEYS, plus the watch-only guards that record and never block, so have no switch
-   (WATCH_ONLY_GUARDS). That is the 108 the README, the site and the popup publish. Comfort
-   features, tools, presentation and Script Shield's level are switches here but not protections.
-   Both lists come from background.js through settings-data.js. */
+/* Derive protection counts from the worker's HEALTH_SHIELD_KEYS and WATCH_ONLY_GUARDS via settings-data.js; comfort and
+   presentation switches do not count. */
 const SHIELD_KEYS = DATA.shieldKeys;
 const WATCH_ONLY_KEYS = DATA.watchOnlyKeys;
 const PROTECTION_TOTAL = SHIELD_KEYS.length + WATCH_ONLY_KEYS.length;
@@ -537,13 +540,14 @@ PAGES.forEach((p) => groupsOf(p).forEach((g) => g.items.forEach((it) => { if (it
    doesn't say it plainly. Everything here is taken from what the switch's text already states. */
 const DETAIL = {
   blockFirstPartyTrackers: { breaks: 'Sites that serve their own features from the same address as their analytics can lose those features. That’s why it’s off until you turn it on.' },
+  blockCnameTrackers: { breaks: 'A listed address may also serve something the site needs. Turn this off for that site; the exception applies to subsequent requests immediately.' },
   capReferrer: { breaks: 'Image hotlinking and some hand-off flows that expect to see where you came from. Sign-in, CAPTCHA and payment pages are already left out.' },
   blockAllCookies: { breaks: 'You’ll be signed out of sites each time the browser starts again. Sign-ins still work while you browse.' },
   blockFraudVendorScripts: { breaks: 'A sign-in can be refused or an order declined, and the site won’t say why. These scripts are what decides whether you get in.' },
   antiFingerprintNoise: { breaks: 'Rare setups can end up more unique, not less. Web workers aren’t covered and can still show your real graphics.' },
   trackerCacheProtection: { breaks: 'Repeated tracker responses can use a little more bandwidth. Normal browser caching is untouched.' },
   autoRejectConsent: { does: ['Says no whenever the banner offers a way to', 'Opens the banner’s choices if it has to', 'Turns off optional tracking', 'Never clicks Accept for you'], doesnt: 'Walls with no way to say no. Lift cookie walls handles those.' },
-  blockThirdPartyCookies: { doesnt: 'Frames, scripts and requests in general, because sign-ins set their cookies on exactly those. Cookies a site already saved can still be sent.' },
+  blockThirdPartyCookies: { doesnt: 'All cross-site cookies, all storage or every frame bypass. Early frame isolation needs an installed native policy and supported navigation timing; other frames use verified configuration. Unknown hosts retain existing policy. Direct visits, first-party service use, media workarounds and explicit site exceptions retain cookies.' },
   cleanCopyLinks: { doesnt: 'Chrome’s own Copy link address and the address bar. Use the right-click Copy clean link for those.' },
   removeConsentWalls: { doesnt: 'Walls kept on a separate domain, where nothing can reach them.' }
 };
@@ -755,7 +759,7 @@ async function siteAction(button) {
 function overrideChoices() {
   const scope = DATA.siteOverrideScope || {};
   const mixed = new Set(scope.mixed || []);
-  return [].concat(scope.page || [], scope.mixed || [], scope.coordinated || [])
+  return [].concat(scope.page || [], scope.mixed || [], scope.coordinated || [], scope.network || [])
     .filter((key, i, all) => all.indexOf(key) === i && ROWS[key] && pageOfKey[key] && carriedItem({ type: 'switch', key }))
     .map((key) => [key, protectionName(key) + (mixed.has(key) ? ' (in the page)' : '')])
     .sort((a, b) => a[1].localeCompare(b[1]));
@@ -1018,11 +1022,7 @@ function itemText(it) {
 const itemTitle = (it) => (it.type === 'switch' ? info(it.key).name : it.label || it.host || it.purpose || it.search || '');
 
 /* ---------- Search engine ----------
-   Words, not one string: every word typed has to match, in any order. A word matches a word in a
-   setting's name, its group and page, or its explanation; a longer word that starts with it; one
-   of the everyday words people use for the same thing (SEARCH_GROUPS); and, when it matches
-   nothing as typed, a word one slip away (two, from seven letters). Plain functions, so
-   tools/test-settings-page.js can run them without a page. */
+   Match every word against names, groups, descriptions and synonyms, with bounded typo tolerance. Runnable without a page. */
 const SEARCH_STOP = new Set(['a', 'an', 'the', 'to', 'of', 'and', 'or', 'for', 'my', 'me', 'i', 'how', 'do', 'does', 'can', 'is', 'it', 'this', 'that', 'with', 'from', 'be', 'on', 'off', 'in', 'at', 'by', 'not', 'no', 'stop', 'turn', 'want', 'make', 'setting']);
 /* Each line is a set of words that mean the same thing to someone searching. */
 const SEARCH_GROUPS = [
@@ -1268,7 +1268,7 @@ const CHECKS = [
   ['downloadReputation', 'Downloads are checked', 'Download checks are off'],
   ['sessionShield', 'Sign-ins are guarded', 'SessionShield is off'],
   ['stripTrackingParams', 'Tracking is stripped from links', 'Links keep their tracking codes'],
-  ['blockThirdPartyCookies', 'Third-party cookies are refused', 'Third-party cookies are allowed'],
+  ['blockThirdPartyCookies', 'Tracker and reviewed service cookies are isolated', 'Tracker cookie isolation is off'],
   ['antiFingerprintNoise', 'Fingerprint noise is on', 'Fingerprint noise is off'],
   ['blockHighConfidencePhishing', 'Clear phishing pages are blocked', 'Phishing is warned about, not blocked'],
   ['blockWebRTCLeak', 'Your IP stays out of WebRTC', 'WebRTC can show your IP'],
@@ -1519,7 +1519,7 @@ async function applyPreset(id) {
   if (!loaded) { toast('Still reading your settings…'); return; }
   const target = id === 'max' ? MAX : REC;
   const label = id === 'max' ? 'Maximum privacy' : 'Recommended';
-  const keys = ALL_KEYS.filter((k) => !!state[k] !== !!target[k] && !(target[k] && !hasKeyFor(k)));
+  const keys = ALL_KEYS.filter((k) => k !== 'blockCnameTrackers' && !!state[k] !== !!target[k] && !(target[k] && !hasKeyFor(k)));
   if (!keys.length) { toast('Everything already matches ' + label); return; }
   const names = keys.map((k) => '• ' + info(k).name + (target[k] ? ' (on)' : ' (off)'));
   const list = names.slice(0, 10).join('\n') + (names.length > 10 ? '\n…and ' + (names.length - 10) + ' more' : '');
@@ -1852,6 +1852,7 @@ function runAction(act, el) {
   else if (act === 'import') $('#import-file').click();
   else if (act === 'clean') void cleanBrowsingData(el);
   else if (act === 'open-activity') openPage('history.html');
+  else if (act === 'clear-observations') void clearActivity(true);
   else if (act === 'clear-activity') void clearActivity();
   else if (act === 'erase-review') void reviewErase(el);
   else if (act === 'erase-go') void runErase(el);
@@ -1931,7 +1932,7 @@ function sanitizeSiteOverrides(raw) {
 function exportableSettings(cfg) {
   const out = {};
   Object.keys(cfg || {}).forEach((key) => {
-    if (SECRET_FIELD_RE.test(key)) return;
+    if (SECRET_FIELD_RE.test(key) || key === 'siteRecoveryUntil') return;
     out[key] = key === 'siteOverrides' ? sanitizeSiteOverrides(cfg[key]).map
       : key === 'eyeShieldSites' ? WOEyeShieldProfiles.cleanSites(cfg[key]) : cfg[key];
   });
@@ -1941,6 +1942,7 @@ function sanitizeImportedSettings(raw) {
   const settings = {};
   let ignored = 0;
   Object.keys(raw || {}).forEach((key) => {
+    if (key === 'siteRecoveryUntil') { ignored++; return; }
     if (!Object.prototype.hasOwnProperty.call(IMPORT_SCHEMA, key) || SECRET_FIELD_RE.test(key)) { ignored++; return; }
     const def = IMPORT_SCHEMA[key];
     const val = raw[key];
@@ -2171,20 +2173,16 @@ async function importSettings(file) {
 }
 
 /* ---- Browsing data: the worker's own cleaner, as in the popup ---- */
-const PRETTY_DATA = { cache: 'cache', cacheStorage: 'cache', cookies: 'cookies', history: 'history', downloads: 'downloads', localStorage: 'local storage', indexedDB: 'local storage', webSQL: 'local storage', fileSystems: 'local storage', serviceWorkers: 'service workers', formData: 'form data' };
 function describeClean(res) {
-  const parts = (Array.isArray(res.cleared) ? res.cleared : []).map((k) => PRETTY_DATA[k] || k).filter((v, i, a) => a.indexOf(v) === i);
-  let text = parts.length ? 'Cleared: ' + parts.join(', ') + '.' : '';
+  const done = Array.isArray(res.completed) ? res.completed : [];
+  const failed = Array.isArray(res.failed) ? res.failed : [];
+  let text = done.length ? 'Cleared: ' + done.join(', ') + '.' : '';
+  if (failed.length) text += (text ? ' ' : '') + 'Could not clear: ' + failed.join(', ') + '.';
   if (res.consent) {
     const c = res.consent;
     text += (text ? ' ' : '') + (c.removed
       ? 'Removed ' + plural(c.removed, 'consent and tracking cookie') + ' across ' + plural(c.sites, 'site') + '; kept the other ' + c.kept + ', so you are still signed in.'
       : 'No consent or tracking cookies were left to remove.');
-  }
-  if (res.perms) {
-    const p = res.perms;
-    text += (text ? ' ' : '') + (p.reset && p.reset.length ? 'Reset ' + p.reset.join(', ').toLowerCase() + ' back to asking.'
-      : p.unsupported && p.unsupported.length ? 'This browser does not let extensions reset those site permissions.' : 'Site permissions could not be reset.');
   }
   return text || 'Done.';
 }
@@ -2198,31 +2196,36 @@ async function cleanBrowsingData(button) {
     + (types.cookies ? '\n\nClearing all cookies signs you out of websites.' : '') + '\n\nThis cannot be undone.')) return;
   button.disabled = true;
   setResult('clean', 'Clearing…', '');
-  const res = await ask({ kind: 'clean-browser', types, sinceMs: RANGE_MS[range] });
+  /* The worker runs only a cleanup it has previewed, so the choice confirmed above is the one it runs. */
+  const preview = await ask({ kind: 'clean-browser-preview', request: { types, sinceMs: RANGE_MS[range], scope: 'all' } });
+  const res = preview && preview.ok ? await ask({ kind: 'clean-browser', previewId: preview.previewId }) : preview;
   button.disabled = false;
-  if (res.ok) setResult('clean', describeClean(res), 'ok');
-  else setResult('clean', 'Clearing failed: ' + (res.error || 'no answer from WardenOne'), 'err');
+  if (res && (res.ok || Array.isArray(res.completed))) setResult('clean', describeClean(res), res.ok ? 'ok' : 'err');
+  else setResult('clean', 'Clearing failed: ' + ((res && res.error) || 'no answer from WardenOne'), 'err');
 }
 
 /* ---- WardenOne's own activity history ---- */
 async function loadActivityCount() {
   if (!hasChrome) return;
   try {
-    const stored = await localRead('wardenone_history');
-    activityCount = Array.isArray(stored.wardenone_history) ? stored.wardenone_history.length : 0;
+    const stored = await ask({ kind: 'history-get' });
+    activityCount = Array.isArray(stored && stored.history) ? stored.history.length : 0;
   } catch (_) { activityCount = null; }
   refreshCustom(['activity']);
 }
 function activityHTML() {
   const line = activityCount === null ? 'WardenOne’s own record of what it blocked and warned about. Kept on this device for 30 days, at most 200 events.'
     : (activityCount ? plural(activityCount, 'event') + ' saved' : 'Nothing saved right now') + '. WardenOne keeps them on this device for 30 days, at most 200.';
-  return '<div class="wide-in"><div class="r-name"><span class="r-label">Activity history</span></div><div class="r-desc">' + esc(line) + '</div>' +
+  const selected = config.historyMode === 'off' ? 'History saving is off.' : config.historyMode === 'session' ? 'History lasts until the browser closes.' : line;
+  return '<div class="wide-in"><div class="r-name"><span class="r-label">Activity history</span></div><div class="r-desc">' + esc(selected) + '</div>' +
     '<div class="r-act"><button class="btn" data-act="open-activity">' + icon('i-external') + 'Open</button><button class="btn" data-act="clear-activity"' + (activityCount === 0 ? ' disabled' : '') + '>' + icon('i-trash') + 'Clear history</button></div></div>' + msgHTML(results.activity);
 }
-async function clearActivity() {
-  if (!confirm('Clear all WardenOne activity history?\n\nThis cannot be undone. Your settings and site lists stay.')) return;
+async function clearActivity(observations = false) {
+  if (!confirm(observations ? 'Clear Activity, notification history and learned observations?\n\nYour approved blocks, firewall rules and site preferences stay.'
+    : 'Clear Activity and notification history?\n\nThis cannot be undone. Your settings and site lists stay.')) return;
   try {
-    await localWrite({ wardenone_history: [] });
+    const result = await ask({ kind: 'history-clear', observations });
+    if (!result || !result.ok) throw new Error(result && result.error || 'Clear failed.');
     activityCount = 0;
     results.activity = { text: 'Activity history cleared.', tone: 'ok' };
   } catch (error) {
@@ -3287,14 +3290,7 @@ async function applyListsPlan(plan, have) {
 
 /* ---------- Popup section order (the same list the popup shows behind its header button) ---------- */
 const POPUP_SECTION_ORDER_KEY = 'wardenone_popup_section_order';
-const POPUP_SECTIONS = [
-  ['script-shield', 'Script Shield'], ['redirects', 'Redirects & popups'], ['ip-protection', 'IP protection'],
-  ['downloads', 'Download Shield'], ['privacy', 'Privacy'], ['adshield', 'AdShield'], ['memory', 'Memory Shield'],
-  ['forget-me', 'Forget Me & Logins'], ['media', 'Media Shield'], ['adult', 'Adult-site safety'],
-  ['advanced-detection', 'Advanced detection (catches rotating/custom domains)'],
-  ['sessionshield', 'SessionShield'], ['blocklist', 'Blocklist'], ['eyeshield', 'EyeShield'],
-  ['watches', 'What WardenOne watches'], ['interface', 'Interface'], ['backup', 'Settings backup'], ['cleaner', 'Privacy cleaner']
-].map(([id, name]) => ({ id, name }));
+const POPUP_SECTIONS = DATA.popupSections;
 const POPUP_SECTION_DEFAULT = POPUP_SECTIONS.map((section) => section.id);
 const sectionName = (id) => (POPUP_SECTIONS.find((section) => section.id === id) || { name: id }).name;
 function resolveSectionOrder(saved) {
@@ -3316,12 +3312,23 @@ function resolveSectionOrder(saved) {
 }
 let sectionOrder = POPUP_SECTION_DEFAULT.slice();
 let sectionNote = '';
+let sectionOrderEdited = false;
 function saveSectionOrder() {
+  sectionOrderEdited = true;
+  const saved = () => {
+    const error = chrome.runtime.lastError;
+    if (!error) return;
+    sectionNote = 'Could not save section order: ' + error.message;
+    if (current === 'arrange') renderPage();
+  };
   try {
     if (typeof chrome === 'undefined' || !chrome.storage?.local) return;
-    if (sectionOrder.every((id, i) => id === POPUP_SECTION_DEFAULT[i])) chrome.storage.local.remove(POPUP_SECTION_ORDER_KEY);
-    else chrome.storage.local.set({ [POPUP_SECTION_ORDER_KEY]: sectionOrder.slice() });
-  } catch (_) {}
+    if (sectionOrder.every((id, i) => id === POPUP_SECTION_DEFAULT[i])) chrome.storage.local.remove(POPUP_SECTION_ORDER_KEY, saved);
+    else chrome.storage.local.set({ [POPUP_SECTION_ORDER_KEY]: sectionOrder.slice() }, saved);
+  } catch (error) {
+    sectionNote = 'Could not save section order: ' + error.message;
+    if (current === 'arrange') renderPage();
+  }
 }
 function sectionsPanel() {
   const moved = sectionOrder.some((id, i) => id !== POPUP_SECTION_DEFAULT[i]);
@@ -3342,9 +3349,9 @@ function moveSection(id, to, focus) {
   if (from < 0 || to < 0 || to >= sectionOrder.length) return;
   if (from === to) return;
   sectionOrder.splice(to, 0, sectionOrder.splice(from, 1)[0]);
-  saveSectionOrder();
   sectionNote = sectionName(id) + ' is now ' + (to + 1) + ' of ' + sectionOrder.length + '.';
   renderPage();
+  saveSectionOrder();
   const li = $('.ord-item[data-id="' + id + '"]');
   if (li) {
     li.classList.add('is-dropped'); setTimeout(() => li.classList.remove('is-dropped'), 650);
@@ -3357,7 +3364,7 @@ document.addEventListener('click', (e) => {
   if (e.target.closest('[data-arrange-sections]')) { sectionNote = ''; goTo('arrange'); return; }
   const mv = e.target.closest('.ord-move');
   if (mv && !mv.disabled) { const id = mv.closest('.ord-item').dataset.id; moveSection(id, sectionOrder.indexOf(id) + Number(mv.dataset.dir), mv.dataset.dir); return; }
-  if (e.target.closest('#ord-reset')) { sectionOrder = POPUP_SECTION_DEFAULT.slice(); saveSectionOrder(); sectionNote = 'Back to the original order.'; renderPage(); }
+  if (e.target.closest('#ord-reset')) { sectionOrder = POPUP_SECTION_DEFAULT.slice(); sectionNote = 'Back to the original order.'; renderPage(); saveSectionOrder(); }
 });
 document.addEventListener('keydown', (e) => {
   const g = e.target.closest && e.target.closest('.ord-grip');
@@ -3485,6 +3492,8 @@ try {
 try {
   if (typeof chrome !== 'undefined' && chrome.storage?.local) {
     chrome.storage.local.get(POPUP_SECTION_ORDER_KEY, (res) => {
+      const error = chrome.runtime.lastError;
+      if (sectionOrderEdited || error) return;
       const next = resolveSectionOrder(res && res[POPUP_SECTION_ORDER_KEY]);
       if (next.every((id, i) => id === sectionOrder[i])) return;
       sectionOrder = next;

@@ -55,13 +55,8 @@
       linear-gradient(155deg, var(--bg-0), var(--bg-1) 45%, var(--bg-2) 100%);
     overflow: hidden;
   }
-  /* Onboarding stays open until the reader closes it. While anything on it moves, the browser
-     draws a frame on every refresh: in Edge 150 (2026-10-17) that was 41% of a core for the
-     small pulse ring alone, and 61-66% with the orbs, whose filter: blur(8px) was redone every
-     frame. So the welcome motion plays for about its first minute and then settles, costing
-     nothing, and the orbs paint their softness instead of filtering it: each image is the old
-     gradient, clipped to the same circle and blurred by the same 8px, drawn once. The box
-     grows by the blur's reach, 24px a side, so its centre and the drift around it stay put. */
+  /* Stop welcome motion after its initial minute to avoid continuous rendering. Preblurred orb images retain a 24px margin
+     so their center and drift stay aligned. */
   .orb {
     position: absolute;
     box-sizing: content-box;
@@ -614,13 +609,13 @@
       <section class="scene" data-scene="protect" hidden tabindex="-1">
         <div class="eyebrow"><span class="pip"></span> Step 2 of 3 &middot; Protection</div>
         <h2>Choose your protection.</h2>
-        <p class="lead">Core security starts on fresh installs. WardenOne offers <span id="onboarding-total">108</span> protections, plus tools for privacy, page cleanup and performance. Optional reputation providers add outside checks when you enable them.</p>
+        <p class="lead">Core security starts on fresh installs. WardenOne offers <span id="onboarding-total">110</span> protections, plus tools for privacy, page cleanup and performance. Optional reputation providers add outside checks when you enable them.</p>
         <div class="stats">
-          <div class="stat"><b id="onboarding-total-stat">108</b><span>protections available</span></div>
+          <div class="stat"><b id="onboarding-total-stat">110</b><span>protections available</span></div>
           <div class="stat"><b>7</b><span>optional reputation providers</span></div>
           <div class="stat"><b>0</b><span>WardenOne telemetry</span></div>
         </div>
-        <p class="guide-intro"><span id="onboarding-switchable">105</span> protections have their own switch; <span id="onboarding-watch-only">3</span> watch-only protections record activity. These totals describe available features, not a diagnosis of this page. Most work locally; optional provider checks contact the services you choose. <a href="api-keys.html"><u>Providers and keys</u></a> &middot; <a href="settings.html#page=about"><u>Privacy and project information</u></a></p>
+        <p class="guide-intro"><span id="onboarding-switchable">107</span> protections have their own switch; <span id="onboarding-watch-only">3</span> watch-only protections record activity. These totals describe available features, not a diagnosis of this page. Most work locally; optional provider checks contact the services you choose. <a href="api-keys.html"><u>Providers and keys</u></a> &middot; <a href="settings.html#page=about"><u>Privacy and project information</u></a></p>
         <div class="feature-grid">
           <article class="feat g1">
             <div class="ic"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7c4 1 10 1 14 0M5 12c4 1 10 1 14 0M5 17c4 1 10 1 14 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="m16 4 4 4-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0"/></svg></div>

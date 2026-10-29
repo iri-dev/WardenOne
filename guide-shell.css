@@ -604,15 +604,8 @@ input[type="range"] { width: 150px; accent-color: var(--guide-plum); }
   select { max-width: 100%; }
 }
 
-/* ---- the reader's own blocklist, on the Activity page --------------------
-   Lives here rather than in a <style> block on history.html: tools/test-theme.js
-   reads the FIRST inline <style> as "the page style" and only falls back to this
-   file when there is none, so an inline block silently replaced the shared theme
-   signatures it checks for. */
-  /* Scoped to this panel rather than added to theme.css: nothing else uses it, and
-     theme.css is shared by every page. Only variables that actually exist in
-     theme.css are referenced -- an undefined custom property silently voids the
-     whole declaration, which is how borders have gone missing here before. */
+/* Keep Activity panel rules here: test-theme.js treats a page's first inline style as the complete page theme. */
+  /* Scope these rules to Activity and use existing theme variables; undefined variables invalidate declarations. */
   .block-add { margin: 12px 0 14px; padding: 12px 14px; border: 1px solid var(--wo-line); border-radius: 12px; background: var(--wo-bg-soft); }
   .block-add-label { display: block; font-size: 11.5px; color: var(--wo-text-faint); margin-bottom: 7px; }
   .block-add-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

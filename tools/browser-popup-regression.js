@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const profile = require('./perf-profile.js');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(process.env.WARDENONE_EXTENSION_DIR || path.join(__dirname, '..'));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function run() {
@@ -32,14 +32,48 @@ async function run() {
     await profile.closeExtensionTabs?.(cdp, port, extension.id);
     await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir });
 
-    async function openPopup() {
+    async function openPopup(storageDelay = 0) {
       const { targetId } = await cdp.send('Target.createTarget', {
-        url: `chrome-extension://${extension.id}/popup.html`,
+        url: 'about:blank',
       });
       const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
       await cdp.send('Page.enable', {}, sessionId);
       await cdp.send('Runtime.enable', {}, sessionId);
       page = { targetId, sessionId };
+      await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+        const original = chrome.storage.session.get.bind(chrome.storage.session);
+        chrome.storage.session.get = (keys, callback) => {
+          if (${storageDelay} && Array.isArray(keys) && keys.includes('wardenone_popup_scroll_memory')) {
+            setTimeout(() => original(keys, callback), ${storageDelay});
+          } else return original(keys, callback);
+        };
+        const getLocal = chrome.storage.local.get.bind(chrome.storage.local);
+        chrome.storage.local.get = (keys, callback) => {
+          if (${storageDelay} && typeof callback === 'function' &&
+              (keys === 'wardenone_config' || keys === 'wardenone_popup_section_order')) {
+            setTimeout(() => getLocal(keys, callback), ${storageDelay});
+          } else return getLocal(keys, callback);
+        };
+        window.__woPopupFrames = [];
+        const sample = () => {
+          if (document.body) {
+            const saved = JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory') || 'null');
+            const anchor = saved?.anchor;
+            const anchored = anchor && (anchor.id ? document.getElementById(anchor.id) : document.querySelector('[data-key="' + anchor.key + '"]'));
+            const frame = {
+              y: scrollY, visible: getComputedStyle(document.body).visibility === 'visible',
+              search: document.getElementById('wo-settings-search')?.value,
+              providers: document.querySelector('.advanced-providers')?.open,
+              anchor: anchored ? { id: anchor.id, key: anchor.key, offset: anchored.getBoundingClientRect().top } : null,
+            };
+            if (window.__woPopupFrames.length < 30 || frame.visible) window.__woPopupFrames.push(frame);
+            if (frame.visible) return;
+          }
+          if (performance.now() < 10000) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      })();` }, sessionId);
+      await cdp.send('Page.navigate', { url: `chrome-extension://${extension.id}/popup.html` }, sessionId);
       await cdp.send('Page.bringToFront', {}, sessionId);
       try {
         await until("document.readyState === 'complete' && !!document.getElementById('wo-settings-search')", 'popup load', 30000);
@@ -70,8 +104,33 @@ async function run() {
     async function visible(selector) {
       return value(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); return !!el && !el.closest('.wo-hidden') && getComputedStyle(el).display !== 'none'; })()`);
     }
+    function samePosition(saved, actual) {
+      if (!saved.anchor) return Math.abs(actual.y - saved.y) < 2;
+      return actual.anchor && actual.anchor.id === saved.anchor.id && actual.anchor.key === saved.anchor.key
+        && Math.abs(actual.anchor.offset - saved.anchor.offset) < 2;
+    }
 
     await openPopup();
+    const reopenY = 3200;
+    await value(`(() => {
+      document.querySelector('.advanced-providers').open = true;
+      scrollTo(0, ${reopenY});
+    })()`);
+    await until(`JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))?.y === ${reopenY} && JSON.parse(localStorage.getItem('wardenone_advanced_providers_open'))?.open`, 'scroll and disclosure recorded by their events');
+    const reopenPosition = await value("JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))");
+    await cdp.send('Target.closeTarget', { targetId: page.targetId });
+    await openPopup(1200);
+    try { await until('window.__woPopupFrames.some(frame => frame.visible)', 'first visible popup frame'); }
+    catch (error) {
+      throw new Error(error.message + ': ' + JSON.stringify(await value("({ frames: window.__woPopupFrames, classes: document.documentElement.className, visibility: getComputedStyle(document.body).visibility, state: document.readyState, y: scrollY })")));
+    }
+    const firstFrames = await value('window.__woPopupFrames');
+    assert(firstFrames.every(frame => frame.visible), 'delayed storage must never hide the controls');
+    const firstVisible = firstFrames.find(frame => frame.visible);
+    assert(samePosition(reopenPosition, firstVisible),
+      'the first visible frame must show the saved position: ' + JSON.stringify({ saved: reopenPosition, frames: firstFrames }));
+    assert.equal(firstVisible.providers, true, 'provider disclosure should restore before the first visible frame');
+    await value("document.querySelector('.advanced-providers').open = false; scrollTo(0, 0)");
     for (const id of ['tl-max', 'tl-idle']) {
       const inspectNumber = () => value(`(() => {
         const input = document.getElementById(${JSON.stringify(id)});
@@ -242,11 +301,8 @@ async function run() {
       'held touch drag to reorder');
     await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false }, page.sessionId);
     await value("document.getElementById('arrange-reset').click(); document.getElementById('arrange-done').click()");
-    /* The card is shown in each layout the way the popup shows it: layout set while hidden, then
-       shown, and measured on the next frame. Edge 153 can leave the toggle's style on the old
-       layout when the layout attribute changes on a card already on screen. The popup's own
-       choice is set as well: every site-card repaint re-applies it, and with only the attribute
-       changed, one landing before the measurement put the card back in layout A. */
+    /* Set the layout while hidden, then show and measure next frame for Edge 153. Set the popup preference too so
+       concurrent repaints cannot restore layout A. */
     const nextFrame = () => value("new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve('frame'))); setTimeout(() => resolve('timer'), 250); })");
     const showCard = async (layout) => {
       await value("(() => { const section = document.getElementById('site-card'); siteCardLayout = " + JSON.stringify(layout) + ";"
@@ -376,6 +432,7 @@ async function run() {
       'the update button label should be centered');
     assert(await value("document.getElementById('ug-refresh').getAttribute('aria-label') === 'Check again'"));
     assert(!(await value("document.getElementById('ug-note').textContent.includes('hidden from extensions')")));
+    await value("document.getElementById('cl-section-now').open = true; document.getElementById('cl-advanced').open = true; document.getElementById('cl-record-tools').open = true;");
     assert(await value("(() => { const select = document.getElementById('privacy-data-mode'); const row = select.closest('.row'); return select.getBoundingClientRect().width > 250 && select.getBoundingClientRect().right <= row.getBoundingClientRect().right + 1; })()"),
       'the reset choice should fit across the popup');
     assert.equal(await value("document.getElementById('privacy-data-erase').textContent"), 'Reset WardenOne');
@@ -457,6 +514,9 @@ async function run() {
       throw new Error(error.message + ': ' + JSON.stringify(state));
     }
     assert(await visible('#js-shield'), 'restored search must keep Script Shield visible');
+    await until('window.__woPopupFrames.some(frame => frame.visible)', 'restored search first paint');
+    assert.equal(await value('window.__woPopupFrames.find(frame => frame.visible).search'), 'WebAssembly',
+      'the saved search must apply before controls first appear');
     await value("document.getElementById('wo-search-clear').click()");
 
     await value("(() => { const el = document.getElementById('enabled'); el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); })()");
@@ -475,10 +535,15 @@ async function run() {
        clamps to it, and a wheel pointed into an end does not move the page at all. */
     const maxScroll = await value('document.scrollingElement.scrollHeight - innerHeight');
     assert(maxScroll > 200, 'the popup is too short to test scroll restoration: ' + maxScroll);
-    const savedY = Math.floor(maxScroll / 2);
-    await value(`new Promise(resolve => chrome.storage.session.set({wardenone_popup_scroll_memory:{y:${savedY},at:Date.now()}},resolve))`);
-    await value("scrollTo(0,0); restorePopupScrollPosition()");
-    await until(`Math.abs(scrollY - ${savedY}) < 2`, 'saved popup scroll position');
+    await value(`scrollTo(0, ${Math.floor(maxScroll / 2)})`);
+    await until("scrollY > 0 && JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))?.y === Math.round(scrollY)", 'scrolled position to record');
+    const savedPosition = await value("JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))");
+    await cdp.send('Target.closeTarget', { targetId: page.targetId });
+    await openPopup();
+    await until('window.__woPopupFrames.some(frame => frame.visible)', 'saved popup position first frame');
+    const savedFrame = await value('window.__woPopupFrames.find(frame => frame.visible)');
+    assert(samePosition(savedPosition, savedFrame),
+      'the recorded position must restore before the first frame: ' + JSON.stringify({ savedPosition, savedFrame }));
     const restoredY = await value('scrollY');
     /* Count the popup's own scroll writes. Comparing scrollY alone flaked on CI: sections such as
        Script Shield and the extension alerts fill in from async data for seconds after load, and
@@ -546,7 +611,67 @@ async function run() {
       }, page.sessionId);
       fs.writeFileSync(process.env.WARDENONE_BUILD_UPDATE_SCREENSHOT, Buffer.from(shot.data, 'base64'));
     }
-    console.log('[ok] real popup controls, search, health, diagnostics, updates, scroll, reopen and master-switch checks passed');
+    if (process.env.WARDENONE_HEADLESS !== '1') {
+      const previousPopup = page;
+      const { targetId: focusTarget } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+      const { sessionId: focusSession } = await cdp.send('Target.attachToTarget', { targetId: focusTarget, flatten: true });
+      await cdp.send('Target.closeTarget', { targetId: previousPopup.targetId });
+      const popupTab = { targetId: focusTarget, sessionId: focusSession };
+      page = popupTab;
+      async function openToolbarPopup() {
+        await cdp.send('Page.bringToFront', {}, focusSession);
+        const existing = new Set((await cdp.send('Target.getTargets')).targetInfos.map(target => target.targetId));
+        const result = await cdp.send('Runtime.evaluate', {
+          expression: 'chrome.action.openPopup().then(() => true)', awaitPromise: true, userGesture: true,
+        }, extension.attachedSession);
+        if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
+        const deadline = Date.now() + 10000;
+        let target;
+        while (!target && Date.now() < deadline) {
+          target = (await cdp.send('Target.getTargets')).targetInfos.find(item =>
+            !existing.has(item.targetId) && item.url === `chrome-extension://${extension.id}/popup.html`);
+          if (!target) await sleep(20);
+        }
+        assert(target, 'the native toolbar popup must open');
+        const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+        page = { targetId: target.targetId, sessionId };
+        await until("document.readyState === 'complete' && !!document.getElementById('wo-settings-search')", 'native toolbar popup');
+        assert.equal(await value('getComputedStyle(document.body).visibility'), 'visible');
+      }
+      async function dismissToolbarPopup() {
+        const closing = page;
+        await value('window.close()').catch(() => {});
+        await cdp.send('Target.detachFromTarget', { sessionId: closing.sessionId }).catch(() => {});
+        page = popupTab;
+        await cdp.send('Page.bringToFront', {}, focusSession);
+        const deadline = Date.now() + 5000;
+        while ((await cdp.send('Target.getTargets')).targetInfos.some(target => target.targetId === closing.targetId)) {
+          assert(Date.now() < deadline, 'the dismissed toolbar popup must close');
+          await sleep(20);
+        }
+      }
+      await openToolbarPopup();
+      for (const targetY of [2800, 0]) {
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 }, page.sessionId);
+        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 }, page.sessionId);
+        await value(`chrome.storage.session.set = () => Promise.resolve(); scrollTo(0, ${targetY})`);
+        await until(`JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))?.y === Math.round(scrollY) && ${targetY === 0 ? 'scrollY === 0' : 'scrollY > 0'}`, 'native scroll to record before dismissal');
+        const remembered = await value("JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))");
+        await dismissToolbarPopup();
+        await openToolbarPopup();
+        const reopened = await value(`(() => {
+          const anchor = ${JSON.stringify(remembered.anchor)};
+          const el = anchor && (anchor.id ? document.getElementById(anchor.id) : document.querySelector('[data-key="' + anchor.key + '"]'));
+          return { y:scrollY, anchor:el ? {id:anchor.id,key:anchor.key,offset:el.getBoundingClientRect().top} : null,
+            memory:JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory')) };
+        })()`);
+        assert(samePosition(remembered, reopened),
+          'native dismissal must retain the same setting in view even when asynchronous writes do not complete: ' + JSON.stringify({ remembered, reopened }));
+        console.log('[ok] native toolbar popup retains scroll ' + targetY + ' after dismissal with pending storage writes');
+      }
+      await dismissToolbarPopup();
+    } else console.log('[info] native toolbar checks require a headed browser');
+    console.log('[ok] real popup controls, immediate cached rendering, search, health, diagnostics, updates and master-switch checks passed');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     siteServer.close();

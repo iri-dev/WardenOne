@@ -335,16 +335,8 @@ function run(options) {
   assert.strictEqual(r.lift(), 1064 - 900 + 8, 'it clears the bar (' + r.lift() + ')');
 }
 {
-  /* THE THIRD REPORT, Twitch: "when it blocks something the badge becomes unclickable".
-     Twitch is an app shell whose document never scrolls, so everything in its flow is
-     anchored. The badge's corner is the chat column's input row: the Chat button under the
-     badge, the chat input (a contenteditable with a tabindex) directly above it, and above
-     that the message list, which scrolls. "Clear of the control" landed on the input, which
-     is another anchored control, and "clear of the whole block" is the viewport itself on a
-     page that does not scroll -- so nothing fit and the badge went inert, visible and dead,
-     the moment a play event (an ad break blocked, the stream resuming) forced a re-check.
-     The badge now climbs: a spot occupied by another anchored control yields the next
-     candidate, clear of THAT control, until the spot is free or the cap is reached. */
+  /* Twitch's non-scrolling shell anchors chat controls above the badge. Exercise successive avoidance candidates and the
+     movement cap when playback forces a recheck. */
   const twitch = (opts) => run({
     docHeight: 1080, htmlOverflow: 'hidden',
     build: (body) => {

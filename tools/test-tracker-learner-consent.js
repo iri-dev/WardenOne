@@ -40,7 +40,7 @@ function lift(name) {
 }
 const PIECES = ['normalizeTrackerDomain', 'siteIdentityBg', 'trackerStoreShape', 'trackerDistinctSiteCount',
   'trackerDistinctSessionCount', 'trackerDay', 'trackerNewSalt', 'trackerSaltShape', 'trackerLearnerSalt', 'trackerMarkPositions', 'trackerMarkHas', 'trackerMarkAdd',
-  'trackerSessionState', 'noteTrackerSessionSeen', 'noteTrackerSiteView', 'trackerSiteViewFor', 'resetTrackerSessionState', 'trackerControlledDomains',
+  'trackerSessionState', 'noteTrackerSessionSeen', 'noteTrackerSiteView', 'noteTrackerEvidenceSeen', 'trackerLearnerLock', 'commitTrackerLearnerDecision', 'trackerSiteViewFor', 'resetTrackerSessionState', 'trackerControlledDomains',
   'isProtectedTrackerDomain', 'looksLikeKnownTrackerHost',
   'ownProviderDomains', 'noteTrackerObservation', 'pruneTrackerLearnerStore', 'saveTrackerLearner',
   'applyTrackerLearnerRules', 'trackerLearnerProposals', 'decideTrackerProposal', 'decideAllTrackerProposals',
@@ -51,6 +51,9 @@ function rig(options) {
   const o = options || {};
   const state = { history: [], written: [], dnr: [], updates: [], session: o.session || 'session-A', learner: null, sessionStore: {} };
   const sandbox = {
+    WOLearner: require('../tracker-learner-utils.js'), WO_TRACKER_NETWORK_DATA: require('./build-tracker-network-data.js').build(),
+    WOCname: require('./build-cname-data.js').helpers().WOCname, isMediaCompatDomain: () => false,
+    activeAllowlist: cfg => cfg.allowlist || [], hostMatchesAllowlist: (host, values) => values.some(value => host === value || host.endsWith('.' + value)),
     console: { warn() {}, log() {} }, Math, Date, Object, Array, Set, Map, Number, String, URL, JSON, isNaN, Promise, Uint8Array,
     /* Deterministic keys for the site sketch: a fresh random key puts a third fixture site on
        already-set bits about once in sixty runs (the documented extra observation), which a

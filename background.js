@@ -18,6 +18,13 @@ importScripts('domain-utils.js');
 // Worker-only PSL data: private rules isolate tenants (SEC-07); ICANN rules bound filter exceptions.
 // Frames receive their site identity in content config.
 importScripts('psl-private.js');
+importScripts('privacy-signals.js');
+importScripts('cname-utils.js');
+importScripts('background-cname.js');
+importScripts('tracker-learner-utils.js');
+importScripts('tracker-network-data.js');
+importScripts('identifier-detector.js');
+importScripts('background-identifiers.js');
 importScripts('network-policy.js');
 importScripts('engine-compat.js');
 // IDN lookalike data is needed by startup checks, not by every page frame.
@@ -31,12 +38,11 @@ importScripts('notification-manager.js');
 // One change to wardenone_config at a time across this worker and every extension page; see
 // updateStoredConfig below.
 importScripts('config-lock.js');
+importScripts('upgrade-config.js');
+importScripts('site-recovery.js');
 
-/* Content scripts are untrusted extension contexts: they execute beside arbitrary pages and
-   should never be able to enumerate local configuration, provider credentials, history, or
-   learned browsing data. Chrome exposes storage.local to them by default, so close that API
-   boundary before any worker event handlers are registered. Content scripts receive only the
-   bounded, secret-free snapshot served by content-config-get below. */
+/* Restrict storage.local before registering handlers: content scripts must receive only bounded, secret-free config
+   snapshots, never credentials or browsing records. */
 function restrictStorageToTrustedContexts() {
   for (const area of [chrome.storage && chrome.storage.local, chrome.storage && chrome.storage.session]) {
     try {
@@ -57,6 +63,8 @@ const INCOGNITO_CONTEXT = (() => {
   try { return !!(chrome.extension && chrome.extension.inIncognitoContext); } catch (_) { return false; }
 })();
 const CONTENT_SETTING_SCOPE = INCOGNITO_CONTEXT ? 'incognito_session_only' : 'regular';
+importScripts('history-store.js');
+importScripts('background-privacy-cleaner.js');
 
 function contentSettingSetDetails(primaryPattern, setting) {
   return { primaryPattern, setting, scope: CONTENT_SETTING_SCOPE };
@@ -80,11 +88,7 @@ function pruneTabMessageRates(now) {
   if (now - TAB_MESSAGE_RATE_LAST_PRUNE < 10000) return;
   TAB_MESSAGE_RATE_LAST_PRUNE = now;
   const keys = Object.keys(TAB_MESSAGE_RATE);
-  // Expired buckets are dropped on every sweep, not only once the dictionary passes
-  // TAB_MESSAGE_RATE_MAX_KEYS. A bucket that is never touched again cannot prune itself, so with
-  // the old early return an ordinary session that never reached 512 keys kept every timestamp for
-  // the worker's whole life. The key ceiling below is now purely a cap on how many LIVE buckets
-  // are kept, which is what it was meant to be.
+  // Prune expired buckets on every sweep; untouched keys cannot expire themselves. The ceiling limits live buckets only.
   const cutoff = now - TAB_MESSAGE_RATE_MAX_WINDOW_MS;
   const active = [];
   for (const key of keys) {
@@ -566,6 +570,7 @@ function normalizeTabBlockMessage(msg, sender) {
   const type = String((msg && msg.type) || 'block');
   const detail = (msg && msg.detail && typeof msg.detail === 'object') ? safeDetailAssign({}, msg.detail) : (msg && msg.detail) || null;
   const out = { type, detail, log: true };
+  if (type === 'detected_thirdparty_tracker') { out.log = false; return out; }
   if (XSS_ACTIVITY_MESSAGE_TYPES.has(type)) {
     out.detail = normalizeXssActivityDetail(type, detail);
     out.log = securityHistoryAllowed(type, out.detail, sender);
@@ -613,6 +618,7 @@ beginBadgeCountRecovery();
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!messageSenderIsTab(sender)) return;
+  if (!tabMessagePayloadAllowed(msg)) return;
   const tabId = sender.tab.id;
   /* The Site Dashboard's count of routine page actions (see "Site tally"). Top frame only: that
      is the page the dashboard describes, and frames report through it. */
@@ -650,6 +656,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       'blocked_autoplay_media',
       'detected_thirdparty_tracker',
       'blocked_token_exfil',
+      'consent_outcome',
     ]);
     const isWarning = /^warned_/.test(normalized.type || '') || normalized.type === 'behavioral_risk'
       || normalized.type === 'detected_download_gate' || NO_BADGE_TYPES.has(normalized.type || '');
@@ -689,34 +696,11 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
       } catch (_) {}
     }
 
-    // ADAPTIVE LEARNING: only background-corroborated detector paths may change
-    // the learned blocklist. Behavioral/XSS events originate in MAIN-world page
-    // instrumentation and cross a page-visible CustomEvent, so they are warnings
-    // only even when their local score is high.
+    /* Page-derived observations cannot authorize persistent network blocks. */
     try {
-      // SECURITY: wo-events arrive via a DOM CustomEvent the MAIN-world page shares,
-      // so a malicious page can FORGE them. Never learn an attacker-supplied domain
-      // (msg.detail.host / matched) -- that would let any site poison the auto-block
-      // "learned bad sites" list with arbitrary third parties (e.g. a bank, google).
-      // Learning is constrained to the sender TAB's own host, which Chrome sets and
-      // a page cannot spoof; a forged event can then only blocklist the forging site
-      // itself (harmless). Background-side reputation checks still cover cross-domain.
       const tabHost = (() => { try { return new URL(sender.tab.url).hostname; } catch (_) { return ''; } })();
-      if (tabHost && msg.type === 'detected_grabber_domain') {
-        localGetStrict('wardenone_config').then((store) => {
-          const cfg = (store && store.wardenone_config) || {};
-          if (cfg.enabled !== false && cfg.warnGrabberDomains !== false) {
-            learnDomain(tabHost, 'known IP-grabber behavior');
-          }
-        }).catch(() => {});
-      }
-      // NOTE: blocked_safe_browsing_* events are about a LINK/TARGET, not the page,
-      // and arrive via a forgeable content event -- we deliberately do NOT auto-learn
-      // from them (it would either poison an arbitrary domain or mis-blocklist an
-      // innocent page that merely linked out). The background's own Safe Browsing /
-      // blocklist checks already block known-bad URLs on every visit.
       if (tabHost && msg.type === 'detected_thirdparty_tracker') {
-        noteTrackerObservation(sender.tab.url || '', msg.detail || {});
+        void noteTrackerPageObservation(sender, msg.detail);
       }
     } catch (_) {}
   }
@@ -745,7 +729,7 @@ function persistHistBufferNow() {
       return;
     }
     const slice = pending.length > 100 ? pending.slice(-100) : pending;
-    chrome.storage.session.set({ __wardenone_hist_buffer: slice }).catch(() => {});
+    WO_HISTORY.journal(slice).catch(() => {});
   } catch (_) {}
 }
 function persistHistBuffer() {
@@ -761,7 +745,7 @@ const LOG_SEGMENT_MAX = 24;
 // Redact long digit runs and arbitrary mixed IDs, which can identify accounts or users (PRIV-08).
 const LOG_ROUTE_PART = '(?:[a-z]+|\\d{1,4}|[a-z]{1,6}\\d{1,3})';
 const LOG_ROUTE_WORD = new RegExp('^' + LOG_ROUTE_PART + '(?:[._~-]' + LOG_ROUTE_PART + ')*$');
-const LOG_SENSITIVE_ROUTE = /(?:^|[/._-])(?:reset|verify|verification|invite|invitation|magic|recover|recovery|otp|token|activate|activation)(?:$|[/;._-])/i;
+const LOG_SENSITIVE_ROUTE = /(?:^|[/._-])(?:reset|password|passwd|passcode|verify|verification|invite|invitation|magic|recover|recovery|otp|token|activate|activation|callback)(?:$|[/;._-])/i;
 function safeLogSegment(segment) {
   if (!segment) return segment;
   let decoded = segment;
@@ -799,6 +783,7 @@ function safeUrlForLog(value) {
   if (!raw) return '';
   try {
     const url = new URL(raw);
+    if (!/^https?:$/.test(url.protocol)) return '';
     return (url.protocol + '//' + url.host + safeLogPath(url.pathname)).slice(0, LOG_URL_MAX);
   } catch (_) {}
   // Some callers log a bare domain, or a scheme-less host/path. Re-parse with an
@@ -822,7 +807,8 @@ function sanitizeHistoryDetail(value, depth) {
     remaining -= size;
     return true;
   };
-  const cleanString = (text) => /^[a-z][a-z0-9+.-]*:\/\//i.test(text.trim()) ? safeUrlForLog(text) : text;
+  const cleanString = (text) => /^[a-z][a-z0-9+.-]*:\/\//i.test(text.trim()) ? safeUrlForLog(text)
+    : text.replace(/https?:\/\/[^\s<>"'`]+/gi, safeUrlForLog);
   function visit(item, level) {
     if (level > HISTORY_DETAIL_LIMITS.depth) return undefined;
     if (typeof item === 'string') {
@@ -845,10 +831,13 @@ function sanitizeHistoryDetail(value, depth) {
       if (!descriptor || !descriptor.enumerable || !('value' in descriptor)) continue;
       if (array && !/^(0|[1-9]\d*)$/.test(key)) continue;
       if (key.length > HISTORY_DETAIL_LIMITS.key || UNSAFE_DETAIL_KEYS.has(key)) continue;
+      if (/^(?:password|passcode|secret|token|id[_-]?token|access[_-]?token|refresh[_-]?token|session[_-]?token|client[_-]?secret|authorization|api[_-]?key|cookie|set-cookie)$/i.test(key)) continue;
       const cleanKey = array ? '' : cleanString(key);
       if (UNSAFE_DETAIL_KEYS.has(cleanKey)) continue;
       if (!reserve(array ? 1 : JSON.stringify(cleanKey).length + 2)) break;
-      const next = visit(descriptor.value, level + 1);
+      const raw = typeof descriptor.value === 'string' && /^(?:url|src|href|target|referrer|destination|redirectUrl|sourceUrl)$/i.test(key)
+        && /[/?#]/.test(descriptor.value) ? safeUrlForLog(descriptor.value) : descriptor.value;
+      const next = visit(raw, level + 1);
       if (next === undefined) continue;
       if (array) out.push(next); else out[cleanKey] = next;
     }
@@ -861,11 +850,8 @@ function sanitizeHistoryDetail(value, depth) {
   } catch (_) { return null; }
 }
 
-// The history keeps its last HISTORY_MAX events and, since PRIV-08, only for HISTORY_RETENTION_MS:
-// the same thirty days the notification copy of the same events has always had, so the two
-// copies expire together rather than one outliving the other for as long as the profile did.
-// Applied on every write, on browser start and on the daily alarm; the Activity Centre page also
-// ignores an entry past it, so nothing expired is shown even before the worker has pruned.
+// PRIV-08: bound history by count and retention age. Prune on writes/startup/daily alarms; Activity also filters expired
+// entries before pruning.
 const HISTORY_MAX = 200;
 const HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 function pruneHistoryEntries(hist, now) {
@@ -876,17 +862,22 @@ function pruneHistoryEntries(hist, now) {
     return Number.isFinite(at) && at >= cutoff;
   });
   if (kept.length > HISTORY_MAX) kept.length = HISTORY_MAX;
-  return kept;
+  return kept.map(entry => {
+    const safe = Object.assign({}, entry, { url: safeUrlForLog(entry.url) });
+    if (safe.detail !== undefined) safe.detail = sanitizeHistoryDetail(safe.detail, 0);
+    return safe;
+  });
 }
 async function pruneHistoryStore(reason) {
   if (INCOGNITO_CONTEXT) return false;
   try {
-    const store = await localGet('wardenone_history');
+    const token = WO_HISTORY.epoch;
+    const store = await WO_HISTORY.read('wardenone_history');
     const raw = store && store.wardenone_history;
     if (!Array.isArray(raw)) return false;
     const kept = pruneHistoryEntries(raw, Date.now());
-    if (kept.length === raw.length) return false;
-    await localSet({ wardenone_history: kept });
+    if (JSON.stringify(kept) === JSON.stringify(raw)) return false;
+    await WO_HISTORY.write({ wardenone_history: kept }, null, token);
     return true;
   } catch (e) {
     console.warn('[WardenOne] history prune failed (' + reason + ')', e);
@@ -896,6 +887,7 @@ async function pruneHistoryStore(reason) {
 
 function queueHistory(entry) {
   if (INCOGNITO_CONTEXT) return;
+  if (WO_HISTORY.changing) return;
   // Sanitised here, at the one choke point every history write already passes
   // through, so no future caller can reintroduce this by forgetting to strip.
   const safe = Object.assign({}, entry);
@@ -908,6 +900,7 @@ function queueHistory(entry) {
   if (!Number.isFinite(Number(safe.at))) safe.at = Date.now();
   try { recordWardenNotification(safe); } catch (_) {}
   __histBuffer.push(safe);
+  if (__histBuffer.length > 100) __histBuffer.splice(0, __histBuffer.length - 100);
   persistHistBuffer();
   scheduleHistoryFlush();
 }
@@ -919,6 +912,7 @@ function markHistRecoveryDone() {
   __histRecoveryDone = true;
   if (__histBuffer.length) scheduleHistoryFlush();
 }
+const __historyRecoveryEpoch = WO_HISTORY.epoch;
 if (INCOGNITO_CONTEXT) {
   markHistRecoveryDone();
 } else {
@@ -926,7 +920,7 @@ if (INCOGNITO_CONTEXT) {
     chrome.storage.session.get('__wardenone_hist_buffer', (x) => {
       try {
         const recovered = (x && Array.isArray(x.__wardenone_hist_buffer)) ? x.__wardenone_hist_buffer : [];
-        if (recovered.length) __histBuffer = recovered.concat(__histBuffer);
+        if (__historyRecoveryEpoch === WO_HISTORY.epoch && !WO_HISTORY.changing && recovered.length) __histBuffer = recovered.concat(__histBuffer).slice(-100);
       } catch (_) {}
       markHistRecoveryDone();
     });
@@ -965,21 +959,24 @@ function flushHistory() {
   // take everything currently buffered; new events that arrive during the async
   // round-trip accumulate in a fresh buffer and get flushed on the next tick.
   const pending = __histBuffer;
+  const token = WO_HISTORY.epoch;
   __histInFlight = pending;
   __histBuffer = [];
   // Keep the session write-ahead copy until the local write succeeds and no newer entries exist.
   // Every exit must release __histWriting or later flushes will remain blocked.
   const giveBack = () => {
+    if (token !== WO_HISTORY.epoch || WO_HISTORY.changing) { __histInFlight = []; __histWriting = false; return; }
     __histBuffer = pending.concat(__histBuffer);
     __histInFlight = [];
     __histWriting = false;
     persistHistBuffer();
   };
   try {
-    chrome.storage.local.get('wardenone_history', (x) => {
+    WO_HISTORY.read('wardenone_history', (x, readError) => {
       // Catch inside the async callback: the outer try guards only get(), and failures must release the writer.
       try {
-        if (chrome.runtime.lastError) {
+        if (token !== WO_HISTORY.epoch || WO_HISTORY.changing) { __histInFlight = []; __histWriting = false; return; }
+        if (readError || chrome.runtime.lastError) {
           giveBack();
           if (__histBuffer.length) scheduleHistoryFlush();
           return;
@@ -993,9 +990,9 @@ function flushHistory() {
         for (let i = pending.length - 1; i >= 0; i--) hist.unshift(pending[i]);
         // By time first, then by count (PRIV-08).
         const kept = pruneHistoryEntries(hist, Date.now());
-        chrome.storage.local.set({ wardenone_history: kept }, () => {
+        WO_HISTORY.write({ wardenone_history: kept }, (writeError) => {
           try {
-            const err = chrome.runtime.lastError;
+            const err = writeError || chrome.runtime.lastError;
             if (err) {
               // Restored in memory, so re-persist -- otherwise a worker kill in this window loses
               // exactly the entries this mechanism exists to protect.
@@ -1019,7 +1016,7 @@ function flushHistory() {
             giveBack();
             if (__histBuffer.length) scheduleHistoryFlush();
           }
-        });
+        }, token);
       } catch (_) {
         giveBack();
         if (__histBuffer.length) scheduleHistoryFlush();
@@ -1029,6 +1026,64 @@ function flushHistory() {
     giveBack();
   }
 }
+
+function discardProtectionHistoryBuffers() {
+  if (__histTimer) clearTimeout(__histTimer);
+  if (__histPersistTimer) clearTimeout(__histPersistTimer);
+  __histTimer = null; __histPersistTimer = null;
+  __histBuffer = []; __histInFlight = [];
+  if (__wardenNotificationFlushTimer) clearTimeout(__wardenNotificationFlushTimer);
+  __wardenNotificationFlushTimer = null;
+  for (const job of __wardenNotificationBuffer.splice(0)) job.resolve(null);
+}
+
+async function readProtectionHistory() {
+  const selected = await WO_HISTORY.context();
+  const activity = await WO_HISTORY.read('wardenone_history');
+  const notices = await WO_HISTORY.read('wardenone_notifications');
+  return { ok: true, mode: selected.mode, history: pruneHistoryEntries(activity.wardenone_history, Date.now()),
+    notifications: Array.isArray(notices.wardenone_notifications) ? notices.wardenone_notifications.map(item => sanitizeHistoryDetail(item, 0)).filter(Boolean) : [] };
+}
+
+async function clearProtectionHistory(observations = false, mode) {
+  if (mode !== undefined && !['normal', 'session', 'off'].includes(mode)) return { ok: false, error: 'Choose a valid history mode.' };
+  if (typeof WOIdentifierObserver !== 'undefined') WOIdentifierObserver.clear();
+  try {
+    await WO_HISTORY.erase(async () => {
+      await resetPendingConsentChecks();
+      if (mode !== undefined) await updateStoredConfig(cfg => { cfg.historyMode = mode; });
+      if (observations) {
+        __tallyEraseGeneration++;
+        if (tallyStateWriteTimer) clearTimeout(tallyStateWriteTimer);
+        if (siteTallyWriteTimer) clearTimeout(siteTallyWriteTimer);
+        tallyStateWriteTimer = 0; siteTallyWriteTimer = 0;
+        SITE_TALLY_PENDING.length = 0;
+        await siteTallyWriting;
+        tallyStatePromise = Promise.resolve({ tabs: {}, trail: {}, lastPoll: 0 });
+        await clearTrackerLearnerObservations();
+        await chrome.storage.local.remove(['wardenone_script_drift_baselines', 'wardenone_site_tally']);
+        await chrome.storage.session.remove(['__wardenone_tally_state']);
+      }
+    });
+    await restoreWardenNotificationBadge();
+    return { ok: true };
+  } catch (error) { return { ok: false, error: String(error.message || error) }; }
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.wardenone_config || WO_HISTORY.changing) return;
+  const change = changes.wardenone_config;
+  if (WO_HISTORY.mode(change.oldValue) !== WO_HISTORY.mode(change.newValue)) void clearProtectionHistory();
+});
+
+setTimeout(async () => {
+  try {
+    const selected = await WO_HISTORY.context();
+    if (selected.mode === 'off') await WO_HISTORY.erase();
+    else await (selected.mode === 'normal' ? chrome.storage.session : chrome.storage.local)
+      .remove(['wardenone_history', 'wardenone_notifications']);
+  } catch (_) {}
+}, 0);
 
 // Reset the count when a tab starts loading a new top-level page.
 chrome.webNavigation?.onBeforeNavigate?.addListener((details) => {
@@ -1093,19 +1148,16 @@ function sessionMirror(key, snapshot, restore) {
       return ready;
     },
     persist() {
+      if (typeof __privacyEraseInProgress !== 'undefined' && __privacyEraseInProgress) return;
       const area = sessionArea();
       if (!area || timer) return;
       // Coalesced: a redirect chain or a permission burst would otherwise write once per event.
       timer = setTimeout(() => {
         timer = null;
-        // Restore before the snapshot is taken. A worker that has not read the stored copy yet
-        // holds only what it has seen since it woke, and writing that replaced the whole window
-        // with it: the first redirect hop anywhere in the browser after a suspension erased the
-        // chain recorded before it, well inside its ten-minute TTL, so the download that
-        // followed had nothing to be matched against (LIFE-03). The restore merges and never
-        // rejects, so after it the snapshot is both halves -- and it is one read per worker
-        // lifetime, shared with the readers, not one per write.
+        // LIFE-03: merge restored redirect chains before taking a snapshot. Share one restore per worker lifetime so the
+        // first post-wake write preserves earlier hops.
         mirror.ready().then(() => {
+          if (typeof __privacyEraseInProgress !== 'undefined' && __privacyEraseInProgress) return;
           try { area.set({ [key]: snapshot() }, () => { void chrome.runtime.lastError; }); } catch (_) {}
         });
       }, 250);
@@ -1123,12 +1175,8 @@ const REDIRECT_CHAIN_RECENT_MAX = 80;
 function chainAbuseTld(host) {
   return /\.(zip|mov|cfd|sbs|top|xyz|click|link|rest|quest|cyou|icu|gq|cf|ml|ga|tk|work|monster|lol|mom|hair|tattoo)$/i.test(String(host || ''));
 }
-/* An ad-click destination distinctive enough to act on without asking: a known ad network, an
-   endpoint named in ad-industry jargon (onclick, popunder, preland), a click or redirect endpoint
-   that also carries an ad field, or two ad fields. A domain ending, or a bare /click/ or
-   /redirect/ path, is not: plenty of ordinary sites live on .xyz or .link, and sign-in hops and
-   newsletter links use those paths. Those still count as weak evidence below, but a navigation
-   they flag keeps the recoverable warning instead of being silently undone. */
+/* Silent ad-click recovery needs a known network or distinctive endpoint/parameter evidence. Bare TLDs and generic redirect
+   paths retain a recoverable warning. */
 const PLAYER_AD_FIELD_RE = /(?:^|[?&])(?:publisher_id|zone_id|campaign_id|placement_id|banner_id|creative_id|aff_id|affiliate_id|click_?id)=/ig;
 function embeddedPlayerAdBroker(rawUrl) {
   let target;
@@ -1287,11 +1335,8 @@ function notifyBlockedAction(tabId, type, detail) {
   noteRecentPageNotice(tabId, type, detail);
   sendBlockedActionNotice(tabId, type, detail);
 }
-/* A card drawn just before the page navigates is drawn on a page that is already leaving. The
-   popunder that fires on a link press is refused, then sends the tab on to the link itself, and
-   the "Popup blocked" card went with the page it was drawn on -- the reader saw nothing. So a
-   block the top page reported, or one relayed to it, followed within a moment by a new page in
-   the same tab is drawn once more on the page that replaced it, once that page can draw. */
+/* Carry a just-reported block notice once to the next page in the same tab, since immediate navigation can erase the
+   original card. */
 const PAGE_NOTICE_CARRY_MS = 1500;
 const RECENT_PAGE_NOTICE = Object.create(null);
 const CARRIED_PAGE_NOTICE = Object.create(null);
@@ -1656,12 +1701,8 @@ function redirectChainSummary(chain, finalUrl, tabId, matchedOn) {
     at: Date.now(),
   };
 }
-// Re-check every hop against the blocklist before the chain is summarised (M17).
-//
-// Hops are recorded from a synchronous webRequest observer, which can run before BLOCKED_DOMAINS
-// has hydrated -- and it hydrates once per worker lifetime, so on the first chain after every
-// suspension a hop through a known-bad domain was simply not marked. The hop list is kept, so the
-// check can be made again here, by which point the store is loaded.
+// M17: recheck recorded hops after blocklist hydration; webRequest may observe them before the first worker restore
+// completes.
 function markBlocklistedHops(chain) {
   try {
     if (!chain || chain.blocklisted || !Array.isArray(chain.hops)) return;
@@ -1790,6 +1831,13 @@ function redirectChainShouldInterrupt(chain, finalUrl) {
   // TLD -- boost-you-browser.com is an ordinary .com -- so before this it was
   // logged and allowed through like any long chain.
   if (!chain || (!chain.blocklisted && !chain.abuseTld && !chain.fakeInstall)) return false;
+  if (!chain.abuseTld && !chain.fakeInstall && chain.domains?.length === 1 && chain.hops?.length
+      && chain.hops.every(hop => {
+        try {
+          const host = new URL(hop.to).hostname, domain = registrableDomainBg(host) || host;
+          return domain === chain.domains[0] && !SECURITY_DOMAINS.has(host) && !SECURITY_DOMAINS.has(domain);
+        } catch (_) { return false; }
+      })) return false;
   // Known identity-provider chains often contain many cross-site hops and one-time
   // callback URLs. Replacing the completed callback with an interstitial makes the
   // login unrecoverable, so known auth plumbing is log-only even when a community
@@ -1801,11 +1849,8 @@ function redirectChainShouldInterrupt(chain, finalUrl) {
 // chains resembling login or payment. Preserve user and infrastructure allows;
 // missing a tracker is safer than breaking a sign-in or checkout.
 
-/* Payment and 3-D Secure plumbing, on top of isLoginCompatibilityUrl (which covers
-   identity providers and CAPTCHA but, of payments, only PayPal). These bounce you across
-   domains by design, and some of them -- Stripe's device-fingerprinting host especially --
-   do appear on tracker blocklists, which is exactly the combination that would otherwise
-   qualify one for a purge in the middle of somebody's checkout. */
+/* Payment and 3-D Secure redirects may cross tracker-listed infrastructure. Preserve them during checkout alongside
+   login/CAPTCHA compatibility. */
 const BOUNCE_PURGE_PAYMENT_DOMAINS = [
   'stripe.com', 'stripe.network', 'stripecdn.com', 'adyen.com', 'adyenpayments.com',
   'braintreegateway.com', 'braintree-api.com', 'paypal.com', 'paypalobjects.com',
@@ -1848,12 +1893,7 @@ function trackingBounceDomains(chain, finalUrl, cfg) {
     let landed = '';
     try { landed = registrableDomainBg(new URL(String(finalUrl || '')).hostname) || ''; } catch (_) { landed = ''; }
     const seen = new Set();
-    /* Stops one short of the end, which is what "passed through" means: the last hop is
-       where the reader ended up, not somewhere they were sent onward from. It is also
-       why a single-hop chain yields nothing -- A -> B has no middle, and the loop simply
-       does not run. There was an explicit hops.length < 2 guard above this; it was
-       removed because it could never fire, and a guard no test can reach is one that can
-       be deleted later without anything noticing. */
+    /* Exclude the final destination from passed-through hops; a direct A-to-B chain has no intermediate site. */
     for (let i = 0; i < hops.length - 1; i++) {
       const hop = hops[i] || {};
       const host = String(hop.host || '');
@@ -1908,11 +1948,8 @@ const PRESSED_LINK_RESTORE_AT = Object.create(null);
 const FRAME_REDIRECT_WINDOW_MS = 1500;
 const FORCED_NAV_GESTURE_MS = 5000;
 
-// These arrive from the isolated bridge, which relays only beacons signed with the key it
-// handed the page's MAIN world at document_start -- a page holding the public token cannot
-// produce one (SEC-13). An authorisation is bound to the host the in-page guard let the
-// navigation go to: it explains a navigation to that host and no other, so a page cannot arm
-// it with a decoy and spend it on a jump somewhere else. Without a host it is not recorded.
+// SEC-13: accept signed bridge authorization only for its named host. A public token or decoy navigation cannot authorize
+// another destination.
 function noteNavSignal(tabId, signal, host, url, sourceUrl) {
   if (tabId == null || tabId < 0) return { ok: true };
   if (signal === 'player-gesture') PLAYER_GESTURE_AT[tabId] = Date.now();
@@ -1987,6 +2024,14 @@ function knownInviteRedirect(fromUrl, toUrl) {
     || (to.hostname === 'discord.com' && /^\/invite\/[A-Za-z0-9_-]+\/?$/.test(to.pathname));
 }
 
+function knownRegionalRedirect(fromUrl, toUrl) {
+  let from, to;
+  try { from = new URL(fromUrl); to = new URL(toUrl); } catch (_) { return false; }
+  return from.protocol === 'https:' && to.protocol === 'https:' && !from.port && !to.port
+    && !from.username && !from.password && !to.username && !to.password
+    && /^(?:www\.)?bbc\.co\.uk$/.test(from.hostname) && /^(?:www\.)?bbc\.com$/.test(to.hostname);
+}
+
 // Attribute a cross-site top-level hop to a real tab gesture instead of a
 // rotating tracker URL. Federated login remains exempt, and a mistaken match
 // raises a continue-able interstitial rather than cancelling navigation.
@@ -2018,7 +2063,7 @@ async function maybeBlockForcedTopRedirect(details) {
   const fromHost = siteIdentityBg(fromParsed.hostname) || '';
   const toHost = siteIdentityBg(toUrl.hostname) || '';
   if (!fromHost || !toHost || fromHost === toHost) return;
-  if (knownInviteRedirect(fromUrl, details.url)) return;
+  if (knownInviteRedirect(fromUrl, details.url) || knownRegionalRedirect(fromUrl, details.url)) return;
   const now = Date.now();
   if (now - (LAST_GESTURE_AT[tabId] || 0) < FORCED_NAV_GESTURE_MS) return;
   if (topNavOwnedFor(tabId, toHost, now, FORCED_NAV_GESTURE_MS)) return;
@@ -2453,6 +2498,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 // On install, set a default config in storage so the options page has a base.
 // Single source of truth for default settings (used by install + verify/repair).
 const DEFAULT_CONFIG = {
+  historyMode: 'normal',
   enabled: true,
   watchExtensionPermissions: true,
   /* The right-click element tools. On by default because they do nothing at all
@@ -2542,6 +2588,7 @@ const DEFAULT_CONFIG = {
   blockThirdPartyCookies: true,
   blockAllCookies: false,
   blockFirstPartyTrackers: false,
+  blockCnameTrackers: true,
   sessionShield: true,
   blockTokenExfil: true,
   continuousTokenScan: true,
@@ -2555,16 +2602,12 @@ const DEFAULT_CONFIG = {
   // network addresses are excluded, so it has nothing to be noisy about.
   insecureLoginGuard: true,
   certificateGuard: true,
-  // Opt-in: this is the one protection that would tell an outside party something
-  // about where you browse. On a visible password field it sends that site's
-  // registrable domain to rdap.org to check how recently it was registered, which
-  // is a strong phishing signal but also a party you would never otherwise
-  // contact. Everything else here either runs entirely on the device or talks
-  // only to hosts the page already contacted, and the privacy policy says so
-  // plainly -- so this stays off until the user asks for it.
+  // Opt-in domain-age checks send the password page's registrable domain to rdap.org, revealing browsing context to an
+  // external service.
   loginAgeCheck: false,
   loginAgeMaxDays: 14,
   downloadReputation: true,
+  forcedDownloadProtection: true,
   downloadHardBlockCritical: true,
   downloadHashCheck: true,
   downloadDomainAge: false,
@@ -2670,6 +2713,7 @@ const DEFAULT_CONFIG = {
   allowlist: [],
   allowlistUntil: {},
   siteOverrides: {},
+  siteRecoveryUntil: {},
 };
 
 const CONTENT_CONFIG_EXTRA_FIELDS = new Set([
@@ -2680,7 +2724,7 @@ const CONTENT_CONFIG_EXTRA_FIELDS = new Set([
 ]);
 
 function contentConfigFieldAllowed(field) {
-  if (!field || /Key$/.test(field) || field === 'forgetMeAllConfirmedAt') return false;
+  if (!field || /Key$/.test(field) || field === 'forgetMeAllConfirmedAt' || field === 'siteRecoveryUntil') return false;
   return Object.prototype.hasOwnProperty.call(DEFAULT_CONFIG, field) || CONTENT_CONFIG_EXTRA_FIELDS.has(field);
 }
 
@@ -2969,47 +3013,16 @@ const ONBOARDING_MAX_PRIVACY = Object.assign({}, ONBOARDING_RECOMMENDED, {
   deAmp: true,
 });
 
+function runStoredConfigMigration() {
+  return updateStoredConfig((cfg, stored) => stored ? migrateStoredConfig(cfg, DEFAULT_CONFIG) : false);
+}
+
+runStoredConfigMigration().catch(() => {});
+
 chrome.runtime.onInstalled.addListener((details) => {
   updateStoredConfig((cfg, stored) => {
     if (!stored) return Object.assign({}, DEFAULT_CONFIG);
-    if (details && details.reason === 'update') {
-      let changed = false;
-      if (cfg.__locationPrivacyV344Enabled !== true) {
-        // Preserve an explicit user choice from older releases. The migration is
-        // only responsible for supplying the new default when the setting did
-        // not exist yet; it must not silently turn location blocking back on.
-        if (typeof cfg.blockGeolocation === 'undefined') cfg.blockGeolocation = true;
-        cfg.__locationPrivacyV344Enabled = true;
-        changed = true;
-      }
-      if (cfg.googleSearchResultCleanup === true && cfg.__searchCleanupSplitV352Enabled !== true) {
-        if (typeof cfg.blockSearchAiAnswers === 'undefined') cfg.blockSearchAiAnswers = true;
-        if (typeof cfg.blockSponsoredSearchResults === 'undefined') cfg.blockSponsoredSearchResults = true;
-        cfg.googleSearchResultCleanup = false;
-        cfg.__searchCleanupSplitV352Enabled = true;
-        changed = true;
-      }
-      if (typeof cfg.stopAnimatedVideoPreviews === 'undefined' && typeof cfg.stopYouTubeVideoPreviews === 'boolean') {
-        cfg.stopAnimatedVideoPreviews = cfg.stopYouTubeVideoPreviews;
-        changed = true;
-      }
-      if (Object.prototype.hasOwnProperty.call(cfg, 'stopYouTubeVideoPreviews')) {
-        delete cfg.stopYouTubeVideoPreviews;
-        changed = true;
-      }
-      // A secret-shaped field this build has no setting for is a credential nothing can read.
-      // Earlier builds offered an "Optional OpenPhish token" the community feed never used, and
-      // a reader who pasted one has had it sitting in plaintext beside the keys that are used
-      // (BUG-09). Deleting by pattern rather than by name, so the next retired provider key is
-      // purged the same way; the /Key$/ rule is the one the bridge and the export already use.
-      for (const field of Object.keys(cfg)) {
-        if (/Key$/.test(field) && !Object.prototype.hasOwnProperty.call(DEFAULT_CONFIG, field)) {
-          delete cfg[field];
-          changed = true;
-        }
-      }
-      return changed ? cfg : false;
-    }
+    if (details && details.reason === 'update') return migrateStoredConfig(cfg, DEFAULT_CONFIG);
     return false;
   }).catch(() => {});
   if (details && details.reason === 'install') {
@@ -3036,23 +3049,12 @@ chrome.runtime.onStartup?.addListener(() => {
   refreshExtensionState();
 });
 
-/* ===========================================================================
- * INSTALLED-EXTENSION CHANGE WATCH
- * ---------------------------------------------------------------------------
- * A serialized, version-aware inventory replaces the old permission-only event
- * handler. The module records installs, updates, access changes, enable/disable
- * changes and removals, and backs event delivery with a periodic local scan.
- * ========================================================================== */
+/* The extension-watch module serializes version-aware inventory changes and backs event delivery with a periodic local
+   scan. */
 importScripts('background-extension-watch.js');
 importScripts('background-extension-reputation.js');
 
-/* ===========================================================================
- * STARTUP SECURITY CHECK
- * ---------------------------------------------------------------------------
- * Split into background-startup.js so the main MV3 service worker stays auditable.
- * The module registers startup listeners and exposes STARTUP_REPORT_KEY,
- * runStartupCheck(), and loginRiskVerdict() for the message handlers below.
- * ========================================================================== */
+/* background-startup.js registers startup checks and exposes report/login-risk helpers to the message handlers. */
 importScripts('background-startup.js');
 
 /* AUTO-UPDATING BLOCKLIST
@@ -3138,13 +3140,8 @@ const TRACKER_LISTS = [
   'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt',
 ];
 
-// ---- AdShield: ad-blocking network lists (toggle: adShield, ON by default) ----
-// These are ad-server domain lists in hosts/plain format that our existing
-// parseList() can already digest into DNR block rules. We keep them SEPARATE from
-// the tracker lists so AdShield is its own toggle and its own section. Honest
-// scope: this blocks ad-SERVER requests (most display/banner/video-host ads). It
-// will NOT match uBlock Origin's coverage and will NOT reliably kill YouTube's
-// in-stream video ads (served from the video domain itself).
+// AdShield compiles ad-server lists separately from tracker lists. Network domain blocking alone cannot reliably remove
+// same-origin in-stream ads.
 const ADSHIELD_NET_LISTS = [
   // Peter Lowe's ad servers (also in trackers, but AdShield should stand alone)
   'https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext',
@@ -3363,29 +3360,140 @@ function parseScriptlet(body) {
   return { name, args };
 }
 
+function cosmeticGenericHideDomain(line) {
+  const match = String(line || '').trim().match(/^@@\|\|([a-z0-9.-]+)\^\$([^$]+)$/i);
+  if (!match) return null;
+  const options = match[2].split(',').map((o) => o.trim().toLowerCase());
+  if (!options.includes('generichide') && !options.includes('ghide')) return null;
+  const domain = match[1].replace(/^www\./i, '').replace(/^\.+|\.+$/g, '').toLowerCase();
+  return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain) && !domain.includes('..') ? domain : '';
+}
+
+const COSMETIC_PROCEDURAL_OPS = /:(?:-abp-contains|-abp-has|has|has-text|contains|matches-css(?:-before|-after)?|matches-attr|matches-path|min-text-length|upward|nth-ancestor|watch-attr|xpath|others|remove|style)\(/i;
+
+function classifyCosmeticFilterLine(rawLine) {
+  const line = rawLine.trim();
+  if (!line || line[0] === '!' || line[0] === '[') return null;
+  const hideDomain = line.startsWith('@@') ? cosmeticGenericHideDomain(line) : null;
+  if (hideDomain !== null) return { kind: 'generic-hide-exception', domain: hideDomain };
+  const firstHash = line.indexOf('#');
+  if (firstHash === -1) return null;
+  if (line.startsWith('#^#', firstHash) || line.startsWith('#@?#', firstHash)
+      || line.startsWith('#@$#', firstHash) || line.startsWith('#@%#', firstHash)) return { kind: 'unsupported' };
+  const procSep = line.indexOf('#?#');
+  if (procSep !== -1) return { kind: 'procedural', domainPart: line.slice(0, procSep), selector: line.slice(procSep + 3).trim() };
+  const styleSep = line.indexOf('#$#');
+  if (styleSep !== -1) {
+    const body = line.slice(styleSep + 3).trim();
+    const brace = body.indexOf('{');
+    if (brace !== -1 && body.endsWith('}')) {
+      const selector = body.slice(0, brace).trim(), declarations = body.slice(brace + 1, -1).trim();
+      if (selector && declarations) return { kind: 'procedural', domainPart: line.slice(0, styleSep), selector: selector + ':style(' + declarations + ')' };
+    }
+    return { kind: 'unsupported' };
+  }
+  const scriptSep = line.indexOf('#%#');
+  if (scriptSep !== -1) return { kind: 'scriptlet', domainPart: line.slice(0, scriptSep), body: line.slice(scriptSep + 3).trim() };
+  const hashAt = line.indexOf('#@#'), hashHide = line.indexOf('##');
+  const exception = hashAt !== -1 && (hashHide === -1 || hashAt < hashHide);
+  const sep = exception ? hashAt : hashHide;
+  if (sep === -1) return line.includes('#') ? { kind: 'unsupported' } : null;
+  const domainPart = line.slice(0, sep), selector = line.slice(sep + (exception ? 3 : 2)).trim();
+  if (!selector) return { kind: 'unsupported' };
+  if (!exception && selector.startsWith('+js(')) return { kind: 'scriptlet', domainPart, body: selector.slice(3).trim() };
+  if (selector.length > 800) return { kind: 'unsupported' };
+  if (!exception && COSMETIC_PROCEDURAL_OPS.test(selector)) {
+    return { kind: 'procedural', domainPart, selector };
+  }
+  if (/[{}<>]/.test(selector)) return { kind: 'unsupported' };
+  return { kind: 'passive', domainPart, selector, exception };
+}
+
+function createCosmeticCompilation() {
+  return {
+    generic: new Set(), specific: Object.create(null), exceptions: Object.create(null),
+    genericHideExclusions: new Set(), procedural: Object.create(null), scriptlets: Object.create(null),
+    count: 0, procCount: 0, scriptletCount: 0,
+    passiveLimit: ADSHIELD_COSMETIC_MAX, proceduralLimit: 12000, scriptletLimit: 12000,
+  };
+}
+
+function compilePassiveCosmeticRule(state, rule) {
+  if (!rule || rule.kind !== 'passive') return false;
+  const { domainPart, selector, exception } = rule;
+  if (!domainPart) {
+    if (state.count >= state.passiveLimit) return false;
+    if (exception) (state.exceptions[''] = state.exceptions[''] || []).push(selector);
+    else state.generic.add(selector);
+    state.count++;
+    return true;
+  }
+  let accepted = false;
+  const domains = domainPart.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean);
+  for (const domain of domains) {
+    if (domain[0] === '~') continue;
+    const bucket = exception ? state.exceptions : state.specific;
+    (bucket[domain] = bucket[domain] || []).push(selector);
+    accepted = true;
+    if (++state.count >= state.passiveLimit) break;
+  }
+  return accepted;
+}
+
+function compileProceduralCosmeticRule(state, rule) {
+  if (!rule || rule.kind !== 'procedural' || state.procCount >= state.proceduralLimit) return false;
+  const { domainPart, selector } = rule;
+  if (!selector || selector.length > 800 || /[<>]/.test(selector)) return false;
+  if (!domainPart) return false; // Generic procedural rules are too costly to apply on every page.
+  let accepted = false;
+  const domains = domainPart.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean);
+  for (const domain of domains) {
+    if (domain[0] === '~') continue;
+    (state.procedural[domain] = state.procedural[domain] || []).push(selector);
+    accepted = true;
+    if (++state.procCount >= state.proceduralLimit) break;
+  }
+  return accepted;
+}
+
+function compileScriptletRule(state, rule) {
+  if (!rule || rule.kind !== 'scriptlet' || state.scriptletCount >= state.scriptletLimit) return false;
+  const parsed = parseScriptlet(rule.body);
+  if (!parsed || !scriptletMayBeStoredForDomains(parsed, rule.domainPart)) return false;
+  const domains = (rule.domainPart || '').split(',').map((d) => d.trim().toLowerCase()).filter(Boolean);
+  const targets = domains.length ? domains : ['*']; // Generic non-storage defusers retain their wildcard scope.
+  let accepted = false;
+  for (const domain of targets) {
+    if (domain[0] === '~') continue;
+    (state.scriptlets[domain] = state.scriptlets[domain] || []).push(parsed);
+    accepted = true;
+    if (++state.scriptletCount >= state.scriptletLimit) break;
+  }
+  return accepted;
+}
+
+function passiveCosmeticRules(parsed) {
+  return { generic: parsed.generic, specific: parsed.specific, exceptions: parsed.exceptions,
+    genericHideExclusions: parsed.genericHideExclusions };
+}
+
+function packagedCosmeticRules(parsed) {
+  return { scriptlets: parsed.scriptlets, procedural: parsed.procedural };
+}
+
+function compilePackagedCosmetics(text) {
+  return packagedCosmeticRules(parseCosmeticFilters(text));
+}
+
 function parseCosmeticFilters(text) {
-  // returns { generic, specific, exceptions, genericHideExclusions, procedural, scriptlets }
-  //   procedural: { domain: [rawSelector...] } -- rules using operators like
-  //     :has-text()/:has()/:matches-css()/:style()/:remove() etc. Evaluated by a
-  //     capped engine in the content script (querySelectorAll can't do these).
-  //     uBlock writes these with ## ; AdGuard with #?# / #$# -- we accept both and
-  //     normalise AdGuard's "sel { decls }" style form into "sel:style(decls)".
-  //   scriptlets: { domain: [{name,args}...] } -- ##+js() / #%#//scriptlet() rules.
-  const generic = new Set();
-  const specific = Object.create(null);
-  const exceptions = Object.create(null);
-  const genericHideExclusions = new Set();
-  const procedural = Object.create(null);
-  const scriptlets = Object.create(null);
-  let count = 0;
-  let procCount = 0;
-  let scriptletCount = 0;
-  const PROC_MAX = 12000;     // procedural is heavier -- its own cap
-  const SCRIPTLET_MAX = 12000;
-  const GENERIC_HIDE_EXCEPTION_MAX = 20000;
+  const state = createCosmeticCompilation();
+  const genericHideDomain = cosmeticGenericHideDomain;
+  const classify = classifyCosmeticFilterLine;
+  const compilePassive = compilePassiveCosmeticRule;
+  const compileProcedural = compileProceduralCosmeticRule;
+  const compileScriptlet = compileScriptletRule;
   function* lines() {
-    const chunks = Array.isArray(text) ? text : [text];
-    for (const chunk of chunks) {
+    for (const chunk of Array.isArray(text) ? text : [text]) {
       const source = String(chunk || '');
       let start = 0;
       for (;;) {
@@ -3396,121 +3504,21 @@ function parseCosmeticFilters(text) {
       }
     }
   }
-  // operators that mean "this is a procedural/action rule, not plain CSS"
-  const PROC_OPS = /:(?:-abp-contains|-abp-has|has|has-text|contains|matches-css(?:-before|-after)?|matches-attr|matches-path|min-text-length|upward|nth-ancestor|watch-attr|xpath|others|remove|style)\(/i;
-
-  const addProc = (domainPart, sel) => {
-    if (!sel || sel.length > 800 || /[<>]/.test(sel)) return;
-    if (!domainPart) return; // generic procedural is too costly/risky -- skip (documented)
-    const domains = domainPart.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean);
-    for (const d of domains) {
-      if (d[0] === '~') continue;
-      (procedural[d] = procedural[d] || []).push(sel);
-      if (++procCount >= PROC_MAX) break;
-    }
-  };
-  const addScriptlet = (domainPart, body) => {
-    const parsed = parseScriptlet(body);
-    if (!parsed) return;
-    if (!scriptletMayBeStoredForDomains(parsed, domainPart)) return;
-    const domains = (domainPart || '').split(',').map((d) => d.trim().toLowerCase()).filter(Boolean);
-    const targets = domains.length ? domains : ['*']; // '*' = generic non-storage defusers
-    for (const d of targets) {
-      if (d[0] === '~') continue;
-      (scriptlets[d] = scriptlets[d] || []).push(parsed);
-      if (++scriptletCount >= SCRIPTLET_MAX) break;
-    }
-  };
-
-  // Parse document-level generic-hide exceptions in a separate pass so they
-  // cannot be lost when any cosmetic-rule budget is exhausted first.
-  const noteGenericHideException = (line) => {
-    const match = String(line || '').trim().match(/^@@\|\|([a-z0-9.-]+)\^\$([^$]+)$/i);
-    if (!match) return false;
-    const options = match[2].split(',').map((o) => o.trim().toLowerCase());
-    if (!options.includes('generichide') && !options.includes('ghide')) return false;
-    const domain = match[1].replace(/^www\./i, '').replace(/^\.+|\.+$/g, '').toLowerCase();
-    if (genericHideExclusions.size < GENERIC_HIDE_EXCEPTION_MAX
-        && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain)
-        && !domain.includes('..')) genericHideExclusions.add(domain);
-    return true;
-  };
-
-  for (const line of lines()) noteGenericHideException(line);
-  for (const rawLine of lines()) {
-    if (count >= ADSHIELD_COSMETIC_MAX && procCount >= PROC_MAX && scriptletCount >= SCRIPTLET_MAX) break;
-    const line = rawLine.trim();
-    if (!line || line[0] === '!' || line[0] === '[') continue;
-
-    // Network-style document exceptions can disable generic element hiding for a
-    // site (for example @@||x.com^$generichide). Keep only exact domain-anchored
-    // forms here; broader URL patterns cannot be represented safely by our
-    // per-host cosmetic response.
-    if (noteGenericHideException(line)) continue;
-
-    // ---- AdGuard procedural: domain#?#selector ----
-    const procSep = line.indexOf('#?#');
-    if (procSep !== -1) { if (procCount < PROC_MAX) addProc(line.slice(0, procSep), line.slice(procSep + 3).trim()); continue; }
-
-    // ---- AdGuard cosmetic CSS: domain#$#selector { decls }  ->  sel:style(decls) ----
-    const styleSep = line.indexOf('#$#');
-    if (styleSep !== -1) {
-      const body = line.slice(styleSep + 3).trim();
-      const brace = body.indexOf('{');
-      // skip AdGuard's #$# scriptlet form (e.g. "#$# log") -- only the CSS form has {}
-      if (brace !== -1 && body.endsWith('}') && procCount < PROC_MAX) {
-        const sel = body.slice(0, brace).trim();
-        const decls = body.slice(brace + 1, -1).trim();
-        if (sel && decls) addProc(line.slice(0, styleSep), sel + ':style(' + decls + ')');
-      }
-      continue;
-    }
-
-    // ---- AdGuard scriptlet: domain#%#//scriptlet(...) ----
-    const agScriptSep = line.indexOf('#%#');
-    if (agScriptSep !== -1) { if (scriptletCount < SCRIPTLET_MAX) addScriptlet(line.slice(0, agScriptSep), line.slice(agScriptSep + 3).trim()); continue; }
-
-    // ---- uBlock hide / exception: ## or #@# ----
-    let sep, isException = false;
-    const hashAt = line.indexOf('#@#');
-    const hashHide = line.indexOf('##');
-    if (hashAt !== -1 && (hashHide === -1 || hashAt < hashHide)) { sep = hashAt; isException = true; }
-    else if (hashHide !== -1) { sep = hashHide; }
-    else continue;
-
-    const domainPart = line.slice(0, sep);
-    let selector = line.slice(sep + (isException ? 3 : 2)).trim();
-    if (!selector) continue;
-
-    // uBlock scriptlet injection: ##+js(...)  (was previously LEAKING into CSS and
-    // breaking whole display:none chunks -- now routed to the scriptlet engine)
-    if (!isException && selector.startsWith('+js(')) {
-      if (scriptletCount < SCRIPTLET_MAX) addScriptlet(domainPart, selector.slice(3).trim());
-      continue;
-    }
-    if (selector.length > 800) continue; // pathological
-
-    // uBlock-form procedural/action rule (##.x:has-text(...), ##.x:style(...), ##.x:remove())
-    if (!isException && PROC_OPS.test(selector)) { if (procCount < PROC_MAX) addProc(domainPart, selector); continue; }
-    // exceptions for procedural rules: keep as plain selector exceptions below
-
-    if (/[{}<>]/.test(selector)) continue; // not a clean CSS selector
-
-    if (!domainPart) {
-      if (!isException && count < ADSHIELD_COSMETIC_MAX) { generic.add(selector); count++; }
-      else if (isException && count < ADSHIELD_COSMETIC_MAX) { (exceptions[''] = exceptions[''] || []).push(selector); count++; }
-      continue;
-    }
-    const domains = domainPart.split(',').map((d) => d.trim().toLowerCase()).filter(Boolean);
-    for (const d of domains) {
-      if (d[0] === '~') continue;
-      const bucket = isException ? exceptions : specific;
-      (bucket[d] = bucket[d] || []).push(selector);
-      count++;
-      if (count >= ADSHIELD_COSMETIC_MAX) break;
-    }
+  // Exact document exceptions must survive exhaustion of every cosmetic budget.
+  for (const line of lines()) {
+    const domain = genericHideDomain(line);
+    if (domain && state.genericHideExclusions.size < 20000) state.genericHideExclusions.add(domain);
   }
-  return { generic: Array.from(generic), specific, exceptions, genericHideExclusions: Array.from(genericHideExclusions), procedural, scriptlets };
+  for (const line of lines()) {
+    if (state.count >= state.passiveLimit && state.procCount >= state.proceduralLimit && state.scriptletCount >= state.scriptletLimit) break;
+    const rule = classify(line);
+    if (!rule) continue;
+    if (rule.kind === 'passive') compilePassive(state, rule);
+    else if (rule.kind === 'procedural') compileProcedural(state, rule);
+    else if (rule.kind === 'scriptlet') compileScriptlet(state, rule);
+  }
+  return { generic: Array.from(state.generic), specific: state.specific, exceptions: state.exceptions,
+    genericHideExclusions: Array.from(state.genericHideExclusions), procedural: state.procedural, scriptlets: state.scriptlets };
 }
 
 // Fetch + parse the cosmetic lists, store the result. Errors are non-fatal: a
@@ -3551,18 +3559,9 @@ async function updateAdShieldCosmetics() {
       await writeStorageTelemetry('adshield-cosmetic-unchanged', { cosmeticHash: hash });
       return;
     }
-    // Only the passive halves are kept from a network refresh. Scriptlet and procedural records
-    // name an operation and its arguments, and Chrome's MV3 rules treat fetching those as
-    // building an interpreter for remote commands, even when they arrive as data. They are
-    // compiled at release time instead and shipped in the package -- see tools/build-cosmetics.js
-    // and cosmetic-rules.json. Dropping them here rather than at the point of use means a stale
-    // or tampered cache cannot reintroduce them either.
-    const passive = {
-      generic: parsed.generic,
-      specific: parsed.specific,
-      exceptions: parsed.exceptions,
-      genericHideExclusions: parsed.genericHideExclusions,
-    };
+    // Remote lists cannot supply commands. Project passive fields before storage;
+    // procedural rules and scriptlets come exclusively from the package.
+    const passive = passiveCosmeticRules(parsed);
     try {
       await localSet({
         wardenone_adshield_cosmetic: passive,
@@ -3625,13 +3624,8 @@ async function getPackagedCosmetics() {
       procedural: doc && doc.procedural ? doc.procedural : {},
     };
   } catch (e) {
-    // Missing or unreadable: run without them rather than falling back to anything fetched.
-    //
-    // Failing open is right, failing SILENTLY was not. A package built without this file loses
-    // every scriptlet and procedural rule while the popup still reports protection as active, so
-    // there was nothing to notice -- which is how a staged store ZIP missing it got as far as it
-    // did. tools/test-package-completeness.js stops that at build time; this is what says so at
-    // runtime if one ever ships anyway.
+    // Missing cosmetics fail open with a runtime warning; never substitute downloaded code. Package checks also require
+    // this asset.
     console.warn('[WardenOne] packaged cosmetics unavailable -- scriptlet and procedural rules are off', e);
     __packagedCosmetics = { scriptlets: {}, procedural: {} };
   }
@@ -3829,6 +3823,10 @@ const ACTIVE_OPTION_RULE_BUDGETS = {
 // Adaptive pools share the dynamic quota with the downloaded lists.
 const LEARNED_RULES_BUDGET = 2000;
 const TRACKER_RULES_BUDGET = 1000;
+const CNAME_RULE_BASE = 730000;
+const CNAME_RULES_BUDGET = 300;
+const TRACKER_COOKIE_ALIAS_RULE_BASE = 901000;
+const TRACKER_COOKIE_ALIAS_RULES_BUDGET = 300;
 const ALLOWLIST_RULES_BUDGET = 1000;
 const MEDIA_COMPAT_RULES_BUDGET = 100;
 const LOGIN_COMPAT_RULES_BUDGET = 300;
@@ -3860,13 +3858,13 @@ const FIREWALL_SESSION_RULES_BUDGET = 50;
 // Sites the reader blocked by hand. One rule per entry, so this is also the cap on
 // how many things the list can hold -- it is a hand-written list, not a feed.
 const USER_BLOCKLIST_RULES_BUDGET = 64;
-const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDGET + TRACKER_RULES_BUDGET
+const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDGET + TRACKER_RULES_BUDGET + CNAME_RULES_BUDGET
   + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + NEVER_BLOCK_ALLOW_RULES_BUDGET
   + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET
   + USER_RULES_BUDGET + FIREWALL_RULES_BUDGET + USER_BLOCKLIST_RULES_BUDGET + HTTPS_DYNAMIC_RULES_BUDGET;
 const TOTAL_SESSION_BUDGET = ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
   + SAFE_SEARCH_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET
-  + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET + FIREWALL_SESSION_RULES_BUDGET;
+  + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET + FIREWALL_SESSION_RULES_BUDGET + TRACKER_COOKIE_ALIAS_RULES_BUDGET;
 // All other dynamic builders emit only safe actions. The grabber band has one redirect;
 // every firewall slot is conservatively reserved for a cookie-header modification.
 const TOTAL_UNSAFE_DYNAMIC_BUDGET = FIREWALL_RULES_BUDGET + 1;
@@ -3895,22 +3893,17 @@ const RESOURCE_TYPES = [
   'main_frame', 'sub_frame', 'image', 'xmlhttprequest', 'script', 'ping', 'websocket',
   'webtransport', 'webbundle', 'csp_report', 'other',
 ];
-/* 12s was too tight for what these lists have grown into. Four fetch in parallel
-   and the largest batch is around 28 MB, which needs ~19 Mbps sustained to finish
-   inside 12 seconds -- below that the big lists time out, and until recently that
-   showed up only as an unexplained number in the popup. A background refresh
-   taking longer costs nothing; losing a threat feed on a slow connection does.
-   An in-flight fetch keeps the MV3 worker alive, so a longer wait is safe. */
+/* Large parallel feeds need time on slow connections. An in-flight fetch keeps the MV3 worker alive. */
 const LIST_FETCH_TIMEOUT_MS = 25000;
 const LIST_FETCH_CONCURRENCY = 4;
 const LIST_SOURCE_MAX_BYTES = 18 * 1024 * 1024;
-/* Raised from 10 MB: AdGuard's tracking-protection list grew past it and was
-   being refused on every update with nothing said beyond 'N unreachable' in the
-   popup. Cosmetic lists are parsed into selectors rather than kept whole, so
-   the extra 2 MB of source text is a smaller cost than losing the list. */
 const LIST_COSMETIC_SOURCE_MAX_BYTES = 12 * 1024 * 1024;
 /* The hash feed's publisher splits files at 131,072 lines (8.5 MB); anything larger is a format change. */
 const DOWNLOAD_THREAT_SOURCE_MAX_BYTES = 9 * 1024 * 1024;
+const LIST_REVIEWED_SOURCE_MAX_BYTES = Object.freeze({
+  'https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt': 16 * 1024 * 1024,
+  'https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-online.txt': 16 * 1024 * 1024,
+});
 const LIST_AUTO_MIN_INTERVAL_MS = 12 * 60 * 60 * 1000;
 const LIST_STALE_WARN_MS = 72 * 60 * 60 * 1000;
 const LIST_STALE_CRITICAL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -3925,6 +3918,7 @@ function expectedRemoteListSources(includeCosmetic) {
 }
 
 function listSourceByteLimit(url) {
+  if (Object.prototype.hasOwnProperty.call(LIST_REVIEWED_SOURCE_MAX_BYTES, url)) return LIST_REVIEWED_SOURCE_MAX_BYTES[url];
   if (DOWNLOAD_THREAT_LIST_URLS.includes(url)) return DOWNLOAD_THREAT_SOURCE_MAX_BYTES;
   if (SUPPLEMENTAL_SOURCE_URLS.includes(url)) return 8 * 1024 * 1024;
   return ADSHIELD_COSMETIC_LISTS.includes(url) ? LIST_COSMETIC_SOURCE_MAX_BYTES : LIST_SOURCE_MAX_BYTES;
@@ -4100,6 +4094,7 @@ async function fetchRemoteListTextRaw(policy, timeoutMs) {
 // Session rule ID for the DNT/GPC request-header injection. Sits well outside the
 // dynamic-blocklist range so it never collides.
 const PRIVACY_HEADER_RULE_ID = 900000;
+const PRIVACY_HEADER_NAV_RULE_ID = 900008;
 const THIRD_PARTY_COOKIE_RULE_ID = 900001;
 // Only passive tracker-shaped responses are safe to strip. Auth and federation
 // commonly establish state on main-frame, iframe, script or XHR responses.
@@ -4214,6 +4209,7 @@ function ownDynamicRuleBands() {
   return [
     [LEARNED_RULE_BASE, LEARNED_MAX],
     [TRACKER_RULE_BASE, TRACKER_RULE_MAX],
+    [CNAME_RULE_BASE, CNAME_RULES_BUDGET],
     [GRABBER_FEED_RULE_BASE, GRABBER_FEED_MAX],
     [GRABBER_NAV_RULE_ID, 1],
     [GRABBER_MALWARE_NAV_RULE_ID, 1],
@@ -4243,11 +4239,8 @@ async function getDynamicRulesInBand(base, size) {
 function ownDynamicBandListed(base, size) {
   return ownDynamicRuleBands().some(([first, count]) => base >= first && base + size <= first + count);
 }
-// The shared read is reused until this worker writes a dynamic rule. Every write goes through
-// writeDynamicRules, which drops it when the write is sent and again when it settles, so a read
-// that was in flight across a write is never handed to a caller that came after it. Only the
-// worker writes these rules; the age limit bounds a long-lived worker anyway. Callers get
-// their own array but share the rule objects, which none of them modifies.
+// Invalidate shared dynamic-rule reads when a write starts and settles. Callers own their arrays; shared rule objects
+// remain immutable, with age-bounded reuse.
 const OWN_DYNAMIC_RULES_REUSE_MS = 15000;
 let __ownDynamicRuleIds = null;
 let __ownDynamicRulesRead = null;
@@ -4268,14 +4261,25 @@ function readOwnDynamicRules() {
 function writeDynamicRules(change) {
   __ownDynamicRulesRead = null;
   WONetworkPolicy.validate(change, 'dynamic');
+  writeDynamicRules.revision = (writeDynamicRules.revision || 0) + 1;
   const write = chrome.declarativeNetRequest.updateDynamicRules(change);
-  const forget = () => { __ownDynamicRulesRead = null; };
+  const forget = () => {
+    __ownDynamicRulesRead = null; writeDynamicRules.revision++;
+    if (typeof notifyFrameCookieRuleChange === 'function') notifyFrameCookieRuleChange(change);
+  };
   Promise.resolve(write).then(forget, forget);
   return write;
 }
 function writeSessionRules(change) {
   WONetworkPolicy.validate(change, 'session');
-  return chrome.declarativeNetRequest.updateSessionRules(change);
+  writeSessionRules.revision = (writeSessionRules.revision || 0) + 1;
+  const write = chrome.declarativeNetRequest.updateSessionRules(change);
+  const forget = () => {
+    writeSessionRules.revision++;
+    if (typeof notifyFrameCookieRuleChange === 'function') notifyFrameCookieRuleChange(change);
+  };
+  Promise.resolve(write).then(forget, forget);
+  return write;
 }
 const MEDIA_COMPAT_RULE_BASE = 806000;
 const LOGIN_COMPAT_RULE_BASE = 807000;
@@ -4541,13 +4545,7 @@ function isMainWorldRepairExcludedUrl(rawUrl) {
    to decide which files to inject into which frame of a live tab. Repair reloads the tab
    instead now (SEC-03), and the manifest is the one description of which script runs where. */
 
-// ---- Adaptive "learned bad domains" ------------------------------------
-// When WardenOne's behavioral scorer (or a grabber detection) flags a domain
-// that was NOT on any blocklist, we remember it. On the next visit it's blocked
-// by a dynamic DNR rule. The user sees these in the Activity Log's "Learned bad
-// sites" section and can keep or remove each. This is the adaptive memory that
-// lets the extension improve from what the user actually encounters -- the
-// blocklist stops being purely static.
+// Retain qualifying unlisted threat findings as user-visible learned-domain rules, removable through Activity.
 const LEARNED_RULE_BASE = 700000;
 // Cap matches LEARNED_RULES_BUDGET to stay within the 30k dynamic rule ceiling.
 // The storage set still tracks up to 5000 domains, but only the budgeted count
@@ -4573,7 +4571,16 @@ const TRACKER_LEARN_STORAGE_MAX = 600;
    Expire observations and drop the site sketch after candidacy; explicit user decisions remain settings. */
 const TRACKER_LEARN_TTL_MS = 30 * 86400000;
 const TRACKER_LEARN_MAX_SESSIONS = 4;
-const TRACKER_LEARNER_STORE_VERSION = 3;
+const TRACKER_LEARNER_STORE_VERSION = 4;
+const TRACKER_NETWORK_TOKEN = Symbol('tracker network evidence');
+const TRACKER_NETWORK_TYPES = ['script', 'xmlhttprequest', 'image', 'ping'];
+let __trackerObservationQueue = Promise.resolve();
+let __trackerObservationEpoch = 0;
+let __trackerObservationPending = 0;
+let __trackerNetworkPending = 0;
+let __trackerPagePending = 0;
+const TRACKER_NETWORK_IN_FLIGHT = new Set();
+let __trackerNetworkAliasHosts = null;
 // This session's "what did this site see" list for the popup: sites and trackers per site.
 const TRACKER_SITE_VIEW_MAX_SITES = 40;
 const TRACKER_SITE_VIEW_MAX_DOMAINS = 12;
@@ -4751,12 +4758,8 @@ async function wardenBlockRuleLive(host) {
       && r.condition.resourceTypes.indexOf('main_frame') >= 0);
   } catch (_) { return false; }
 }
-// ---- Feed-updatable IP-grabber list -------------------------------------------
-// The packaged grabber rulepacks derived from rules.json are frozen at ship time, but operators
-// rotate domains/TLDs constantly, so the marquee "IP grabbers" protection decays. This adds
-// a DYNAMIC, feed/user-updatable grabber list (bundled grabber-extra.json seed + the
-// chrome.storage.local 'wardenone_grabber_domains' key) applied as dynamic DNR block rules,
-// so new grabber front-ends are blocked WITHOUT shipping a new extension version.
+// Combine the bundled grabber seed with feed/user additions so rotating logger domains can update between extension
+// releases.
 const GRABBER_FEED_RULE_BASE = 740000;
 const GRABBER_FEED_MAX = 1000;
 const GRABBER_NAV_RULE_ID = 741000;
@@ -4814,23 +4817,138 @@ function loadPackagedGrabberDomains() {
 loadPackagedGrabberDomains();
 /* Publish feed state only after every required source was read successfully (LIFE-02).
    A failed read is not an empty source: retain the current set/band and retry on a bounded schedule. */
-const FEED_LOAD_RETRY_MS = [5000, 30000, 120000];
-const __feedLoadRetries = new Map();
-function scheduleFeedLoadRetry(name, load) {
-  const state = __feedLoadRetries.get(name) || { attempt: 0, timer: null };
-  __feedLoadRetries.set(name, state);
-  if (state.timer || state.attempt >= FEED_LOAD_RETRY_MS.length) return false;
-  state.timer = setTimeout(() => {
-    state.timer = null;
-    state.attempt++;
-    Promise.resolve().then(load).catch(() => {});
-  }, FEED_LOAD_RETRY_MS[state.attempt]);
-  return true;
+const FEED_LOAD_RETRY_MS = [30000, 120000, 600000];
+const FEED_LOAD_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const FEED_LOAD_KEYS = { grabber: 'wardenone_feed_load_grabber', miner: 'wardenone_feed_load_miner' };
+const FEED_LOAD_ALARM_PREFIX = 'wardenone-feed-load-';
+const __feedLoadJobs = new Map();
+const __feedLoadGenerations = new Map();
+const __feedLoadErrors = new Set();
+let __grabberFeedReady = false;
+let __minerFeedReady = false;
+function feedLoadCheckpoint(value) {
+  if (!value || value.version !== 1 || !Number.isInteger(value.failures) || value.failures < 0 || value.failures > 4
+      || !['loading', 'retry', 'cooldown'].includes(value.phase)
+      || !Number.isSafeInteger(value.retryAt) || value.retryAt < 0 || value.retryAt > Date.now() + FEED_LOAD_COOLDOWN_MS + 60000
+      || !Array.isArray(value.failed) || value.failed.length > 3
+      || value.failed.some((part) => !['packaged', 'stored', 'rules', 'config', 'checkpoint'].includes(part))) return null;
+  return { version: 1, failures: value.failures, phase: value.phase, retryAt: value.retryAt, failed: value.failed.slice() };
 }
-function clearFeedLoadRetry(name) {
-  const state = __feedLoadRetries.get(name);
-  if (state && state.timer) clearTimeout(state.timer);
-  __feedLoadRetries.delete(name);
+async function armFeedLoadRetry(name, when, onlyIfMissing = false) {
+  const alarmName = FEED_LOAD_ALARM_PREFIX + name;
+  if (onlyIfMissing) {
+    const existing = await chrome.alarms.get(alarmName);
+    if (existing) return existing;
+  }
+  await chrome.alarms.create(alarmName, { when: Math.max(Date.now() + 30000, when) });
+  return null;
+}
+async function scheduleFeedLoadRetry(name, previous, failed) {
+  const failures = Math.min(4, previous.failures + 1);
+  const retryAt = Date.now() + (FEED_LOAD_RETRY_MS[failures - 1] || FEED_LOAD_COOLDOWN_MS);
+  await chrome.storage.session.set({ [FEED_LOAD_KEYS[name]]: {
+    version: 1, failures, phase: failures === 4 ? 'cooldown' : 'retry', retryAt, failed,
+  } });
+  await armFeedLoadRetry(name, retryAt);
+}
+async function clearFeedLoadRetry(name) {
+  await chrome.storage.session.remove(FEED_LOAD_KEYS[name]);
+  await chrome.alarms.clear(FEED_LOAD_ALARM_PREFIX + name);
+  __feedLoadErrors.delete(name);
+  if (name === 'grabber') {
+    const degraded = await readReconcileDegraded();
+    if (degraded && Array.isArray(degraded.failed) && degraded.failed.includes('grabberFeed')) scheduleExtensionStateRefresh();
+  }
+}
+function feedLoadDisabled(name, cfg) {
+  return name === 'grabber' ? grabberFeedDisabled(cfg) : minerFeedDisabled(cfg);
+}
+function feedRuleOwner(name) {
+  return name === 'grabber' ? applyGrabberFeedRules() : applyMinerFeedRules();
+}
+function runFeedLoad(name, resume, load) {
+  if (resume && __feedLoadJobs.has(name)) return __feedLoadJobs.get(name);
+  const generation = (__feedLoadGenerations.get(name) || 0) + 1;
+  __feedLoadGenerations.set(name, generation);
+  const current = () => __feedLoadGenerations.get(name) === generation;
+  const previousJob = __feedLoadJobs.get(name) || Promise.resolve();
+  let failureState = { failures: 0 };
+  const job = previousJob.then(async () => {
+    if (!current()) return { ok: false, superseded: true };
+    /* Arm before storage acknowledgement: interruption at either boundary must leave a browser-owned wake. */
+    const recoveryAlarm = await armFeedLoadRetry(name, Date.now() + 30000, true);
+    const key = FEED_LOAD_KEYS[name];
+    const stored = await chrome.storage.session.get(key);
+    const checkpoint = feedLoadCheckpoint(stored && stored[key]);
+    failureState = resume && checkpoint ? checkpoint : failureState;
+    const cfg = await readFeedConfig();
+    if (feedLoadDisabled(name, cfg)) {
+      if (await feedRuleOwner(name) === false) throw new Error('disabled rules');
+      await clearFeedLoadRetry(name);
+      return { ok: true, disabled: true };
+    }
+    if (resume && checkpoint && checkpoint.phase !== 'loading' && checkpoint.retryAt > Date.now()) {
+      await hydrateInstalledFeedDomains(name);
+      if (!recoveryAlarm || recoveryAlarm.scheduledTime < checkpoint.retryAt
+          || recoveryAlarm.scheduledTime > Math.max(Date.now() + 30000, checkpoint.retryAt)) {
+        await armFeedLoadRetry(name, checkpoint.retryAt);
+      }
+      return { ok: false, deferred: true };
+    }
+    const state = { version: 1, failures: resume && checkpoint ? checkpoint.failures : 0,
+      phase: 'loading', retryAt: Date.now() + 30000, failed: [] };
+    await armFeedLoadRetry(name, state.retryAt);
+    await chrome.storage.session.set({ [key]: state });
+    const result = await load(current);
+    if (!current()) return { ok: false, superseded: true };
+    if (result.ok || feedLoadDisabled(name, await readFeedConfig())) await clearFeedLoadRetry(name);
+    else {
+      await hydrateInstalledFeedDomains(name);
+      await scheduleFeedLoadRetry(name, state, result.failed);
+    }
+    return result;
+  }).catch(async (error) => {
+    __feedLoadErrors.add(name);
+    console.warn('[WardenOne] ' + name + ' feed recovery pending', error);
+    try { await scheduleFeedLoadRetry(name, failureState, ['checkpoint']); }
+    catch (_) { try { await armFeedLoadRetry(name, Date.now() + 30000); } catch (_) {} }
+    return { ok: false, failed: ['checkpoint'] };
+  });
+  __feedLoadJobs.set(name, job);
+  job.then(() => { if (__feedLoadJobs.get(name) === job) __feedLoadJobs.delete(name); });
+  return job;
+}
+async function hydrateInstalledFeedDomains(name) {
+  if (name === 'grabber') {
+    if (__grabberFeedReady || GRABBER_FEED_DOMAINS.size) return;
+    const bands = await Promise.all([
+      getDynamicRulesInBand(GRABBER_FEED_RULE_BASE, GRABBER_FEED_MAX),
+      getDynamicRulesInBand(GRABBER_NAV_RULE_ID, 1), getDynamicRulesInBand(GRABBER_MALWARE_NAV_RULE_ID, 1),
+    ]);
+    for (const rule of bands.flat()) {
+      if (!rule.action || !['block', 'redirect'].includes(rule.action.type)) continue;
+      addGrabberFeedDomains(rule.condition && rule.condition.requestDomains);
+      if (rule.id >= GRABBER_FEED_RULE_BASE && rule.id < GRABBER_FEED_RULE_BASE + GRABBER_FEED_MAX
+          && rule.condition && rule.condition.requestDomains && rule.condition.requestDomains.length === 1) {
+        GRABBER_FEED_RULE_HOSTS.set(rule.id, rule.condition.requestDomains[0]);
+      }
+    }
+  } else {
+    if (__minerFeedReady || MINER_HOSTS.size || MINER_POOL_HOSTS.size) return;
+    const rules = await getDynamicRulesInBand(MINER_FEED_RULE_BASE, MINER_FEED_MAX);
+    for (const rule of rules) {
+      if (!rule.action || rule.action.type !== 'block') continue;
+      addMinerDomains(rule.condition && rule.condition.requestDomains,
+        rule.id >= MINER_FEED_RULE_BASE + MINER_POOL_RULE_OFFSET ? MINER_POOL_HOSTS : MINER_HOSTS);
+    }
+  }
+}
+async function readFeedLoadFailures(cfg) {
+  const names = ['grabber', 'miner'].filter((name) => !feedLoadDisabled(name, cfg));
+  try {
+    const stored = await chrome.storage.session.get(names.map((name) => FEED_LOAD_KEYS[name]));
+    return names.filter((name) => stored[FEED_LOAD_KEYS[name]] || __feedLoadErrors.has(name));
+  } catch (_) { return names; }
 }
 /* In place: readers hold the Set itself, and they keep answering from the last complete load. */
 function replaceFeedSet(target, next) {
@@ -4838,10 +4956,9 @@ function replaceFeedSet(target, next) {
   for (const v of next) target.add(v);
 }
 async function readFeedConfig() {
-  try {
-    const s = await localGet('wardenone_config');
-    return Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {});
-  } catch (_) { return Object.assign({}, DEFAULT_CONFIG); }
+  const s = await localGet('wardenone_config');
+  if (!s || s.unreadable) throw new Error('feed settings unavailable');
+  return Object.assign({}, DEFAULT_CONFIG, s.wardenone_config || {});
 }
 /* The one case where an empty band is the right answer. */
 function grabberFeedDisabled(cfg) {
@@ -4863,6 +4980,12 @@ async function applyGrabberFeedRules() {
     const existingNav = await getDynamicRulesInBand(GRABBER_NAV_RULE_ID, 1);
     const existingSite = await getDynamicRulesInBand(GRABBER_MALWARE_NAV_RULE_ID, 1);
     const cfg = await readFeedConfig();
+    if (!grabberFeedDisabled(cfg) && !__grabberFeedReady) {
+      const disabled = (cfg.blockGrabberResources === false ? mine : [])
+        .concat(cfg.warnGrabberDomains === false ? existingNav : [], cfg.blockMalwareSites === false ? existingSite : []);
+      if (disabled.length) await writeDynamicRules({ removeRuleIds: disabled.map((rule) => rule.id), addRules: [] });
+      return false;
+    }
     const domains = grabberFeedDisabled(cfg) ? [] : Array.from(GRABBER_FEED_DOMAINS).slice(0, GRABBER_FEED_MAX);
     const resourcesOn = cfg.enabled !== false && cfg.blockGrabberResources !== false;
     const warningsOn = cfg.enabled !== false && cfg.warnGrabberDomains !== false;
@@ -4897,37 +5020,37 @@ async function applyGrabberFeedRules() {
     if (resourcesOn) domains.forEach((host, index) => GRABBER_FEED_RULE_HOSTS.set(GRABBER_FEED_RULE_BASE + index, host));
   } catch (e) { console.warn('[WardenOne] grabber feed rules failed', e); return false; }
 }
-async function loadGrabberFeed() {
-  const next = new Set();
-  const failed = [];
-  try {
-    const res = await fetch(chrome.runtime.getURL('grabber-extra.json'), { cache: 'no-store' });
-    if (!res || !res.ok) throw new Error('http ' + (res ? res.status : '?'));
-    const data = await res.json();
-    addGrabberFeedDomains(Array.isArray(data) ? data : (data && data.domains), next);
-  } catch (_) { failed.push('packaged'); }
-  try {
-    const x = await localGetStrict(['wardenone_grabber_domains', SUPPLEMENTAL_LIST_STORAGE_KEY]);
-    const stored = x && x.wardenone_grabber_domains;
-    addGrabberFeedDomains(Array.isArray(stored) ? stored : (stored && stored.domains), next);
-    const supplemental = x && x[SUPPLEMENTAL_LIST_STORAGE_KEY];
-    addGrabberFeedDomains(supplemental && supplemental.grabberDomainsExtra, next);
-  } catch (_) { failed.push('stored'); }
-  const complete = failed.length === 0;
-  if (complete) {
-    replaceFeedSet(GRABBER_FEED_DOMAINS, next);
-    clearFeedLoadRetry('grabber');
-  } else {
-    console.warn('[WardenOne] grabber feed load incomplete (' + failed.join(', ') + '); keeping the current rules');
-    scheduleFeedLoadRetry('grabber', loadGrabberFeed);
-  }
-  // The band follows a complete load, and it follows the switch even after an incomplete one --
-  // an empty band is right when the feature is off. What an incomplete load must never do is
-  // hand a partial set to the applier while the feature is on.
-  if (complete || grabberFeedDisabled(await readFeedConfig())) await applyGrabberFeedRules();
-  return { ok: complete, failed };
+function loadGrabberFeed(resume = false) {
+  return runFeedLoad('grabber', resume, async (current) => {
+    const next = new Set();
+    const failed = [];
+    try {
+      const res = await fetch(chrome.runtime.getURL('grabber-extra.json'), { cache: 'no-store' });
+      if (!res || !res.ok) throw new Error('http ' + (res ? res.status : '?'));
+      const data = await res.json();
+      addGrabberFeedDomains(Array.isArray(data) ? data : (data && data.domains), next);
+    } catch (_) { failed.push('packaged'); }
+    try {
+      const x = await localGetStrict(['wardenone_grabber_domains', SUPPLEMENTAL_LIST_STORAGE_KEY]);
+      const stored = x && x.wardenone_grabber_domains;
+      addGrabberFeedDomains(Array.isArray(stored) ? stored : (stored && stored.domains), next);
+      const supplemental = x && x[SUPPLEMENTAL_LIST_STORAGE_KEY];
+      addGrabberFeedDomains(supplemental && supplemental.grabberDomainsExtra, next);
+    } catch (_) { failed.push('stored'); }
+    const complete = failed.length === 0;
+    if (!current()) return { ok: false, superseded: true };
+    if (complete) {
+      replaceFeedSet(GRABBER_FEED_DOMAINS, next);
+      __grabberFeedReady = true;
+    } else {
+      console.warn('[WardenOne] grabber feed load incomplete (' + failed.join(', ') + '); keeping the current rules');
+    }
+    /* The applier may remove explicitly disabled bands; enabled bands require a complete source set. */
+    if (await applyGrabberFeedRules() === false) failed.push('rules');
+    return { ok: failed.length === 0, failed };
+  });
 }
-loadGrabberFeed();
+loadGrabberFeed(true);
 
 /* Chrome allows only 20 getMatchedRules calls per ten minutes. All consumers use
    this snapshot so one feature cannot silently exhaust another's evidence. */
@@ -5257,13 +5380,8 @@ function userFilterExceptionHost(pattern) {
 
 /* Parse a whole list. Returns everything a caller could want to show or apply,
    including the line number of each refusal so the editor can point at it. */
-/* The parse says what is IN USE and what is not, separately (M46). The network band holds
-   USER_RULE_MAX rules; a network line past that is `overflow`, named by line, and never a
-   rule. `count` is what is in use -- the rules emitted plus the cosmetic rules -- and
-   `cosmetic` is its own number, because the old answer carried only a running total that
-   went on counting past the cap, and the UI derived "hiding rules" as total minus network:
-   550 blocking lines read as 500 blocking and 50 hiding, and the 50 that did nothing were
-   reported as doing something else. */
+/* M46: count only admitted network and cosmetic rules. Report network overflow separately by line; never relabel it as
+   cosmetic coverage. */
 function parseUserFilterText(text, startId, policy) {
   const lines = String(text || '').split(/\r?\n/);
   const network = [];
@@ -5304,13 +5422,8 @@ function parseUserFilterText(text, startId, policy) {
   return { network, cosmeticByDomain, genericCosmetic, errors, cosmetic, overflow, overflowLines, count: network.length + cosmetic, nextId: id };
 }
 
-/* How the one network band is shared out, source by source, in the order the bundle is
-   built: the reader's own text first, then each enabled list in its stored order. That order
-   is the precedence -- a hand-written rule is never displaced by a subscription -- and it is
-   rebuilt from the same stored text on every start and every list refresh, so the admitted
-   set is the same after a restart as before it. Each source is parsed on its own to learn
-   how many network rules it brings; the band is then handed out down the line, so a list's
-   `applied` is what it gets AFTER the sources ahead of it, not what it would get alone. */
+/* Allocate the network band to user text first, then enabled subscriptions in stored order. Report each source's admitted
+   share consistently across restarts. */
 function userFilterAllocation(own, lists) {
   let left = USER_RULE_MAX;
   const share = (text) => {
@@ -5394,13 +5507,8 @@ function invalidateUserFilters() {
   try { __cosmeticHostCache.clear(); } catch (_) {}
 }
 
-// One atomic replacement, and the truth about it (H19). updateDynamicRules is
-// all-or-nothing: when it rejects, every old rule is still live. The old code assumed the
-// opposite and "recovered" by adding the new rules one at a time -- onto ids the old rules
-// still held, so every add collided and rejected too -- then reported ok:true while the
-// editor text had already been stored. A deleted exception could outlive its deletion for
-// as long as one invalid line stayed in the list. Now a refusal is a refusal: the old rules
-// stay, the caller keeps the old stored text, and the reason reaches the reader.
+// H19: updateDynamicRules is atomic. On rejection, retain old rules and stored text, and return the error without
+// individual-rule retries.
 async function applyUserFilterRulesFrom(bundle) {
   if (!chrome.declarativeNetRequest || !chrome.declarativeNetRequest.updateDynamicRules) {
     return { ok: false, count: 0, error: 'Dynamic rules are not available in this browser.' };
@@ -5577,6 +5685,7 @@ function logRuleBases() {
     [USER_RULE_BASE, 'My rules'],
     [LEARNED_RULE_BASE, 'Blocked sites'],
     [TRACKER_RULE_BASE, 'Tracker blocking'],
+    [CNAME_RULE_BASE, 'CNAME-cloaked tracker — local mapping'],
     [GRABBER_FEED_RULE_BASE, 'IP-logger feed'],
     [MINER_FEED_RULE_BASE, 'Cryptominer feed'],
     [SAFE_SEARCH_RULE_BASE, 'SafeSearch'],
@@ -5603,6 +5712,7 @@ function logRuleSource(ruleId, rulesetId) {
   }
   const id = Number(ruleId);
   if (!Number.isFinite(id)) return '';
+  if (id === TRACKER_COOKIE_RULE_ID || (id >= TRACKER_COOKIE_ALIAS_RULE_BASE && id < TRACKER_COOKIE_ALIAS_RULE_BASE + TRACKER_COOKIE_ALIAS_RULES_BUDGET)) return 'Cookie isolation policy';
   for (const [base, name] of logRuleBases()) if (id >= base) return name;
   return 'A network rule';
 }
@@ -5619,13 +5729,8 @@ function logAllowingRuleBases() {
   ].filter((base) => typeof base === 'number'));
   return __logAllowingBases;
 }
-/* Static rulesets are mostly block lists, but not only. The compatibility pack carries
-   five allow rules -- one lets github.com's own requests through, so every request a GitHub page
-   made matched it, and the Site Dashboard counted hundreds of "IP-logger blocks" -- and the
-   AdShield list carries hundreds of exceptions and allow-the-whole-frame rules. The feed names the
-   rule, never its action, so the action is read from the shipped files, once, and kept: the ids in
-   each static ruleset that do not stop a request. A redirect does (Spotify's ad clips are swapped
-   for silence), so only block and redirect count. */
+/* Matched-rule reports omit actions. Read packaged actions once and count only block/redirect rules; compatibility allows
+   are not blocked requests. */
 const STATIC_NON_STOPPING_RULES = new Map();
 let staticNonStoppingLoad = null;
 function loadStaticNonStoppingRules() {
@@ -5669,12 +5774,8 @@ async function matchedRuleActions(matches) {
   await read('_session', (filter) => dnr.getSessionRules(filter));
   return actions;
 }
-/* Chrome's matched-rule feed says WHICH rule matched, never what it did. So a match
-   sitting next to a blocked request may be an allowance that had nothing to do with
-   the block, and writing "blocked by: your allowlist" onto that row would be a wrong
-   answer wearing an exact answer's clothes. Only a rule that can block gets to claim
-   one. A static rule can unless its file says otherwise (above); until the files have
-   been read, static rules are taken as blocks, which is what they nearly all are. */
+/* Only blocking-capable rules may claim a block. Until static actions load, presume block; exclude known allowances
+   afterward. */
 function logRuleCanBlock(ruleId, rulesetId, actions) {
   if (rulesetId && rulesetId !== '_dynamic' && rulesetId !== '_session') {
     const nonStopping = STATIC_NON_STOPPING_RULES.get(rulesetId);
@@ -5832,6 +5933,8 @@ function logOnBeforeRequest(d) {
     rule: '',
     source: '',
   };
+  const alias = resolveKnownAlias(logHostOf(d.url));
+  if (alias) entry.cname = alias;
   LOG_PENDING.set(d.requestId, entry);
   logPush(entry);
 }
@@ -5938,6 +6041,7 @@ async function logPollMatchedRules() {
 function logAttach() {
   if (LOG_ATTACHED) return;
   LOG_ATTACHED = true;
+  loadKnownAliases().catch(() => {});
   const filter = { urls: ['<all_urls>'] };
   try { chrome.webRequest.onBeforeRequest.addListener(logOnBeforeRequest, filter); } catch (_) {}
   try { chrome.webRequest.onCompleted.addListener(logOnCompleted, filter); } catch (_) {}
@@ -6192,12 +6296,8 @@ function userBlockRulesFrom(entries) {
   const rules = [];
   const ceiling = USER_BLOCKLIST_RULE_BASE + USER_BLOCKLIST_RULES_BUDGET;
   let id = USER_BLOCKLIST_RULE_BASE;
-  /* Whole-site entries are BATCHED. One requestDomains condition holds many domains,
-     so a hand-written list of a few hundred sites costs a handful of rules instead of
-     a few hundred -- and the dynamic-rule ceiling is 30,000 shared across every band
-     in this file. A rule per entry pushed the total 209 over that ceiling, at which
-     point Chrome rejects the whole update and nothing applies. Paths and addresses
-     need a urlFilter each, so those stay one apiece. */
+  /* Batch whole-site entries into requestDomains to conserve the shared dynamic-rule budget. Paths and full URLs still need
+     individual urlFilters. */
   const domains = [];
   const singles = [];
   for (const entry of entries || []) {
@@ -6596,6 +6696,7 @@ async function applyMinerFeedRules() {
     const existing = await getDynamicRulesInBand(MINER_FEED_RULE_BASE, MINER_FEED_MAX);
     const mine = existing.filter((x) => x.id >= MINER_FEED_RULE_BASE && x.id < MINER_FEED_RULE_BASE + MINER_FEED_MAX);
     const off = minerFeedDisabled(await readFeedConfig());
+    if (!off && !__minerFeedReady) return false;
     const miners = off ? [] : Array.from(MINER_HOSTS).slice(0, MINER_POOL_RULE_OFFSET);
     const pools = off ? [] : Array.from(MINER_POOL_HOSTS).slice(0, MINER_FEED_MAX - MINER_POOL_RULE_OFFSET);
     const addRules = miners.map((d, i) => ({
@@ -6611,40 +6712,42 @@ async function applyMinerFeedRules() {
     })));
     if (dnrBandUnchanged(mine, addRules)) return;
     await writeDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
-  } catch (e) { console.warn('[WardenOne] cryptominer feed rules failed', e); }
+  } catch (e) { console.warn('[WardenOne] cryptominer feed rules failed', e); return false; }
 }
 // Same shape as loadGrabberFeed, for the same reason (LIFE-02): assembled aside, swapped in
 // only when every source read completed, retried when one did not.
-async function loadMinerFeed() {
-  const miners = new Set();
-  const pools = new Set();
-  const failed = [];
-  try {
-    const res = await fetch(chrome.runtime.getURL('cryptominer-domains.json'), { cache: 'no-store' });
-    if (!res || !res.ok) throw new Error('http ' + (res ? res.status : '?'));
-    const data = await res.json();
-    addMinerDomains(data && data.minerHosts, miners);
-    addMinerDomains(data && data.poolHosts, pools);
-  } catch (_) { failed.push('packaged'); }
-  try {
-    const x = await localGetStrict(['wardenone_cryptominer_domains']);
-    const stored = x && x.wardenone_cryptominer_domains;
-    addMinerDomains(stored && stored.minerHosts, miners);
-    addMinerDomains(stored && stored.poolHosts, pools);
-  } catch (_) { failed.push('stored'); }
-  const complete = failed.length === 0;
-  if (complete) {
-    replaceFeedSet(MINER_HOSTS, miners);
-    replaceFeedSet(MINER_POOL_HOSTS, pools);
-    clearFeedLoadRetry('miner');
-  } else {
-    console.warn('[WardenOne] cryptominer feed load incomplete (' + failed.join(', ') + '); keeping the current rules');
-    scheduleFeedLoadRetry('miner', loadMinerFeed);
-  }
-  if (complete || minerFeedDisabled(await readFeedConfig())) await applyMinerFeedRules();
-  return { ok: complete, failed };
+function loadMinerFeed(resume = false) {
+  return runFeedLoad('miner', resume, async (current) => {
+    const miners = new Set();
+    const pools = new Set();
+    const failed = [];
+    try {
+      const res = await fetch(chrome.runtime.getURL('cryptominer-domains.json'), { cache: 'no-store' });
+      if (!res || !res.ok) throw new Error('http ' + (res ? res.status : '?'));
+      const data = await res.json();
+      addMinerDomains(data && data.minerHosts, miners);
+      addMinerDomains(data && data.poolHosts, pools);
+    } catch (_) { failed.push('packaged'); }
+    try {
+      const x = await localGetStrict(['wardenone_cryptominer_domains']);
+      const stored = x && x.wardenone_cryptominer_domains;
+      addMinerDomains(stored && stored.minerHosts, miners);
+      addMinerDomains(stored && stored.poolHosts, pools);
+    } catch (_) { failed.push('stored'); }
+    const complete = failed.length === 0;
+    if (!current()) return { ok: false, superseded: true };
+    if (complete) {
+      replaceFeedSet(MINER_HOSTS, miners);
+      replaceFeedSet(MINER_POOL_HOSTS, pools);
+      __minerFeedReady = true;
+    } else {
+      console.warn('[WardenOne] cryptominer feed load incomplete (' + failed.join(', ') + '); keeping the current rules');
+    }
+    if (await applyMinerFeedRules() === false) failed.push('rules');
+    return { ok: failed.length === 0, failed };
+  });
 }
-loadMinerFeed();
+loadMinerFeed(true);
 
 async function learnDomain(domain, reason) {
   try {
@@ -6684,7 +6787,7 @@ function trackerStoreShape(raw) {
     /* Named sites from an earlier build fold into the count and the sketch here, and the names
        are gone the moment this shape is written back (PRIV-01). */
     let siteCount = 0;
-    let marks = 0;
+    let marks;
     if (v.sites && typeof v.sites === 'object') {
       Object.keys(v.sites).forEach((siteKey) => {
         const site = normalizeTrackerDomain(siteKey);
@@ -6695,18 +6798,12 @@ function trackerStoreShape(raw) {
       });
     } else {
       siteCount = Math.max(0, Math.min(TRACKER_LEARN_MIN_SITES, Math.floor(Number(v.sites) || 0)));
-      marks = Number(v.marks) >>> 0;
+      marks = WOLearner.validMarks(v.marks) ? v.marks : undefined;
+      if (siteCount < TRACKER_LEARN_MIN_SITES && siteCount > 0 && marks === undefined) siteCount = 0;
     }
-    const signals = {};
-    const rawSignals = v.signals && typeof v.signals === 'object' ? v.signals : {};
-    Object.keys(rawSignals).slice(0, 20).forEach((s) => {
-      signals[String(s).slice(0, 40)] = Math.max(1, Number(rawSignals[s] || 1));
-    });
-    // Four states. 'candidate' is being watched; 'proposed' met the thresholds and is waiting
-    // for the reader; 'learned' is a rule and needs the reader's approval behind it; 'dismissed'
-    // is a proposal the reader declined, kept so it is not proposed again. A 'learned' entry
-    // written by an earlier build has no approval -- it was promoted on page-supplied evidence
-    // alone (SEC-04) -- and comes back as a proposal, marked legacy so the popup can say so.
+    const signals = WOLearner.counts(v.signals, WOLearner.signals);
+    // Candidates collect evidence; proposals await approval; learned rules require it; dismissals suppress repeat
+    // proposals. SEC-04: legacy unapproved rules return as proposals.
     const approvedAt = Number(v.approvedAt || 0);
     let state = v.state === 'learned' ? 'learned' : v.state === 'proposed' ? 'proposed' : v.state === 'dismissed' ? 'dismissed' : 'candidate';
     let legacy = v.legacy === true;
@@ -6718,17 +6815,19 @@ function trackerStoreShape(raw) {
     const entry = {
       firstSeen: trackerDay(v.firstSeen || Date.now()),
       lastSeen: trackerDay(v.lastSeen || v.firstSeen || Date.now()),
-      hits: Math.max(1, Number(v.hits || 1)),
+      hits: Math.max(1, Math.min(1000000, Number(v.hits || 1) || 1)),
       state,
       reason: String(v.reason || 'tracker-like third-party requests').slice(0, 120),
       sites: siteCount,
       signals,
+      evidence: Number(src.version) === TRACKER_LEARNER_STORE_VERSION ? WOLearner.counts(v.evidence, Object.keys(WOLearner.sources)) : {},
       sessions: Math.max(0, Math.min(TRACKER_LEARN_MAX_SESSIONS, sessions)),
       proposedAt: trackerDay(v.proposedAt || (state === 'proposed' ? Date.now() : 0)),
       approvedAt: state === 'learned' ? trackerDay(approvedAt) : 0,
       dismissedAt: trackerDay(v.dismissedAt || 0),
       legacy,
     };
+    if (state === 'learned' && approvedAt > 0 && Number(src.version) === TRACKER_LEARNER_STORE_VERSION && v.cnameApproved === true) entry.cnameApproved = true;
     // The sketch exists only while the tracker is still gathering its three sites.
     if (state === 'candidate' && siteCount < TRACKER_LEARN_MIN_SITES && marks) entry.marks = marks;
     out.domains[domain] = entry;
@@ -6746,7 +6845,12 @@ function trackerStoreShape(raw) {
     };
     fill(c.allow, allow);
     fill(c.block, block);
-    out.siteControls[site] = { allow, block };
+    const cname = {};
+    if (Number(src.version) === TRACKER_LEARNER_STORE_VERSION) {
+      fill(c.cname, cname);
+      for (const domain of Object.keys(cname)) if (!(domain in allow) && !(domain in block)) delete cname[domain];
+    }
+    out.siteControls[site] = { allow, block, ...(Object.keys(cname).length ? { cname } : {}) };
   });
   return out;
 }
@@ -6807,28 +6911,16 @@ function trackerLearnerSalt() {
   return TRACKER_LEARNER.salt;
 }
 
-/* Use two keyed bits per site in a 32-bit sketch, capped at three observed sites and removed after candidacy.
-   Collisions can require another observation but retain no site names, order or precise times. */
+/* Numeric sketches retain their legacy bit positions until candidacy ends. New sketches use 128 bits;
+   neither format retains site names, and both are removed after candidacy. */
 function trackerMarkPositions(salt, site) {
-  let h = 0x811c9dc5;
-  const text = String(salt) + '\n' + String(site);
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-  const a = h & 31;
-  let b = (h >>> 5) & 31;
-  if (b === a) b = (b + 1) & 31;
-  return [a, b];
+  return WOLearner.positions(salt, site);
 }
 function trackerMarkHas(marks, salt, site) {
-  const [a, b] = trackerMarkPositions(salt, site);
-  const m = Number(marks) >>> 0;
-  return ((m >>> a) & 1) === 1 && ((m >>> b) & 1) === 1;
+  return WOLearner.has(marks, salt, site);
 }
 function trackerMarkAdd(marks, salt, site) {
-  const [a, b] = trackerMarkPositions(salt, site);
-  return ((Number(marks) >>> 0) | (1 << a) | (1 << b)) >>> 0;
+  return WOLearner.add(marks, salt, site);
 }
 
 /* Keep per-site tracker counts and counted-session membership in storage.session only (PRIV-01).
@@ -6836,12 +6928,13 @@ function trackerMarkAdd(marks, salt, site) {
 let __trackerSession = null;
 function trackerSessionState() {
   if (__trackerSession) return __trackerSession;
-  const state = { counted: new Set(), siteView: {}, mirror: null };
+  const state = { counted: new Set(), siteView: {}, evidenceSeen: {}, evidenceDay: 0, mirror: null };
   state.mirror = sessionMirror(
     'wardenone_tracker_session',
-    () => ({ counted: Array.from(state.counted).slice(-TRACKER_LEARN_STORAGE_MAX), siteView: state.siteView }),
+    () => ({ counted: Array.from(state.counted).slice(-TRACKER_LEARN_STORAGE_MAX), siteView: state.siteView, evidenceSeen: state.evidenceSeen, evidenceDay: state.evidenceDay }),
     (stored) => {
       if (!stored || typeof stored !== 'object') return;
+      state.evidenceDay = trackerDay(stored.evidenceDay);
       (Array.isArray(stored.counted) ? stored.counted : []).slice(-TRACKER_LEARN_STORAGE_MAX).forEach((raw) => {
         const domain = normalizeTrackerDomain(raw);
         if (domain) state.counted.add(domain);
@@ -6856,6 +6949,11 @@ function trackerSessionState() {
           const d = normalizeTrackerDomain(rawDomain);
           if (!d || site === d || (!(d in row) && Object.keys(row).length >= TRACKER_SITE_VIEW_MAX_DOMAINS)) return;
           row[d] = Math.max(Number(row[d]) || 0, Math.floor(Number(src[rawDomain]) || 0));
+          const mask = stored.evidenceSeen && stored.evidenceSeen[rawSite] && stored.evidenceSeen[rawSite][rawDomain];
+          if (Number.isInteger(mask) && mask > 0 && mask < (1 << WOLearner.signals.length)) {
+            const seen = state.evidenceSeen[site] || (state.evidenceSeen[site] = {});
+            seen[d] = mask;
+          }
         });
       });
     },
@@ -6878,16 +6976,30 @@ async function noteTrackerSiteView(site, domain) {
   const view = state.siteView;
   if (!view[site]) {
     const sites = Object.keys(view);
-    if (sites.length >= TRACKER_SITE_VIEW_MAX_SITES) delete view[sites[0]];
+    if (sites.length >= TRACKER_SITE_VIEW_MAX_SITES) { delete view[sites[0]]; delete state.evidenceSeen[sites[0]]; }
     view[site] = {};
   }
   const row = view[site];
   if (!(domain in row)) {
     const domains = Object.keys(row);
-    if (domains.length >= TRACKER_SITE_VIEW_MAX_DOMAINS) delete row[domains[0]];
+    if (domains.length >= TRACKER_SITE_VIEW_MAX_DOMAINS) { delete row[domains[0]]; if (state.evidenceSeen[site]) delete state.evidenceSeen[site][domains[0]]; }
   }
   row[domain] = Math.min(1000000, (Number(row[domain]) || 0) + 1);
   state.mirror.persist();
+}
+async function noteTrackerEvidenceSeen(site, domain, signal) {
+  const state = trackerSessionState();
+  await state.mirror.ready();
+  const day = trackerDay(Date.now());
+  if (state.evidenceDay !== day) { state.evidenceSeen = {}; state.evidenceDay = day; }
+  const bit = 1 << WOLearner.signals.indexOf(signal);
+  const row = state.evidenceSeen[site];
+  if (row && (row[domain] & bit)) return false;
+  await noteTrackerSiteView(site, domain);
+  const seen = state.evidenceSeen[site] || (state.evidenceSeen[site] = {});
+  seen[domain] = (seen[domain] || 0) | bit;
+  state.mirror.persist();
+  return true;
 }
 async function trackerSiteViewFor(site) {
   const state = trackerSessionState();
@@ -6898,6 +7010,8 @@ function resetTrackerSessionState() {
   const state = trackerSessionState();
   state.counted.clear();
   state.siteView = {};
+  state.evidenceSeen = {};
+  state.evidenceDay = 0;
   state.mirror.persist();
 }
 
@@ -6953,13 +7067,16 @@ function pruneTrackerLearnerStore() {
     // The sketch is for gathering three sites; once gathered or decided it has nothing to say.
     if (entry.state !== 'candidate' || trackerDistinctSiteCount(entry) >= TRACKER_LEARN_MIN_SITES) delete entry.marks;
   });
+  const rank = (domain, entry) => entry.state === 'learned' || entry.state === 'dismissed' || controlled.has(domain) ? 2
+    : WOLearner.summary(entry.evidence).confidence === 'corroborated' ? 1 : 0;
   const entries = Object.entries(domains)
-    .sort((a, b) => Number((b[1] && b[1].lastSeen) || 0) - Number((a[1] && a[1].lastSeen) || 0));
+    .sort((a, b) => rank(b[0], b[1]) - rank(a[0], a[1]) || Number(b[1].lastSeen || 0) - Number(a[1].lastSeen || 0));
   TRACKER_LEARNER.domains = Object.fromEntries(entries.slice(0, TRACKER_LEARN_STORAGE_MAX));
   const known = new Set(Object.keys(TRACKER_LEARNER.domains));
   Object.keys(TRACKER_LEARNER.siteControls || {}).forEach((site) => {
     const c = TRACKER_LEARNER.siteControls[site] || {};
-    ['allow', 'block'].forEach((k) => {
+    ['allow', 'block', 'cname'].forEach((k) => {
+      if (k === 'cname' && !c[k]) return;
       const src = c[k] || {};
       c[k] = Object.fromEntries(Object.entries(src).filter(([d]) => known.has(d)).slice(0, 80));
     });
@@ -6971,6 +7088,27 @@ async function saveTrackerLearner(applyRules) {
   pruneTrackerLearnerStore();
   await localSet({ [TRACKER_LEARNER_KEY]: TRACKER_LEARNER });
   if (applyRules) await applyTrackerLearnerRules();
+}
+
+async function trackerLearnerLock(limited) {
+  if (limited && __trackerObservationPending >= 64) return null;
+  __trackerObservationPending++;
+  const previous = __trackerObservationQueue;
+  let release;
+  __trackerObservationQueue = new Promise(resolve => { release = resolve; });
+  await previous;
+  return () => { __trackerObservationPending--; release(); };
+}
+async function commitTrackerLearnerDecision(previous, applyRules) {
+  try {
+    if (applyRules && await applyTrackerLearnerRules() === false) throw new Error('Native tracker policy was rejected');
+    await saveTrackerLearner(false);
+    return true;
+  } catch (_) {
+    TRACKER_LEARNER = previous;
+    if (applyRules) await applyTrackerLearnerRules();
+    return false;
+  }
 }
 
 async function applyTrackerLearnerRules() {
@@ -6985,8 +7123,21 @@ async function applyTrackerLearnerRules() {
       return;
     }
     const rules = [];
+    const controls = TRACKER_LEARNER.siteControls || {};
+    const approved = new Set(Object.entries(TRACKER_LEARNER.domains || {}).filter(([, entry]) => entry.state === 'learned' && entry.cnameApproved === true).map(([domain]) => domain));
+    for (const entry of Object.values(controls)) for (const domain of Object.keys(entry.cname || {})) approved.add(domain);
+    const aliases = new Map();
+    if (WO_TRACKER_NETWORK_DATA.canonicalSites.some(domain => approved.has(domain))) {
+      const mapping = await loadKnownAliases();
+      for (const [host, target] of mapping) {
+        const service = normalizeTrackerDomain(target);
+        if (!approved.has(service)) continue;
+        if (!aliases.has(service)) aliases.set(service, new Map());
+        aliases.get(service).set(host, target);
+      }
+    }
     const addRule = (action, priority, domain, extraCondition) => {
-      if (rules.length >= TRACKER_RULE_MAX) return;
+      if (rules.length >= TRACKER_RULE_MAX) throw new Error('Approved tracker rule budget exceeded');
       const d = normalizeTrackerDomain(domain);
       if (!d) return;
       rules.push({
@@ -7000,18 +7151,25 @@ async function applyTrackerLearnerRules() {
         }, extraCondition || {}),
       });
     };
-    const controls = TRACKER_LEARNER.siteControls || {};
+    const addAliases = (action, priority, domain, extraCondition) => {
+      if (!aliases.has(domain)) return;
+      const expanded = WOCname.compile(aliases.get(domain), { base: TRACKER_RULE_BASE + rules.length,
+        excludedInitiatorDomains: [], protectedHost: host => isProtectedTrackerDomain(host) || isMediaCompatDomain(host) });
+      if (rules.length + expanded.length > TRACKER_RULE_MAX) throw new Error('Approved tracker alias rule budget exceeded');
+      for (const alias of expanded) rules.push({ ...alias, priority, action: { type: action },
+        condition: { ...alias.condition, resourceTypes: TRACKER_RESOURCE_TYPES, ...(extraCondition || {}) } });
+    };
     Object.keys(controls).sort().forEach((site) => {
       const initiator = normalizeTrackerDomain(site);
       if (!initiator) return;
       const c = controls[site] || {};
-      Object.keys(c.allow || {}).sort().forEach((domain) => addRule('allow', 2600, domain, { initiatorDomains: [initiator] }));
-      Object.keys(c.block || {}).sort().forEach((domain) => addRule('block', 2500, domain, { initiatorDomains: [initiator] }));
+      Object.keys(c.allow || {}).sort().forEach((domain) => { addRule('allow', 2600, domain, { initiatorDomains: [initiator] }); if (c.cname?.[domain]) addAliases('allow', 2600, domain, { initiatorDomains: [initiator] }); });
+      Object.keys(c.block || {}).sort().forEach((domain) => { addRule('block', 2500, domain, { initiatorDomains: [initiator] }); if (c.cname?.[domain]) addAliases('block', 2500, domain, { initiatorDomains: [initiator] }); });
     });
     Object.keys(TRACKER_LEARNER.domains || {})
       .filter((domain) => TRACKER_LEARNER.domains[domain] && TRACKER_LEARNER.domains[domain].state === 'learned')
       .sort((a, b) => Number((TRACKER_LEARNER.domains[b] && TRACKER_LEARNER.domains[b].hits) || 0) - Number((TRACKER_LEARNER.domains[a] && TRACKER_LEARNER.domains[a].hits) || 0))
-      .forEach((domain) => addRule('block', 1800, domain));
+      .forEach((domain) => { addRule('block', 1800, domain); if (TRACKER_LEARNER.domains[domain].cnameApproved) addAliases('block', 1800, domain); });
     if (dnrBandUnchanged(mine, rules)) return;
     await writeDynamicRules({ removeRuleIds: oldIds, addRules: rules });
   } catch (e) {
@@ -7028,29 +7186,133 @@ function looksLikeKnownTrackerHost(domain) {
     || /(^|\.)(scorecardresearch|quantserve|doubleclick|moatads|adsafeprotected|mixpanel|amplitude|heapanalytics|fullstory|hotjar|mouseflow|crazyegg|luckyorange|inspectlet|chartbeat|matomo|piwik|demdex|bluekai|krux|omtrdc|2o7|adnxs|rubiconproject|pubmatic|criteo)\./.test(d);
 }
 
-async function noteTrackerObservation(tabUrl, detail) {
+function trackerNetworkFilter() {
+  return { urls: [...new Set([
+    ...WO_TRACKER_NETWORK_DATA.cnameHosts.map(host => '*://' + host + '/*'),
+    ...WO_TRACKER_NETWORK_DATA.trackerHosts.concat(WO_TRACKER_NETWORK_DATA.fingerprintHosts).map(host => '*://*.' + host + '/*'),
+  ])], types: TRACKER_NETWORK_TYPES };
+}
+function trackerNetworkListener(details) { void noteTrackerNetworkRequest(details); }
+function reconcileTrackerObserver(enabled) {
+  if (typeof WOIdentifierObserver !== 'undefined') WOIdentifierObserver.reconcile(enabled);
   try {
+    const event = chrome.webRequest.onBeforeRequest;
+    if (enabled && !event.hasListener(trackerNetworkListener)) event.addListener(trackerNetworkListener, trackerNetworkFilter());
+    if (!enabled && event.hasListener(trackerNetworkListener)) event.removeListener(trackerNetworkListener);
+  } catch (error) { console.warn('[WardenOne] tracker observations unavailable', error); return false; }
+}
+try { chrome.webRequest.onBeforeRequest.addListener(trackerNetworkListener, trackerNetworkFilter()); }
+catch (error) { console.warn('[WardenOne] tracker observation listener unavailable', error); }
+
+async function trackerRequestTopFrame(details) {
+  if (!Number.isInteger(details?.tabId) || details.tabId < 0 || !Number.isInteger(details.frameId) || details.frameId < 0
+      || typeof details.documentId !== 'string' || !details.documentId || typeof details.initiator !== 'string') return null;
+  let id = details.frameId, frame = await chrome.webNavigation.getFrame({ tabId: details.tabId, frameId: id });
+  if (!frame || typeof frame.url !== 'string' || frame.url.length > 8192 || frame.documentId !== details.documentId || frame.documentLifecycle !== 'active'
+      || new URL(frame.url).origin !== new URL(details.initiator).origin) return null;
+  const seen = new Set();
+  while (id !== 0) {
+    if (seen.has(id) || seen.size >= 8 || !Number.isInteger(frame.parentFrameId) || frame.parentFrameId < 0) return null;
+    seen.add(id);
+    id = frame.parentFrameId;
+    const parent = await chrome.webNavigation.getFrame({ tabId: details.tabId, frameId: id });
+    if (!parent || typeof parent.url !== 'string' || parent.url.length > 8192 || parent.documentLifecycle !== 'active' || frame.parentDocumentId && frame.parentDocumentId !== parent.documentId) return null;
+    frame = parent;
+  }
+  if (!/^https?:$/.test(new URL(frame.url).protocol)) return null;
+  return { url: frame.url, documentId: frame.documentId, tabId: details.tabId };
+}
+async function noteTrackerPageObservation(sender, detail) {
+  const privacyEpoch = __trackerObservationEpoch;
+  const evidence = WOLearner.pageEvidence(detail);
+  const raw = detail && (detail.domain || detail.host);
+  if (!evidence || typeof raw !== 'string' || raw.length > 512 || __trackerPagePending >= 64) return;
+  detail = { domain: raw, signal: evidence.signal };
+  __trackerPagePending++;
+  try {
+    const top = await trackerRequestTopFrame({ tabId: sender.tab.id, frameId: sender.frameId, documentId: sender.documentId,
+      initiator: sender.origin || new URL(sender.url).origin });
+    if (top) await noteTrackerObservation(top.url, detail, undefined, privacyEpoch);
+  } catch (_) {}
+  finally { __trackerPagePending--; }
+}
+async function noteTrackerNetworkRequest(details) {
+  const privacyEpoch = __trackerObservationEpoch;
+  if (__trackerNetworkPending >= 64 || !details || !TRACKER_NETWORK_TYPES.includes(details.type)
+      || typeof details.url !== 'string' || details.url.length > 8192 || typeof details.documentId !== 'string') return;
+  let owned = false, key;
+  try {
+    const request = new URL(details.url);
+    if (!/^https?:$/.test(request.protocol)) return;
+    const host = WOCname.normalizeHost(request.hostname);
+    if (!host) return;
+    key = details.documentId + '|' + host + '|' + details.type;
+    if (TRACKER_NETWORK_IN_FLIGHT.has(key)) return;
+    TRACKER_NETWORK_IN_FLIGHT.add(key); owned = true; __trackerNetworkPending++;
+    const stored = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, stored && stored.wardenone_config || {});
+    if (cfg.enabled === false || cfg.trackerLearner === false) return;
+    const top = await trackerRequestTopFrame(details);
+    if (!top) return;
+    let domain = host, signal = '';
+    const matches = scopes => scopes.some(scope => host === scope || host.endsWith('.' + scope));
+    const aliasHosts = (__trackerNetworkAliasHosts ||= new Set(WO_TRACKER_NETWORK_DATA.cnameHosts));
+    if (aliasHosts.has(host)) {
+      await loadKnownAliases();
+      const alias = resolveKnownAlias(host);
+      if (!alias) return;
+      domain = alias.canonicalTarget; signal = 'curated-cname';
+    } else if (['script', 'xmlhttprequest'].includes(details.type) && matches(WO_TRACKER_NETWORK_DATA.fingerprintHosts)) signal = 'fingerprint-feed';
+    else if (WO_TRACKER_NETWORK_DATA.trackerRules.some(rule => rule.types.includes(details.type) && matches(rule.hosts)
+      && (!rule.initiators || rule.initiators.some(scope => {
+        const initiator = new URL(details.initiator).hostname;
+        return initiator === scope || initiator.endsWith('.' + scope);
+      })))) signal = 'curated-feed';
+    if (!signal) return;
+    const current = await chrome.webNavigation.getFrame({ tabId: top.tabId, frameId: 0 });
+    if (!current || current.documentId !== top.documentId || current.documentLifecycle !== 'active') return;
+    await noteTrackerObservation(top.url, { domain, signal }, TRACKER_NETWORK_TOKEN, privacyEpoch);
+  } catch (_) {}
+  finally { if (owned) { TRACKER_NETWORK_IN_FLIGHT.delete(key); __trackerNetworkPending--; } }
+}
+
+async function noteTrackerObservation(tabUrl, detail, token, privacyEpoch = __trackerObservationEpoch) {
+  const release = await trackerLearnerLock(true);
+  if (!release) return;
+  try {
+    if (privacyEpoch !== __trackerObservationEpoch) return;
     const cfgStore = await localGet('wardenone_config');
     const cfg = Object.assign({}, DEFAULT_CONFIG, (cfgStore && cfgStore.wardenone_config) || {});
     if (cfg.enabled === false || cfg.trackerLearner === false) return;
-    let first = '';
+    let first = '', firstHost = '';
     try {
       const top = new URL(String(tabUrl || ''));
       // Web pages only. chrome://, file:// and extension pages are not sites the learner should know.
-      if (/^https?:$/.test(top.protocol)) first = normalizeTrackerDomain(top.hostname);
+      if (/^https?:$/.test(top.protocol)) { firstHost = top.hostname; first = normalizeTrackerDomain(firstHost); }
     } catch (_) {}
-    const signal = String((detail && detail.signal) || 'tracker').slice(0, 40);
-    // DOM discovery only says that a third-party resource exists. Treating a
-    // generic script/iframe/src URL as tracker evidence poisoned shared media
-    // providers after they appeared on a few sites. Only API/path/parameter
-    // evidence reaches the learner.
-    if (signal === 'resource-url') return;
-    const third = normalizeTrackerDomain((detail && (detail.domain || detail.host)) || '');
-    if (!first || !third || first === third || isProtectedTrackerDomain(third)) return;
+    const evidence = token === TRACKER_NETWORK_TOKEN && ['curated-feed', 'curated-cname', 'fingerprint-feed'].includes(detail?.signal)
+      ? { signal: detail.signal, source: detail.signal } : WOLearner.pageEvidence(detail);
+    if (!evidence || !first || hostMatchesAllowlist(firstHost, activeAllowlist(cfg))) return;
+    if (Object.entries(cfg.siteOverrides || {}).some(([host, value]) => value?.trackerLearner === false && hostMatchesSite(firstHost, host))) return;
+    const signal = evidence.signal;
+    const raw = detail.domain || detail.host;
+    if (typeof raw !== 'string') return;
+    const third = normalizeTrackerDomain(WOCname.normalizeHost(raw));
+    if (!third || first === third || isProtectedTrackerDomain(third) || isMediaCompatDomain(third)) return;
     await loadTrackerLearner();
     const now = Date.now();
     const day = trackerDay(now);
     const domains = TRACKER_LEARNER.domains || (TRACKER_LEARNER.domains = {});
+    if (!domains[third] && Object.keys(domains).length >= TRACKER_LEARN_STORAGE_MAX) {
+      if (token !== TRACKER_NETWORK_TOKEN) return;
+      const controlled = trackerControlledDomains();
+      const replace = Object.entries(domains).filter(([domain, value]) => !controlled.has(domain) && value.state === 'candidate'
+        && WOLearner.summary(value.evidence).confidence !== 'corroborated')
+        .sort((a, b) => a[1].lastSeen - b[1].lastSeen)[0];
+      if (!replace) return;
+      delete domains[replace[0]];
+    }
+    if (!await noteTrackerEvidenceSeen(first, third, signal)) return;
     const entry = domains[third] || (domains[third] = {
       firstSeen: day,
       lastSeen: day,
@@ -7059,14 +7321,17 @@ async function noteTrackerObservation(tabUrl, detail) {
       reason: 'tracker-like third-party requests',
       sites: 0,
       signals: {},
+      evidence: {},
       sessions: 0,
     });
     entry.lastSeen = day;
     entry.hits = Math.min(1000000, Number(entry.hits || 0) + 1);
     entry.signals = entry.signals || {};
     entry.signals[signal] = Math.min(1000000, Number(entry.signals[signal] || 0) + 1);
-    // What this site saw, for the popup, for this session only.
-    await noteTrackerSiteView(first, third);
+    entry.evidence = entry.evidence || {};
+    for (const source of token === TRACKER_NETWORK_TOKEN ? ['network', evidence.source] : [evidence.source]) {
+      entry.evidence[source] = Math.min(1000000, Number(entry.evidence[source] || 0) + 1);
+    }
     // The site, counted once through the sketch. The name is not kept (PRIV-01).
     if (entry.state === 'candidate' && trackerDistinctSiteCount(entry) < TRACKER_LEARN_MIN_SITES) {
       const salt = trackerLearnerSalt();
@@ -7075,12 +7340,8 @@ async function noteTrackerObservation(tabUrl, detail) {
         entry.sites = trackerDistinctSiteCount(entry) + 1;
       }
     }
-    // Which browser session saw it, counted once per session. The corroboration this learner asks
-    // for is 'three different sites', and a hostile page supplies all three for free: it needs
-    // three registrable domains, and free subdomains on shared hosts are three distinct keys at
-    // zero cost, reachable in one visit through two redirects. Sessions are the axis an attacker
-    // cannot compress -- the record of which trackers this session has counted lives in
-    // chrome.storage.session, so it dies with the browser. Only the count is kept.
+    // Session evidence dies with the browser. Count corroboration once per session so attacker-controlled sites in one
+    // visit cannot substitute for independent sessions.
     if (await noteTrackerSessionSeen(third)) {
       entry.sessions = Math.min(TRACKER_LEARN_MAX_SESSIONS, trackerDistinctSessionCount(entry) + 1);
     }
@@ -7102,18 +7363,19 @@ async function noteTrackerObservation(tabUrl, detail) {
       entry.proposedAt = day;
       delete entry.marks;   // the sketch has done its one job
       entry.reason = strongHost
-        ? 'known tracker host pattern, seen across ' + distinctSessions + ' sessions'
+        ? 'tracker-shaped hostname, seen across ' + distinctSessions + ' sessions; approval required'
         : 'seen as a tracker on ' + trackerDistinctSiteCount(entry) + ' different sites';
       queueHistory({
         type: 'proposed_tracker_domain',
         detail: { domain: third, sites: trackerDistinctSiteCount(entry), hits: entry.hits, why: 'Seen behaving like a tracker on ' + trackerDistinctSiteCount(entry) + ' of your sites across ' + distinctSessions + ' sessions. Nothing is blocked until you say so in the popup.' },
-        url: tabUrl || '',
-        at: now,
+        url: '',
+        at: day,
       });
     }
     // A proposal changes no rule, so nothing is applied here; only a decision does that.
     await saveTrackerLearner(false);
   } catch (_) {}
+  finally { release(); }
 }
 
 // The reader's side of the learner. A proposal becomes a rule only through decideTrackerProposal,
@@ -7131,6 +7393,8 @@ function trackerLearnerProposals() {
         reason: String(entry.reason || ''),
         proposedAt: Number(entry.proposedAt || 0),
         legacy: entry.legacy === true,
+        knownAliases: WO_TRACKER_NETWORK_DATA.canonicalSites.includes(domain),
+        ...WOLearner.summary(entry.evidence),
       };
     })
     .filter(Boolean)
@@ -7139,6 +7403,8 @@ function trackerLearnerProposals() {
 }
 
 async function decideTrackerProposal(domain, decision) {
+  const release = await trackerLearnerLock(false);
+  try {
   await loadTrackerLearner();
   const d = normalizeTrackerDomain(domain);
   const entry = d && TRACKER_LEARNER.domains ? TRACKER_LEARNER.domains[d] : null;
@@ -7146,27 +7412,33 @@ async function decideTrackerProposal(domain, decision) {
   if (entry.state !== 'proposed') return { ok: false, error: 'That domain is not waiting for a decision.' };
   const now = Date.now();
   if (decision === 'block') {
+    const previous = JSON.parse(JSON.stringify(TRACKER_LEARNER));
     entry.state = 'learned';
     entry.approvedAt = trackerDay(now);
     entry.legacy = false;
+    if (WO_TRACKER_NETWORK_DATA.canonicalSites.includes(d)) entry.cnameApproved = true;
     delete entry.marks;
+    if (!await commitTrackerLearnerDecision(previous, true)) {
+      return { ok: false, error: 'Could not apply the tracker decision. The proposal remains available.' };
+    }
     queueHistory({
       type: 'learned_tracker_domain',
       detail: { domain: d, sites: trackerDistinctSiteCount(entry), hits: entry.hits, why: 'You approved blocking it everywhere.' },
       url: '',
       at: now,
     });
-    await saveTrackerLearner(true);
     return { ok: true, domain: d, state: 'learned' };
   }
   if (decision === 'ignore') {
+    const previous = JSON.parse(JSON.stringify(TRACKER_LEARNER));
     entry.state = 'dismissed';
     entry.dismissedAt = trackerDay(now);
     delete entry.marks;
-    await saveTrackerLearner(false);
+    if (!await commitTrackerLearnerDecision(previous, false)) return { ok: false, error: 'Could not save the tracker decision.' };
     return { ok: true, domain: d, state: 'dismissed' };
   }
   return { ok: false, error: 'Decide block or ignore.' };
+  } finally { release(); }
 }
 
 async function decideAllTrackerProposals(decision) {
@@ -7211,6 +7483,8 @@ async function trackerLearnerStatus(url) {
         sites: trackerDistinctSiteCount(entry),
         lastSeen: Number(entry.lastSeen || 0),
         reason: entry.reason || '',
+        knownAliases: WO_TRACKER_NETWORK_DATA.canonicalSites.includes(domain),
+        ...WOLearner.summary(entry.evidence),
       };
     })
     .filter(Boolean)
@@ -7230,12 +7504,13 @@ async function trackerLearnerStatus(url) {
   };
 }
 
-/* The reset the record needs: everything the learner observed, gone; everything the reader decided,
-   kept. Candidates and proposals are observations. An approved rule, a dismissal and a per-site
-   allow or block are the reader's decisions and stay, with their evidence counts zeroed so a kept
-   entry says nothing about where it was seen; this session's view goes with the rest. Run by Clean
-   browsing data when History is ticked -- which PRIVACY.md has said it did all along (PRIV-01). */
+/* PRIV-01: history cleanup removes learner observations and session evidence. Preserve explicit approvals, dismissals and
+   site decisions, with evidence counts cleared. */
 async function clearTrackerLearnerObservations() {
+  if (typeof WOIdentifierObserver !== 'undefined') WOIdentifierObserver.clear();
+  __trackerObservationEpoch++;
+  const release = await trackerLearnerLock(false);
+  try {
   await loadTrackerLearner();
   const domains = TRACKER_LEARNER.domains || (TRACKER_LEARNER.domains = {});
   const controlled = trackerControlledDomains();
@@ -7250,16 +7525,21 @@ async function clearTrackerLearnerObservations() {
     entry.sessions = 0;
     entry.hits = 1;
     entry.signals = {};
+    entry.evidence = {};
     entry.firstSeen = today;
     entry.lastSeen = today;
   });
   resetTrackerSessionState();
   await saveTrackerLearner(false);
   return { ok: true, removed, kept: Object.keys(domains).length };
+  } finally { release(); }
 }
 
 async function setTrackerLearnerSiteMode(url, domain, mode) {
+  const release = await trackerLearnerLock(false);
+  try {
   await loadTrackerLearner();
+  const previous = JSON.parse(JSON.stringify(TRACKER_LEARNER));
   let site = '';
   try { site = normalizeTrackerDomain(new URL(String(url || '')).hostname); } catch (_) {}
   const d = normalizeTrackerDomain(domain);
@@ -7288,8 +7568,16 @@ async function setTrackerLearnerSiteMode(url, domain, mode) {
     delete c.allow[d];
     delete c.block[d];
   }
-  await saveTrackerLearner(true);
+  if ((mode === 'allow' || mode === 'block') && WO_TRACKER_NETWORK_DATA.canonicalSites.includes(d)) {
+    c.cname = c.cname || {};
+    c.cname[d] = Date.now();
+  } else if (c.cname) {
+    delete c.cname[d];
+    if (!Object.keys(c.cname).length) delete c.cname;
+  }
+  if (!await commitTrackerLearnerDecision(previous, true)) return { ok: false, error: 'Could not apply the site tracker decision.' };
   return trackerLearnerStatus(url);
+  } finally { release(); }
 }
 
 // In-memory set of known-bad domains (from the loaded blocklists), used to score
@@ -7365,20 +7653,11 @@ const SITE_BREACH_MAX_BYTES = 512 * 1024;
 // keep the historical *Bg names used throughout this file.
 function regDomainBg(host) { return regDomain(host); }
 function registrableDomainBg(host) { return registrableDomain(host); }
-/* "Same owner?" -- the form for trust decisions: forced-navigation and redirect-warning cross-site
-   tests, the logger's party column, script-drift and smart-script party, the cookie audit and the
-   Forget-Me wipe scope. Never broader than registrableDomainBg (see domain-utils.js), so switching a
-   check to it can only withdraw trust between two tenants of one platform. Registry and list
-   lookups (WHOIS/RDAP age, breach records, blocklist membership) stay on registrableDomainBg:
-   webflow.io is the domain somebody registered, alice.webflow.io is a site (SEC-07). */
+/* SEC-07: use tenant-aware boundaries for trust and wipe scope. Registration/list lookups keep registrableDomainBg; private
+   rules can only narrow trust. */
 function siteIdentityBg(host) { return siteIdentity(host); }
-// chrome.cookies.getAll's domain filter matches that host and its SUBdomains.
-// Session cookies are normally set on the registrable domain (".twitch.tv"), which
-// is a PARENT of "www.twitch.tv" and so was filtered straight out. Both cookie
-// checks below were therefore grading a site on cookies it could not see: the audit
-// reported "no session cookies" for sites that plainly have one, which also skipped
-// the entire cookie-hygiene section of the score -- the only place a site could earn
-// points at all.
+// cookies.getAll domain filters include descendants, not parents. Read the registrable domain to include parent-scoped
+// session cookies.
 function cookieAuditDomain(hostname) {
   return siteIdentityBg(hostname) || hostname;
 }
@@ -7528,7 +7807,7 @@ function __cfgCacheSet(value) {
 const CONFIG_UNREADABLE = Object.freeze({ unreadable: true });
 function localGet(key) {
   if (key === 'wardenone_config') {
-    if (__cfgCacheValid) return Promise.resolve({ wardenone_config: __cfgClone(__cfgCache) });
+    if (__cfgCacheValid) return Promise.resolve({ wardenone_config: effectiveSiteRecoveryConfig(__cfgClone(__cfgCache)) });
     if (!__cfgLoad) {
       const generation = __cfgGeneration;
       const load = new Promise((resolve) => chrome.storage.local.get('wardenone_config', (res) => {
@@ -7548,9 +7827,18 @@ function localGet(key) {
     }
     return __cfgLoad.then((value) => (value === CONFIG_UNREADABLE
       ? { wardenone_config: {}, unreadable: true }
-      : { wardenone_config: __cfgClone(value) }));
+      : { wardenone_config: effectiveSiteRecoveryConfig(__cfgClone(value)) }));
   }
-  return new Promise((resolve) => chrome.storage.local.get(key, resolve));
+  return new Promise((resolve) => chrome.storage.local.get(key, (result) => {
+    if (Array.isArray(key) && key.includes('wardenone_config') && result && result.wardenone_config) {
+      result.wardenone_config = effectiveSiteRecoveryConfig(result.wardenone_config);
+    }
+    resolve(result);
+  }));
+}
+function effectiveSiteRecoveryConfig(config) {
+  return typeof WOSiteRecovery === 'undefined' ? config
+    : WOSiteRecovery.effective(config, Date.now(), normalizeAllowlistHost);
 }
 /* Distinguish failed storage reads from successfully empty data before applying feeds (LIFE-02). */
 function localGetStrict(keys) {
@@ -7606,7 +7894,9 @@ function persistentLocalPayload(obj) {
   return safe;
 }
 
-function localSet(obj) {
+const PRIVACY_ERASE_CONFIG_WRITE = Symbol('privacy erase config write');
+function localSet(obj, writeToken) {
+  if (typeof __privacyEraseInProgress !== 'undefined' && __privacyEraseInProgress && writeToken !== PRIVACY_ERASE_CONFIG_WRITE) return Promise.reject(new Error('Data erase in progress.'));
   const payload = persistentLocalPayload(obj);
   if (!payload || !Object.keys(payload).length) return Promise.resolve({ persisted: false, reason: INCOGNITO_CONTEXT ? 'incognito' : 'empty', keys: [] });
   // The content snapshot is built from four of these keys; a write to one of them must not
@@ -7644,7 +7934,7 @@ function storedConfigChangedKeys(before, after) {
   });
 }
 
-function updateStoredConfig(mutate, triesLeft, operationOrder) {
+function updateStoredConfig(mutate, triesLeft, operationOrder, writeToken) {
   let id = '';
   let order = operationOrder;
   let changedKeys = [];
@@ -7661,10 +7951,10 @@ function updateStoredConfig(mutate, triesLeft, operationOrder) {
     const stamp = stampConfigWrite(res[WO_CONFIG_WRITES_KEY], changedKeys, order);
     id = stamp.id;
     order = stamp.order;
-    await localSet({ wardenone_config: next, [WO_CONFIG_WRITES_KEY]: stamp.record });
+    await localSet({ wardenone_config: next, [WO_CONFIG_WRITES_KEY]: stamp.record }, writeToken);
     return next;
   }).then((next) => {
-    if (next) confirmConfigWrite(id, (left) => { updateStoredConfig(mutate, left, order).catch(() => {}); },
+    if (next) confirmConfigWrite(id, (left) => { updateStoredConfig(mutate, left, order, writeToken).catch(() => {}); },
       triesLeft, changedKeys, order);
     return next;
   });
@@ -8376,13 +8666,8 @@ function isReputationCacheKey(key) {
   return /^[0-9a-f]{64}$/.test(String(key || ''));
 }
 
-// ---- Shared per-provider reputation cache plumbing -------------------------------
-// Every external-reputation provider keeps its own module-level cache object and write
-// timer (the provider's fetch/lookup code touches those directly), but the on-demand
-// LOAD and the debounced prune-and-write are byte-identical across providers. These two
-// helpers hold that logic once; each provider's load/schedule function is a thin shim
-// that bridges to its own module variables via get/set closures. A change to the prune
-// or write policy now lands in one place instead of six.
+// ---- Shared per-provider reputation cache plumbing.
+// Keep each provider's own lookup state while sharing loading and debounced pruning.
 async function loadReputationCacheVia(getCache, setCache, cacheKey, keepKey) {
   const current = getCache();
   if (current && typeof current === 'object') return current;
@@ -8407,12 +8692,8 @@ async function loadReputationCacheVia(getCache, setCache, cacheKey, keepKey) {
   return cache;
 }
 function scheduleReputationCacheWriteVia(getTimer, setTimer, load, setCache, cacheKey, max) {
-  // Write-through NOW: this is called right after a fresh (paid) lookup result was added to the
-  // in-memory cache, which previously lived ONLY in memory for the 700ms debounce -- an SW death
-  // in that window lost the result and re-spent the rate-limited/paid API quota on the next look.
-  // Persisting the current cache immediately makes a hot result durable; the debounced timer below
-  // still does the heavier prune+sort+trim. Reputation providers are opt-in and cache hits dominate,
-  // so this write fires only on the (infrequent) miss path.
+  // Persist fresh paid lookup results immediately so worker eviction cannot re-spend quota. Debounce only the heavier
+  // prune/sort/trim work.
   Promise.resolve(load())
     .then((cache) => { if (cache && typeof cache === 'object') return localSet({ [cacheKey]: cache }); })
     .catch(() => {});
@@ -8531,11 +8812,8 @@ async function fetchPhishTankUrl(rawUrl, apiKey) {
   try {
     const res = await fetchJsonWithTimeout(PHISHTANK_ENDPOINT, {
       method: 'POST',
-      // No X-WardenOne-Client header (DATA-03). PhishTank identifies an application by its
-      // app_key and asks for a descriptive User-Agent -- a header an extension's fetch cannot
-      // set -- and documents nothing else; the header named this reader as a WardenOne
-      // installation, down to the build, on a request that already carries their own key and
-      // the full URL. Nothing here should introduce WardenOne to a provider that did not ask.
+      // DATA-03: use PhishTank's documented app_key; omit unsolicited installation-identifying headers. Extension fetch
+      // cannot set its requested User-Agent.
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
@@ -10240,6 +10518,7 @@ function addSafeBrowsingBypass(handle, sender) {
       const urlKey = await safeBrowsingBypassUrlKey(rec.url);
       if (!urlKey) return { ok: false, error: 'Unrecognised address.' };
       const grants = await readSafeBrowsingBypasses();
+      if (!await messageSenderStillCurrent(sender, true)) return { ok: false, error: 'This warning is no longer active.' };
       // Losing a grant on worker shutdown is safer than leaving a replayable warning.
       await chrome.storage.session.remove(key);
       grants[tabId] = { urlKey, until: Date.now() + SAFE_BROWSING_BYPASS_TTL_MS };
@@ -11064,7 +11343,9 @@ function clearLocationRules() {
 function scheduleSitePauseExpiry(cfg) {
   try {
     if (!chrome.alarms) return;
-    const earliest = nextSitePauseLapse(cfg);
+    const pause = nextSitePauseLapse(cfg);
+    const recovery = WOSiteRecovery.next(cfg.siteRecoveryUntil, Date.now(), normalizeAllowlistHost);
+    const earliest = pause && recovery ? Math.min(pause, recovery) : pause || recovery;
     if (!earliest) { chrome.alarms.clear(SITE_PAUSE_EXPIRY_ALARM, () => { void chrome.runtime.lastError; }); return; }
     chrome.alarms.create(SITE_PAUSE_EXPIRY_ALARM, { when: earliest + 1000 });
   } catch (_) {}
@@ -11238,12 +11519,8 @@ async function applyAllCookieBlock(enabled) {
 
 let __globalLocationBlockEnabled = null;
 let __locationExemptKey = null;
-/* One owner for every location rule this extension writes (COMPAT-02): the block on the three
-   global patterns, an 'ask' on each excused site -- never 'allow'; a pause hands the site back to
-   Chrome's prompt, it does not grant anything -- and the restore. Excused sites that stop being
-   excused are written back to 'block' explicitly, because a single rule cannot be removed and a
-   clear-then-reset would be a moment with no block at all. One function, so the block and its
-   exceptions cannot interleave in the serialization lane. */
+/* COMPAT-02: serialize location blocks, ask exceptions and restores together. Re-block withdrawn exceptions explicitly;
+   clear/reset would create an unprotected gap. */
 async function applyGlobalLocationBlock(enabled, exemptHosts) {
   try {
     enabled = !!enabled;
@@ -11360,12 +11637,14 @@ const RECONCILE_PENDING_KEY = 'wardenone_reconcile_pending';
 const RECONCILE_RETRY_MAX = 6;
 const RECONCILE_RETRY_MIN_MS = 60 * 1000;
 const RECONCILE_COMPONENT_LABELS = {
+  cnameTrackers: 'CNAME tracker rules',
   config: 'settings could not be read',
   reconcile: 'the protection check itself failed before it could run',
   privacyHeaders: 'privacy signal headers',
   headerShield: 'Header Shield',
   thirdPartyCookies: 'third-party cookie blocking',
   trackerCookies: 'tracker cookie stripping',
+  trackerObserver: 'tracker evidence collection',
   allowlist: 'site allowlist rules',
   mediaCompatibility: 'media compatibility rules',
   loginCompatibility: 'login compatibility rules',
@@ -11431,6 +11710,7 @@ async function markReconcilePending() {
 async function clearReconcilePending() {
   const area = sessionArea();
   if (area) await area.remove(RECONCILE_PENDING_KEY);
+  try { await chrome.alarms.clear('wardenone-reconcile'); } catch (_) {}
 }
 // On a cold worker: if the last run left something unapplied, try again -- once per wake, not
 // more often than a minute apart, and not forever. Returns whether a retry was scheduled.
@@ -11561,6 +11841,9 @@ function refreshExtensionState() {
         cfg.forceHttps === true ? 1 : 0,
         cfg.adShield !== false ? 1 : 0,
         cfg.blockTrackers !== false ? 1 : 0,
+        cfg.blockCnameTrackers !== false ? 1 : 0,
+        cfg.trackerLearner !== false ? 1 : 0,
+        JSON.stringify(cfg.siteOverrides || {}),
         cfg.blockGrabberResources !== false ? 1 : 0,
         cfg.warnGrabberDomains !== false ? 1 : 0,
         cfg.blockMalwareSites !== false ? 1 : 0,
@@ -11590,11 +11873,7 @@ function refreshExtensionState() {
         cfg.blockWebRTCLeak !== false ? 1 : 0,
         cfg.intranetProtection !== false ? 1 : 0,
         cfg.intranetNetworkRules !== false ? 1 : 0,
-        // Both of these drive a dynamic content-script registration reconciled below, and neither
-        // was represented here. The key is an early-out: once any other change had primed it,
-        // toggling only one of these produced an identical key, the whole block returned before
-        // reaching its reconciler, and the script was neither registered nor unregistered. The
-        // switch in the popup did nothing until something unrelated happened to change too.
+        // Include registration-driving switches in the cache key so toggling either reaches its reconciler.
         cfg.cryptominerCpuWatch === true ? 1 : 0,
         cfg.flagSearchJunk === true ? 1 : 0,
         cfg.warnSearchResults !== false ? 1 : 0,
@@ -11621,12 +11900,8 @@ function refreshExtensionState() {
       const sharedSessionRules = () => (sessionRulesSnapshot ||= chrome.declarativeNetRequest.getSessionRules());
       const dynamicBatch = createReconcileDnrBatch('dynamic');
       const sessionBatch = createReconcileDnrBatch('session');
-      // Each applier is run under a name, and a resolved false counts as a failure: the
-      // appliers catch their own Chrome errors, so a rejection was never going to arrive.
-      // The applier is handed over as a thunk, so one that throws synchronously fails as THAT
-      // component and the rest of the list still runs (BUG-08). This is the one list: there is
-      // no second or third copy of it in the failure paths below, which is how three copies
-      // came to disagree about which components exist.
+      // BUG-08: run each named applier as a thunk and treat false as failure. Synchronous errors must not prevent other
+      // components from reconciling.
       const run = (name, apply, stableKey, batch) => {
         names.push(name);
         if (stableKey !== undefined && __reconcileComponentKeys.get(name) === stableKey) {
@@ -11646,14 +11921,16 @@ function refreshExtensionState() {
           throw error;
         }));
       };
-      run('privacyHeaders', () => applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false), String(on && cfg.sendPrivacySignals !== false));
+      run('privacyHeaders', () => reconcilePrivacySignalsInjection(on && cfg.sendPrivacySignals !== false, cfg), JSON.stringify([on && cfg.sendPrivacySignals !== false, activeAllowlist(cfg), cfg.siteOverrides]));
       run('headerShield', () => applyHeaderShieldRules({
         clientHints: on && cfg.clientHintProtection !== false,
         strictReferrer: on && cfg.capReferrer === true,
         trackerCache: on && cfg.trackerCacheProtection === true,
       }), [on && cfg.clientHintProtection !== false, on && cfg.capReferrer === true, on && cfg.trackerCacheProtection === true].join(','));
-      run('thirdPartyCookies', () => applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false), String(on && cfg.blockThirdPartyCookies !== false));
-      run('trackerCookies', () => applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false), String(on && cfg.blockThirdPartyCookies !== false));
+      run('thirdPartyCookies', () => applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false, cfg));
+      run('trackerCookies', (submitRules) => applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false, cfg, submitRules), undefined, sessionBatch);
+      run('trackerObserver', () => reconcileTrackerObserver(on && cfg.trackerLearner !== false), String(on && cfg.trackerLearner !== false));
+      run('cnameTrackers', (submitRules) => applyCnameRules(cfg, submitRules), undefined, dynamicBatch);
       run('allowlist', (submitRules) => applyAllowlistRules(on ? activeAllowlist(cfg) : [], sharedSessionRules, submitRules), JSON.stringify(on ? activeAllowlist(cfg) : []), sessionBatch);
       run('mediaCompatibility', (submitRules) => applyMediaCompatibilityRules(on, sharedSessionRules, submitRules), String(on), sessionBatch);
       run('loginCompatibility', (submitRules) => applyLoginCompatibilityRules(on && cfg.loginCompatibility !== false, sharedSessionRules, submitRules), String(on && cfg.loginCompatibility !== false), sessionBatch);
@@ -11735,6 +12012,10 @@ function refreshExtensionState() {
 
 let __refreshExtensionStateTimer = null;
 function scheduleExtensionStateRefresh() {
+  try {
+    const alarm = chrome.alarms.create('wardenone-reconcile', { delayInMinutes: 0.5 });
+    if (alarm && typeof alarm.catch === 'function') alarm.catch(() => {});
+  } catch (_) {}
   if (__refreshExtensionStateTimer) clearTimeout(__refreshExtensionStateTimer);
   __refreshExtensionStateTimer = setTimeout(() => {
     __refreshExtensionStateTimer = null;
@@ -11963,12 +12244,8 @@ async function reconcileSearchJunkInjection(cfgArg) {
       }
     } catch (_) {}
   }
-  /* The warning pass must not wait to be told it is wanted: the page is kept out of
-     extension storage, and asking this worker means waking it -- most of a second,
-     measured, on a search made after a pause -- so the switch rides in the registration.
-     search-loggers.js (generated from rules.json) goes in front of the script only while
-     the pass is on; the page reads the list from it and takes its being there as the
-     answer. The scraper pass still asks for its lists, which only the worker holds. */
+  /* Registration enables immediate search warnings: inject search-loggers.js first only while enabled. Scraper lists still
+     come from the worker. */
   const warn = merged.warnSearchResults !== false;
   const files = warn ? ['search-loggers.js', 'search-junk.js'] : ['search-junk.js'];
   let have = null;
@@ -12189,11 +12466,8 @@ async function reconcileEyeShieldInjection(cfgArg) {
 // Loading its DOM scanner into every frame while the feature is off costs parse
 // time, a storage read, and listeners on every page.
 const CONSENT_REJECT_SCRIPT_ID = 'wo-consent-reject-dynamic';
-// Origins where auto-consent-reject must NEVER run. consent-reject.js synthetically clicks
-// "reject / opt-out / disable all" controls; on login/SSO/OAuth, captcha challenge frames,
-// and payment/checkout that risks dismissing a real auth/payment step or flipping an
-// account setting the user never touched. The dynamically-registered consent script did NOT
-// inherit content.min.js's manifest exclude_matches, so we mirror them here (+ payment hosts).
+// Consent scripts synthesize clicks. Mirror engine exclusions and payment hosts in dynamic registration to protect
+// authentication, CAPTCHA and checkout controls.
 const CONSENT_REJECT_EXCLUDE_MATCHES = [
   'https://accounts.google.com/*', 'https://*.accounts.google.com/*',
   'https://accounts.google.co.uk/*', 'https://*.accounts.google.co.uk/*',
@@ -12240,7 +12514,7 @@ function injectConsentRejectIntoOpenTabs() {
         if (consentRejectExcludedUrl(t.url)) continue; // don't catch-up inject on login/payment tabs
         try {
           chrome.scripting.executeScript(
-            { target: { tabId: t.id, allFrames: true }, world: 'ISOLATED', files: ['consent-reject.js'] },
+            { target: { tabId: t.id, allFrames: true }, world: 'ISOLATED', files: ['consent-state.js', 'consent-reject.js'] },
             () => { void chrome.runtime.lastError; },
           );
         } catch (_) {}
@@ -12265,7 +12539,7 @@ async function reconcileConsentRejectInjection(cfgArg) {
       id: CONSENT_REJECT_SCRIPT_ID,
       matches: ['<all_urls>'],
       excludeMatches: CONSENT_REJECT_EXCLUDE_MATCHES,
-      js: ['consent-reject.js'],
+      js: ['consent-state.js', 'consent-reject.js'],
       runAt: 'document_start',
       allFrames: true,
       matchOriginAsFallback: true,
@@ -12607,16 +12881,27 @@ function applyHeaderShieldRules(options) {
 
 // Replace DNT/GPC header rules in one remove-and-add transaction.
 // Separate calls leave a gap that can survive worker termination. Missing IDs are safe to remove.
+function privacySignalExclusions(cfg) {
+  const hosts = new Set(activeAllowlist(cfg));
+  for (const [raw, entry] of Object.entries(cfg.siteOverrides || {})) {
+    if (entry?.sendPrivacySignals !== false) continue;
+    const host = normalizeAllowlistHost(raw); if (host) hosts.add(host);
+  }
+  return [...hosts].sort();
+}
 let __privacyHeaderRuleEnabled = null;
-async function applyPrivacyHeaderRule(enabled) {
+async function applyPrivacyHeaderRule(enabled, cfg) {
+  cfg ||= {};
   try {
     enabled = !!enabled;
-    if (__privacyHeaderRuleEnabled === enabled) return;
+    const excluded = privacySignalExclusions(cfg), stateKey = JSON.stringify([enabled, excluded]);
+    if (__privacyHeaderRuleEnabled === stateKey) return;
     await writeSessionRules({
-      removeRuleIds: [PRIVACY_HEADER_RULE_ID],
-      addRules: !enabled ? [] : [{
-        id: PRIVACY_HEADER_RULE_ID,
-        priority: 1,
+      removeRuleIds: [PRIVACY_HEADER_RULE_ID, PRIVACY_HEADER_NAV_RULE_ID],
+      addRules: !enabled ? [] : [false, true].map(navigation => ({
+        id: navigation ? PRIVACY_HEADER_NAV_RULE_ID : PRIVACY_HEADER_RULE_ID,
+        // Request allowances do not disable the separately configured privacy preference.
+        priority: 100001,
         action: {
           type: 'modifyHeaders',
           requestHeaders: [
@@ -12624,14 +12909,47 @@ async function applyPrivacyHeaderRule(enabled) {
             { header: 'Sec-GPC', operation: 'set', value: '1' },
           ],
         },
-        condition: { urlFilter: '*', resourceTypes: RESOURCE_TYPES },
-      }],
+        condition: { urlFilter: '*', resourceTypes: navigation ? ['main_frame', 'sub_frame'] : ALL_DNR_RESOURCE_TYPES.filter(type => !['main_frame', 'sub_frame'].includes(type)),
+          ...(excluded.length ? navigation ? { excludedRequestDomains: excluded } : { excludedInitiatorDomains: excluded } : {}) },
+      })),
     });
-    __privacyHeaderRuleEnabled = enabled;
+    __privacyHeaderRuleEnabled = stateKey;
   } catch (e) {
     console.warn('[WardenOne] privacy header rule failed', e);
     return false;
   }
+}
+
+const PRIVACY_SIGNALS_SCRIPT_ID = 'wo-privacy-signals';
+async function reconcilePrivacySignalsInjection(enabled, cfg) {
+  cfg ||= {};
+  enabled = !!enabled;
+  if (await applyPrivacyHeaderRule(enabled, cfg) === false) return false;
+  const excluded = privacySignalExclusions(cfg);
+  try {
+    const scripts = await chrome.scripting.getRegisteredContentScripts({ ids: [PRIVACY_SIGNALS_SCRIPT_ID] });
+    const have = scripts.some(script => script.id === PRIVACY_SIGNALS_SCRIPT_ID);
+    if (enabled) {
+      const definition = { id: PRIVACY_SIGNALS_SCRIPT_ID, matches: ['http://*/*', 'https://*/*'],
+        excludeMatches: excluded.flatMap(host => ['http://', 'https://'].map(scheme => scheme
+          + (/^\d+(?:\.\d+){3}$/.test(host) || host.includes(':') ? host : '*.' + host) + '/*')),
+        js: ['privacy-signals.js'], world: 'MAIN', runAt: 'document_start', allFrames: true,
+        matchOriginAsFallback: true, persistAcrossSessions: true };
+      if (have) await chrome.scripting.updateContentScripts([definition]);
+      else await chrome.scripting.registerContentScripts([definition]);
+    } else if (have) await chrome.scripting.unregisterContentScripts({ ids: [PRIVACY_SIGNALS_SCRIPT_ID] });
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (!Number.isInteger(tab.id) || !/^https?:\/\//i.test(tab.url || '')) continue;
+      const frames = await chrome.webNavigation.getAllFrames({ tabId: tab.id }).catch(() => []);
+      for (const frame of frames || []) {
+        if (!frame.documentId || frame.documentLifecycle !== 'active' || !/^https?:\/\//i.test(frame.url || '')) continue;
+        const on = enabled && !hostMatchesAllowlist(new URL(frame.url).hostname, excluded);
+        try { await chrome.scripting.executeScript({ target: { tabId: tab.id, documentIds: [frame.documentId] },
+          world: 'MAIN', func: wardenOneSetPrivacySignals, args: [on] }); } catch (_) {}
+      }
+    }
+  } catch (error) { console.warn('[WardenOne] privacy signals unavailable', error); return false; }
 }
 
 let __locationPrivacyHeaderRuleEnabled = null;
@@ -12691,14 +13009,14 @@ async function applyIpLookupBlockRules(enabled) {
   }
 }
 
-// Block third-party tracking cookies at the network layer, but only on passive
-// pixel/beacon responses. Never strip auth state from navigations, frames, scripts,
-// or XHR/fetch: doing so breaks OAuth, SAML and university federation callbacks.
-let __thirdPartyCookieRuleEnabled = null;
-async function applyThirdPartyCookieRule(enabled) {
+// Unclassified cross-site requests keep the existing passive pixel/beacon scope.
+let __thirdPartyCookieRuleStateKey = '';
+async function applyThirdPartyCookieRule(enabled, cfg = {}) {
   try {
     enabled = !!enabled;
-    if (__thirdPartyCookieRuleEnabled === enabled) return;
+    const compatibility = enabled ? trackerCookieCompatibility(cfg, false) : {};
+    const stateKey = JSON.stringify([enabled, compatibility]);
+    if (__thirdPartyCookieRuleStateKey === stateKey) return;
     await writeSessionRules({
       removeRuleIds: [THIRD_PARTY_COOKIE_RULE_ID],
       addRules: !enabled ? [] : [{
@@ -12708,20 +13026,137 @@ async function applyThirdPartyCookieRule(enabled) {
         condition: {
           domainType: 'thirdParty',
           resourceTypes: THIRD_PARTY_COOKIE_RESOURCE_TYPES,
-          excludedRequestDomains: LOGIN_COMPAT_NEVER_BLOCK_DOMAINS,
+          ...compatibility,
         },
       }],
     });
-    __thirdPartyCookieRuleEnabled = enabled;
+    __thirdPartyCookieRuleStateKey = stateKey;
   } catch (e) {
     console.warn('[WardenOne] third-party cookie rule failed', e);
     return false;
   }
 }
 
-// Strip third-party cookies narrowly to preserve federation. Known tracker hosts can use all types,
-// with the same exact host scope and login-compat exclusions as Header Shield.
+// Known tracker cookies use both directions; unknown hosts keep the passive policy above.
 const TRACKER_COOKIE_RULE_ID = 900007;
+
+const COOKIE_SERVICE_POLICIES = [
+  { domains: ['accounts.google.com', 'accounts.google.co.uk'], firstParty: ['google.com', 'google.co.uk'] },
+  { domains: ['js.stripe.com'], firstParty: ['stripe.com', 'stripe.network'] },
+  { domains: ['checkout.stripe.com'], firstParty: ['stripe.com', 'stripe.network'] },
+  { domains: ['m.stripe.com', 'q.stripe.com', 'm.stripe.network'], firstParty: ['stripe.com', 'stripe.network'] },
+  { domains: ['accounts.spotify.com'], firstParty: ['spotify.com'] },
+  { domains: ['connect.facebook.net'], firstParty: ['facebook.com', 'facebook.net'] },
+  { domains: ['gstatic.com'], firstParty: ['google.com', 'google.co.uk', 'gstatic.com'] },
+];
+
+function serviceCookieRules(base, action, compatibility) {
+  const topDomains = !!chrome.declarativeNetRequest?.RuleConditionKeys?.EXCLUDED_TOP_DOMAINS;
+  return COOKIE_SERVICE_POLICIES.map((policy, index) => {
+    const excluded = [...new Set([...(compatibility.excludedInitiatorDomains || []), ...policy.firstParty])].sort();
+    return { id: base + index, priority: 2000, action, condition: { requestDomains: policy.domains,
+      [topDomains ? 'excludedTopDomains' : 'excludedInitiatorDomains']: excluded,
+      resourceTypes: trackerCookieResourceTypes() } };
+  });
+}
+
+function frameCookieRuleMatches(rule, context, allowance = false) {
+  const c = rule.condition || {};
+  const matches = (host, domains) => domains.some(domain => host === domain || host.endsWith('.' + domain));
+  const type = context.type || 'sub_frame';
+  if (c.resourceTypes && !c.resourceTypes.includes(type)) return false;
+  if (c.excludedResourceTypes?.includes(type)) return false;
+  for (const [key, host] of [['requestDomains', context.host], ['initiatorDomains', context.initiator], ['topDomains', context.top]]) {
+    if (c[key] && !(allowance && !host) && !matches(host, c[key])) return false;
+  }
+  for (const [key, host] of [['excludedRequestDomains', context.host], ['excludedInitiatorDomains', context.initiator], ['excludedTopDomains', context.top]]) {
+    if (c[key] && matches(host, c[key])) return false;
+  }
+  if (c.tabIds && !c.tabIds.includes(context.tabId)) return false;
+  if (c.excludedTabIds?.includes(context.tabId)) return false;
+  if (c.domainType && !(allowance && !context.initiator) && c.domainType !== (registrableDomainBg(context.host) === registrableDomainBg(context.initiator) ? 'firstParty' : 'thirdParty')) return false;
+  const supported = new Set(['resourceTypes', 'excludedResourceTypes', 'requestDomains', 'initiatorDomains', 'topDomains',
+    'excludedRequestDomains', 'excludedInitiatorDomains', 'excludedTopDomains', 'tabIds', 'excludedTabIds', 'domainType']);
+  if (allowance) return true;
+  if (c.regexFilter) {
+    if (!new RegExp(c.regexFilter, c.isUrlFilterCaseSensitive ? '' : 'i').test(context.url)) return false;
+    supported.add('regexFilter'); supported.add('isUrlFilterCaseSensitive');
+  }
+  return Object.keys(c).every(key => supported.has(key));
+}
+
+function notifyFrameCookieRuleChange(change) {
+  const bands = [[TRACKER_COOKIE_RULE_ID, 1], [TRACKER_COOKIE_ALIAS_RULE_BASE, TRACKER_COOKIE_ALIAS_RULES_BUDGET],
+    [FIREWALL_RULE_BASE, FIREWALL_RULE_MAX], [FIREWALL_SESSION_RULE_BASE, FIREWALL_SESSION_RULE_MAX],
+    [TRACKER_RULE_BASE, TRACKER_RULE_MAX], [USER_RULE_BASE, USER_RULE_MAX]];
+  if ((change.removeRuleIds || []).some(id => bands.some(([base, size]) => id >= base && id < base + size))
+      || (change.addRules || []).some(rule => ['allow', 'allowAllRequests'].includes(rule.action.type) && rule.priority >= 2000)) scheduleContentConfigRefresh();
+}
+
+async function frameCookieRuleSnapshot() {
+  const revision = () => String(writeSessionRules.revision || 0) + ':' + String(writeDynamicRules.revision || 0);
+  const key = revision();
+  const held = frameCookieRuleSnapshot.cached;
+  if (held?.key === key) return held.rules;
+  const ids = [];
+  for (const [base, size] of [[FIREWALL_RULE_BASE, FIREWALL_RULE_MAX], [TRACKER_RULE_BASE, TRACKER_RULE_MAX], [USER_RULE_BASE, USER_RULE_MAX]]) {
+    for (let i = 0; i < size; i++) ids.push(base + i);
+  }
+  const rules = Promise.all([chrome.declarativeNetRequest.getSessionRules(), chrome.declarativeNetRequest.getDynamicRules({ ruleIds: ids })])
+    .then(([session, dynamic]) => {
+      if (revision() !== key) throw new Error('Cookie access policy changed while reading');
+      const owned = rule => rule.id === TRACKER_COOKIE_RULE_ID || (rule.id >= TRACKER_COOKIE_ALIAS_RULE_BASE && rule.id < TRACKER_COOKIE_ALIAS_RULE_BASE + TRACKER_COOKIE_ALIAS_RULES_BUDGET);
+      return { cookies: session.filter(owned), allowances: session.concat(dynamic).filter(rule => ['allow', 'allowAllRequests'].includes(rule.action.type) && rule.priority >= 2000) };
+    });
+  const entry = { key, rules }; frameCookieRuleSnapshot.cached = entry;
+  rules.catch(() => { if (frameCookieRuleSnapshot.cached === entry) frameCookieRuleSnapshot.cached = null; });
+  return rules;
+}
+
+async function frameCookieIsolationFor(sender, cfg) {
+  try {
+    if (!messageSenderIsTab(sender) || sender.frameId === 0 || !sender.documentId || cfg.enabled === false || cfg.blockThirdPartyCookies === false) return false;
+    const host = contentConfigFrameHost(sender), top = trustHostFromUrl(sender.tab.url);
+    if (!host || !top || host === top) return false;
+    const compatibility = trackerCookieCompatibility(cfg);
+    if ((compatibility.excludedInitiatorDomains || []).some(domain => hostMatchesSite(top, domain))) return false;
+    const rules = await frameCookieRuleSnapshot();
+    const scopeMatches = rule => {
+      const c = rule.condition;
+      if (c.requestDomains && !c.requestDomains.some(domain => hostMatchesSite(host, domain))) return false;
+      if (c.excludedRequestDomains?.some(domain => hostMatchesSite(host, domain))) return false;
+      return !c.regexFilter || new RegExp(c.regexFilter, c.isUrlFilterCaseSensitive ? '' : 'i').test(sender.url);
+    };
+    if (!rules.cookies.some(scopeMatches)) return false;
+    const frame = await chrome.webNavigation.getFrame({ tabId: sender.tab.id, frameId: sender.frameId });
+    if (!frame || frame.documentId !== sender.documentId || frame.parentFrameId < 0) return false;
+    const parent = await chrome.webNavigation.getFrame({ tabId: sender.tab.id, frameId: frame.parentFrameId });
+    const initiator = trustHostFromUrl(parent?.url);
+    if (!initiator) return false;
+    const context = { host, top, initiator, url: sender.url, tabId: sender.tab.id };
+    if (!rules.cookies.some(rule => frameCookieRuleMatches(rule, context))) return false;
+    // Ambiguous URL/method-specific allowances keep DOM access; native header rules still apply.
+    if (rules.allowances.some(rule => frameCookieRuleMatches(rule, context, true))) return false;
+    const inherited = rules.allowances.filter(rule => rule.action.type === 'allowAllRequests');
+    if (inherited.length) {
+      const tree = new Map((await chrome.webNavigation.getAllFrames({ tabId: sender.tab.id })).map(entry => [entry.frameId, entry]));
+      const seen = new Set();
+      for (let id = frame.parentFrameId; id >= 0;) {
+        const ancestor = tree.get(id);
+        if (!ancestor || seen.has(id)) return false;
+        seen.add(id);
+        const ancestorHost = trustHostFromUrl(ancestor.url);
+        if (!ancestorHost) return false;
+        const parentHost = trustHostFromUrl(tree.get(ancestor.parentFrameId)?.url);
+        const candidate = { ...context, host: ancestorHost, initiator: parentHost, url: ancestor.url,
+          type: ancestor.parentFrameId < 0 ? 'main_frame' : 'sub_frame' };
+        if (inherited.some(rule => frameCookieRuleMatches(rule, candidate, true))) return false;
+        id = ancestor.parentFrameId;
+      }
+    }
+    return true;
+  } catch (_) { return false; }
+}
 
 function trackerCookieResourceTypes() {
   // main_frame stays out for the same reason it does everywhere else: navigating
@@ -12729,48 +13164,72 @@ function trackerCookieResourceTypes() {
   return SECURITY_RESOURCE_TYPES.filter((type) => type !== 'main_frame');
 }
 
-let __trackerCookieRuleEnabled = null;
+function trackerCookieCompatibility(cfg, knownTracker = true) {
+  const hosts = new Set(activeAllowlist(cfg));
+  if (knownTracker) for (const host of MEDIA_COMPAT_DOMAINS) hosts.add(host);
+  for (const [pattern, entry] of Object.entries(cfg.siteOverrides || {})) {
+    if (!entry || entry.blockThirdPartyCookies !== false) continue;
+    const host = normalizeAllowlistHost(pattern);
+    if (host) hosts.add(host);
+  }
+  if (hosts.size > 2000) throw new Error('Tracker cookie exception budget exceeded');
+  return { ...(hosts.size ? { excludedInitiatorDomains: [...hosts].sort() } : {}),
+    excludedRequestDomains: [...new Set([...LOGIN_COMPAT_NEVER_BLOCK_DOMAINS, ...(knownTracker ? MEDIA_COMPAT_DOMAINS : [])])].sort() };
+}
 
-async function applyTrackerCookieRule(enabled) {
+let __trackerCookieRuleStateKey = '';
+
+async function applyTrackerCookieRule(enabled, cfg = {}, submitRules) {
   try {
     if (!chrome.declarativeNetRequest?.updateSessionRules) return;
     enabled = !!enabled;
-    if (__trackerCookieRuleEnabled === enabled) return;
-    if (!enabled) {
-      await writeSessionRules({
-        removeRuleIds: [TRACKER_COOKIE_RULE_ID],
-        addRules: [],
-      });
-      __trackerCookieRuleEnabled = enabled;
-      return;
+    const compatibility = enabled ? trackerCookieCompatibility(cfg) : {};
+    const excludedInitiatorDomains = compatibility.excludedInitiatorDomains || [];
+    const stateKey = JSON.stringify([enabled, compatibility]);
+    if (__trackerCookieRuleStateKey === stateKey) return;
+    const addRules = [];
+    if (enabled) {
+      let domains = await packagedHeaderTrackerDomains();
+      if (!domains.length) throw new Error('Tracker cookie classification unavailable');
+      domains = domains.filter(host => !isProtectedTrackerDomain(host) && !isMediaCompatDomain(host));
+      const action = { type: 'modifyHeaders', responseHeaders: [{ header: 'set-cookie', operation: 'remove' }],
+        requestHeaders: [{ header: 'cookie', operation: 'remove' }] };
+      if (domains.length) addRules.push({ id: TRACKER_COOKIE_RULE_ID, priority: 2000, action,
+        condition: { domainType: 'thirdParty', requestDomains: domains, resourceTypes: trackerCookieResourceTypes(), ...compatibility } });
+      const mapping = await loadKnownAliases();
+      const covered = new Map(), uncovered = new Map(), domainSet = new Set(domains);
+      for (const [alias, target] of mapping) {
+        let suffix = alias;
+        while (!domainSet.has(suffix) && suffix.includes('.')) suffix = suffix.slice(suffix.indexOf('.') + 1);
+        (domainSet.has(suffix) ? covered : uncovered).set(alias, target);
+      }
+      const aliasRules = [];
+      for (const [aliases, domainType] of [[uncovered, null], [covered, 'firstParty']]) {
+        const compiled = WOCname.compile(aliases, { base: TRACKER_COOKIE_ALIAS_RULE_BASE + aliasRules.length, excludedInitiatorDomains,
+          protectedHost: host => isProtectedTrackerDomain(host) || isMediaCompatDomain(host) });
+        for (const rule of compiled) aliasRules.push({ ...rule, priority: 2000, action,
+          condition: { ...rule.condition, resourceTypes: trackerCookieResourceTypes(), ...compatibility, ...(domainType ? { domainType } : {}) } });
+      }
+      const serviceRules = serviceCookieRules(TRACKER_COOKIE_ALIAS_RULE_BASE + aliasRules.length, action, compatibility);
+      const supplementalRules = aliasRules.concat(serviceRules);
+      addRules.push(...supplementalRules);
+      // Replacing frame timing prevents malformed server metrics from hiding the bootstrap restriction.
+      const frameRules = addRules.map((rule, index) => ({ ...rule,
+        id: TRACKER_COOKIE_ALIAS_RULE_BASE + supplementalRules.length + index,
+        action: { ...action, responseHeaders: action.responseHeaders.concat({ header: 'server-timing', operation: 'set', value: 'cookie-policy;desc="restricted";dur=0' }) },
+        condition: { ...rule.condition, resourceTypes: ['sub_frame'] } }));
+      if (supplementalRules.length + frameRules.length > TRACKER_COOKIE_ALIAS_RULES_BUDGET) throw new Error('Tracker cookie rule budget exceeded');
+      for (let i = 0; i < addRules.length; i++) addRules[i] = { ...addRules[i],
+        condition: { ...addRules[i].condition, resourceTypes: addRules[i].condition.resourceTypes.filter(type => type !== 'sub_frame') } };
+      addRules.push(...frameRules);
     }
-    const domains = await packagedHeaderTrackerDomains();
-    if (!domains.length) {
-      // No list, no rule. A requestDomains condition with an empty array matches
-      // every domain, which would turn this into exactly the blanket wide rule
-      // the narrow one exists to avoid.
-      await writeSessionRules({
-        removeRuleIds: [TRACKER_COOKIE_RULE_ID],
-        addRules: [],
-      });
-      __trackerCookieRuleEnabled = false;
-      return;
-    }
-    await writeSessionRules({
-      removeRuleIds: [TRACKER_COOKIE_RULE_ID],
-      addRules: [{
-        id: TRACKER_COOKIE_RULE_ID,
-        priority: 1,
-        action: { type: 'modifyHeaders', responseHeaders: [{ header: 'set-cookie', operation: 'remove' }] },
-        condition: {
-          domainType: 'thirdParty',
-          requestDomains: domains,
-          resourceTypes: trackerCookieResourceTypes(),
-          excludedRequestDomains: LOGIN_COMPAT_NEVER_BLOCK_DOMAINS,
-        },
-      }],
-    });
-    __trackerCookieRuleEnabled = enabled;
+    const change = {
+      removeRuleIds: [TRACKER_COOKIE_RULE_ID, ...Array.from({ length: TRACKER_COOKIE_ALIAS_RULES_BUDGET }, (_, i) => TRACKER_COOKIE_ALIAS_RULE_BASE + i)],
+      addRules,
+    };
+    await (submitRules ? submitRules(change) : writeSessionRules(change));
+    __trackerCookieRuleStateKey = stateKey;
+    scheduleContentConfigRefresh();
   } catch (e) {
     console.warn('[WardenOne] tracker cookie rule failed', e);
     return false;
@@ -12783,14 +13242,14 @@ function refreshPrivacyHeaders() {
     localGet('wardenone_config').then((res) => {
       const cfg = (res && res.wardenone_config) || {};
       const on = cfg.enabled !== false;
-      applyPrivacyHeaderRule(on && cfg.sendPrivacySignals !== false);
+      void serializeSubsystem('privacyHeaders', () => reconcilePrivacySignalsInjection(on && cfg.sendPrivacySignals !== false, cfg));
       applyHeaderShieldRules({
         clientHints: on && cfg.clientHintProtection !== false,
         strictReferrer: on && cfg.capReferrer === true,
         trackerCache: on && cfg.trackerCacheProtection === true,
       });
-      applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false);
-      applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false);
+      applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false, cfg);
+      applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false, cfg);
     }).catch(() => {});
   } catch (_) {}
 }
@@ -12814,13 +13273,8 @@ function httpsUpgradeRule(id) {
     },
   };
 }
-// The rule lives in two stores: the dynamic copy survives a browser restart, the session
-// copy is the one whose failure counts (it is the store that reliably takes a rule within
-// a session). Each store is replaced in ONE call carrying both removeRuleIds and addRules,
-// the persistent copy first: at no await boundary is either store empty while the setting
-// says on, so a worker dying mid-way leaves the upgrade in force instead of silently off.
-// The old shape cleared both stores before adding to either, which was the widest such
-// gap the worker had.
+// Replace each store atomically, persistent first. The session copy determines success; no await boundary may leave either
+// store deliberately empty while enabled.
 let __httpsUpgradeRuleEnabled = null;
 async function applyHttpsUpgradeRule(enabled) {
   enabled = !!enabled;
@@ -13234,7 +13688,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
         applyTrackerLearnerRules();
       }
       if (o.enabled !== n.enabled || o.blockCryptominers !== n.blockCryptominers) {
-        applyMinerFeedRules();
+        loadMinerFeed();
+      }
+      if (['enabled', 'blockGrabberResources', 'warnGrabberDomains', 'blockMalwareSites'].some((key) => o[key] !== n[key])) {
+        loadGrabberFeed();
       }
       if (o.enabled !== n.enabled) {
         applyScriptShieldRules();
@@ -13260,12 +13717,8 @@ function scheduleUpdates() {
   } catch (_) {}
 }
 
-// Smart list-update retry. A fixed daily refresh means a transient CDN/network
-// outage -- or simply being offline at install -- leaves blocklists stale for up
-// to 24h. When an update fails outright, or succeeds but with some sources
-// unreachable, we schedule a few backed-off one-shot retries to pick up what we
-// missed, then fall back to the normal daily cadence. Integrity rejections and
-// the user's own toggles are NOT transient, so they never trigger a retry.
+// Retry transient feed failures with bounded backoff before returning to daily refresh. Integrity rejections and disabled
+// sources are not retryable outages.
 const LIST_RETRY_BACKOFF_MIN = [4, 12, 40]; // minutes between retries; then give up until daily
 const LIST_RETRY_ALARM = 'wardenone-list-retry';
 async function getListRetryCount() {
@@ -13308,11 +13761,18 @@ async function updateRemoteListsWithRetry(reason) {
 }
 
 chrome.alarms?.onAlarm.addListener((alarm) => {
+  if (alarm && alarm.name === 'wardenone-reconcile') refreshExtensionState();
+  if (alarm && alarm.name === FEED_LOAD_ALARM_PREFIX + 'grabber') loadGrabberFeed(true);
+  if (alarm && alarm.name === FEED_LOAD_ALARM_PREFIX + 'miner') loadMinerFeed(true);
   if (alarm && alarm.name === 'wardenone-list-update') { updateRemoteListsWithRetry('alarm'); pruneHistoryStore('alarm').catch(() => {}); }
   if (alarm && alarm.name === LIST_RETRY_ALARM) updateRemoteListsWithRetry('retry');
   if (alarm && alarm.name === 'wardenone-startup-check') runStartupCheck('startup');
   // A timed site pause just lapsed: the location exception and the request pass go with it.
-  if (alarm && alarm.name === SITE_PAUSE_EXPIRY_ALARM) refreshExtensionState();
+  if (alarm && alarm.name === SITE_PAUSE_EXPIRY_ALARM) {
+    invalidateContentConfigMemo();
+    scheduleContentConfigRefresh();
+    refreshExtensionState();
+  }
   if (alarm && alarm.name === 'wardenone-memory-sweep') {
     if (!MODULE_LOADED.memory) return;   // no module, nothing to sweep with (CWS-03)
     // PERF (weak machines): read config ONCE per wake (was 3x storage.get +
@@ -13512,11 +13972,13 @@ function noteForgetTabHost(tabId, host) {
 }
 
 function persistForgetTabHosts() {
+  if (typeof __privacyEraseInProgress !== 'undefined' && __privacyEraseInProgress) return;
   const area = forgetSessionArea();
   if (!area || __forgetTabHostsWrite) return;
   // Coalesced: navigation bursts would otherwise write once per hop.
   __forgetTabHostsWrite = setTimeout(() => {
     __forgetTabHostsWrite = null;
+    if (__privacyEraseInProgress) return;
     try {
       const cutoff = Date.now() - FORGET_TAB_HOSTS_TTL_MS;
       const entries = Object.keys(FORGET_TAB_HOSTS)
@@ -13666,6 +14128,7 @@ function isWardenOneDynamicRuleId(id) {
     || (id >= OPTION_RULE_BASE && id < OPTION_RULE_BASE + OPTION_RULES_MAX)
     || (id >= LEARNED_RULE_BASE && id < LEARNED_RULE_BASE + LEARNED_MAX)
     || (id >= TRACKER_RULE_BASE && id < TRACKER_RULE_BASE + TRACKER_RULE_MAX)
+    || (id >= CNAME_RULE_BASE && id < CNAME_RULE_BASE + CNAME_RULES_BUDGET)
     || (id >= GRABBER_FEED_RULE_BASE && id < GRABBER_FEED_RULE_BASE + GRABBER_FEED_MAX)
     || id === GRABBER_NAV_RULE_ID || id === GRABBER_MALWARE_NAV_RULE_ID
     || (id >= NEVER_BLOCK_ALLOW_RULE_BASE && id < NEVER_BLOCK_ALLOW_RULE_BASE + NEVER_BLOCK_ALLOW_MAX)
@@ -14226,12 +14689,8 @@ function normalizeSmartScriptFailure(details) {
   };
 }
 
-// Every third-party script a frame had blocked, keyed by frame and navigation
-// epoch. Recovering one host per reload was racy: the single attempt landed on
-// whichever script the network happened to report first -- usually an analytics
-// beacon rather than the one the player needs -- and each extra reload was another
-// chance for the frame to move on and have its reload rejected. Stage one now
-// clears the whole frame in one pass, so host ordering stops mattering.
+// Recover the frame's full blocked-host set for its navigation epoch in one pass; network report ordering must not select
+// only an analytics host.
 const SMART_SCRIPT_FRAME_HOSTS = new Map();
 
 function noteSmartScriptFrameHost(failure) {
@@ -14605,12 +15064,8 @@ async function handleSmartScriptPageStatus(sender) {
   return { ok: true, refused: explain.hosts.length, hosts: explain.hosts.slice(0, 3), host: explain.host };
 }
 
-// The trust action the notice offers -- the same one the Script Shield panel already has.
-//
-// The host is read from the SENDER's own tab and never from the message, so there is no field to
-// forge: the worst a replayed or stray message can do is trust the site it came from. It is refused
-// outright unless we genuinely refused a script on that tab's current navigation, so a message
-// arriving without the condition that shows the notice does nothing at all.
+// Derive trust from the sender tab, never a message host. Require an actual script refusal on the current navigation before
+// accepting this action.
 async function handleSmartScriptTrustSite(sender) {
   const explain = await smartScriptSiteExplainable(sender);
   if (!explain) return { ok: false, error: 'Nothing was blocked on this page.' };
@@ -14839,12 +15294,8 @@ const GOOGLE_SEARCH_SPONSORED_PATH_FILTERS = [
 // Subresource rules still apply; the search engine decides what results its parameter filters.
 const SAFE_SEARCH_RULE_BASE = 743000;
 const SAFE_SEARCH_RULE_MAX = 40;
-// `allow` is written out per engine rather than derived from `match`, because the
-// two are not the same shape. DuckDuckGo's match has to consume the "?" to avoid
-// firing on /settings and /about -- which means an "allow" built as match + "[?&]"
-// can never match a URL where the parameter landed FIRST (…/?kp=1&q=…), and every
-// search on that engine becomes a redirect loop. tools/test-safe-search.js runs
-// both patterns against real URLs with the parameter in either position.
+// Keep allow patterns separate from match patterns: DuckDuckGo's match consumes ?, so deriving allow would miss a
+// first-position safety parameter and loop.
 const SAFE_SEARCH_ENGINES = [
   {
     label: 'google',
@@ -15136,13 +15587,8 @@ function serializeSubsystem(name, task) {
   __subsystemQueues.set(name, next.then(() => {}, () => {}));
   return next;
 }
-/* Whole-store writers, one transaction per store (M48). The firewall matrix, My Rules with the
-   subscribed lists, and the element-zapper selectors are each read whole, changed in a private
-   copy and written back whole. Chrome storage has no compare-and-swap and an awaited read-change-
-   write is not atomic, so two overlapping changes both read the old store and the later write
-   erased the earlier one while both callers were told it worked. Each whole transaction --
-   read, change, apply, write -- now runs in its store's own lane of the same queue the appliers
-   use. My Rules and the subscribed lists share one lane because they compile into one rule band. */
+/* Whole-store writers, one transaction per store (M48). Serialize read/change/apply/write because Chrome storage has no
+   compare-and-swap. User rules and subscriptions share a lane and rule band. */
 const USER_FILTER_STORES = 'wardenone_user_rules+wardenone_custom_lists';
 function storeTransaction(key, task) {
   return serializeSubsystem('store:' + key, task);
@@ -15150,6 +15596,8 @@ function storeTransaction(key, task) {
 // applyScriptShieldRules is deliberately absent: it already owns its own serialization chain
 // (__scriptShieldRuleUpdate), and it is the pattern this generalises rather than a gap in it.
 const SERIALIZED_STATE_APPLIERS = [
+  'reconcilePrivacySignalsInjection',
+  'reconcileTrackerObserver',
   'applyLearnedRules',
   'applyUserFilterRules',
   /* The candidate-taking variants are what the write handlers call, so the lane that
@@ -15158,6 +15606,7 @@ const SERIALIZED_STATE_APPLIERS = [
   'applyGrabberFeedRules',
   'applyMinerFeedRules',
   'applyTrackerLearnerRules',
+  'applyCnameRules',
   'applyAllowlistRules',
   'applyMediaCompatibilityRules',
   'applyLoginCompatibilityRules',
@@ -15271,6 +15720,11 @@ const UBO_TYPE_MAP = {
 const UBO_IGNORABLE = new Set(['all']);
 const UBO_UNSUPPORTED = /(redirect|redirect-rule|removeparam|csp|replace|empty|mp4|inline-script|inline-font|generichide|genericblock|elemhide|specifichide|cname|header|popup|popunder|strict1p|strict3p)/;
 
+function validNetworkRuleScope(host) {
+  return host.length <= 253 && host.split('.').every((label) =>
+    label.length > 0 && label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label));
+}
+
 function networkRulePatternHost(pattern) {
   let p = String(pattern || '').trim().toLowerCase();
   if (!p) return '';
@@ -15297,6 +15751,8 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
     at = end < 0 ? source.length + 1 : end + 1;
     if (!line || line[0] === '!' || line[0] === '#' || line[0] === '[') continue;
     if (line.includes('##') || line.includes('#@#') || line.includes('#?#') || line.includes('#$#') || line.includes('#%#')) continue;
+    const candidatePattern = line.startsWith('@@') ? line.slice(2) : line;
+    if (/^\/.*\/[a-z]*(?:\$|$)/i.test(candidatePattern)) continue;
     const dollar = line.indexOf('$');
     if (dollar === -1) continue;
 
@@ -15329,9 +15785,16 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
         continue;
       }
       if (k === 'domain') {
-        if (neg || !v) { bad = true; break; }
+        if (neg || !v || o.indexOf('=', o.indexOf('=') + 1) !== -1) { bad = true; break; }
         const incl = [], excl = [];
-        v.split('|').forEach((d) => { d = d.trim().toLowerCase(); if (!d) return; if (d[0] === '~') excl.push(d.slice(1)); else incl.push(d); });
+        for (let d of v.split('|')) {
+          d = d.trim().toLowerCase();
+          const excluded = d.startsWith('~');
+          const host = excluded ? d.slice(1) : d;
+          if (!validNetworkRuleScope(host)) { bad = true; break; }
+          (excluded ? excl : incl).push(host);
+        }
+        if (bad) break;
         if (incl.length) domains = incl;
         if (excl.length) excludedDomains = excl;
         continue;
@@ -15427,7 +15890,9 @@ function parseList(text) {
   /* A fuzzylist names the REAL sites a feed protects, the originals its look-alike matching
      measures against: MetaMask's config lists metamask.io, etherscan.io and opensea.io there.
      Read as blocks, it put those eight sites on the malware list. */
-  function collectJson(value, key, activeBranch) {
+  let jsonNodes = 0;
+  function collectJson(value, key, activeBranch, depth = 0) {
+    if (++jsonNodes > 500000 || depth > 32) throw new Error('Integrity guard rejected source: JSON complexity limit');
     const keyName = String(key || '');
     if (/^(allow|white|safe|legit|ignore|fuzzy|tolerance|source|report|comment|description|category|title|name|created|updated|date|reason)/i.test(keyName) || /(allow|white)list/i.test(keyName)) return;
     const blockKey = /^(blocklist|blacklist|domains?|hosts?|urls?|entries|list)$/i.test(keyName);
@@ -15438,23 +15903,25 @@ function parseList(text) {
       return;
     }
     if (Array.isArray(value)) {
-      for (const item of value) collectJson(item, keyName, active);
+      for (const item of value) collectJson(item, keyName, active, depth + 1);
       return;
     }
     if (value && typeof value === 'object') {
       for (const [childKey, childValue] of Object.entries(value)) {
-        collectJson(childValue, childKey, active);
+        if (['__proto__', 'constructor', 'prototype'].includes(childKey)) throw new Error('Integrity guard rejected source: JSON control key');
+        collectJson(childValue, childKey, active, depth + 1);
       }
     }
   }
 
   const trimmed = String(text || '').trim();
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+  if (trimmed.startsWith('{') || /^\[\s*(?:["[{\]\d-]|true|false|null)/.test(trimmed)) {
+    let parsed;
     try {
-      const parsed = JSON.parse(trimmed);
-      collectJson(parsed, '', Array.isArray(parsed));
-      if (out.length) return out;
-    } catch (_) {}
+      parsed = JSON.parse(trimmed);
+    } catch (_) { throw new Error('Integrity guard rejected source: invalid JSON'); }
+    collectJson(parsed, '', Array.isArray(parsed));
+    return out;
   }
 
   for (const rawLine of String(text || '').split(/\r?\n/)) {
@@ -15472,13 +15939,8 @@ function parseList(text) {
   return out;
 }
 
-/* parseList for a downloaded feed, a slice of lines at a time, giving the service worker back
-   between slices. A feed runs to hundreds of thousands of lines, and parsing one in a single task
-   held the worker for seconds after a fresh install (gaps of 1.9 s with the per-host checks made
-   cheap, 2.75 s before) -- a settings change made then reached open tabs only after it, which on
-   a slower machine took longer than the change itself. Same hosts, same order: each slice goes
-   through parseList and repeats are dropped across slices as parseList drops them within one.
-   A genuine JSON feed is still parsed whole, since it cannot be cut at a line. */
+/* Yield between line-based feed slices while preserving parseList order and cross-slice deduplication. JSON feeds must
+   remain whole. */
 const LIST_PARSE_SLICE_LINES = 4000;
 async function parseListInSlices(text) {
   const source = String(text || '');
@@ -15513,6 +15975,12 @@ async function parseListInSlices(text) {
     at = end;
   }
   return out;
+}
+
+async function compileRemoteNetworkSource(text, maxOptionRules) {
+  const domains = await parseListInSlices(text);
+  const optionRules = parseNetworkRules(text, 0, maxOptionRules);
+  return { domains, optionRules };
 }
 
 function getListMeta() {
@@ -15912,8 +16380,7 @@ async function fetchListSource(url, reason, integrity) {
   try {
     const text = fetched.text || '';
     const byteLength = fetched.byteLength || utf8ByteLength(text);
-    const domains = await parseListInSlices(text);
-    const optionRules = parseNetworkRules(text, 0, OPTION_RULES_PER_SOURCE_CAP);
+    const { domains, optionRules } = await compileRemoteNetworkSource(text, OPTION_RULES_PER_SOURCE_CAP);
     const hash = await sha256TextHex(text);
     const verdict = evaluateListSourceIntegrity(
       url,
@@ -16040,21 +16507,24 @@ function parseSupplementalManifestText(text) {
   try {
     parsed = JSON.parse(String(text || ''));
   } catch (_) {
-    return out;
+    throw new Error('Integrity guard rejected source: invalid supplemental JSON');
   }
-  const walk = (value, activeBucket, key) => {
+  let jsonNodes = 0;
+  const walk = (value, activeBucket, key, depth = 0) => {
+    if (++jsonNodes > 500000 || depth > 32) throw new Error('Integrity guard rejected source: supplemental JSON complexity limit');
     const bucket = supplementalManifestBucketForKey(key) || activeBucket || '';
     if (typeof value === 'string') {
       addSupplementalDomain(out, bucket, value);
       return;
     }
     if (Array.isArray(value)) {
-      for (const item of value) walk(item, bucket, key);
+      for (const item of value) walk(item, bucket, key, depth + 1);
       return;
     }
     if (value && typeof value === 'object') {
       for (const [childKey, childValue] of Object.entries(value)) {
-        walk(childValue, supplementalManifestBucketForKey(childKey) || bucket, childKey);
+        if (['__proto__', 'constructor', 'prototype'].includes(childKey)) throw new Error('Integrity guard rejected source: supplemental JSON control key');
+        walk(childValue, supplementalManifestBucketForKey(childKey) || bucket, childKey, depth + 1);
       }
     }
   };
@@ -16409,12 +16879,8 @@ function remoteDomainRuleSourceKind(domain, buckets) {
   return 'security';
 }
 
-// A list refresh can spend several seconds downloading/parsing sources. The user
-// may turn WardenOne off during that work, after refreshBlocklistRuleset() has
-// already removed the old rules. Re-check the live config at the actual DNR
-// commit boundary so that stale work cannot reinstall blocking behind an off
-// master switch. The post-commit check closes the much smaller race where the
-// setting changes while Chrome is applying the atomic rule update.
+// Recheck live config before and after the atomic DNR commit so a refresh cannot reinstall blocking after the user switches
+// it off.
 async function commitRemoteListRules(removeRuleIds, addRules, unchanged) {
   const masterEnabled = async () => {
     const store = await localGet('wardenone_config');
@@ -16742,12 +17208,7 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
      nobody had registered. */
   'mute-toast',
   'toast-shown',
-  /* Search-result warnings. The handler is fussy about who may ask -- it refuses any
-     sender that is not one of the five search engines -- but that check lives inside it
-     and this list is consulted first, so without an entry here every request was refused
-     as 'Not allowed from this context' and the feature reported nothing on any page. The
-     same shape as mute-toast above: a guard working exactly as designed, on a kind nobody
-     had registered. */
+  /* Register search-result requests here before their handler applies its stricter search-engine sender checks. */
   'search-result-check',
   /* The palette's pick. On this list because the overlay lives in the page and so sends
      from a tab; the real gate is the one-shot window in the handler, which a page cannot
@@ -16776,7 +17237,6 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'hidden-add',
   'hidden-remove',
   'hidden-list',
-  'domain-age',
   /* The isolated bridge owns both watchdogs. Keeping them out of this table meant
      the generic sender gate rejected them before their deliberately tab-scoped
      handlers could run, so engine repair and navigation attribution were inert. */
@@ -16790,12 +17250,8 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'menu-opening',
 ]);
 const TAB_CONTEXT_RATE_LIMITS = {
-  // Every tab-allowed kind needs an entry. rg-block is the highest-volume one --
-  // content scripts report every block through it -- and a hostile page can forge
-  // the MAIN-world event that feeds it, so without a ceiling it can flood history,
-  // the badge counter and storage. The page-side limiter in bridge.js does not
-  // count: the page can bypass its own limiter. Set high enough that a genuinely
-  // ad-heavy page reporting real blocks is never cut off.
+  // Rate-limit every tab-allowed kind in the worker. Forged MAIN events can bypass bridge limits and flood history,
+  // counters or storage.
   'rg-block': { max: 300, windowMs: 60000 },
   'rg-tally': { max: 300, windowMs: 60000 },
   /* One bridge runs in every frame and the smaller isolated guards each request their own
@@ -16867,10 +17323,11 @@ const MESSAGE_WEB_ACCESSIBLE_PATHS = (chrome.runtime.getManifest().web_accessibl
 function messageSenderIsExtensionOrigin(sender) {
   try {
     const url = String((sender && sender.url) || '');
-    if (!url || (sender && sender.id && sender.id !== chrome.runtime.id)) return false;
+    if (!url || !sender || sender.id !== chrome.runtime.id) return false;
     const page = new URL(url);
     const root = new URL(chrome.runtime.getURL(''));
-    return page.protocol === root.protocol && page.host === root.host;
+    return page.protocol === root.protocol && page.host === root.host
+      && (sender.origin === undefined || sender.origin === root.protocol + '//' + root.host);
   } catch (_) {
     return false;
   }
@@ -16895,7 +17352,70 @@ function messageSenderIsExtensionPath(sender, path) {
   }
 }
 function messageSenderIsTab(sender) {
-  return !!(sender && sender.tab && sender.tab.id != null && !messageSenderIsExtensionOrigin(sender));
+  return !!(sender && sender.id === chrome.runtime.id && sender.tab
+    && Number.isInteger(sender.tab.id) && sender.tab.id >= 0
+    && Number.isInteger(sender.frameId) && sender.frameId >= 0 && !messageSenderIsExtensionOrigin(sender));
+}
+function messageEnvelopeValid(msg) {
+  return !!(msg && typeof msg === 'object' && !Array.isArray(msg)
+    && Object.prototype.hasOwnProperty.call(msg, 'kind') && typeof (msg.kind) === 'string'
+    && /^[a-z][a-z0-9-]{0,79}$/.test(msg.kind)
+    && !Object.keys(msg).some((key) => key === '__proto__' || key === 'constructor' || key === 'prototype'));
+}
+function tabMessagePayloadAllowed(msg) {
+  if (!messageEnvelopeValid(msg)) return false;
+  const pending = [{ value: msg, depth: 0 }], seen = new WeakSet();
+  let nodes = 0, characters = 0;
+  while (pending.length) {
+    const { value, depth } = pending.pop();
+    if (++nodes > 512 || depth > 8) return false;
+    if (typeof value === 'string') {
+      characters += value.length;
+      if (value.length > 8192 || characters > 65536) return false;
+    } else if (value && typeof value === 'object') {
+      if (seen.has(value)) return false;
+      seen.add(value);
+      const keys = Object.keys(value);
+      if (keys.length > (Array.isArray(value) ? 128 : 48)) return false;
+      for (const key of keys) {
+        if (key.length > 80 || key === '__proto__' || key === 'constructor' || key === 'prototype') return false;
+        pending.push({ value: value[key], depth: depth + 1 });
+      }
+    } else if (typeof value === 'number' ? !Number.isFinite(value)
+      : value !== null && typeof value !== 'boolean') return false;
+  }
+  return true;
+}
+function messageSenderIsTopOrigin(sender, raw) {
+  try {
+    if (!messageSenderIsTab(sender) || sender.frameId !== 0) return false;
+    const frame = new URL(sender.url), top = new URL(sender.tab.url), target = new URL(raw);
+    return /^https?:$/.test(frame.protocol) && !target.username && !target.password
+      && frame.origin === top.origin && target.origin === frame.origin
+      && (sender.origin === undefined || sender.origin === frame.origin);
+  } catch (_) { return false; }
+}
+async function messageSenderStillCurrent(sender, exactUrl = false) {
+  try {
+    if (!sender || sender.id !== chrome.runtime.id || sender.frameId !== 0
+        || !sender.tab || !Number.isInteger(sender.tab.id) || sender.tab.id < 0
+        || typeof sender.documentId !== 'string' || !sender.documentId) return false;
+    const tab = await tabsGet(sender.tab.id);
+    if (!tab || !!tab.incognito !== INCOGNITO_CONTEXT) return false;
+    const actual = new URL(tab.url), reported = new URL(sender.url);
+    if (exactUrl ? actual.href !== reported.href : actual.origin !== reported.origin) return false;
+    const extension = new URL(chrome.runtime.getURL(''));
+    if (reported.protocol === extension.protocol && reported.host === extension.host) {
+      /* webNavigation does not expose extension-page frames. */
+      const contexts = await chrome.runtime.getContexts({ documentIds: [sender.documentId], tabIds: [sender.tab.id], frameIds: [0] });
+      return contexts.some(context => context.contextType === 'TAB' && context.documentId === sender.documentId
+        && context.tabId === sender.tab.id && context.frameId === 0 && context.documentUrl === reported.href
+        && context.incognito === INCOGNITO_CONTEXT);
+    }
+    const frame = await chrome.webNavigation.getFrame({ tabId: sender.tab.id, frameId: 0 });
+    if (!frame || frame.documentId !== sender.documentId) return false;
+    return true;
+  } catch (_) { return false; }
 }
 function messageCleanHost(value) {
   try {
@@ -16915,7 +17435,8 @@ function messageSameHost(a, b) {
   return !!(ha && hb && ha === hb);
 }
 function messageSenderMatchesHost(sender, host) {
-  return !messageSenderIsTab(sender) || messageSameHost(host, (sender.tab && sender.tab.url) || '');
+  return messageSenderIsExtensionPage(sender)
+    || (messageSenderIsTab(sender) && messageSameHost(host, sender.tab.url || ''));
 }
 function messageIsCookiePermissionEscape(msg, sender) {
   return !!(msg && msg.kind === 'set-site-permission'
@@ -16924,7 +17445,7 @@ function messageIsCookiePermissionEscape(msg, sender) {
     && msg.setting === 'allow'
     && /^https?:\/\//i.test(String(msg.url || ''))
     && sender.tab
-    && messageSameHost(msg.url, sender.tab.url || ''));
+    && messageSenderIsTopOrigin(sender, msg.url));
 }
 
 // Always-catch wrapper for promise-returning message handlers. Guarantees sendResponse
@@ -16972,11 +17493,8 @@ async function activeTabMatchesOrigin(rawOrigin) {
   return '';
 }
 
-// A public list host serves on 80/443. A service on some other port is, in practice, something on
-// the user's own network -- and isLocalOrPrivateHost only inspects the hostname STRING, so a
-// public name that resolves to 192.168.x.x already walks past it. Refusing non-default ports
-// removes most of that reach at no cost to a real host. Used by the custom-list fetch, whose
-// address the reader typed; the worker no longer fetches any address a PAGE chose (SEC-11).
+// SEC-11: custom-list fetches allow default ports only. Hostname checks cannot detect public names resolving to LAN
+// addresses; port restrictions reduce that exposure.
 function isDefaultPortHttpUrl(raw) {
   try {
     return new URL(String(raw || '')).port === '';
@@ -16992,14 +17510,8 @@ function isDefaultPortHttpUrl(raw) {
 const INTRANET_NET_RULE_BASE = 932200;
 const INTRANET_NET_RULES_BUDGET = 32;
 
-// RE2, matched against the whole URL, and held to intranetTargetHost by
-// tools/test-ip-classifier-agreement.js. The optional userinfo group matters:
-// http://x@192.168.1.1/ is the same request wearing a hat, and an anchor that
-// only allows scheme-then-host would miss it. Each host must end in an optional
-// DNS trailing dot, a numeric port and the path, so 10.example.com and
-// https://nas:pw@example.com/ stay public. The browser hands rules canonical
-// URLs: IPv4 is four decimal octets and IPv6 is bracketed.
-// Loopback is kept apart because a sign-in provider may post to this computer only.
+// Match canonical RE2 URLs, including userinfo, optional DNS trailing dots and numeric ports. Keep public lookalikes out
+// and loopback separate for local sign-in callbacks; test-ip-classifier-agreement.js checks parity.
 const INTRANET_LOOPBACK_PATTERNS = [
   String.raw`^(https?|wss?)://([^/@]*@)?127(\.[0-9]{1,3}){3}\.?(:[0-9]+)?(/|$)`,
   // Chrome answers localhost and every name under it with loopback itself.
@@ -17067,13 +17579,8 @@ function intranetFormPostCondition(regexFilter, excludedInitiatorDomains) {
   return condition;
 }
 
-// A page served FROM the LAN talking to the LAN is a local dashboard, not an
-// attack, and the in-page guard has always allowed it -- publicPage() gates the
-// whole thing. domainType:'thirdParty' covers a local page talking to itself,
-// but not a local page pulling from a second device, which is exactly what a
-// home dashboard with a camera on another address does. Those tabs are excluded
-// by id, reusing the local-context map the rebinding detector already maintains
-// from the resolved address, so a name like camera.lan counts too.
+// Allow LAN-origin dashboards to reach other local devices. Exclude resolved local-context tabs by id; thirdParty alone
+// covers only same-device requests.
 function locallyServedTabIds() {
   const out = [];
   try {
@@ -17412,8 +17919,8 @@ const HEALTH_SHIELD_KEYS = [
   'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'certificateGuard', 'blockTrackers',
   'adShield', 'scriptletEngine', 'twitchAdBlock', 'sendPrivacySignals', 'clientHintProtection',
   'capReferrer', 'trackerCacheProtection', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'blockThirdPartyCookies',
-  'blockFirstPartyTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers',
-  'paymentCardGuard', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation',
+  'blockFirstPartyTrackers', 'blockCnameTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers',
+  'paymentCardGuard', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'forcedDownloadProtection',
   'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus',
   'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation',
   'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'scamLockGuard', 'commandPasteGuard',
@@ -17550,7 +18057,8 @@ async function buildProtectionHealthSummary(tab) {
     typeof STARTUP_REPORT_KEY === 'string' ? STARTUP_REPORT_KEY : 'wardenone_startup_report',
   ]);
   const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
-  const hist = Array.isArray(store && store.wardenone_history) ? store.wardenone_history : [];
+  const activity = await WO_HISTORY.read('wardenone_history');
+  const hist = pruneHistoryEntries(activity.wardenone_history, Date.now());
   const isBlockLike = (type) => /^blocked_|^gated_|^detected_/.test(String(type || ''));
   const blockedTotal = hist.filter((e) => isBlockLike(e && e.type)).length;
   const blocked24h = hist.filter((e) => isBlockLike(e && e.type) && now - Number((e && e.at) || 0) <= 24 * 60 * 60 * 1000).length;
@@ -17631,11 +18139,8 @@ async function buildProtectionHealthSummary(tab) {
     + (startupReport && Array.isArray(startupReport.extensions) ? startupReport.extensions.length : 0);
   if (startupFindings) addIssue('warn', startupFindings + ' startup security finding(s) are waiting in the popup.');
 
-  // Three outcomes, not two. `null` means the question could not be asked; an empty array means
-  // it was asked and the answer was 'none'. The old code collapsed both into `length === 0` and
-  // skipped every check, so the single worst state -- master switch on, not one ruleset enabled,
-  // no network blocking running at all -- produced the most reassuring line the popup can show:
-  // "You're safe. Core shields are active and watching quietly."
+  // Distinguish an unavailable ruleset read (null) from a successful empty result; enabled protection with no active rules
+  // must report failure.
   let enabledRulesets = null;
   try {
     if (chrome.declarativeNetRequest && chrome.declarativeNetRequest.getEnabledRulesets) {
@@ -17651,6 +18156,11 @@ async function buildProtectionHealthSummary(tab) {
   // The reconciler's own record of what did not reach Chrome. A switch that is on in settings
   // and missing from the browser is the one state this summary must not call healthy (MV3-01).
   const degraded = await readReconcileDegraded();
+  const pendingFeeds = await readFeedLoadFailures(cfg);
+  if (pendingFeeds.length) {
+    const names = pendingFeeds.map((name) => name === 'grabber' ? 'IP-logger' : 'cryptominer');
+    addIssue('danger', 'Could not finish loading ' + names.join(' and ') + ' protection data. Existing browser rules remain active; automatic recovery is pending.', true, { fix: 'repair' });
+  }
   if (degraded && Array.isArray(degraded.failed) && degraded.failed.length) {
     const named = degraded.failed.map((k) => RECONCILE_COMPONENT_LABELS[k] || k).slice(0, 6);
     const exhausted = Number(degraded.attempts || 0) >= RECONCILE_RETRY_MAX;
@@ -17697,16 +18207,12 @@ async function buildProtectionHealthSummary(tab) {
     }
   }
 
-  // The tab the popup is open on, asked rather than assumed (FEAT-02). An engine that is
-  // switched on in settings and missing from the page is the one state this summary exists
-  // to catch, and until now it had no way to see it: the count above is settings, the ruleset
-  // check is the network, and neither reaches a document. Only `failed` becomes an issue --
-  // a page Chrome keeps extensions out of, a paused site, an excluded one, a sleeping tab or
-  // one that has not answered yet is reported as what it is, and lowers nothing.
+  // The tab the popup is open on, asked rather than assumed (FEAT-02).
+  // Only failed status raises an issue; exclusions, pauses, sleeping and pending tabs retain their own status.
   const tabEvidence = await tabProtectionEvidence(tab, cfg);
   if (tabEvidence.state === 'failed') addIssue('warn', tabEvidence.text, true, { fix: 'repair' });
   const componentFailures = (degraded && Array.isArray(degraded.failed) ? degraded.failed.length : 0)
-    + LISTENERS_NOT_REGISTERED.length + (__blocklistRulesetError ? 1 : 0);
+    + pendingFeeds.length + LISTENERS_NOT_REGISTERED.length + (__blocklistRulesetError ? 1 : 0);
 
   // ---- what this adds up to ------------------------------------------------------------
   // "You're safe" is said only when the page in front of the reader answered the engine's
@@ -17751,18 +18257,15 @@ async function buildProtectionHealthSummary(tab) {
   };
 }
 
-/* ---- Site Dashboard -------------------------------------------------------------------------
-   What WardenOne did on the page open in one tab, for the popup's site card and dashboard. Two
-   sources it already keeps, read and never added to: the network rules Chrome matched in that tab
-   (getMatchedRules names the list that fired, never the request it stopped) and the Activity
-   Centre's own log, cut to this site. Both are scoped to the page load by the document's own
-   time origin, so a count never carries over from the previous page in the same tab. */
+/* Site Dashboard reads matched rules and Activity for this tab. Scope both to the document time origin so counts cannot
+   carry across navigation. */
 const SITE_DASH_MATCH_TTL_MS = 15000;
 const SITE_DASH_MATCH_CACHE = new Map();
 const SITE_DASH_SOURCE_CATEGORY = {
   'Tracker list': 'trackers',
   'EasyPrivacy': 'trackers',
   'Tracker blocking': 'trackers',
+  'CNAME-cloaked tracker — local mapping': 'trackers',
   'Fingerprint-script block': 'trackers',
   'AdShield / EasyList': 'ads',
   'Spotify web player media': 'ads',
@@ -17861,9 +18364,9 @@ async function buildSiteDashboard(tab) {
   const since = await siteDashPageSince(tab.id);
   const [network, store] = await Promise.all([
     siteDashNetwork(tab.id, since),
-    localGet('wardenone_history'),
+    WO_HISTORY.read('wardenone_history'),
   ]);
-  const stored = Array.isArray(store && store.wardenone_history) ? store.wardenone_history : [];
+  const stored = pruneHistoryEntries(store.wardenone_history, Date.now());
   const now = Date.now();
   const all = stored.concat(__histBuffer).filter((e) => e && siteDashHost(e.url) === host
     && Number.isFinite(Number(e.at)) && now - Number(e.at) <= HISTORY_RETENTION_MS);
@@ -17948,6 +18451,7 @@ const SITE_TALLY_KEEP_MS = 7 * 24 * SITE_TALLY_HOUR_MS;
 const SITE_TALLY_MAX_SITES = 300;
 const SITE_TALLY_POLL_MS = 120000;
 let tallyStatePromise = null;
+let __tallyEraseGeneration = 0;
 let tallyStateWriteTimer = 0;
 const SITE_TALLY_PENDING = [];
 let siteTallyWriteTimer = 0;
@@ -17970,10 +18474,14 @@ function tallyState() {
   return tallyStatePromise;
 }
 function persistTallyState() {
+  const generation = __tallyEraseGeneration;
   if (tallyStateWriteTimer) return;
   tallyStateWriteTimer = setTimeout(async () => {
     tallyStateWriteTimer = 0;
-    try { await chrome.storage.session.set({ [TALLY_SESSION_KEY]: await tallyState() }); } catch (_) {}
+    try {
+      const state = await tallyState();
+      if (generation === __tallyEraseGeneration && !__privacyEraseInProgress) await chrome.storage.session.set({ [TALLY_SESSION_KEY]: state });
+    } catch (_) {}
   }, 500);
 }
 
@@ -17985,6 +18493,7 @@ function siteTallyAdd(host, at, key, n) {
 /* One writer at a time: read, fold the pending counts in by the hour, drop what is over seven
    days old, keep the 300 most recently active sites, write. */
 function flushSiteTally() {
+  const generation = __tallyEraseGeneration;
   siteTallyWriting = siteTallyWriting.then(async () => {
     if (!SITE_TALLY_PENDING.length) return;
     const pending = SITE_TALLY_PENDING.splice(0, SITE_TALLY_PENDING.length);
@@ -18010,7 +18519,7 @@ function flushSiteTally() {
     }
     recency.sort((a, b) => b[1] - a[1]);
     for (const [host] of recency.slice(SITE_TALLY_MAX_SITES)) delete store[host];
-    try { await localSet({ [SITE_TALLY_KEY]: store }); } catch (_) {}
+    try { if (generation === __tallyEraseGeneration) await localSet({ [SITE_TALLY_KEY]: store }); } catch (_) {}
   }).catch(() => {});
   return siteTallyWriting;
 }
@@ -18359,7 +18868,8 @@ async function recordPermissionChainSignal(sender, msg, granted) {
   return { ok: true, warn: shouldWarn, verdict: detail };
 }
 
-function openSiteSettingsForSender(sender, msg) {
+async function openSiteSettingsForSender(sender, msg) {
+  if (!await messageSenderStillCurrent(sender)) return { ok: false, error: 'This page is no longer active.' };
   return new Promise((resolve) => {
     try {
       const raw = String((msg && msg.url) || (sender && sender.tab && sender.tab.url) || '');
@@ -18471,6 +18981,8 @@ async function recordOAuthGrantWarning(sender, msg) {
 }
 
 const SCRIPT_DRIFT_BASELINE_KEY = 'wardenone_script_drift_baselines';
+let scriptDriftEraseGeneration = 0;
+let scriptDriftWrites = Promise.resolve();
 const SCRIPT_DRIFT_MAX_BASELINES = 700;
 const SCRIPT_DRIFT_MAX_PER_SCAN = 14;
 const SCRIPT_DRIFT_MAX_BYTES = 3 * 1024 * 1024;
@@ -18567,14 +19079,25 @@ function loadScriptDriftBaselines() {
   }).catch(() => ({ base: {}, pruned: 0 }));
 }
 
-async function saveScriptDriftBaselines(base) {
+async function saveScriptDriftBaselines(base, generation = scriptDriftEraseGeneration) {
   const cutoff = Date.now();
   const entries = Object.entries(base || {})
     .filter(([k, v]) => v && typeof v === 'object' && v.hash
       && !scriptDriftLegacyKey(k) && scriptDriftFresh(v, cutoff))
     .sort((a, b) => Number((b[1] && b[1].lastSeen) || 0) - Number((a[1] && a[1].lastSeen) || 0))
     .slice(0, SCRIPT_DRIFT_MAX_BASELINES);
-  await localSet({ [SCRIPT_DRIFT_BASELINE_KEY]: Object.fromEntries(entries) });
+  const write = scriptDriftWrites.then(() => {
+    if (generation !== scriptDriftEraseGeneration) return;
+    return localSet({ [SCRIPT_DRIFT_BASELINE_KEY]: Object.fromEntries(entries) });
+  });
+  scriptDriftWrites = write.catch(() => {});
+  await write;
+}
+
+async function clearScriptDriftBaselines() {
+  scriptDriftEraseGeneration++;
+  await scriptDriftWrites;
+  await chrome.storage.local.remove(SCRIPT_DRIFT_BASELINE_KEY);
 }
 
 function scriptDriftScanIndicators(text, scriptHost) {
@@ -18715,6 +19238,8 @@ function scriptDriftBuildWarning(entry, current, pageHost) {
 }
 
 async function handleScriptDriftScan(sender, msg) {
+  const privacyEpoch = WO_HISTORY.epoch;
+  const eraseGeneration = scriptDriftEraseGeneration;
   const store = await localGet('wardenone_config');
   const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
   if (cfg.enabled === false || cfg.scriptDriftGuard === false) return { ok: true, ignored: 'disabled', warnings: [] };
@@ -18754,8 +19279,10 @@ async function handleScriptDriftScan(sender, msg) {
     const prev = base[key];
     if (prev && now - Number(prev.checkedAt || 0) < SCRIPT_DRIFT_RECHECK_MS) continue;
     const fetched = await fetchScriptForDrift(info);
+    if (privacyEpoch !== WO_HISTORY.epoch || WO_HISTORY.changing) return { ok: true, warnings: [] };
     if (!fetched.ok) continue;
     const hash = await sha256TextHex(fetched.text);
+    if (privacyEpoch !== WO_HISTORY.epoch || WO_HISTORY.changing) return { ok: true, warnings: [] };
     if (!hash) continue;
     const scan = scriptDriftScanIndicators(fetched.text, fetched.host);
     /* Persist only fields read by comparison; build warning text from the current fetch.
@@ -18794,8 +19321,8 @@ async function handleScriptDriftScan(sender, msg) {
     base[key] = current;
     changed = true;
   }
-  if (changed) {
-    try { await saveScriptDriftBaselines(base); } catch (_) {}
+  if (changed && privacyEpoch === WO_HISTORY.epoch && !WO_HISTORY.changing) {
+    try { await saveScriptDriftBaselines(base, eraseGeneration); } catch (_) {}
   }
   return { ok: true, warnings: warnings.slice(0, 3) };
 }
@@ -19129,12 +19656,7 @@ async function runWardenCommandOnActiveTab(command) {
     if (command === WO_COMMAND_PALETTE) { openCommandPalette(tab); return; }
 
     if (command === WO_COMMAND_ELEMENT_TOOL) {
-      /* One tool, one shortcut. There were two of these once -- a picker and a zapper --
-         and element-picker.js records why they were merged: both ended in a saved rule
-         and the only difference was whether the confirmation came before or after. Two
-         shortcuts here would put that split back through the keyboard.
-         Its own keys are already built: Escape leaves, arrows widen and narrow the
-         selection, Ctrl+Z undoes and keeps working after the tool has closed. */
+      /* One shortcut opens the shared picker/zapper; its own Escape, selection and undo keys remain available. */
       startElementTool(tab, 0);
       return;
     }
@@ -19233,13 +19755,8 @@ const WO_MENU_MODULE_ITEMS = new Set(['wardenone-sep-tab', WO_MENU_SLEEP_TAB, WO
 if (!MODULE_LOADED.memory) {
   for (let i = WO_MENU_ITEMS.length - 1; i >= 0; i--) if (WO_MENU_MODULE_ITEMS.has(WO_MENU_ITEMS[i].id)) WO_MENU_ITEMS.splice(i, 1);
 }
-/* Built only when the definition changed (PERF-05). Chrome keeps an extension's context menu
-   across worker restarts, so tearing it down and creating a dozen entries on every wake -- a
-   worker wakes for any message, tab event or alarm -- rewrote a menu that was already exactly
-   right. The fingerprint of what was last built (the item table, the switch, the version) is
-   kept in storage.session, which Chrome clears at browser start; a wake that finds its own
-   fingerprint there leaves the menu alone. Install, update and browser start always rebuild,
-   as they did, and a settings save rebuilds only when the switch it reads actually moved. */
+/* Built only when the definition changed (PERF-05). Menus survive worker restarts; reuse the session fingerprint.
+   Install, update and browser start rebuild. */
 const WO_MENU_BUILT_KEY = '__wardenone_menu_built';
 function wardenMenuFingerprint(on) {
   let version = '';
@@ -19905,12 +20422,8 @@ function wardenReloadAfterSiteChange(tab) {
   } catch (_) {}
 }
 
-/* Clean one URL using the engine's own cleaner rather than a second copy of
-   the tracking-parameter lists, which would drift from it. The engine runs in
-   the MAIN world, so the handle it exposes is reachable there and nowhere else.
-   A page can overwrite that handle, so the answer is checked before it is
-   used: the host has to be the one the link already had, or one that was
-   spelled out inside it -- which is what unwrapping a redirector produces. */
+/* Clean one URL using the engine's own cleaner. Validate its page-replaceable answer: the destination host must match
+   the original or an embedded redirect target. */
 async function wardenCleanUrlViaPage(raw, tab) {
   const original = String(raw || '');
   if (!/^https?:\/\//i.test(original) || !tab || typeof tab.id !== 'number') return original;
@@ -20133,13 +20646,8 @@ async function toggleWardenSiteBlock(tab, info) {
       return;
     }
 
-    /* A blocked site unblocks UNLESS the entry the reader clicked explicitly said
-       "Block". That one guard is the whole anti-blind-toggle fix: a click on
-       "Block this site" must never quietly undo an existing block (the original
-       bug, where alternating clicks just flipped the state). Everything else
-       unblocks a blocked site -- including from Chrome's error page, where the
-       worker has been evicted and the in-memory offer is gone, so the durable
-       offer or, failing that, the live state is what decides. */
+    /* An explicit Block offer must never toggle an existing block off. Otherwise allow unblocking from durable offers or
+       current state after worker eviction. */
     const offer = await wardenReadBlockOffer();
     const labelSaidBlock = offer.host === host && offer.action === 'block';
     if (LEARNED[host] && !labelSaidBlock) {
@@ -20205,13 +20713,8 @@ async function toggleWardenSiteBlock(tab, info) {
     /* Before the reload, so the tab lands on Chrome's blocked page rather than the
        site's own cached offline screen. */
     await wardenDropSiteWorker(host);
-    /* Recorded as 'block', because that is what the entry still reads until the
-       reload refreshes it. It stops a rapid second click -- before the reload --
-       from toggling the block straight back off. Once the tab lands on the error
-       page, the load-complete refresh rewrites this to 'unblock' (durably, in
-       storage.session), so the error-page right-click unblocks even after the
-       worker is evicted; and if the offer is ever missing entirely, a blocked
-       site still unblocks, so the error page is never a dead end. */
+    /* Retain the Block offer until reload to prevent double-click toggling. Error-page completion stores Unblock durably;
+       missing offers still permit unblocking. */
     await wardenWriteBlockOffer(host, 'block');
     await wardenManualNotice(host,
       'Blocked. Reloading now -- Chrome will say the site is blocked. Undo it in Activity under learned sites.', tab);
@@ -20491,11 +20994,8 @@ function storedForgetTabHost(tabId) {
   });
 }
 
-/* The site a tab was on when it left, durably (LIFE-01). `warm` is the heap's answer, right at once
-   when the worker is warm. When it is empty, the answer is Forget Me's record for the tab -- the
-   live entry if a restore has already run this wake, else the stored copy -- which is the same
-   record Forget Me itself trusts on tab close. `except` is the page the tab moved to, so a record
-   that names only that page is not an answer to "what did it leave". */
+/* LIFE-01: recover the departed site from warm state or Forget Me's durable tab record, excluding the destination the tab
+   just entered. */
 async function leftSiteOfTab(tabId, warm, except) {
   if (warm) return warm !== except ? warm : '';
   try {
@@ -20720,29 +21220,31 @@ queueHistory({
 });
 }
 
-async function cleanConsentAndTrackingCookies() {
-if (!chrome.cookies || !chrome.cookies.getAll) return { removed: 0, kept: 0, sites: 0 };
-let all = [];
-try { all = await chrome.cookies.getAll({}); } catch (_) { return { removed: 0, kept: 0, sites: 0 }; }
-if (!Array.isArray(all)) return { removed: 0, kept: 0, sites: 0 };
+async function cleanConsentAndTrackingCookies(options = {}) {
+if (!chrome.cookies || !chrome.cookies.getAll) throw Error('Cookie cleanup is unavailable.');
+const all = await chrome.cookies.getAll({ partitionKey: {} });
+if (!Array.isArray(all)) throw Error('Cookie enumeration failed.');
+const protectedHosts = (options.protectedOrigins || []).map(site => new URL(site).hostname.replace(/\.$/, ''));
+const targetHost = options.origin ? new URL(options.origin).hostname.replace(/\.$/, '') : '';
+const overlaps = (left, right) => left === right || left.endsWith('.' + right) || right.endsWith('.' + left);
 const sites = new Set();
-let removed = 0;
+let removed = 0, failed = 0;
 for (const cookie of all) {
     if (!cookieIsDisposable(cookie)) continue;
+    const host = String(cookie.domain || '').replace(/^\./, '').replace(/\.$/, '').toLowerCase();
+    if (targetHost && !(cookie.hostOnly ? host === targetHost : targetHost === host || targetHost.endsWith('.' + host))) continue;
+    let partitionHost = '';
+    try { partitionHost = new URL(cookie.partitionKey && cookie.partitionKey.topLevelSite).hostname.replace(/\.$/, ''); } catch (_) {}
+    if (protectedHosts.some(site => overlaps(host, site) || (partitionHost && overlaps(partitionHost, site)))) continue;
     const url = cookieRemovalUrl(cookie);
     if (!url) continue;
     try {
-      await chrome.cookies.remove({
-        url,
-        name: cookie.name,
-        storeId: cookie.storeId,
-        partitionKey: cookie.partitionKey,
-      });
-      removed++;
-      sites.add(String(cookie.domain || '').replace(/^\./, ''));
-    } catch (_) {}
+      const result = await chrome.cookies.remove({ url, name: cookie.name, storeId: cookie.storeId, partitionKey: cookie.partitionKey });
+      if (result) { removed++; sites.add(host); }
+      else failed++;
+    } catch (_) { failed++; }
 }
-return { removed, kept: all.length - removed, sites: sites.size };
+return { removed, kept: all.length - removed, sites: sites.size, failed };
 }
 
 function privacyStoreTimestamp(value) {
@@ -20775,10 +21277,16 @@ const PRIVACY_STORE_POLICY = Object.freeze([
     'wardenone_js_allowlist', 'wardenone_js_global_block', 'wardenone_download_trusted_sites',
     'wardenone_ext_reputation_custom', 'wardenone_script_trusted_hosts', 'wardenone_location_site_rules',
   ] },
-  { owner: 'Activity history', sensitivity: 'browsing records', area: 'local', maxAgeDays: 30, maxItems: 200, retention: '30 days; latest 200 events', siteErase: 'prune', keys: [
+  { owner: 'Privacy Cleaner preferences', sensitivity: 'site preferences', area: 'local', maxAgeDays: null, maxItems: 100, retention: 'Until changed or erased; up to 100 protected origins', siteErase: 'prune', keys: [
+    'wardenone_cleaner_settings',
+  ] },
+  { owner: 'Privacy Cleaner results', sensitivity: 'aggregate status', area: 'local', maxAgeDays: 30, maxItems: 20, retention: 'Shows last 20 cleanups within 30 days; expired results pruned on later state writes; schedule and interruption marker contain no site addresses', siteErase: 'keep', keys: [
+    'wardenone_cleaner_state',
+  ] },
+  { owner: 'Activity history', sensitivity: 'browsing records', area: 'local or session', maxAgeDays: 30, maxItems: 200, retention: 'Normal: 30 days; latest 200 events. Session: until browser closes. Off: none.', siteErase: 'prune', keys: [
     'wardenone_history',
   ] },
-  { owner: 'Notification Centre', sensitivity: 'security records', area: 'local', maxAgeDays: null, maxItems: 300, retention: 'Reader choice: unlimited, 1, 7 or 30 days; latest 300 notices', siteErase: 'prune', keys: [
+  { owner: 'Notification Centre', sensitivity: 'security records', area: 'local or session', maxAgeDays: null, maxItems: 300, retention: 'Normal: reader choice of unlimited, 1, 7 or 30 days; latest 300 notices. Session: until browser closes. Off: none.', siteErase: 'prune', keys: [
     'wardenone_notifications',
   ] },
   { owner: 'Site Dashboard counts', sensitivity: 'browsing records', area: 'local', maxAgeDays: 7, maxItems: 300, retention: '7 days by the hour; up to 300 sites; never from a private window', siteErase: 'prune', keys: [
@@ -20805,6 +21313,9 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   { owner: 'Protection verification', sensitivity: 'aggregate status', area: 'local', maxAgeDays: null, maxItems: 1, retention: 'Last check until replaced or all data is erased', siteErase: 'keep', keys: [
     'wardenone_last_verification',
   ] },
+  { owner: 'Packaged feed recovery', sensitivity: 'aggregate status', area: 'session', maxAgeDays: null, maxItems: 2, retention: 'Until successful recovery, feature off, full erasure or browser close', siteErase: 'keep', keys: [
+    'wardenone_feed_load_grabber', 'wardenone_feed_load_miner',
+  ] },
   { owner: 'Downloaded protection lists', sensitivity: 'public list data', area: 'local', maxAgeDays: null, maxItems: null, retention: 'Until refreshed or all data is erased', siteErase: 'keep', keys: [
     'wardenone_adshield_cosmetic', 'wardenone_adshield_cosmetic_at',
     'wardenone_adshield_cosmetic_checked_at', 'wardenone_adshield_cosmetic_hash',
@@ -20823,13 +21334,16 @@ const PRIVACY_STORE_POLICY = Object.freeze([
     'wardenone_rebind_session', 'wardenone_tracker_session', 'wardenone_sw_registered',
     'wardenone_session_started_at',
   ] },
+  { owner: 'Warning hand-off', sensitivity: 'exact navigation URL', area: 'session', maxAgeDays: 0.25, maxItems: 40, retention: 'Consumed on Continue, tab close, six-hour expiry or browser close; random handle prefix', siteErase: 'prune', keys: [
+    'wardenone_warning',
+  ] },
   { owner: 'Interface preferences', sensitivity: 'settings', area: 'local or extension page', maxAgeDays: null, maxItems: null, retention: 'Until changed or erased', siteErase: 'prune', keys: [
     'wardenone_advanced_providers_open', 'wardenone_all_cookies_previous_setting',
     'wardenone_consent_accepted', 'wardenone_location_previous_setting',
     'wardenone_onboarding_done_at', 'wardenone_onboarding_maxprivacy_at',
     'wardenone_onboarding_recommended_at', 'wardenone_popup_scroll_memory',
     'wardenone_popup_search_memory', 'wardenone_script_shield_mode', 'wardenone_site_card_layout', 'wardenone_site_card_folded', 'wardenone_popup_section_order',
-    'wardenone_settings_density', 'wardenone_settings_favorites', 'wardenone_settings_last_page', 'wardenone_theme', 'wardenone_warning',
+    'wardenone_settings_density', 'wardenone_settings_favorites', 'wardenone_settings_last_page', 'wardenone_theme',
   ] },
   { owner: 'Settings change list', sensitivity: 'settings', area: 'local', maxAgeDays: 30, maxItems: 40, retention: '30 days; latest 40 switch changes', siteErase: 'keep', keys: [
     'wardenone_settings_recent',
@@ -20848,6 +21362,10 @@ for (const policy of PRIVACY_STORE_POLICY) {
   for (const key of policy.keys) PRIVACY_STORE_BY_KEY.set(key, policy);
 }
 
+function privacyPolicyForKey(key) {
+  return PRIVACY_STORE_BY_KEY.get(key.startsWith('wardenone_warning:') ? 'wardenone_warning' : key);
+}
+
 async function inspectWardenOneData() {
   const [local, session] = await Promise.all([
     chrome.storage.local.get(null),
@@ -20857,7 +21375,7 @@ async function inspectWardenOneData() {
   for (const [area, values] of [['local', local || {}], ['session', session || {}]]) {
     for (const [key, value] of Object.entries(values)) {
       const bytes = new TextEncoder().encode(JSON.stringify(value) || '').length;
-      const policy = PRIVACY_STORE_BY_KEY.get(key);
+      const policy = privacyPolicyForKey(key);
       records.push({ area, key, bytes, oldestKnownAt: privacyStoreTimestamp(value),
         owner: policy ? policy.owner : 'Unregistered store',
         sensitivity: policy ? policy.sensitivity : 'unknown',
@@ -20976,6 +21494,17 @@ async function planWardenOneSiteErase(rawHost) {
   return { ok: true, site, writes, affected: writes.map(({ area, key }) => ({ area, key })) };
 }
 
+async function resetPendingConsentChecks() {
+  const tabs = await new Promise(resolve => {
+    try { chrome.tabs.query({}, rows => { void chrome.runtime.lastError; resolve(rows || []); }); }
+    catch (_) { resolve([]); }
+  });
+  await Promise.all(tabs.filter(tab => Number.isInteger(tab.id) && /^https?:\/\//i.test(tab.url || '')).map(tab => new Promise(resolve => {
+    try { chrome.tabs.sendMessage(tab.id, { kind: 'consent-reset' }, () => { void chrome.runtime.lastError; resolve(); }); }
+    catch (_) { resolve(); }
+  })));
+}
+
 async function eraseWardenOneSite(rawHost, dryRun) {
   if (__privacyEraseInProgress) return { ok: false, error: 'An erase is already running.' };
   const plan = await planWardenOneSiteErase(rawHost);
@@ -20983,7 +21512,11 @@ async function eraseWardenOneSite(rawHost, dryRun) {
     return { ok: plan.ok, error: plan.error, site: plan.site, affected: plan.affected || [] };
   }
   __privacyEraseInProgress = true;
+  if (typeof WOIdentifierObserver !== 'undefined') WOIdentifierObserver.clear();
   try {
+    if (typeof WO_CLEANER !== 'undefined') await WO_CLEANER.pauseAndDrain();
+    await WO_HISTORY.revoke();
+    await resetPendingConsentChecks();
     /* Prune the latest config under its writer lock. The stamp also lets split
        incognito contexts repair an older save that lands after the erase. */
     const config = await updateStoredConfig((cfg, stored) => {
@@ -20993,7 +21526,7 @@ async function eraseWardenOneSite(rawHost, dryRun) {
         throw new Error('A site setting could not be safely separated.');
       }
       return JSON.stringify(stored) === JSON.stringify(next) ? false : next;
-    });
+    }, undefined, undefined, PRIVACY_ERASE_CONFIG_WRITE);
     const affected = plan.affected.filter(({ area, key }) => area !== 'local' || key !== 'wardenone_config');
     if (config) affected.push({ area: 'local', key: 'wardenone_config' });
     for (const { area, key, value } of plan.writes) {
@@ -21004,6 +21537,8 @@ async function eraseWardenOneSite(rawHost, dryRun) {
     }
     if (!affected.length) {
       __privacyEraseInProgress = false;
+      WO_HISTORY.resume();
+      if (typeof WO_CLEANER !== 'undefined') WO_CLEANER.resume();
       return { ok: true, site: plan.site, affected };
     }
     const [dynamic, sessionRules] = await Promise.all([
@@ -21035,7 +21570,12 @@ async function eraseWardenOneData(mode) {
   const pending = Object.assign({}, (local || {}).wardenone_pending_downloads || {}, (session || {}).wardenone_pending_downloads || {});
   if (Object.keys(pending).length) return { ok: false, error: 'Finish or cancel active Download Shield reviews before erasing WardenOne data.' };
   __privacyEraseInProgress = true;
+  if (typeof WOIdentifierObserver !== 'undefined') WOIdentifierObserver.clear();
   try {
+    if (typeof WO_CLEANER !== 'undefined') await WO_CLEANER.pauseAndDrain();
+    await WO_HISTORY.revoke();
+    await resetPendingConsentChecks();
+    await chrome.alarms.clearAll();
     const [dynamic, sessionRules] = await Promise.all([
       chrome.declarativeNetRequest.getDynamicRules(),
       chrome.declarativeNetRequest.getSessionRules(),
@@ -21092,14 +21632,62 @@ function privacyTestSettings(config, host) {
   };
 }
 
+async function siteRecoveryAction(msg) {
+  const tabId = msg.tabId;
+  if (!Number.isInteger(tabId) || tabId < 0 || !['start', 'undo', 'status'].includes(msg.action)) return { ok: false, error: 'Invalid recovery request.' };
+  const tab = await new Promise(resolve => chrome.tabs.get(tabId, value => { void chrome.runtime.lastError; resolve(value || null); }));
+  if (!tab || !tab.active) return { ok: false, error: 'Open the site in the active tab.' };
+  if (tab.incognito) return { ok: false, error: 'Recovery trials are unavailable in private windows.' };
+  let host = '';
+  try {
+    const url = new URL(String(tab.url || ''));
+    if (/^https?:$/.test(url.protocol)) host = normalizeAllowlistHost(url.hostname);
+  } catch (_) {}
+  if (!host) return { ok: false, error: 'This page does not support a site recovery trial.' };
+  const now = Date.now();
+  if (msg.action === 'status') {
+    const stored = await localGet('wardenone_config');
+    if (stored.unreadable) return { ok: false, error: 'Settings are unavailable. Try again.' };
+    const current = WOSiteRecovery.active(stored.wardenone_config && stored.wardenone_config.siteRecoveryUntil, now, normalizeAllowlistHost);
+    return { ok: true, host, trial: current[host] || null };
+  }
+  let applied = null;
+  await updateStoredConfig(cfg => {
+    const current = WOSiteRecovery.active(cfg.siteRecoveryUntil, now, normalizeAllowlistHost);
+    if (msg.action === 'undo') {
+      if (!current[host]) return false;
+      delete current[host];
+      cfg.siteRecoveryUntil = current;
+      return cfg;
+    }
+    const key = typeof msg.key === 'string' ? msg.key : '';
+    if (!Object.prototype.hasOwnProperty.call(WOSiteRecovery.FEATURES, key) || cfg.enabled === false || cfg[key] === false) {
+      throw new Error('This protection is not available for a recovery trial.');
+    }
+    if (current[host]) throw new Error('Undo the current trial before starting another.');
+    if (Object.entries(cfg.siteOverrides || {}).some(([site, entry]) => hostMatchesSite(host, site) && entry && entry[key] === false)) {
+      throw new Error('This protection is already off here.');
+    }
+    if (Object.keys(current).length >= 100) throw new Error('Too many active recovery trials.');
+    applied = { key, until: now + WOSiteRecovery.DURATION_MS };
+    cfg.siteRecoveryUntil = Object.assign({}, current, { [host]: applied });
+    return cfg;
+  });
+  return { ok: true, host, trial: applied };
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   /* The warning handler still requires the exact page and a top-level frame. */
   if (messageSenderIsWebAccessiblePage(sender)) {
-    if (msg && msg.kind === 'grabber-navigation-status') {
+    if (tabMessagePayloadAllowed(msg) && msg.kind === 'grabber-navigation-status') {
       respond(grabberNavigationStatus(sender), sendResponse);
       return true;
     }
     try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
+    return true;
+  }
+  if (!messageEnvelopeValid(msg) || (messageSenderIsTab(sender) && !tabMessagePayloadAllowed(msg))) {
+    try { sendResponse({ ok: false, error: 'Invalid message.' }); } catch (_) {}
     return true;
   }
   if (msg && msg.kind && !messageSenderIsTab(sender) && !messageSenderIsExtensionPage(sender)) {
@@ -21146,10 +21734,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && (msg.kind === 'reset-site-permissions' || msg.kind === 'open-site-settings') && messageSenderIsTab(sender)) {
     const targetUrl = msg.url || (sender.tab && sender.tab.url) || '';
-    if (!messageSenderMatchesHost(sender, targetUrl)) {
+    if (!messageSenderIsTopOrigin(sender, targetUrl)) {
       try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
       return true;
     }
+  }
+  if (msg && msg.kind === 'history-get') {
+    respond(readProtectionHistory(), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'history-clear') {
+    respond(clearProtectionHistory(msg.observations === true), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'history-mode-set') {
+    respond(clearProtectionHistory(false, msg.mode), sendResponse);
+    return true;
   }
   if (msg && msg.kind === 'protection-health') {
     if (!messageSenderIsExtensionPage(sender)) {
@@ -21180,6 +21780,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const tab = await new Promise((resolve) => chrome.tabs.get(tabId, (t) => { void chrome.runtime.lastError; resolve(t || null); }));
       return buildSiteDashboard(tab);
     })(), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'site-recovery') {
+    if (!messageSenderIsExtensionPath(sender, 'popup.html')) {
+      try { sendResponse({ ok: false, error: 'Not allowed from this page.' }); } catch (_) {}
+      return true;
+    }
+    respond(siteRecoveryAction(msg), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'clean-current-address') {
@@ -21269,7 +21877,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const frameHost = contentConfigFrameHost(sender);
     let topHost = '';
     try { topHost = new URL(sender.tab.url).hostname; } catch (_) {}
-    respond(buildContentConfigSnapshot(frameHost, contentConfigNeeds(msg.need), topHost), sendResponse);
+    respond((async () => {
+      const snapshot = await buildContentConfigSnapshot(frameHost, contentConfigNeeds(msg.need), topHost);
+      snapshot.overrides.frameCookieIsolation = await frameCookieIsolationFor(sender, snapshot.overrides);
+      return snapshot;
+    })(), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'redirect-bootstrap-get' && messageSenderIsTab(sender)) {
@@ -21321,17 +21933,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         let senderHost = '';
         try { senderHost = new URL(sender.url || (sender.tab && sender.tab.url) || '').hostname; } catch (_) { senderHost = ''; }
-        if (!SEARCH_WARN_ENGINE_HOST.test(String(senderHost || ''))) { sendResponse({ ok: false }); return; }
+        const googleCountry = /^(?:www\.)?google\./i.test(senderHost) && wardenOneBrandCountrySite(senderHost, 'google');
+        if (!SEARCH_WARN_ENGINE_HOST.test(String(senderHost || '')) && !googleCountry) { sendResponse({ ok: false }); return; }
         const store = await localGet('wardenone_config');
         const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
         if (cfg.enabled === false || cfg.warnSearchResults === false) { sendResponse({ ok: false, off: true }); return; }
-        /* Answer with what is in memory now and say whether the feed lists are in yet. A
-           worker woken from idle spends ~400-600 ms restoring them, and a search page asks
-           the moment its results exist; waiting here made every warning late by that much.
-           The packaged IP-logger list is tiny and read at once, so a logger is named on the
-           first answer; a feed verdict that is not ready yet comes on the page's second ask.
-           (On a fresh install the feeds are still downloading, so `ready` stays false until
-           they land -- and an empty answer is never cached by the page as "nothing known".) */
+        /* Answer from memory immediately and report feed readiness. Packaged loggers are available first; pages retry
+           incomplete verdicts instead of caching an empty result. */
         await loadPackagedGrabberDomains();
         const ready = SECURITY_DOMAINS.size > 0;
         sendResponse({ ok: true, ready, verdicts: await searchResultVerdicts(msg.hosts, cfg) });
@@ -21607,54 +22215,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   // real cookie flags and optional breach checks; passwords stay in the popup.
 
 
-  // ---- Browser cleaning: clear selected data types globally ----
-  // The user chooses what to wipe (cache, cookies, history, downloads, storage,
-  // service workers). All via the browsingData API. This is the user clearing
-  // their own browser data -- safe and under their control.
-  if (msg && msg.kind === 'clean-browser' && msg.types) {
-    (async () => {
-      try {
-        const t = msg.types;
-        // A time range, because "everything since the beginning" is rarely what someone means
-        // when they want to tidy up. Falls back to everything when nothing is asked for.
-        const sinceMs = Number(msg.sinceMs);
-        const since = Number.isFinite(sinceMs) && sinceMs > 0 ? Date.now() - sinceMs : 0;
-        const dataTypes = {};
-        if (t.cache) dataTypes.cacheStorage = true, dataTypes.cache = true;
-        if (t.cookies) dataTypes.cookies = true;
-        if (t.history) dataTypes.history = true;
-        if (t.downloads) dataTypes.downloads = true;
-        // fileSystems was missing here while being cleared everywhere else in this file -- the
-        // File System API is another place a site can leave data behind.
-        if (t.storage) { dataTypes.localStorage = true; dataTypes.indexedDB = true; dataTypes.webSQL = true; dataTypes.fileSystems = true; }
-        if (t.serviceWorkers) dataTypes.serviceWorkers = true;
-        if (t.formData) dataTypes.formData = true;
-        let consent = null;
-        // Skip the consent-only sweep when all cookies will be deleted. Its preserved-login summary
-        // would contradict the broader action, and the individual removals would be redundant.
-        if (t.consentCookies && !t.cookies) consent = await cleanConsentAndTrackingCookies();
-        let perms = null;
-        if (t.sitePermissions) perms = await resetSensitiveSitePermissionsGlobally();
-        if (Object.keys(dataTypes).length === 0) {
-          if (consent || perms) { sendResponse({ ok: true, cleared: [], consent, perms }); return; }
-          sendResponse({ ok: false, error: 'nothing selected' });
-          return;
-        }
-        // WardenOne's own two records of where the reader has been go with the browser's history:
-        // the tracker learner's observations (its decisions stay) and the Script Drift baselines.
-        // PRIVACY.md promised this clear here; the handler never did it (PRIV-01).
-        let own = null;
-        if (t.history) {
-          own = { learner: null, scriptDrift: false };
-          try { own.learner = await clearTrackerLearnerObservations(); } catch (_) {}
-          try { await chrome.storage.local.remove(SCRIPT_DRIFT_BASELINE_KEY); own.scriptDrift = true; } catch (_) {}
-        }
-        await chrome.browsingData.remove({ since }, dataTypes);
-        sendResponse({ ok: true, cleared: Object.keys(dataTypes), consent, perms, own });
-      } catch (e) {
-        sendResponse({ ok: false, error: String(e) });
-      }
-    })();
+  if (msg && msg.kind === 'privacy-cleaner-get') {
+    respond(WO_CLEANER.get(), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'privacy-cleaner-clear-history') {
+    respond(WO_CLEANER.clearHistory(), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'privacy-cleaner-save') {
+    respond(WO_CLEANER.save(msg.settings), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'clean-browser-preview') {
+    respond(WO_CLEANER.preview(msg.request), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'clean-browser') {
+    respond(WO_CLEANER.run(msg.previewId), sendResponse);
     return true;
   }
 
@@ -22299,6 +22877,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'set-site-permission' && msg.url && msg.key && msg.setting) {
     (async () => {
       try {
+        if (messageSenderIsTab(sender) && !await messageSenderStillCurrent(sender)) { sendResponse({ ok: false, error: 'This page is no longer active.' }); return; }
         const u = new URL(msg.url);
         if (!/^https?:$/.test(u.protocol)) { sendResponse({ ok: false, error: 'Open a normal web page first.' }); return; }
         if (messageSenderIsExtensionPage(sender) && !await activeTabMatchesOrigin(u.origin)) { sendResponse({ ok: false, error: 'Open the site first.' }); return; }
@@ -22374,6 +22953,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'reset-site-permissions' && msg.url) {
     (async () => {
       try {
+        if (messageSenderIsTab(sender) && !await messageSenderStillCurrent(sender)) { sendResponse({ ok: false, error: 'This page is no longer active.' }); return; }
         const u = new URL(msg.url);
         if (!/^https?:$/.test(u.protocol)) { sendResponse({ ok: false, error: 'Open a normal web page first.' }); return; }
         if (messageSenderIsExtensionPage(sender) && !await activeTabMatchesOrigin(u.origin)) { sendResponse({ ok: false, error: 'Open the site first.' }); return; }
@@ -23031,13 +23611,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'remove-learned' && msg.domain) {
     try {
-      /* Remove the key that is actually in the map, before falling back to the
-         normaliser. normalizeLearnedDomain vetoes every never-block domain --
-         twitch.tv, youtube.com, google.com, github.com and thirty-odd more --
-         by returning '', which is right when deciding what may be BLOCKED and
-         wrong here: those are exactly the sites people block by hand, so the
-         row appeared in the list and its Remove button silently did nothing.
-         Removing a block can never be the unsafe direction. */
+      /* Remove an existing map key before normalization; never-block validation is appropriate for additions but must not
+         prevent deleting a manual block. */
       const raw = String(msg.domain || '').trim().toLowerCase().replace(/^www\./, '');
       const key = Object.prototype.hasOwnProperty.call(LEARNED, raw)
         ? raw
@@ -23118,11 +23693,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
 
-        // Bounded like every other outbound request in this file (L17). Without the abort there
-        // was nothing to stop this hanging on a server that accepts the connection and never
-        // answers -- and the popup leaves its button disabled until this callback arrives, so the
-        // control stayed dead for as long as the socket did. res.json() also buffered whatever
-        // came back with no ceiling; the response for one domain is a short array.
+        // L17: bound request time and response size so a stalled server cannot leave the popup action pending indefinitely.
         const controller = new AbortController();
         const timer = setTimeout(() => { try { controller.abort(); } catch (_) {} }, SITE_BREACH_TIMEOUT_MS);
         let res;
@@ -23391,7 +23962,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           CORE_FILES.push('rules-grabber-resources.json', 'rules-grabber-navigation.json',
             'rules-grabber-malware-navigation.json', 'rules-grabber-compat.json',
             'rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
-            'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'build-update.js', 'network-policy.js');
+            'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'upgrade-config.js', 'build-update.js', 'network-policy.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
           // would report a package that is exactly as built as missing pieces.
           for (const omitted of woOmittedFiles()) {
@@ -23482,6 +24053,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         report.checks.push({ name: 'Block rules registered', ok: false });
         report.ok = false;
       }
+
+      const feeds = await Promise.all([loadGrabberFeed(), loadMinerFeed()]);
+      const feedsOk = feeds.every((result) => result && result.ok === true);
+      report.checks.push({ name: 'Packaged IP-logger and cryptominer data loaded', ok: feedsOk });
+      if (!feedsOk) report.ok = false;
 
       // 5. Put the page engine back where it is missing: reload after a signed bridge challenge.
       // A fresh document_start permits the private key handoff (SEC-01/03). Sleeping tabs reload when shown.

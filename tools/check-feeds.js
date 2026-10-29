@@ -10,6 +10,7 @@
 'use strict';
 
 const fs = require('fs');
+const vm = require('vm');
 
 const SOURCE = fs.readFileSync('background.js', 'utf8');
 const FEEDS = JSON.parse(fs.readFileSync('docs/source-inventory.json', 'utf8')).sources;
@@ -29,11 +30,14 @@ const DOWNLOAD_THREAT_MAX_BYTES = constant('DOWNLOAD_THREAT_SOURCE_MAX_BYTES', 9
 const OPENPHISH_MAX_BYTES = constant('OPENPHISH_FEED_MAX_BYTES', 6 * 1024 * 1024);
 const TIMEOUT_MS = constant('LIST_FETCH_TIMEOUT_MS', 25000);
 const OPENPHISH_TIMEOUT_MS = constant('EXTERNAL_REPUTATION_TIMEOUT_MS', 6500);
+const reviewedMatch = SOURCE.match(/const LIST_REVIEWED_SOURCE_MAX_BYTES = Object\.freeze\(([\s\S]*?)\);/);
+const reviewedLimits = reviewedMatch ? vm.runInNewContext('(' + reviewedMatch[1] + ')') : {};
 
 /* The generated inventory names every runtime feed, including URLs with no filter-like
    words. A shared source uses its strictest cap, as listSourceByteLimit() does. */
 const policyFor = (feed) => {
   const purposes = feed.purposes || [];
+  if (Object.prototype.hasOwnProperty.call(reviewedLimits, feed.url)) return { url: feed.url, maxBytes: reviewedLimits[feed.url], timeoutMs: TIMEOUT_MS };
   if (feed.toggles.includes('openPhish')) return { url: feed.url, maxBytes: OPENPHISH_MAX_BYTES, timeoutMs: OPENPHISH_TIMEOUT_MS };
   if (purposes.includes('Download Guard payload URLs and file hashes')) return { url: feed.url, maxBytes: DOWNLOAD_THREAT_MAX_BYTES, timeoutMs: TIMEOUT_MS };
   if (purposes.includes('Supplemental domain lists')) return { url: feed.url, maxBytes: SUPPLEMENTAL_MAX_BYTES, timeoutMs: TIMEOUT_MS };
@@ -49,12 +53,8 @@ if (process.argv.includes('--list-json')) {
 
 const mb = (n) => (n / (1024 * 1024)).toFixed(1) + ' MB';
 
-/* Abandoning a large response part-way makes Node's own fetch throw an assertion
-   out of its HTTP parser, asynchronously, where no try/catch around the read can
-   reach it. It is a quirk of dropping the socket mid-body, not a fault in the
-   feed -- and left unhandled it kills the run after the findings are gathered but
-   before they are printed, which is the worst possible moment. Swallow only that
-   one, and let anything else crash as it should. */
+/* Node fetch can emit an asynchronous HTTP-parser assertion when a large body is abandoned. Suppress only that known
+   assertion; rethrow other failures. */
 process.on('uncaughtException', (err) => {
   const undiciParserQuirk = err && err.code === 'ERR_ASSERTION'
     && /undici/.test(String(err.stack || ''));
@@ -78,12 +78,8 @@ process.on('uncaughtException', (err) => {
         console.log('DEAD  HTTP ' + res.status + '  ' + url);
         continue;
       }
-      /* Streamed and counted, the way readResponseTextWithByteLimit does it in
-         the extension. Counting beats trusting content-length -- several of these
-         are chunked with no length at all, which is exactly the case a header
-         check waves through. Reading to completion and THEN measuring also made
-         Node's fetch assert when the timeout aborted a 25 MB download mid-body,
-         so stop at the cap and cancel the stream rather than racing it. */
+      /* Count streamed bytes rather than trusting Content-Length. Stop and cancel at the cap, including for chunked
+         responses. */
       const cap = maxBytes;
       const reader = res.body.getReader();
       let bytes = 0;

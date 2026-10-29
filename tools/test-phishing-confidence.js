@@ -12,6 +12,7 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { domainToASCII } = require('url');
 
 const ROOT = path.resolve(__dirname, '..');
 const domainScript = new vm.Script(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'));
@@ -121,6 +122,33 @@ const PHISHING = [
   const v = verdict('disboard.org');
   check('Disboard is not a Discord look-alike in the page detector', !v,
     v && (v.confidence + '/' + v.kind));
+}());
+
+(function shortNamesNeedMoreThanSpellingProximity() {
+  for (const host of [
+    'iri.dev', 'www.iri.dev', 'login.iri.dev', 'iri.co.uk',
+    'dcl.example', 'd6l.example', 'dlh.example', 'usp.example',
+    'tsc.example', 'dpb.example', 'pnt.example',
+  ]) {
+    const v = verdict(host);
+    check(host + ' is not a short-brand look-alike', !v, v && (v.kind + '/' + v.brand));
+  }
+  for (const [host, brand, kind, confidence] of [
+    ['ir5.example', 'irs', 'typosquat', 'high'],
+    ['up5.example', 'ups', 'typosquat', 'high'],
+    ['dh1.example', 'dhl', 'typosquat', 'high'],
+    [domainToASCII('\u0456rs.example'), 'irs', 'homograph', 'high'],
+    ['irs-login.example', 'irs', 'brand-in-name', 'medium'],
+    ['ups-login.example', 'ups', 'brand-in-name', 'medium'],
+    ['login.irs.attacker.example', 'irs', 'subdomain-spoof', 'high'],
+    ['irs.gov.attacker.example', 'irs', 'subdomain-spoof', 'medium'],
+    ['dhl.example', 'dhl', 'tld-swap', 'high'],
+    ['visb.example', 'visa', 'typosquat', 'medium'],
+  ]) {
+    const v = verdict(host);
+    check(host + ' retains its brand warning', !!v && v.brand === brand && v.kind === kind
+      && v.confidence === confidence, JSON.stringify(v));
+  }
 }());
 
 (function realPhishingIsStillCaught() {

@@ -142,6 +142,10 @@ for (const pattern of ['||example.com^', '||sub.example.co.uk/path*', '|https://
       r.kind === 'error' && String(r.why).includes(expect),
       'got ' + r.kind + (r.why ? ' / ' + r.why : ''));
   }
+  const consecutiveRegex = parse(['/first[0-9]+/', '/second.+/', '||valid.example^'].join(NL), box.BASE);
+  check('consecutive unsupported regexes leave the following custom rule and its ID intact',
+    consecutiveRegex.network.length === 1 && consecutiveRegex.network[0].id === box.BASE
+      && consecutiveRegex.errors.map((error) => error.line).join(',') === '1,2');
 }
 
 for (const selector of ['article:has(.promo)', '[data-label=":-abp-contains(x)"]', '[data-label="#?#"]', '[data-label="#@?#"]',

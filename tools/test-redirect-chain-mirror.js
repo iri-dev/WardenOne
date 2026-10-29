@@ -262,7 +262,7 @@ function runChain(api, tabId) {
 
   /* ---- the wiring in the shipped files ------------------------------------------------------ */
   check('persist restores before it snapshots',
-    /timer = null;[\s\S]{0,900}mirror\.ready\(\)\.then\(\(\) => \{\s*try \{ area\.set\(\{ \[key\]: snapshot\(\) \}/.test(BG));
+    /timer = null;[\s\S]{0,900}mirror\.ready\(\)\.then\(\(\) => \{[\s\S]{0,240}try \{ area\.set\(\{ \[key\]: snapshot\(\) \}/.test(BG));
   check('both correlation windows are built on that one mirror',
     /const RECENT_REDIRECT_MIRROR = sessionMirror\(/.test(BG) && /const PERMISSION_CHAIN_MIRROR = sessionMirror\(/.test(BG));
   check('the download handler restores before it looks the chain up',

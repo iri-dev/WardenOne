@@ -46,6 +46,7 @@ function harness(initialLocal, initialSession, options = {}) {
       return next;
     } } },
     chrome: {
+      alarms: { clearAll: async () => true },
       storage: { local: area(local), session: area(session), onChanged: { addListener() {} } },
       declarativeNetRequest: {
         async getDynamicRules() { return dynamic.slice(); },
@@ -70,6 +71,7 @@ function harness(initialLocal, initialSession, options = {}) {
   };
   let lock = Promise.resolve();
   vm.createContext(sandbox);
+  require('./lib/history-store-harness.js').install(sandbox);
   installSessionIo(sandbox);
   vm.runInContext(fs.readFileSync(path.join(root, 'domain-utils.js'), 'utf8') + '\n'
     + fs.readFileSync(path.join(root, 'psl-private.js'), 'utf8'), sandbox);
@@ -77,9 +79,10 @@ function harness(initialLocal, initialSession, options = {}) {
   vm.runInContext(require('./config-write-harness.js').WORKER_WRITE_WITH_MOCK_READ + '\n'
     + 'const DEFAULT_CONFIG = { enabled: true, downloadSafeBrowsingKey: "", siteOverrides: {}, allowlist: [] };'
     + 'const PRIVACY_ERASE_REBUILD_KEY = "wardenone_erase_rebuild";'
+    + 'const PRIVACY_ERASE_CONFIG_WRITE = Symbol("privacy erase config write");'
     + 'let __privacyEraseInProgress = false;' + bg.slice(start, end)
     + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, eraseWardenOneSite, repairConfigAfterReset, repairOverwrittenConfig, stampConfigWrite, updateStoredConfig, preservedPrivacyConfig, policy: PRIVACY_STORE_POLICY };', sandbox);
-  return { api: sandbox.__api, local, session, dynamic, sessionRules, timers, reloaded: () => reloaded };
+  return { api: sandbox.__api, local, session, dynamic, sessionRules, timers, historyStore: sandbox.WO_HISTORY, reloaded: () => reloaded };
 }
 
 (async () => {
@@ -88,9 +91,14 @@ function harness(initialLocal, initialSession, options = {}) {
   assert.strictEqual(inventory.ok, true);
   assert.strictEqual(inventory.records.length, 1);
   assert(inventory.records[0].bytes > 0 && inventory.records[0].oldestKnownAt);
-  assert.strictEqual(inventory.records[0].retention, '30 days; latest 200 events');
+  assert(inventory.records[0].retention.includes('30 days; latest 200 events'));
 
   const policies = h.api.policy;
+  const empty = harness({ wardenone_config: { enabled: true } }, {});
+  const noChange = await empty.api.eraseWardenOneSite('no-record.example', false);
+  assert.equal(noChange.ok, true);
+  assert.equal(noChange.affected.length, 0);
+  assert.equal(empty.historyStore.changing, false, 'erasing an absent site must resume history recording');
   const registered = policies.flatMap((policy) => Array.from(policy.keys));
   assert.strictEqual(new Set(registered).size, registered.length, 'store registry has duplicate keys');
   for (const key of ['wardenone_notifications', 'wardenone_tracker_learner', 'wardenone_script_drift_baselines']) {
@@ -126,6 +134,7 @@ function harness(initialLocal, initialSession, options = {}) {
   assert.strictEqual(h.local.wardenone_config.enabled, false);
   assert.strictEqual(h.local.wardenone_config.downloadSafeBrowsingKey, undefined);
   assert.strictEqual(h.local.wardenone_config.siteOverrides, undefined);
+  assert.strictEqual(h.local.wardenone_config.siteRecoveryUntil, undefined);
   assert.deepStrictEqual(Object.keys(h.session), ['wardenone_erase_rebuild']);
   assert.strictEqual(h.dynamic.length + h.sessionRules.length, 0);
 
@@ -133,7 +142,8 @@ function harness(initialLocal, initialSession, options = {}) {
     wardenone_history: [{ url: 'https://erase.example/one' }, { url: 'https://keep.example/two' }],
     wardenone_config: { enabled: false, downloadSafeBrowsingKey: 'secret',
       allowlist: ['erase.example', 'keep.example'],
-      siteOverrides: { 'erase.example': { adShield: false }, 'keep.example': { adShield: true } } },
+      siteOverrides: { 'erase.example': { adShield: false }, 'keep.example': { adShield: true } },
+      siteRecoveryUntil: { 'erase.example': { key: 'removeOverlays', until: Date.now() + 60000 }, 'keep.example': { key: 'removeOverlays', until: Date.now() + 60000 } } },
     wardenone_safe_browsing_cache: { opaqueHash: { hit: true } },
     wardenone_script_drift_baselines: { opaqueHash: { hash: 'digest' } },
     wardenone_blocklist: ['erase.example', 'keep.example'],
@@ -156,6 +166,8 @@ function harness(initialLocal, initialSession, options = {}) {
     'site erase keeps unrelated user rules and the other half of a cosmetic rule');
   assert.strictEqual(h.local.wardenone_config.enabled, false);
   assert.strictEqual(h.local.wardenone_config.downloadSafeBrowsingKey, 'secret');
+  assert.strictEqual(h.local.wardenone_config.siteRecoveryUntil['erase.example'], undefined);
+  assert(h.local.wardenone_config.siteRecoveryUntil['keep.example']);
   assert.strictEqual(h.local.wardenone_safe_browsing_cache, undefined);
   assert.strictEqual(h.local.wardenone_script_drift_baselines, undefined);
   assert.strictEqual(h.dynamic.length + h.sessionRules.length, 0);

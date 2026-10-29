@@ -1,9 +1,5 @@
-/* Test support, not a suite. Every write of wardenone_config now goes through the config lock
-   (config-lock.js), and in the worker through updateStoredConfig() in background.js. Tests that run
-   worker or page code in a vm sandbox, with localGet and localSet mocked, need both. They get the
-   shipped source, sliced rather than rewritten, so they exercise what ships; only the strict read
-   is mapped onto the sandbox's own localGet. There is no Web Lock in a vm, so the lock just runs
-   the task, which is what it does in a browser without one. */
+/* Lift shipped config-lock/updateStoredConfig code for VM suites. Map strict reads to the sandbox's localGet; without Web
+   Locks, use the browser's unlocked fallback. */
 'use strict';
 
 const fs = require('fs');

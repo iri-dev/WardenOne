@@ -60,8 +60,9 @@ function enclosingFunction(source, index) {
        the batch helper is exercised for atomicity and fallback by its own suite. */
     if (arg.trim() === 'change') {
       const nearby = BG.slice(Math.max(0, m.index - 350), m.index);
+      const named = nearby.match(/const change = \{([\s\S]*?)\};/);
       if (PASS_THROUGH.has(fn)
-        || /const change = \{ removeRuleIds: oldIds, addRules(?::|\s*\})/.test(nearby)) continue;
+        || (named && /\bremoveRuleIds:/.test(named[1]) && /\baddRules(?::|,|\s*$)/.test(named[1]))) continue;
     }
     if (!/removeRuleIds/.test(arg) || !/addRules/.test(arg)) {
       offenders.push(fn + ' @' + BG.slice(0, m.index).split('\n').length + ': ' + arg.replace(/\s+/g, ' ').slice(0, 60));
@@ -85,8 +86,9 @@ function fnSlice(name) {
   const to = BG.indexOf('\n}\n', from);
   return BG.slice(from, to + 3);
 }
-const APPLIERS = slice("let __privacyHeaderRuleEnabled = null;", "let __ipLookupBlockRulesEnabled = null;")
-  + "let __thirdPartyCookieRuleEnabled = null;\n" + fnSlice('applyThirdPartyCookieRule')
+const APPLIERS = slice('function privacySignalExclusions(', 'let __privacyHeaderRuleEnabled = null;') + slice("let __privacyHeaderRuleEnabled = null;", "let __ipLookupBlockRulesEnabled = null;")
+  + "let __thirdPartyCookieRuleStateKey = '';\n" + fnSlice('applyThirdPartyCookieRule')
+  + slice('function trackerCookieCompatibility(', "let __trackerCookieRuleStateKey")
   + slice("const HTTPS_UPGRADE_RULE_ID = 910000;", "function refreshHttpsUpgrade()")
   /* Force HTTPS reads its persistent copy before deciding to write it. */
   + dynamicRuleIo.prelude(BG, [[910001, 1]])
@@ -122,9 +124,11 @@ function harness(options) {
     console: { warn: (...args) => warnings.push(args.join(' ')), log() {}, error() {} },
     Promise, Map, Set, Array, Object, String, Number, Boolean, JSON, Error,
     PRIVACY_HEADER_RULE_ID: 900000,
+    PRIVACY_HEADER_NAV_RULE_ID: 900008,
     THIRD_PARTY_COOKIE_RULE_ID: 900001,
     LOCATION_PRIVACY_HEADER_RULE_ID: 900002,
     THIRD_PARTY_COOKIE_RESOURCE_TYPES: ['image', 'ping'],
+    MEDIA_COMPAT_DOMAINS: new Set(), activeAllowlist: cfg => cfg.allowlist || [], normalizeAllowlistHost: value => value,
     LOGIN_COMPAT_NEVER_BLOCK_DOMAINS: ['accounts.google.com', 'login.microsoftonline.com'],
     chrome: {
       declarativeNetRequest: {
@@ -150,6 +154,7 @@ const SINGLE_STORE = [
 
 (async () => {
   for (const [name, id, looksRight] of SINGLE_STORE) {
+    const expectedRules = name === 'applyPrivacyHeaderRule' ? 2 : 1;
     /* Cold worker, empty store: one call installs it. */
     {
       const h = harness();
@@ -170,8 +175,8 @@ const SINGLE_STORE = [
       const everyBoundary = h.snapshots.length > 0 && h.snapshots.every((s) => s.session.some((r) => r.id === id));
       check(name + ': a refresh over an installed rule never passes through an empty store', everyBoundary,
         h.snapshots.map((s) => s.session.map((r) => r.id).join(',') || '(empty)').join(' -> '));
-      check(name + ': the refresh is one transaction', h.log.length === 1 && (h.log[0].update.removeRuleIds || []).includes(id) && (h.log[0].update.addRules || []).length === 1);
-      check(name + ': the store ends with exactly one copy', h.stores().session.size === 1);
+      check(name + ': the refresh is one transaction', h.log.length === 1 && (h.log[0].update.removeRuleIds || []).includes(id) && (h.log[0].update.addRules || []).length === expectedRules);
+      check(name + ': the store ends with exactly one copy of each desired rule', h.stores().session.size === expectedRules);
     }
     /* Switching off removes it, and adds nothing. */
     {
@@ -187,7 +192,7 @@ const SINGLE_STORE = [
       const result = await h.api[name](true);
       check(name + ': a rejected update reports failure and leaves the store as it was', result === false && h.stores().session.size === 0 && h.warnings.length === 1);
       const again = harness({ fail: [] });
-      check(name + ': the failure is not remembered as success', (await again.api[name](true)) !== false && again.stores().session.size === 1);
+      check(name + ': the failure is not remembered as success', (await again.api[name](true)) !== false && again.stores().session.size === expectedRules);
     }
   }
 

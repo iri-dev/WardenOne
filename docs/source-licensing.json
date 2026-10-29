@@ -1695,6 +1695,94 @@
         }
       ],
       "checkedAt": "2026-10-19"
+    },
+    "adguard-cname": {
+      "name": "AdGuard CNAME trackers",
+      "publisher": "Adguard Software Ltd",
+      "home": "https://github.com/AdguardTeam/cname-trackers",
+      "urls": [
+        "https://github.com/AdguardTeam/cname-trackers"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "MIT",
+        "url": "https://github.com/AdguardTeam/cname-trackers/blob/d519e17ee10e2d1c5b2762a78a8e11ec2b38ce5a/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published MIT terms cover the selected, redistributed CNAME mapping."
+      },
+      "attribution": "Copyright 2021 Adguard Software Ltd.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Preserve the upstream copyright and complete MIT permission notice."
+        ],
+        "implementation": [
+          "Select four pinned tracker-provider JSON mappings, normalize exact hosts, resolve bounded chains and omit registrable-site apex aliases.",
+          "Preserve source bytes, revision and hashes in docs/cname-source-snapshot.json.gz and the MIT text in licenses/AdGuard-CNAME-MIT.txt and packaged notices."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/AdGuard-CNAME-MIT.txt"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://github.com/AdguardTeam/cname-trackers/blob/d519e17ee10e2d1c5b2762a78a8e11ec2b38ce5a/LICENSE",
+          "finding": "The pinned repository includes an MIT copyright and permission notice for its software and accompanying material."
+        }
+      ],
+      "checkedAt": "2026-10-26"
+    },
+    "adguard-tracker-catalog": {
+      "name": "AdGuard Companies DB tracker attribution",
+      "publisher": "Companies DB contributors and WhoTracks.Me team",
+      "home": "https://github.com/AdguardTeam/companiesdb",
+      "urls": [
+        "https://raw.githubusercontent.com/AdguardTeam/companiesdb/8d845040224a0e3ea9cbba5df68ceb6a988235d2/dist/trackers.json",
+        "https://raw.githubusercontent.com/AdguardTeam/companiesdb/8d845040224a0e3ea9cbba5df68ceb6a988235d2/dist/companies.json"
+      ],
+      "license": {
+        "type": "published-license",
+        "id": "CC-BY-SA-4.0",
+        "url": "https://github.com/AdguardTeam/companiesdb/blob/8d845040224a0e3ea9cbba5df68ceb6a988235d2/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published CC BY-SA terms cover this separately identified attribution-data adaptation."
+      },
+      "attribution": "Companies DB contributors; incorporates WhoTracks.Me contributions acknowledged upstream. Attribution does not imply endorsement.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Attribute the dataset and upstream contributors, link source and license, identify modifications, and distribute the adapted metadata under CC BY-SA 4.0."
+        ],
+        "implementation": [
+          "Pinned input bytes and SHA-256 in docs/tracker-catalog-source.json.gz; builder selects a compact subset and display labels.",
+          "The adapted tracker-catalog.json retains CC BY-SA 4.0; GPL source code remains separately licensed. Source/revision/license are retained in metadata and packaged credits/notices."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/CC-BY-SA-4.0.txt"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/AdguardTeam/companiesdb/8d845040224a0e3ea9cbba5df68ceb6a988235d2/LICENSE",
+          "documentSha256": "187442db4df3afd21f2f0525739fd4beac28a62daaba3ee8d3533f60e7c33ec7",
+          "finding": "Pinned repository license is Attribution-ShareAlike 4.0 International."
+        },
+        {
+          "url": "https://github.com/AdguardTeam/companiesdb/blob/8d845040224a0e3ea9cbba5df68ceb6a988235d2/README.md",
+          "finding": "Documents product/company/category/domain fields and acknowledges WhoTracks.Me contributions."
+        }
+      ],
+      "checkedAt": "2026-10-27"
     }
   },
   "buildInputs": [
@@ -1721,6 +1809,24 @@
       "constant": "URL",
       "artifact": "spotify-silent-1s.mp4",
       "purpose": "Silent replacement media"
+    },
+    {
+      "builtBy": "tools/build-cname-data.js",
+      "constant": "CNAME_SOURCE_URL",
+      "artifact": "cname-trackers.json",
+      "purpose": "Four pinned provider CNAME mappings; exact input paths and hashes retained in the source snapshot"
+    },
+    {
+      "builtBy": "tools/build-tracker-catalog.js",
+      "constant": "TRACKERS_SOURCE_URL",
+      "artifact": "tracker-catalog.json",
+      "purpose": "Local product/domain/category attribution metadata"
+    },
+    {
+      "builtBy": "tools/build-tracker-catalog.js",
+      "constant": "COMPANIES_SOURCE_URL",
+      "artifact": "tracker-catalog.json",
+      "purpose": "Local organization names for tracker attribution"
     }
   ],
   "artifacts": [
@@ -1824,10 +1930,18 @@
       "provenance": "Byte-identical copy of domain-utils.js for the isolated execution world",
       "builtBy": "tools/build-content.js",
       "modifications": "Generated from the canonical domain helper, preserving its PSL notice and source version.",
-      "sourceFiles": ["domain-utils.js", "tools/build-content.js", "tools/build-psl.js"],
+      "sourceFiles": [
+        "domain-utils.js",
+        "tools/build-content.js",
+        "tools/build-psl.js"
+      ],
       "compliance": {
         "status": "implemented",
-        "noticeFiles": ["CREDITS.md", "THIRD_PARTY_NOTICES.html", "LICENSE"],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
         "issueIds": []
       }
     },
@@ -2100,6 +2214,70 @@
         ],
         "issueIds": []
       }
+    },
+    {
+      "file": "cname-trackers.json",
+      "license": "MIT",
+      "provenance": "AdguardTeam/cname-trackers, selected Eulerian, Etracker, Webtrekk and AT Internet mappings",
+      "builtBy": "tools/build-cname-data.js",
+      "modifications": "Host normalization, exact aliases, bounded chain resolution and registrable-site apex omission.",
+      "sourceFiles": [
+        "docs/cname-source-snapshot.json.gz",
+        "tools/build-cname-data.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/AdGuard-CNAME-MIT.txt"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "tracker-network-data.js",
+      "license": "See contributing input licences; generator GPL-3.0-or-later",
+      "provenance": "Observation scopes derived from the licensed CNAME mapping, packaged tracker conditions and WardenOne fingerprint-library inventory.",
+      "builtBy": "tools/build-tracker-network-data.js",
+      "modifications": "Exact CNAME hosts and full supported tracker request/initiator/type conditions, with no per-site DNS lookup.",
+      "sourceFiles": [
+        "cname-trackers.json",
+        "rules-trackers.json",
+        "background.js",
+        "tools/build-tracker-network-data.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/AdGuard-CNAME-MIT.txt"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "tracker-catalog.json",
+      "provenance": "AdGuard Companies DB at 8d845040224a0e3ea9cbba5df68ceb6a988235d2; Companies DB contributors and WhoTracks.Me team.",
+      "license": "CC-BY-SA-4.0",
+      "modifications": "Selected 41 products and 60 domain boundaries from existing WardenOne observation families; compact schema and display labels. Attribution only; no generated blocking rules.",
+      "builtBy": "tools/build-tracker-catalog.js",
+      "sourceFiles": [
+        "docs/tracker-catalog-source.json.gz",
+        "tools/build-tracker-catalog.js",
+        "rules-trackers.json",
+        "background.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/CC-BY-SA-4.0.txt"
+        ],
+        "issueIds": []
+      }
     }
   ],
   "externalServices": [
@@ -2260,6 +2438,8 @@
     "licenses/Dandelicence-1.4.txt",
     "licenses/DBAD-1.2.txt",
     "licenses/Unlicense.txt",
-    "licenses/Unicode-3.0.txt"
+    "licenses/Unicode-3.0.txt",
+    "licenses/AdGuard-CNAME-MIT.txt",
+    "licenses/CC-BY-SA-4.0.txt"
   ]
 }

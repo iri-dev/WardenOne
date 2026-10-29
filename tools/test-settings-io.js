@@ -130,7 +130,9 @@ const round = sanitizeImportedSettings(JSON.parse(JSON.stringify(exportableSetti
 check('a freshly exported file imports cleanly with nothing ignored', round.ignored === 0,
   'ignored=' + round.ignored);
 check('a round trip preserves the non-secret surface',
-  Object.keys(round.settings).length === Object.keys(DEFAULTS).filter((k) => !/Key$/.test(k)).length,
-  Object.keys(round.settings).length + ' of ' + Object.keys(DEFAULTS).filter((k) => !/Key$/.test(k)).length);
+  Object.keys(round.settings).length === Object.keys(DEFAULTS).filter((k) => !/Key$/.test(k) && k !== 'siteRecoveryUntil').length,
+  Object.keys(round.settings).length + ' of ' + Object.keys(DEFAULTS).filter((k) => !/Key$/.test(k) && k !== 'siteRecoveryUntil').length);
+check('temporary recovery trials stay out of settings backups', !Object.prototype.hasOwnProperty.call(exportableSettings(DEFAULTS), 'siteRecoveryUntil')
+  && !Object.prototype.hasOwnProperty.call(sanitizeImportedSettings({ siteRecoveryUntil: { 'example.com': { key: 'adShield', until: Date.now() + 60000 } } }).settings, 'siteRecoveryUntil'));
 
 console.log('\n' + passed + ' passed, 0 failed');

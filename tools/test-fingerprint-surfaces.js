@@ -238,7 +238,6 @@ pending.push((async function missingApisAreHandled() {
   });
 }());
 
-// ---------------------------------------------------------------------------
 
 Promise.all(pending).then(() => {
   if (failures.length) {

@@ -153,6 +153,12 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-media-security.js
 
+      - name: Test badge styling and playback under strict page policies in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-badge-csp.js
+
       - name: Test IP-logger switches against live requests in Edge
         if: success() || failure()
         env:
@@ -284,6 +290,10 @@ jobs:
         if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-media-security.js
 
+      - name: Test badge styling and playback under strict page policies in Chrome at the minimum version
+        if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
+        run: node tools/browser-badge-csp.js
+
       - name: Test IP-logger switches against live requests in Chrome at the minimum version
         if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-grabber-switches.js
@@ -300,11 +310,39 @@ jobs:
         if: (success() || failure()) && steps.chrome.outcome == 'success' && steps.runtime.outcome == 'success'
         run: node tools/browser-resource-saver.js
 
+  browser-upgrade:
+    name: saved-profile-upgrades
+    runs-on: windows-2025
+    timeout-minutes: 15
+    concurrency:
+      group: gate-${{ github.ref }}-upgrade
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+
+      - name: Upgrade saved profiles in Edge
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/run-saved-profile-upgrades.js --out tmp/upgrade-gate
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: saved-profile-upgrades-${{ github.sha }}
+          path: tmp/upgrade-gate/*.json
+          retention-days: 30
+
   # A passing push stages a commit-tagged draft, then makes it the sole rolling release
   # after both assets are verified. /releases/latest/download follows the complete build.
   rolling-build:
     name: publish-latest-build
-    needs: [gate, browser-popup, browser-settings, browser-minimum]
+    needs: [gate, browser-popup, browser-settings, browser-minimum, browser-upgrade]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # A draft can be retried safely; published assets are never overwritten.

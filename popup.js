@@ -36,7 +36,7 @@ function syncConfigCheckboxes(key, checked) {
 
 const KEYS = [
   'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'blockPopupTricks', 'backTrapGuard', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'detectRedirectChains', 'blockMetaRefresh',
-  'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'blockSuspiciousWebRTC', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine', 'twitchAdBlock', 'twitchSteadyPlayback', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
+  'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'blockSuspiciousWebRTC', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine', 'twitchAdBlock', 'twitchSteadyPlayback', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'blockCnameTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'forcedDownloadProtection', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
   'mediaShield', 'fullscreenGuard', 'fakeWindowGuard', 'notificationAbuseGuard', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation', 'blockAutoplayMedia',
   'gateAdultSites', 'adultHeuristics', 'safeSearch',
   'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists',
@@ -48,10 +48,11 @@ const KEYS = [
 ];
 
 const DEFAULTS = {
+  historyMode: 'normal',
   enabled: true,
   blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true, backTrapGuard: true, clearCookiesOnLeave: false, clearServiceWorkersOnLeave: false, blockMetaRefresh: true,
   detectRedirectChains: true, warnGrabberDomains: true, blockGrabberResources: true,
-  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchSteadyPlayback: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
+  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchSteadyPlayback: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, blockCnameTrackers: true, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, forcedDownloadProtection: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
   mediaShield: true, fullscreenGuard: true, fakeWindowGuard: true, notificationAbuseGuard: true, blockCameraMic: true, blockScreenCapture: true, blockGeolocation: true, blockAutoplayMedia: true, blockSuspiciousWebRTC: false,
   eyeShield: false, eyeShieldMode: 'off', eyeShieldBrightness: 100, eyeShieldBrightnessByHost: {},
   eyeShieldContrast: 100, eyeShieldContrastByHost: {}, eyeShieldSaturation: 100, eyeShieldSaturationByHost: {},
@@ -76,6 +77,7 @@ const DEFAULTS = {
   // host -> { featureKey: false }. Turns one protection off on one site instead of
   // everywhere, or the whole engine off there.
   siteOverrides: {},
+  siteRecoveryUntil: {},
 };
 
 // Include worker-only settings so exported backups round-trip through the popup importer.
@@ -89,8 +91,8 @@ const IMPORT_ONLY_DEFAULTS = {
 };
 const IMPORT_SCHEMA = Object.assign({}, IMPORT_ONLY_DEFAULTS, DEFAULTS);
 
-/* Only page-side protections can be turned off per site. "mixed" leaves the network or worker
-   half running; "coordinated" also stops the worker backstop. Unlisted keys are rejected. */
+/* "mixed" stops the page part; "coordinated" also stops its worker backstop.
+   Network-only exceptions are honored by their rule owner. Unlisted keys are rejected. */
 const SITE_OVERRIDE_SCOPE = {
   page: [
     'blockGesturelessNav', 'backTrapGuard', 'blockMetaRefresh',
@@ -108,21 +110,22 @@ const SITE_OVERRIDE_SCOPE = {
   mixed: [
     'blockPopupTricks', 'clearCookiesOnLeave', 'detectRedirectChains', 'blockGrabberResources', 'warnGrabberDomains',
     'blockWebRTCLeak', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers',
-    'blockSponsoredSearchResults', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine', 'sendPrivacySignals',
-    'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockThirdPartyCookies',
+    'blockSponsoredSearchResults', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine',
+    'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts',
     'blockAllCookies', 'detectSkimmers', 'paymentCardGuard', 'forceHttps', 'loginAgeCheck', 'downloadReputation',
     'downloadSafeBrowsing', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation',
     'whoisXmlThreatIntel', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'intranetProtection',
     'blockGeolocation', 'silentMode', 'capReferrer', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
     'trackerLearner', 'unshimLinks', 'stripTrackingParams',
   ],
-  coordinated: ['blockForcedPopups', 'strictPopupShield'],
+  coordinated: ['blockForcedPopups', 'strictPopupShield', 'blockThirdPartyCookies', 'forcedDownloadProtection', 'sendPrivacySignals'],
+  network: ['blockCnameTrackers'],
 };
-const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVERRIDE_SCOPE.mixed, SITE_OVERRIDE_SCOPE.coordinated));
+const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVERRIDE_SCOPE.mixed, SITE_OVERRIDE_SCOPE.coordinated, SITE_OVERRIDE_SCOPE.network));
 const SITE_OVERRIDE_MIXED = new Set(SITE_OVERRIDE_SCOPE.mixed);
 
 // Keep costly or compatibility-sensitive switches out of "Turn everything on".
-const MANUAL_ONLY_TOGGLES = new Set(['blockAllCookies', 'silentMode', 'cryptominerCpuWatch', 'trackerCacheProtection', 'blockAllStorageAccess', 'blockSuspiciousWebRTC']);
+const MANUAL_ONLY_TOGGLES = new Set(['blockCnameTrackers', 'blockAllCookies', 'silentMode', 'cryptominerCpuWatch', 'trackerCacheProtection', 'blockAllStorageAccess', 'blockSuspiciousWebRTC']);
 const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'xssBehaviorGuard', 'commandPasteGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'paymentCardGuard', 'blockGeolocation']);
 
 const REPUTATION_PROVIDERS = [
@@ -166,11 +169,6 @@ function popupChangedKeys() {
   keys.forEach((k) => { if (configValuesDiffer(config[k], savedConfigSnapshot[k])) changed.push(k); });
   return changed;
 }
-
-const POPUP_SEARCH_KEY = 'wardenone_popup_search_memory';
-// Reassigned by the settings-search block once it's wired; restores the last query
-// on popup open so reopening jumps straight back to what you were looking at.
-let restorePopupSearch = (done) => { if (typeof done === 'function') done(); };
 
 function applyToUI() {
   const enabledEl = $('enabled');
@@ -459,13 +457,8 @@ function reflectSilentMode() {
   });
 }
 
-// The one-time repair for a profile the old popup already damaged. Every save it made while
-// Silent was on wrote both switches false, so a profile arriving here with Silent on and both
-// off is carrying Silent's writes, not a choice: the switches were disabled the whole time,
-// so nobody could have made one. When such a profile turns Silent off, Normal is put back
-// to what Normal means -- both on -- instead of a silence nobody asked for. It runs only on
-// that transition and only for that exact signature; a profile with Silent off is never
-// touched, and a reader who had turned off just one of the two keeps it off.
+// Restore both Normal switches only when leaving Silent with the legacy both-off signature. Other saved choices remain
+// intact.
 function repairSilentModeRewrite(wasSilent) {
   if (!wasSilent || config.silentMode === true) return false;
   if (config.showToasts !== false || config.showBadge !== false) return false;
@@ -766,7 +759,6 @@ function load() {
     loadStartupReport();
     renderProtectionHealth();
     refreshSiteDashboard();
-    restorePopupSearch(() => restoreAdvancedProvidersState(restorePopupScrollPosition));
   });
 }
 
@@ -849,7 +841,7 @@ function sanitizeSiteOverrides(raw) {
 function exportableSettings(cfg) {
   const out = {};
   Object.keys(cfg || {}).forEach((key) => {
-    if (SECRET_FIELD_RE.test(key)) return;
+    if (SECRET_FIELD_RE.test(key) || key === 'siteRecoveryUntil') return;
     out[key] = key === 'siteOverrides' ? sanitizeSiteOverrides(cfg[key]).map
       : key === 'eyeShieldSites' ? WOEyeShieldProfiles.cleanSites(cfg[key]) : cfg[key];
   });
@@ -885,10 +877,12 @@ function sanitizeImportedSettings(raw) {
   const settings = {};
   let ignored = 0;
   Object.keys(raw || {}).forEach((key) => {
+    if (key === 'siteRecoveryUntil') { ignored++; return; }
     if (!Object.prototype.hasOwnProperty.call(IMPORT_SCHEMA, key)) { ignored++; return; }
     if (SECRET_FIELD_RE.test(key)) { ignored++; return; }
     const def = IMPORT_SCHEMA[key];
     const val = raw[key];
+    if (key === 'historyMode' && !['normal', 'session', 'off'].includes(val)) { ignored++; return; }
     // Preserve nested per-site override maps; ignore unusable entries instead of applying an empty map (PI-03).
     if (key === 'siteOverrides') {
       if (!val || typeof val !== 'object' || Array.isArray(val)) { ignored++; return; }
@@ -1961,6 +1955,131 @@ function wireSiteControls() {
     if (!key) return;
     activeTabHost((host) => setSiteOverride(host, key, false));
   });
+  wireSiteRecovery();
+}
+
+let siteRecoveryState = null;
+let siteRecoveryPreview = null;
+function siteRecoveryStatus(text) {
+  const box = $('site-recovery-context');
+  if (box) box.textContent = text;
+}
+function renderSiteRecovery() {
+  const state = siteRecoveryState;
+  const box = $('site-recovery-suggestions');
+  const active = $('site-recovery-active');
+  if (!state || !box || !active) return;
+  box.textContent = '';
+  const trial = state.trial && state.trial.until > Date.now() ? state.trial : null;
+  active.textContent = trial
+    ? WOSiteRecovery.FEATURES[trial.key] + ' is off on ' + state.host + ' and its subdomains for another ' + describeRemaining(trial.until - Date.now()) + '. Other protections stay on.'
+    : 'No recovery trial is active on ' + state.host + '.';
+  $('site-recovery-undo').hidden = !trial;
+  $('site-recovery-reload').hidden = !trial;
+  if (trial) {
+    siteRecoveryStatus('Reload this tab to test. Undo restores the original setting; the trial also ends automatically.');
+    return;
+  }
+  const candidates = WOSiteRecovery.suggestions(state.summary, config, Date.now());
+  if (!candidates.length) {
+    siteRecoveryStatus('No recent action suggests a narrow, lower-risk fix. Check Activity or use the site controls below.');
+    return;
+  }
+  siteRecoveryStatus('These protections acted on this page recently. Try one at a time, then reload to see whether the site works.');
+  for (const candidate of candidates) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin:6px 0;';
+    const label = document.createElement('span');
+    label.className = 'desc';
+    label.style.cssText = 'flex:1;min-width:0;';
+    label.textContent = candidate.label + ' · ' + (SITE_DASH_EVENT_LABELS[candidate.type] || candidate.type);
+    const button = document.createElement('button');
+    button.className = 'btn';
+    button.type = 'button';
+    button.textContent = 'Try 15m';
+    button.addEventListener('click', () => requestSiteRecovery('start', candidate.key));
+    row.append(label, button);
+    box.appendChild(row);
+  }
+}
+function loadSiteRecovery() {
+  siteRecoveryState = null;
+  siteRecoveryPreview = null;
+  $('site-recovery-suggestions').textContent = '';
+  $('site-recovery-active').textContent = '';
+  $('site-recovery-undo').hidden = true;
+  $('site-recovery-reload').hidden = true;
+  $('site-recovery-report').hidden = true;
+  $('site-recovery-export').hidden = true;
+  chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+    const tab = tabs && tabs[0];
+    if (!tab || !Number.isInteger(tab.id)) { siteRecoveryStatus('Open a website tab first.'); return; }
+    chrome.runtime.sendMessage({ kind: 'site-recovery', action: 'status', tabId: tab.id }, res => {
+      const err = chrome.runtime.lastError;
+      if (err || !res || !res.ok) { siteRecoveryStatus(res && res.error || err && err.message || 'Could not inspect this site.'); return; }
+      chrome.runtime.sendMessage({ kind: 'site-dashboard', tabId: tab.id }, dashboard => {
+        void chrome.runtime.lastError;
+        const summary = dashboard && dashboard.ok && dashboard.web ? siteDashSummarize(dashboard) : { events: [] };
+        summary.host = res.host;
+        siteRecoveryState = { tabId: tab.id, host: res.host, trial: res.trial, summary };
+        siteRecoveryPreview = null;
+        $('site-recovery-report').hidden = true;
+        $('site-recovery-export').hidden = true;
+        renderSiteRecovery();
+      });
+    });
+  });
+}
+function requestSiteRecovery(action, key) {
+  const state = siteRecoveryState;
+  if (!state) return;
+  chrome.runtime.sendMessage({ kind: 'site-recovery', action, tabId: state.tabId, key }, res => {
+    const err = chrome.runtime.lastError;
+    if (err || !res || !res.ok) { siteRecoveryStatus(res && res.error || err && err.message || 'Could not change the trial.'); return; }
+    loadSiteRecovery();
+    refreshSiteDashboard();
+  });
+}
+function wireSiteRecovery() {
+  const open = $('site-recovery-open');
+  open?.addEventListener('click', () => {
+    const panel = $('site-recovery-panel');
+    panel.hidden = !panel.hidden;
+    open.setAttribute('aria-expanded', String(!panel.hidden));
+    if (!panel.hidden) loadSiteRecovery();
+  });
+  $('site-recovery-undo')?.addEventListener('click', () => requestSiteRecovery('undo'));
+  $('site-recovery-reload')?.addEventListener('click', () => {
+    if (siteRecoveryState) chrome.tabs.reload(siteRecoveryState.tabId);
+  });
+  $('site-recovery-logger')?.addEventListener('click', () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL('logger.html') });
+  });
+  $('site-recovery-preview')?.addEventListener('click', () => {
+    if (!siteRecoveryState) return;
+    siteRecoveryPreview = WOSiteRecovery.report(siteRecoveryState.summary, siteRecoveryState.trial, Date.now(), normalizeSiteHost);
+    if (!siteRecoveryPreview) return;
+    $('site-recovery-report').textContent = JSON.stringify(siteRecoveryPreview, null, 2);
+    $('site-recovery-report').hidden = false;
+    $('site-recovery-export').hidden = false;
+  });
+  $('site-recovery-export')?.addEventListener('click', () => {
+    if (!siteRecoveryPreview) return;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(siteRecoveryPreview, null, 2) + '\n'], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'wardenone-site-diagnostic.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+  });
+  setInterval(() => {
+    if (!$('site-recovery-panel')?.hidden && siteRecoveryState?.trial) {
+      if (siteRecoveryState.trial.until <= Date.now()) loadSiteRecovery();
+      else renderSiteRecovery();
+    }
+  }, 30000);
 }
 
 function activeTabHost(callback) {
@@ -2566,8 +2685,9 @@ function renderTrackerLearner() {
         title.className = 'perm-row-label';
         const siteHits = Number(item.siteHits || 0);
         // This browser session's count: the worker keeps no per-site record past it (PRIV-01).
-        const siteText = siteHits ? siteHits + ' hit' + (siteHits === 1 ? '' : 's') + ' here this session' : 'manual rule';
+        const siteText = siteHits ? siteHits + ' observation' + (siteHits === 1 ? '' : 's') + ' here this session' : 'manual rule';
         title.textContent = item.domain + ' - ' + trackerModeLabel(item) + ' - ' + siteText;
+        title.title = String(item.source || '') + ' · ' + String(item.confidence || 'unverified');
         const actions = document.createElement('div');
         actions.className = 'tracker-mode-buttons';
         [
@@ -2580,7 +2700,7 @@ function renderTrackerLearner() {
           btn.className = 'btn tracker-mode-btn';
           const on = (item.mode || 'auto') === value;
           btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-          btn.title = titleText;
+          btn.title = titleText + (item.knownAliases && value !== 'auto' ? ', including confirmed tracking aliases' : '');
           btn.textContent = text;
           btn.addEventListener('click', () => {
             if (on) return;
@@ -2602,10 +2722,7 @@ function renderTrackerLearner() {
   });
 }
 
-/* The learner's proposals (SEC-04). Each is a domain seen behaving like a tracker on several
-   of the reader's sites across more than one browser session. That is enough to ASK; it is
-   not enough to block, because every input the learner sees arrives from a page. So the
-   decision is made here, by the reader, and only "Block" writes a rule. */
+/* Evidence can justify a proposal; only an explicit decision authorizes a learner rule. */
 function renderTrackerProposals() {
   const row = $('tracker-proposals-row');
   const box = $('tracker-learner-proposals');
@@ -2634,8 +2751,11 @@ function renderTrackerProposals() {
       label.className = 'perm-row-label';
       const sites = Number(item.sites || 0);
       const sessions = Number(item.sessions || 0);
+      const age = Math.max(0, Math.floor((Date.now() - Number(item.proposedAt || Date.now())) / 86400000));
       label.textContent = item.domain + ' \u2014 seen on ' + sites + ' site' + (sites === 1 ? '' : 's')
         + (sessions > 1 ? ' across ' + sessions + ' sessions' : '')
+        + ' · ' + String(item.confidence || 'unverified') + ' · ' + String(item.source || 'No corroborated source recorded')
+        + ' · ' + age + ' day' + (age === 1 ? '' : 's') + ' old'
         + (item.legacy ? '. Learned automatically by an earlier version; approve it to keep blocking it.' : '');
       label.title = String(item.reason || '');
       const actions = document.createElement('div');
@@ -2645,7 +2765,7 @@ function renderTrackerProposals() {
         btn.type = 'button';
         btn.className = 'btn tracker-mode-btn';
         btn.textContent = text;
-        btn.title = titleText;
+        btn.title = titleText + (value === 'block' && item.knownAliases ? ', including confirmed tracking aliases of this service' : '');
         btn.addEventListener('click', () => decide(item.domain, value, line));
         actions.appendChild(btn);
       });
@@ -3042,13 +3162,8 @@ function computeScore(data, cookies) {
     else if (w.store) { storePenalty += w.store; storeHits++; }
   });
   urlPenalty = Math.min(40, urlPenalty);
-  // A session in script-readable storage is a real weakness and also how almost
-  // every modern app is built. At 24 it alone dropped an otherwise-clean site two
-  // whole grades, which said "you are riskier than you are" about most of the web
-  // and left the letter unable to distinguish an ordinary SPA from a careless one.
-  // The URL cap stays 40: putting a credential in the URL really is worse, because
-  // it leaves the origin entirely -- into history, the Referer header, and every
-  // link anyone pastes. Keeping the gap between the two is the point.
+  // Script-readable sessions are weaker than HttpOnly storage, but URL credentials also leak through history and copied
+  // links; retain the higher URL penalty.
   storePenalty = Math.min(16, storePenalty);
   // Mishandling a credential on the page that asks for one is worse than doing it
   // on a blog, so the same evidence costs more there.
@@ -3083,12 +3198,8 @@ function computeScore(data, cookies) {
       });
       const httpOnlyPenalty = missing.httpOnly ? 16 : 0;
       const securePenalty = missing.secure ? 12 : 0;
-      // "A script on this origin can read the session" is ONE failure however many
-      // places the evidence turns up. A session sitting in localStorage AND in a
-      // non-HttpOnly cookie is usually the same token, so it was being charged
-      // twice for one design decision. Charge it once, at the higher of the two.
-      // Missing Secure is a genuinely different failure -- the cookie travels in
-      // clear text -- so that still adds on top.
+      // Charge script-readable session exposure once at the higher storage/cookie score. Missing Secure is a separate
+      // transport risk.
       const alreadyCharged = Math.min(Math.min(34, httpOnlyPenalty), storePenalty);
       score -= Math.min(34, Math.min(34, httpOnlyPenalty) - alreadyCharged + securePenalty);
       if (missing.httpOnly) reasons.push(missing.httpOnly + ' session cookie(s) readable by scripts (no HttpOnly)');
@@ -3982,74 +4093,6 @@ $('ss-panic').addEventListener('click', () => {
   });
 });
 
-// ----- Privacy cleaner -----
-$('cl-run').addEventListener('click', () => {
-  const types = {
-    cache: $('cl-cache').checked,
-    // This line was missing, and with it the whole feature. The checkbox is cl-consent, the
-    // field the worker reads is consentCookies, and neither name appeared in the other's file,
-    // so nothing looked wrong in either place: the control was read by nobody and the sweep was
-    // gated on a field nobody sent. Ticking only this box produced "Pick at least one thing to
-    // clean", which reads as a UI quirk rather than as the feature being absent (PI-01).
-    consentCookies: $('cl-consent').checked,
-    cookies: $('cl-cookies').checked,
-    history: $('cl-history').checked,
-    downloads: $('cl-downloads').checked,
-    storage: $('cl-storage').checked,
-    serviceWorkers: $('cl-sw').checked,
-    formData: $('cl-form').checked,
-    sitePermissions: $('cl-perms').checked,
-  };
-  const out = $('cl-result');
-  const anyChecked = Object.values(types).some(Boolean);
-  if (!anyChecked) { out.style.display = 'block'; out.style.color = 'var(--ink-faint)'; out.textContent = 'Pick at least one thing to clean.'; return; }
-  // Only the all-cookies option signs anyone out. The consent sweep deliberately does not, so it
-  // must not inherit the scary confirmation -- not being frightening is the whole point of it.
-  const willSignOut = types.cookies ? '\n\nClearing ALL cookies will sign you out of websites.' : '';
-  if (!confirm('Clean the selected browser data for all sites?' + willSignOut + '\n\nThis cannot be undone.')) return;
-  const btn = $('cl-run');
-  btn.disabled = true; btn.textContent = 'Cleaning…';
-  out.style.display = 'block'; out.style.color = 'var(--ink-faint)'; out.textContent = '';
-  const sinceSel = $('cl-since');
-  const sinceMs = sinceSel ? Number(sinceSel.value) || 0 : 0;
-  chrome.runtime.sendMessage({ kind: 'clean-browser', types, sinceMs }, (res) => { void chrome.runtime.lastError;
-    btn.disabled = false; btn.textContent = 'Clean selected';
-    if (res && res.ok) {
-      out.style.color = 'var(--wo-success)';
-      // Report the consent sweep by count. "Removed 143 across 62 sites, kept the rest" is the
-      // sentence that tells someone it worked AND that it did not touch their logins.
-      const parts = res.cleared.map(prettyDataType).filter((v, i, a) => a.indexOf(v) === i);
-      let text = parts.length ? 'Cleaned: ' + parts.join(', ') + '.' : '';
-      if (res.consent) {
-        const c = res.consent;
-        text += (text ? ' ' : '')
-          + (c.removed
-            ? 'Removed ' + c.removed + ' consent and tracking cookie' + (c.removed === 1 ? '' : 's')
-              + ' across ' + c.sites + ' site' + (c.sites === 1 ? '' : 's')
-              + '; kept the other ' + c.kept + ', so you are still signed in.'
-            : 'No consent or tracking cookies left to remove.');
-      }
-      if (res.perms) {
-        const p = res.perms;
-        text += (text ? ' ' : '')
-          + (p.reset && p.reset.length
-            ? 'Reset ' + p.reset.join(', ').toLowerCase() + ' back to asking.'
-            : (p.unsupported && p.unsupported.length
-              ? 'This Chrome does not let extensions reset those site permissions.'
-              : 'Site permissions could not be reset.'));
-      }
-      out.textContent = text;
-    } else {
-      out.style.color = 'var(--wo-popup-soft-danger)';
-      // Show what actually went wrong. A bare "try again" sent me hunting for a while when the
-      // real answer -- a ReferenceError naming the exact binding -- was sitting in the response.
-      out.textContent = 'Cleaning failed: ' + ((res && res.error) || 'no response from WardenOne');
-    }
-  });
-});
-function prettyDataType(k) {
-  return ({ cache: 'cache', cacheStorage: 'cache', cookies: 'cookies', history: 'history', downloads: 'downloads', localStorage: 'local storage', indexedDB: 'local storage', webSQL: 'local storage', serviceWorkers: 'service workers', formData: 'form data' })[k] || k;
-}
 function permissionResetSummary(result) {
   if (!result) return '';
   const reset = Array.isArray(result.reset) ? result.reset : [];
@@ -5421,12 +5464,7 @@ function renderHiddenList() {
           undo.disabled = true;
           chrome.runtime.sendMessage({ kind: 'hidden-remove', hostname: savedHost, selector: sel }, () => {
             void chrome.runtime.lastError;
-            /* No reload. The worker tells every matching tab to rebuild its
-               hidden-element stylesheet and to drop the Zapper's mark from
-               anything the list no longer covers, so the element comes back in
-               place. Reloading once per undo -- which is what this did -- looked
-               like a reload loop to WardenOne's own detector the moment somebody
-               undid more than one thing. */
+            /* The worker clears obsolete Zapper marks and rebuilds matching tabs' stylesheets; undo needs no reload. */
             renderHiddenList();
           });
         });
@@ -5707,12 +5745,8 @@ if (permissionsLink) permissionsLink.addEventListener('click', (event) => {
   } catch (_) {}
 });
 
-/* ---- Site Dashboard ----------------------------------------------------------------------------
-   The current site as the popup's centre: a card under the master switch with what WardenOne
-   stopped on this page, and a view behind it with the detail. The numbers come from the worker
-   (site-dashboard: the network rules Chrome matched in this tab, and the Activity Centre's own log
-   cut to this site and this page load); the switch states come from this popup's config. Nothing
-   here changes a setting. */
+/* Site Dashboard uses worker-provided per-page network/activity counts and this popup's config for switch states. Rendering
+   it does not change settings. */
 /* label: the dashboard's row. a / many: how the one-line card names one of them, or several. */
 const SITE_DASH_CATEGORIES = [
   { id: 'trackers', label: 'Trackers', a: 'a tracker', many: 'trackers' },
@@ -6394,7 +6428,8 @@ const POPUP_SECTION_IDS = {
   'advanced detection (catches rotating/custom domains)': 'advanced-detection',
   'sessionshield \u2014 login & session protection': 'sessionshield', 'blocklist (auto-updating)': 'blocklist',
   'eyeshield': 'eyeshield', 'what wardenone watches': 'watches', 'interface': 'interface',
-  'settings backup': 'backup', 'privacy cleaner': 'cleaner'
+  'settings backup': 'backup', 'privacy cleaner': 'cleaner',
+  'security centre': 'security-centre', 'browser health': 'browser-health'
 };
 function popupSectionId(heading) {
   const text = (heading.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -6425,7 +6460,7 @@ const POPUP_SECTION_DEFAULT = popupSectionRuns().map((run) => run.id);
 function resolvePopupSectionOrder(saved, present, defaults) {
   const known = new Set(present);
   const order = [];
-  (Array.isArray(saved) ? saved : []).forEach((id) => {
+  (Array.isArray(saved) ? saved.slice(0, 64) : []).forEach((id) => {
     if (typeof id === 'string' && known.has(id) && order.indexOf(id) === -1) order.push(id);
   });
   const base = defaults.filter((id) => known.has(id)).concat(present.filter((id) => defaults.indexOf(id) === -1));
@@ -6455,12 +6490,19 @@ function applyPopupSectionOrder(saved) {
   return order;
 }
 
+let popupSectionOrderEdited = false;
 function savePopupSectionOrder(order) {
+  popupSectionOrderEdited = true;
   const isDefault = order.length === POPUP_SECTION_DEFAULT.length && order.every((id, i) => id === POPUP_SECTION_DEFAULT[i]);
+  const saved = () => {
+    const error = chrome.runtime.lastError;
+    if (error) arrangeStatus('Could not save section order: ' + error.message);
+    else writePopupMemoryMirror(POPUP_SECTION_ORDER_KEY, order.slice());
+  };
   try {
-    if (isDefault) chrome.storage.local.remove(POPUP_SECTION_ORDER_KEY);
-    else chrome.storage.local.set({ [POPUP_SECTION_ORDER_KEY]: order });
-  } catch (_) {}
+    if (isDefault) chrome.storage.local.remove(POPUP_SECTION_ORDER_KEY, saved);
+    else chrome.storage.local.set({ [POPUP_SECTION_ORDER_KEY]: order.slice() }, saved);
+  } catch (error) { arrangeStatus('Could not save section order: ' + error.message); }
 }
 
 const ARRANGE_SVG = {
@@ -6556,10 +6598,10 @@ function arrangeStatus(text) {
 
 function commitArrangeOrder(order, movedId, focusWhat) {
   const applied = applyPopupSectionOrder(order);
-  savePopupSectionOrder(applied);
   renderArrangeList({ id: movedId, what: focusWhat, flash: true });
   const run = popupSectionRuns().find((r) => r.id === movedId);
   if (run) arrangeStatus(popupSectionTitle(run) + ' is now ' + (applied.indexOf(movedId) + 1) + ' of ' + applied.length + '.');
+  savePopupSectionOrder(applied);
 }
 
 function moveArrangeSection(id, delta, focusWhat) {
@@ -6712,13 +6754,21 @@ function wireArrangeDrag(list) {
 (function initPopupSectionOrder() {
   const box = $('groups');
   if (!box || !POPUP_SECTION_DEFAULT.length) return;
-  /* Storage can answer after the popup is already being measured. Keep the controls usable while
-     the saved order arrives; a brief default-order paint is safer than an invisible popup. */
+  const mirroredOrder = readPopupMemoryMirror(POPUP_SECTION_ORDER_KEY);
+  if (Array.isArray(mirroredOrder)) {
+    applyPopupSectionOrder(mirroredOrder);
+    adjustPopupScrollAnchor();
+  }
   try {
     chrome.storage.local.get(POPUP_SECTION_ORDER_KEY, (res) => {
+      const error = chrome.runtime.lastError;
       try {
         const saved = res && res[POPUP_SECTION_ORDER_KEY];
-        if (Array.isArray(saved) && saved.length) applyPopupSectionOrder(saved);
+        if (!popupSectionOrderEdited && !error) {
+          if (Array.isArray(saved) && saved.length) applyPopupSectionOrder(saved);
+          adjustPopupScrollAnchor();
+          writePopupMemoryMirror(POPUP_SECTION_ORDER_KEY, Array.isArray(saved) ? saved : POPUP_SECTION_DEFAULT);
+        }
       } catch (_) {}
     });
   } catch (_) {}
@@ -6745,9 +6795,9 @@ function wireArrangeDrag(list) {
   const reset = $('arrange-reset');
   if (reset) reset.addEventListener('click', () => {
     applyPopupSectionOrder(POPUP_SECTION_DEFAULT);
-    savePopupSectionOrder(POPUP_SECTION_DEFAULT);
     renderArrangeList();
     arrangeStatus('Back to the original order.');
+    savePopupSectionOrder(POPUP_SECTION_DEFAULT);
   });
   const list = $('arrange-list');
   if (list) {

@@ -75,6 +75,7 @@ function realm() {
   const sandbox = {
     URL, String, Number, Array, Object, Math, JSON, Map, Set, Date, RegExp, console,
     decodeURIComponent, encodeURIComponent,
+    resolveKnownAlias: () => null,
     setTimeout: (fn) => { timers.push(fn); return timers.length; },
     registrableDomainBg: (h) => String(h || '').split('.').slice(-2).join('.'),
     siteIdentityBg: (h) => String(h || '').split('.').slice(-2).join('.'),

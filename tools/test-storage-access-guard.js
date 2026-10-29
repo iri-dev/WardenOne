@@ -337,7 +337,6 @@ pending.push((async function theTopLevelVariantIsCoveredToo() {
     /sign(ing)? in|checkout|comment login/i.test(desc), desc.slice(0, 140));
 }());
 
-// ---------------------------------------------------------------------------
 
 Promise.all(pending).then(() => {
   if (failures.length) {

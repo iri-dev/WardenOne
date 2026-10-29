@@ -10,8 +10,8 @@ const source = fs.readFileSync('popup-settings-search.js', 'utf8');
 const popupHtml = fs.readFileSync('popup.html', 'utf8');
 const searchBlock = source.match(/;\(function\(\)\{\r?\n  var inp=document\.getElementById\('wo-settings-search'\);[\s\S]*?\r?\n\}\)\(\);/);
 assert(searchBlock, 'popup settings-search module must remain discoverable');
-assert(popupHtml.indexOf('<script src="popup.js"></script>') < popupHtml.indexOf('<script src="popup-settings-search.js"></script>'),
-  'settings search must load after popup state helpers');
+assert(popupHtml.indexOf('<script src="popup-scroll-memory.js"></script>') < popupHtml.indexOf('<script src="popup-settings-search.js"></script>'),
+  'settings search must load after popup memory helpers');
 assert(popupHtml.includes('id="js-shield"') && popupHtml.includes('WebAssembly startup'),
   'the search fixture must cover the real Script Shield section');
 
@@ -180,6 +180,7 @@ const document = {
 };
 
 const storage = { get() {}, set() {}, remove() {} };
+let initialMemory = {};
 const context = {
   POPUP_SEARCH_KEY: 'wardenone_popup_search_memory',
   clearTimeout() {},
@@ -187,6 +188,8 @@ const context = {
   Date,
   document,
   popupScrollStore() { return storage; },
+  readInitialPopupMemory(callback) { callback(initialMemory); },
+  writePopupMemoryMirror(key, entry) { initialMemory[key] = entry; },
   restorePopupSearch() {},
   setTimeout() { return 1; },
   window: { addEventListener() {} },
@@ -274,5 +277,14 @@ for (const typo of ['microphon', 'recogniton', 'camra']) {
 
 searchInput.value = '';
 searchInput.emit('input');
+
+initialMemory = { wardenone_popup_search_memory: { q: 'WebAssembly' } };
+let restored = false;
+context.restorePopupSearch(() => {
+  restored = true;
+  assert.strictEqual(searchInput.value, 'WebAssembly', 'the prefetched search must apply before scroll restoration continues');
+  assert(!webAssemblyRow.classList.contains('wo-hidden') && !scriptGroup.classList.contains('wo-hidden'));
+});
+assert(restored);
 
 console.log('[ok] popup settings-search grouping checks passed');

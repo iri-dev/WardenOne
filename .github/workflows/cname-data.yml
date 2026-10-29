@@ -1,0 +1,32 @@
+name: CNAME source review
+on:
+  schedule:
+    - cron: '20 5 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mapping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+      - run: node tools/build-cname-data.js --refresh
+      - run: node tools/build-tracker-network-data.js --build
+      - run: node tools/build-source-inventory.js
+      - run: node tools/test-cname-protection.js
+      - run: node tools/test-tracker-evidence.js
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cname-source-candidate
+          path: |
+            cname-trackers.json
+            tracker-network-data.js
+            docs/cname-source-snapshot.json.gz
+            docs/source-inventory.json
+            CREDITS.md
+            THIRD_PARTY_NOTICES.html
+          retention-days: 30

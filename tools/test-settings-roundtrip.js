@@ -85,10 +85,11 @@ check('secrets do not travel', !('downloadSafeBrowsingKey' in exported) && !Obje
 const back = api.sanitizeImportedSettings(exported);
 const expected = Object.assign({}, live);
 Object.keys(expected).filter((k) => /Key$/.test(k)).forEach((k) => { delete expected[k]; });
+delete expected.siteRecoveryUntil;
 check('everything the exporter wrote comes back, nothing counted unrecognised', back.ignored === 0, 'ignored ' + back.ignored);
 check('the import equals the export, deeply', JSON.stringify(back.settings) === JSON.stringify(exported),
   Object.keys(exported).filter((k) => JSON.stringify(back.settings[k]) !== JSON.stringify(exported[k])).join(', '));
-check('the import equals the live configuration minus secrets', JSON.stringify(back.settings) === JSON.stringify(expected),
+check('the import equals the live configuration minus secrets and temporary trials', JSON.stringify(back.settings) === JSON.stringify(expected),
   Object.keys(expected).filter((k) => JSON.stringify(back.settings[k]) !== JSON.stringify(expected[k])).join(', '));
 check('the per-site overrides survive intact (PI-03)', JSON.stringify(back.settings.siteOverrides) === JSON.stringify(live.siteOverrides), back.settings.siteOverrides);
 check('the worker-only keys are applied, not refused (PI-04)', back.settings.logThirdPartyBeacons === false && back.settings.downloadHashCheck === false

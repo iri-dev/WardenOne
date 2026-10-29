@@ -592,12 +592,8 @@ function wardenOneIsPublicSuffix(host) {
     || wardenOneCompactRules(tld, WARDENONE_ICANN_GROUPS, wardenOneIcannCache)?.has(wildcard));
 }
 
-/* registrableDomain with the complete private list, for trust decisions: "are these two hosts one
- * owner". The answer is never broader than registrableDomain's -- a private rule can only push the
- * boundary further right, and the longer of the two is taken regardless -- so switching a check to
- * this can withdraw trust between two tenants and can never grant it. Lookups keyed by the
- * registered domain (WHOIS, breach records, list membership) keep registrableDomain: alice.webflow.io
- * is a site, but webflow.io is the domain somebody registered. */
+/* Private suffix rules can only narrow trust between tenants. Keep registration-based lookups such as WHOIS and feed
+   membership on registrableDomain. */
 function siteIdentity(host) {
   const h = regDomain(host);
   const loose = registrableDomain(h);

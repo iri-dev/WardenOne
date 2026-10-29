@@ -179,7 +179,7 @@ const isBlocked = (p) => p.then(() => false, (e) => e && e.name === 'NotAllowedE
   }
 
   /* ---- 5. the relay ------------------------------------------------------------------ */
-  const relay = between(BG, "if (msg && msg.kind === 'rg-block') {", '// ADAPTIVE LEARNING', 'the rg-block branch');
+  const relay = between(BG, "if (msg && msg.kind === 'rg-block') {", '/* Page-derived observations', 'the rg-block branch');
   check('the worker relays a frame block to frame 0 of the same tab',
     /normalized\.type === 'blocked_command_paste_frame' && Number\(sender\.frameId\) > 0/.test(relay)
     && /chrome\.tabs\.sendMessage\(tabId, \{\s*kind: 'frame-clickfix'/.test(relay) && /\{ frameId: 0 \}/.test(relay));

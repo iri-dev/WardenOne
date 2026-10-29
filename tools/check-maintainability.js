@@ -147,6 +147,9 @@ function checkContentBuild() {
 
 [
   'background.js',
+  'background-privacy-cleaner.js',
+  'background-cname.js',
+  'cname-utils.js',
   'background-startup.js',
   'background-extension-watch.js',
   'background-extension-reputation.js',
@@ -155,15 +158,19 @@ function checkContentBuild() {
   'bridge.js',
   'frame-image-logger.js',
   'popup.js',
+  'popup-privacy-cleaner.js',
   'popup-health.js',
   'popup-scroll-memory.js',
   'popup-diagnostics.js',
   'popup-settings-search.js',
   'site-dashboard-shared.js',
+  'site-recovery.js',
+  'upgrade-config.js',
   'notifications.js',
   'notification-schema.js',
   'notification-manager.js',
   'offscreen.js',
+  'history-store.js',
   'extensions.js',
   'theme.js',
   'onboarding.js',
@@ -196,6 +203,8 @@ function checkContentBuild() {
   'tools/test-feed-check-coverage.js',
   'tools/test-memory-shield.js',
   'tools/test-download-guard.js',
+  'tools/test-forced-downloads.js',
+  'tools/test-download-auto-skip-intent.js',
   'tools/test-download-interruption-policy.js',
   'tools/test-download-early-pause.js',
   'tools/test-download-review-cleanup.js',
@@ -232,6 +241,24 @@ function checkContentBuild() {
   'tools/test-keyboard-lock-guard.js',
   'tools/test-fingerprint-surfaces.js',
   'tools/test-fingerprint-media.js',
+  'tools/test-fingerprint-adversarial.js',
+  'tools/lib/fingerprint-adversarial-harness.js',
+  'tools/browser-fingerprint-resistance.js',
+  'tools/test-ghostery-performance.js',
+  'tools/prepare-ghostery-performance.js',
+  'tools/browser-ghostery-performance.js',
+  'tools/browser-ghostery-performance-lifecycle.js',
+  'tools/lib/ghostery-performance.js',
+  'tools/lib/ghostery-performance-fixtures.js',
+  'tools/lib/outbound-hosts.js',
+  'tools/lib/outbound-inventory.js',
+  'tools/build-outbound-inventory.js',
+  'tools/browser-outbound-privacy.js',
+  'tools/browser-uninstall-privacy.js',
+  'tools/browser-site-recovery.js',
+  'tools/test-outbound-inventory.js',
+  'tools/test-site-recovery.js',
+  'tools/test-privacy-erase-write.js',
   'tools/test-script-mode-order.js',
   'tools/test-payment-frame-origin.js',
   'tools/test-overlay-evidence.js',
@@ -241,6 +268,7 @@ function checkContentBuild() {
   'tools/test-tracker-cookie-rule.js',
   'tools/test-known-limits.js',
   'tools/test-extension-verdicts.js',
+  'tools/browser-extension-security.js',
   'tools/test-privacy-disclosure.js',
   'tools/test-pwned-password-check.js',
   'tools/test-header-shield.js',
@@ -277,6 +305,7 @@ function checkContentBuild() {
   'tools/test-extension-check.js',
   'tools/test-badge-yield.js',
   'tools/test-media-scan-timing.js',
+  'tools/test-autoplay-guard.js',
   'tools/test-hot-path-layout.js',
   'tools/test-user-blocklist.js',
   'tools/test-autofill-trap.js',
@@ -359,6 +388,11 @@ function checkContentBuild() {
   'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
   'tools/test-message-hardening.js',
+  'tools/test-message-boundaries.js',
+  'tools/test-history-modes.js',
+  'tools/test-storage-inventory.js',
+  'tools/test-private-network.js',
+  'tools/test-remote-input-boundaries.js',
   'tools/test-secret-hygiene.js',
   'tools/test-history-privacy.js',
   'tools/test-privacy-data-erase.js',
@@ -382,6 +416,10 @@ function checkContentBuild() {
   'tools/test-message-reachability.js',
   'tools/test-list-fetch-broker.js',
   'tools/test-cosmetic-parser-chunks.js',
+  'tools/test-filter-parsing-benchmark.js',
+  'tools/test-filter-compilation.js',
+  'tools/test-privacy-baseline.js',
+  'tools/test-cname-protection.js',
   'tools/test-history-retention.js',
   'tools/test-listener-registration.js',
   'tools/test-logger-batch-reset.js',
@@ -397,6 +435,24 @@ function checkContentBuild() {
   'tools/test-blocker-durability.js',
   'tools/test-warning-ownership.js',
   'tools/test-tracker-learner-trust.js',
+  'tools/test-tracker-evidence.js',
+  'tools/test-tracker-evidence-corpus.js',
+  'tools/test-tracker-sketch.js',
+  'tools/build-tracker-network-data.js',
+  'tools/bench-tracker-evidence.js',
+  'tools/bench-tracker-sketch.js',
+  'tools/browser-tracker-learning.js',
+  'tools/lib/tracker-learner-harness.js',
+  'tracker-learner-utils.js',
+  'tracker-network-data.js',
+  'tracker-attribution.js',
+  'identifier-detector.js',
+  'background-identifiers.js',
+  'consent-state.js',
+  'tools/test-consent-stress.js',
+  'tools/browser-consent-stress.js',
+  'privacy-signals.js',
+  'cookie-access.js',
   'tools/test-frame-scope-disclosure.js',
   'tools/test-frame-credential-guard.js',
   'tools/test-site-identity.js',
@@ -432,6 +488,7 @@ function checkContentBuild() {
   'tools/test-site-dashboard-presentation.js',
   'tools/test-site-card-fold.js',
   'tools/test-arrange-drag.js',
+  'tools/test-section-order.js',
   'tools/test-onboarding-site-card.js',
   'tools/test-onboarding-pin-guidance.js',
   'tools/test-onboarding-coverage.js',
@@ -451,11 +508,18 @@ function checkContentBuild() {
   'tools/browser-audit-mediums.js',
   'tools/browser-element-zapper.js',
   'tools/browser-media-security.js',
+  'tools/browser-badge-csp.js',
   'tools/browser-resource-saver.js',
   'tools/test-animated-image-saver.js',
   'tools/browser-engine-smoke.js',
   'tools/browser-download-hash-redirects.js',
+  'tools/browser-forced-downloads.js',
   'tools/browser-reputation-bypass.js',
+  'tools/browser-message-boundaries.js',
+  'tools/browser-adversarial-dnr.js',
+  'tools/browser-history-modes.js',
+  'tools/audit-message-boundaries.js',
+  'tools/audit-storage.js',
   'tools/browser-runtime-smoke.js',
   'tools/browser-image-logger-loads.js',
   'tools/browser-grabber-switches.js',
@@ -520,6 +584,7 @@ function checkContentBuild() {
   'settings.js',
   'settings-data.js',
   'config-lock.js',
+  'upgrade-config.js',
 ].forEach(checkSyntax);
 
 [
@@ -558,16 +623,8 @@ checkCommand('performance budget tests', ['tools/test-performance-budget.js']);
 checkCommand('memory shield tests', ['tools/test-memory-shield.js']);
 checkCommand('static DNR hardening check', ['tools/harden-static-dnr.js', '--check']);
 checkCommand('grabber rulepack split', ['tools/build-grabber-rulepacks.js', '--check']);
-/* The harness embeds a copy of the shipped toast block so it opens by double-click
-   rather than needing a server. A copy can go stale, and nothing was checking this
-   one -- so a toast added to the engine could be missing from the page used to test
-   toast timings, with nothing to say so.
-
-   Guarded on presence: both files are local-only and absent from a fresh clone,
-   because the page and its builder only make sense as a pair and neither is
-   shipped. CI has neither, so an unguarded check fails there for a file the repo
-   is not supposed to contain -- which is exactly what happened when this was
-   added without the guard. */
+/* The local-only toast harness embeds engine code. Check freshness only when its page and builder are present; fresh clones
+   and CI omit both. */
 if (exists('tools/build-toast-harness.js') && exists('tools/toast-harness.html')) {
   checkCommand('toast harness matches the shipped toast block', ['tools/build-toast-harness.js', '--check']);
 } else {
@@ -601,6 +658,11 @@ checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);
 checkCommand('bridge host list tests', ['tools/test-bridge-host-lists.js']);
 checkCommand('MAIN config minimisation tests', ['tools/test-main-config-minimisation.js']);
 checkCommand('hostile message hardening tests', ['tools/test-message-hardening.js']);
+checkCommand('message trust boundary tests', ['tools/test-message-boundaries.js']);
+checkCommand('history storage mode tests', ['tools/test-history-modes.js']);
+checkCommand('storage inventory tests', ['tools/test-storage-inventory.js']);
+checkCommand('private network boundary tests', ['tools/test-private-network.js']);
+checkCommand('remote input boundary tests', ['tools/test-remote-input-boundaries.js']);
 checkCommand('message rate limit tests', ['tools/test-message-rate-limits.js']);
 checkCommand('secret hygiene tests', ['tools/test-secret-hygiene.js']);
 checkCommand('history privacy tests', ['tools/test-history-privacy.js']);
@@ -658,6 +720,8 @@ checkCommand('shared extension theme tests', ['tools/test-theme.js']);
 checkCommand('popup label tests', ['tools/test-popup-labels.js']);
 checkCommand('verification compatibility tests', ['tools/test-verification-compatibility.js']);
 checkCommand('download guard tests', ['tools/test-download-guard.js']);
+checkCommand('forced download protection tests', ['tools/test-forced-downloads.js']);
+checkCommand('download auto-skip intent tests', ['tools/test-download-auto-skip-intent.js']);
 checkCommand('download interruption policy tests', ['tools/test-download-interruption-policy.js']);
 checkCommand('download early-pause tests', ['tools/test-download-early-pause.js']);
 checkCommand('download review cleanup tests', ['tools/test-download-review-cleanup.js']);
@@ -681,6 +745,7 @@ checkCommand('consent reject tests', ['tools/test-consent-reject.js']);
 checkCommand('consent wall tests', ['tools/test-consent-wall.js']);
 checkCommand('Update Guardian tests', ['tools/test-update-guardian.js']);
 checkCommand('WardenOne build update tests', ['tools/test-build-update.js']);
+checkCommand('saved-profile config migration tests', ['tools/test-upgrade-config.js']);
 checkCommand('protection count tests', ['tools/test-protection-count.js']);
 checkCommand('engine watchdog tests', ['tools/test-engine-watchdog.js']);
 checkCommand('file access guard tests', ['tools/test-file-access-guard.js']);
@@ -719,10 +784,43 @@ checkCommand('stale-state tests', ['tools/test-stale-state.js']);
 checkCommand('storage prune ladder tests', ['tools/test-storage-prune-ladder.js']);
 checkCommand('cosmetic provenance tests', ['tools/test-cosmetic-provenance.js']);
 checkCommand('cosmetic source chunk tests', ['tools/test-cosmetic-parser-chunks.js']);
+checkCommand('filter parsing benchmark tests', ['tools/test-filter-parsing-benchmark.js']);
+checkCommand('filter compilation tests', ['tools/test-filter-compilation.js']);
+checkCommand('privacy baseline tests', ['tools/test-privacy-baseline.js']);
+checkCommand('review archive boundary tests', ['tools/test-review-archive.js']);
+checkCommand('protection ownership contracts', ['tools/test-protection-contracts.js']);
+checkCommand('release review tests', ['tools/test-release-review.js']);
+checkCommand('CNAME compilation work bounds', ['tools/test-cname-compilation-cost.js']);
+checkCommand('Ghostery baseline provenance', ['tools/test-ghostery-baseline.js']);
+checkCommand('tracker attribution data parity', ['tools/build-tracker-catalog.js', '--check']);
+checkCommand('tracker attribution boundaries', ['tools/test-tracker-attribution.js']);
+checkCommand('adaptive identifier evidence', ['tools/test-identifier-detector.js']);
+checkCommand('consent outcome verification', ['tools/test-consent-outcomes.js']);
+checkCommand('consent stress regressions', ['tools/test-consent-stress.js']);
+checkCommand('GPC surface parity', ['tools/test-privacy-signals.js']);
+checkCommand('frame cookie access', ['tools/test-cookie-access.js']);
+if (process.env.WARDENONE_RELEASE_REPORT) {
+  checkCommand('native release acceptance', ['tools/summarize-release-rematch.js', process.env.WARDENONE_RELEASE_REPORT]);
+}
+checkCommand('CNAME protection tests', ['tools/test-cname-protection.js']);
+checkCommand('tracker cookie isolation tests', ['tools/test-tracker-cookie-isolation.js']);
+checkCommand('CNAME mapping source parity', ['tools/build-cname-data.js', '--check']);
 checkCommand('site-compatibility host scope tests', ['tools/test-compat-host-scope.js']);
 checkCommand('blocker durability tests', ['tools/test-blocker-durability.js']);
 checkCommand('warning ownership tests', ['tools/test-warning-ownership.js']);
 checkCommand('tracker learner trust tests', ['tools/test-tracker-learner-trust.js']);
+checkCommand('tracker network data parity', ['tools/build-tracker-network-data.js', '--check']);
+checkCommand('tracker evidence tests', ['tools/test-tracker-evidence.js']);
+checkCommand('fingerprint consistency tests', ['tools/test-fingerprint-consistency.js']);
+checkCommand('fingerprint adversarial tests', ['tools/test-fingerprint-adversarial.js']);
+checkCommand('matched Ghostery performance tests', ['tools/test-ghostery-performance.js']);
+checkCommand('outbound inventory parity', ['tools/build-outbound-inventory.js', '--check']);
+checkCommand('outbound privacy inventory tests', ['tools/test-outbound-inventory.js']);
+checkCommand('privacy erase write-boundary tests', ['tools/test-privacy-erase-write.js']);
+checkCommand('client rectangle cache tests', ['tools/test-client-rect-cache.js']);
+checkCommand('live-site readiness tests', ['tools/test-real-site-readiness.js']);
+checkCommand('tracker sketch tests', ['tools/test-tracker-sketch.js']);
+checkCommand('tracker evidence corpus tests', ['tools/test-tracker-evidence-corpus.js']);
 checkCommand('frame scope disclosure tests', ['tools/test-frame-scope-disclosure.js']);
 checkCommand('frame credential guard tests', ['tools/test-frame-credential-guard.js']);
 checkCommand('shared-host site identity tests', ['tools/test-site-identity.js']);
@@ -769,6 +867,7 @@ checkCommand('tracker learner consent tests', ['tools/test-tracker-learner-conse
 checkCommand('settings round-trip tests', ['tools/test-settings-roundtrip.js']);
 checkCommand('master switch tests', ['tools/test-master-switch.js']);
 checkCommand('site override scope tests', ['tools/test-site-override-scope.js']);
+checkCommand('guided site recovery tests', ['tools/test-site-recovery.js']);
 checkCommand('permission sweep tests', ['tools/test-permission-sweep.js']);
 checkCommand('device access guard tests', ['tools/test-device-access-guard.js']);
 checkCommand('notification guard tests', ['tools/test-notification-guard.js']);
@@ -783,6 +882,7 @@ checkCommand('site dashboard count tests', ['tools/test-site-dashboard-counts.js
 checkCommand('site dashboard presentation tests', ['tools/test-site-dashboard-presentation.js']);
 checkCommand('site card fold tests', ['tools/test-site-card-fold.js']);
 checkCommand('arrange drag tests', ['tools/test-arrange-drag.js']);
+checkCommand('section order persistence tests', ['tools/test-section-order.js']);
 checkCommand('onboarding site card tests', ['tools/test-onboarding-site-card.js']);
 checkCommand('onboarding pin guidance tests', ['tools/test-onboarding-pin-guidance.js']);
 checkCommand('onboarding feature coverage tests', ['tools/test-onboarding-coverage.js']);
@@ -848,6 +948,7 @@ checkCommand('firewall decision semantics', ['tools/test-firewall-semantics.js']
 checkCommand('check an extension', ['tools/test-extension-check.js']);
 checkCommand('badge yields to page controls', ['tools/test-badge-yield.js']);
 checkCommand('media scan timing', ['tools/test-media-scan-timing.js']);
+checkCommand('autoplay guard tests', ['tools/test-autoplay-guard.js']);
 checkCommand('hot path layout', ['tools/test-hot-path-layout.js']);
 checkCommand('user blocklist', ['tools/test-user-blocklist.js']);
 checkCommand('autofill trap', ['tools/test-autofill-trap.js']);
@@ -896,11 +997,7 @@ checkCommand('YouTube prune tests', ['tools/test-yt-prune.js']);
 // to be covered or explicitly excluded. A second manual inventory would drift too.
 const gateSource = read('tools/check-maintainability.js') || '';
 
-// Suites that exist but are never executed here. This used to accept a suite whose name appeared
-// ANYWHERE in this file, and the syntax-check list above names every one of them -- so
-// test-privacy-disclosure.js was syntax-checked from the day it was added and never run, and four
-// of its checks went red unseen while the privacy policy and the code moved apart. Being named is
-// not being run: a suite counts only when a checkCommand call executes it.
+// Count suites only when checkCommand executes them; appearing in the syntax inventory is insufficient.
 {
   const onDisk = fs.readdirSync('tools')
     .filter((f) => /^test-.*\.js$/.test(f))
@@ -914,11 +1011,7 @@ const gateSource = read('tools/check-maintainability.js') || '';
   }
 }
 
-// Every tools/*.js must at least PARSE. Only the test suites were ever wired in, so both
-// filter-list builders sat with their shebang on line 7 -- a hard SyntaxError, since Node strips
-// one only at the very start of a file -- and no gate step ever ran them to find out. Compiled
-// through Node's own CommonJS wrapper, which is what `node --check` does, and read from the
-// directory so a tool added tomorrow is covered without anyone remembering to list it.
+// Syntax-check every tools/*.js through Node's CommonJS wrapper, including builders and newly added tools.
 {
   const vm = require('vm');
   const files = fs.readdirSync('tools').filter((f) => /\.js$/.test(f)).map((f) => 'tools/' + f);

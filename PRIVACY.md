@@ -1,6 +1,6 @@
 # WardenOne — Privacy Policy
 
-**Last updated: October 16, 2026**
+**Last updated: October 27, 2026**
 
 WardenOne is a browser security extension that protects you against phishing, malware
 downloads, redirect chains, IP grabbers, trackers, token theft, bad certificates, and
@@ -20,6 +20,22 @@ unclear, contact us (see **Contact** below).
   visit.** Every default-on feature either runs entirely on your device or talks only to
   hosts the page you are viewing has already contacted itself.
 - **We never sell, rent, or share your data**, and we do not use it for advertising.
+- Tracker/service names in Activity and Network Logger come from a bundled local
+  catalog. Name lookups and **Refresh names** send no browsing hostname to a server.
+  **Source** opens the pinned public dataset only when you click it.
+- Tracker learner also checks unfamiliar URL values for repeated reuse across sites.
+  It keeps at most 256 keyed digests and three hashed site counters per value in worker
+  memory, for at most 30 minutes or until the worker restarts. Raw values, parameter
+  names and visited-site lists are not stored. Activity records only the destination
+  hostname and a suspected-identifier summary, subject to your history controls.
+  Detection leaves requests intact, makes no external lookup, and is disabled in private windows.
+- Consent verification reads only the recognized consent manager's saved cookie
+  after an opt-out action. Cookie values stay out of Activity; it records the
+  manager, action, outcome and evidence type. Pending verification is canceled
+  by pause, disposal or clearing history. Verification adds no external lookup.
+- Privacy signals expose GPC to page scripts and send GPC/DNT headers. Turning
+  the feature off restores the browser's own preference. Site exceptions follow
+  each document's hostname, including embedded documents.
 - The only times data leaves your device are: (1) downloading public block-lists to keep
   protection current, (2) a browser-release check when you open the popup — Update
   Guardian asks Brave, Google or Microsoft (whichever makes your browser) for its latest
@@ -29,7 +45,7 @@ unclear, contact us (see **Contact** below).
   third-party scripts a page has already loaded, so they can be checked for tampering — on
   by default, and it reaches no host the page has not already used, (4) an **opt-in**
   password-breach check that uses privacy-preserving k-anonymity, (5) an **opt-in**
-  login-page age check that sends a site's domain to a public registration-data service,
+  login-page age check whose button sends a site's domain to a public registration-data service,
   (6) **opt-in** reputation look-ups that you must switch on yourself — and which, once on,
   **send the addresses of pages you open** to the provider automatically, which is why they
   are off by default and described in full below — (7) a WardenOne build check when the popup
@@ -59,8 +75,15 @@ account by WardenOne, and is **not** uploaded to us:
   and size limits; content beyond those limits is dropped. Outside sensitive routes,
   plain lowercase words and numbers of up to eight digits may remain, including names, short
   account or order numbers, or secrets that have those shapes. The log keeps at most
-  the last 200 events and nothing older than 30 days (the same period as the notification
-  copy of those events); **Clear history** on the Activity page removes it at once.
+  the last 200 events and nothing older than 30 days under normal retention.
+  **Settings → Clean-up & backup → Activity and notification history** also offers
+  browser-session storage or no saved history. These choices cover Activity and the
+  Notification Centre; live protection and its notices continue. Changing the choice
+  clears both saved histories and their pending journal. **Clear history** on the
+  Activity page removes both histories through the worker, including pending writes.
+  Site Dashboard counts, explicit site settings and the separately controlled tracker
+  learner are separate datasets. **Clear observations** also clears tracker observations,
+  Script Drift baselines and site counts, preserving approved blocks and firewall choices.
 - **Warning-page hand-off records, held in memory for as long as they are needed.** When
   WardenOne stops a navigation — a forced redirect, a blocked page, a certificate failure —
   the warning page has to know the exact address so it can show you where you were going
@@ -99,13 +122,20 @@ account by WardenOne, and is **not** uploaded to us:
   whether to *suggest* blocking it — it never blocks one on its own; you approve each
   suggestion in the popup — it needs to know that the domain appeared on three different
   sites of yours in two different browser sessions. That is all it keeps: per tracker
-  domain, a count of sites (never their names) and a 32-bit sketch keyed to your install
+  domain, a count of sites (never their names) and a 128-bit sketch keyed to your install
   that can only answer "was this site already counted?" — held while the domain is still
   gathering its three sites and dropped the moment it is proposed or decided — plus a count
-  of sessions, a count of requests, and first- and last-seen dates to the day. Observations
-  expire after 30 days unseen; the decisions you make (block, ignore, allow or block on one
-  site) are settings and stay. Which trackers appeared on the site you are looking at, with
-  a count, is kept only for the current browser session and goes when the browser closes.
+  of sessions, coalesced observations, fixed source categories, and first- and last-seen dates
+  to the day. Valid older 32-bit sketches finish or expire in their original format so migration
+  does not count the same sites again. A wider sketch reduces missed counts and also makes
+  guessed membership more precise for someone who has the profile and its key. Observations
+  expire after 30 days unseen, including ignored suggestions. Approved blocks and per-site
+  settings stay. Which trackers appeared on the site you are looking at, with
+  a count, is kept only for the current browser session and goes when the browser closes,
+  bounded to 40 sites and 12 tracker domains per site. Repeated source signals are coalesced
+  within each day and browser session. The learner keeps at most 600 domain entries and no
+  raw request URLs; proposal history has no visited-site URL. Browser-observed hosts are
+  checked only against packaged data, with no external DNS lookup or hostname submission.
   An earlier build kept up to 80 named sites per tracker with hit counts and exact times;
   the first start of this build folds that into the counts above and the names are gone.
   The Script Drift check keeps a record per third-party script it has examined, filed under
@@ -113,9 +143,9 @@ account by WardenOne, and is **not** uploaded to us:
   on their own after 30 days. Neither record is sent anywhere or readable by a website. The
   install key is stored with the learner, so someone holding a copy of your whole profile
   could test a site name they already suspect against the sketch; what they cannot do is
-  read a list of your sites out of it. **Clean browsing data** with *Browsing history*
-  ticked clears the learner's observations (your decisions stay) and the Script Drift
-  records; turning the learner off stops new observations.
+  read a list of your sites out of it. **Privacy Cleaner** offers independent choices for
+  browser history, WardenOne activity and notifications, tracker observations (your
+  decisions stay), and Script Drift baselines. Turning the learner off stops new observations.
 - The installed-extension inventory, change timeline, exact-version review snapshots,
   and any exact-ID reputation records you deliberately import. The bundled extension
   reputation database is read from WardenOne's own package; installed extension IDs
@@ -124,14 +154,21 @@ account by WardenOne, and is **not** uploaded to us:
   the extension can authenticate to the provider you enabled).
 - The notification history behind the Notification Centre: up to 300 notices, each with a
   short description, the site it concerned and up to twelve examples of repeats, kept for the
-  retention you choose there (30 days unless you change it, including a no-expiry choice) and removed by its **Clear**
-  button.
+  retention you choose there (30 days unless you change it, including a no-expiry choice)
+  under normal history mode. Browser-session and no-saved-history choices override
+  that persistence. Its **Clear** button removes notification history.
 - The rules and lists you make yourself: the text you write in **My Rules**, the filter lists
   you subscribe to (their addresses and the rules they returned), your per-site firewall
   choices, the page elements you hid with the element zapper (the site and the element's
   selector), and your own blocked-site list. These are yours rather than something WardenOne
   observed, so nothing expires them; each is removed from the page where you made it, and all
   of them go when WardenOne is removed. An earlier version of this policy did not list them.
+- **Site not working?** keeps only the host, one selected feature and a 15-minute expiry for an active recovery trial. The worker applies that temporary choice on the host and its subdomains within the same site boundary without changing a lasting site override. It stops applying at expiry or when you press **Undo trial**; an expired record is pruned on the next recovery change. The panel derives suggestions from existing local Activity data. Its diagnostic preview includes only the host, recent action types and counts, and the trial expiry. The report stays in the popup until you explicitly save a local file; WardenOne does not upload it. It includes no page text, URL path, query, password or screenshot.
+
+Packaged IP-logger and cryptominer loading can keep two small recovery records in
+session storage. They contain a retry count, loading status, retry time and failed
+source category, with no visited sites or page content. They clear after recovery,
+when the feature is off, on full erasure or when the browser closes.
 
 The opt-in Twitch local rewind feature makes short, high-bitrate clips of video and audio
 already playing in the current tab and keeps up to five minutes in volatile browser
@@ -320,10 +357,12 @@ needs an authenticated key and transmits the address itself; WardenOne does not 
 ### 4. Login page age check (opt-in, off by default, no API key needed)
 
 A login form on a domain registered days ago is one of the strongest phishing signals
-there is. If you switch this on, then **when a page shows a password field** WardenOne
-sends that site's registrable domain — `example.com`, never the full URL, never the page
-contents, never what you type — to the public RDAP service at **`rdap.org`**, and uses
-the registration date it returns to warn you before you sign in.
+there is. If you switch this on, a page with a password field offers a **Check domain age**
+button. Only pressing it sends that site's registrable domain — `example.com`, never
+the full URL, page contents or what you type — to **`rdap.org`**, or your enabled
+WhoisXML domain-age service. WardenOne uses the returned registration date to assess
+the sign-in page. Page scripts cannot start the manual domain-age request through
+the MAIN-world message bridge.
 
 This optional check tells an outside party something about where you browse,
 which is why it is **off by default** even though it needs no API key and costs nothing.

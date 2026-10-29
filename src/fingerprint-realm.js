@@ -1,10 +1,7 @@
 /* WardenOne — Copyright (C) 2026 iri · GNU GPL v3 or later, see LICENSE · Official source: https://github.com/iri-dev/WardenOne · Upstream filter-list attribution: CREDITS.md · A modified copy must say so, with a date (GPLv3 5a), and keep this notice. */
-/* fingerprint-realm.js is GENERATED from this bootstrap and marked regions in src/content.js.
-   Run node tools/build-content.js after editing either source.
-
-   Patch each child realm with the engine’s noise and shared seed. Same-origin frames inherit the
-   parent’s protected realm record synchronously; cross-origin frames wait for signed bridge config.
-   Web workers remain unpatched: re-serving their source changes URLs and breaks module imports. */
+/* fingerprint-realm.js is GENERATED; rebuild with tools/build-content.js after editing this bootstrap or src/content.js.
+   Same-origin children inherit the protected seed; cross-origin children await signed config. Workers stay native because
+   re-serving source breaks URLs and imports. */
 (function () {
   'use strict';
   /* Skip realms already owned by the top-frame engine; patch child and blank/blob popup realms once. */
@@ -81,9 +78,8 @@
   const early = adopt();
   if (early) settle(early.noise, early.webglBlocked === true, early);
 
-  /* Not decided upstream yet -- the parent's own config has not landed. Listen on every
-     same-origin source for the moment it settles, and adopt then. A page can dispatch this
-     event too; hearing it only makes this realm re-read the record. */
+  /* Listen for an upstream verdict while configuration is pending. Page-generated events only trigger a re-read of the
+     protected record. */
   const adoptLater = () => {
     const late = adopt();
     if (!late) return;

@@ -314,6 +314,23 @@ function check(name, cond, detail) {
     querySelector(selector) { return selector === 'script[src]' ? {} : null; } }] }];
   check('Script Drift still sees an external script inside an off-document-built subtree',
     h.run('hasScript(prebuilt)') === true);
+  let parentReads = 0;
+  let ancestor = null;
+  for (let depth = 0; depth < 80; depth++) {
+    const parent = ancestor;
+    ancestor = { get parentElement() { parentReads++; return parent; } };
+  }
+  let queries = 0;
+  const siblings = Array.from({ length: 100 }, () => ({ nodeType: 1, tagName: 'DIV', parentElement: ancestor,
+    querySelector() { queries++; return null; } }));
+  h.sandbox.siblings = [{ addedNodes: [...siblings, ...siblings] }];
+  check('Script Drift ignores repeated ordinary roots', h.run('hasScript(siblings)') === false);
+  check('Script Drift visits shared ancestors once per batch', parentReads === 80, 'parent reads=' + parentReads);
+  check('Script Drift queries each repeated root once', queries === siblings.length, 'queries=' + queries);
+  siblings[siblings.length - 1].querySelector = selector => selector === 'script[src]' ? {} : null;
+  check('Script Drift still checks later siblings below a reused ancestor', h.run('hasScript(siblings)') === true);
+  h.sandbox.lateScript = [{ addedNodes: [...siblings, { nodeType: 1, tagName: 'SCRIPT', parentElement: ancestor }] }];
+  check('Script Drift detects an inline script after a large ordinary batch', h.run('hasScript(lateScript)') === true);
 }
 
 // ---------------------------------------------------------------------------

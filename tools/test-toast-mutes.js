@@ -455,7 +455,6 @@ function loadWholeQuietRule() {
   check('it names itself plainly', POPUP_HTML.indexOf('Notifications you silenced') > 0);
 }());
 
-// ---------------------------------------------------------------------------
 
 if (failures.length) {
   console.error('FAIL (' + failures.length + ')');

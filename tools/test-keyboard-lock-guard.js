@@ -190,7 +190,6 @@ pending.push((async function aWholeKeyboardGrabIsRefusedAfterAFakeAddressBar() {
     (SOURCE.match(/blocked_keyboard_lock/g) || []).length === (CONTENT.match(/blocked_keyboard_lock/g) || []).length);
 }());
 
-// ---------------------------------------------------------------------------
 
 Promise.all(pending).then(() => {
   if (failures.length) {

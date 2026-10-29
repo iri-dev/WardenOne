@@ -132,12 +132,8 @@ function ambientSource(names) {
   return wanted.filter((n) => SHIMS[n]).map((n) => SHIMS[n]).join('\n');
 }
 
-// Platform globals that lifted code needs and a hand-built sandbox does not have. A vm context
-// only contains what the suite listed, so code using AbortController -- which every content
-// script now does, to release its listeners on teardown -- dies with "not defined" even though it
-// is perfectly ordinary browser code. These are Node's real implementations, not stand-ins: the
-// signal/abort contract is exactly what the release path depends on, so testing against a mock
-// would prove less than nothing. Only filled in when the sandbox has not supplied its own.
+// Supply missing platform globals from Node's real implementations so VM suites exercise native AbortSignal behavior.
+// Preserve explicitly supplied sandbox globals.
 const PLATFORM_GLOBALS = ['AbortController', 'AbortSignal', 'EventTarget', 'Event'];
 
 function installPlatformGlobals(sandbox) {

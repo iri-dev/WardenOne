@@ -1,194 +1,137 @@
-/* WardenOne — Copyright (C) 2026 iri
-   Licensed under the GNU General Public License v3 or later. See LICENSE.
-   Official source: https://github.com/iri-dev/WardenOne
-   Upstream filter-list attribution: CREDITS.md
-   Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
-   with the date, and to keep these notices intact. */
-/* Each cleaner control must reach a supported worker action and return its outcome. (PI-01)
-   Run: node tools/test-privacy-cleaner-wiring.js */
+/* WardenOne — Copyright (C) 2026 iri; GPL-3.0-or-later. See LICENSE. */
 'use strict';
-
+const assert = require('assert/strict');
 const fs = require('fs');
-const path = require('path');
 const vm = require('vm');
+const crypto = require('crypto');
+const SOURCE = fs.readFileSync('background-privacy-cleaner.js', 'utf8');
+const BG = fs.readFileSync('background.js', 'utf8');
+const HTML = fs.readFileSync('popup.html', 'utf8');
+const UI = fs.readFileSync('popup-privacy-cleaner.js', 'utf8');
+const SETTINGS = 'wardenone_cleaner_settings', STATE = 'wardenone_cleaner_state';
+const copy = value => JSON.parse(JSON.stringify(value));
 
-const ROOT = path.resolve(__dirname, '..');
-const HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
-const POPUP = fs.readFileSync(path.join(ROOT, 'popup.js'), 'utf8');
-const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
-
-let failures = 0;
-function check(label, condition, extra) {
-  if (condition) { console.log('  ok  ' + label); return; }
-  failures++;
-  console.log('  FAIL ' + label + (extra ? ' :: ' + extra : ''));
+async function harness(options = {}) {
+  const store = options.store || {}, alarms = new Map(), listeners = {}, calls = [];
+  let now = options.now || Date.UTC(2026, 0, 31, 14), writes = 0;
+  class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
+  const event = name => ({ addListener(fn) { listeners[name] = fn; } });
+  const ctx = { console, URL, crypto, Date: Clock, INCOGNITO_CONTEXT: !!options.private, __privacyEraseInProgress: false,
+    SCRIPT_DRIFT_BASELINE_KEY: 'wardenone_script_drift_baselines',
+    activeTabMatchesOrigin: async origin => options.inactive ? '' : origin,
+    regDomainBg: host => host.split('.').slice(-2).join('.'),
+    cleanConsentAndTrackingCookies: async filter => { calls.push({ consent: copy(filter) }); return { removed: 2, kept: 4, sites: 1, failed: 0 }; },
+    resetSensitiveSitePermissionsGlobally: async () => { calls.push({ permissions: true }); return { reset: ['Camera'], failed: [] }; },
+    clearProtectionHistory: async observations => { calls.push({ security: observations }); return { ok: true }; },
+    clearTrackerLearnerObservations: async () => { calls.push({ learning: true }); },
+    clearScriptDriftBaselines: async () => { calls.push({ removed: 'wardenone_script_drift_baselines' }); },
+    showWardenSystemNotification: async () => { calls.push({ notify: true }); },
+    chrome: { storage: { local: {
+      async get(key) { return copy({ [key]: store[key] }); },
+      async set(value) { writes++; if (options.failState && value[STATE]) throw Error('Disk full'); Object.assign(store, copy(value)); },
+      async remove(key) { calls.push({ removed: key }); delete store[key]; },
+    }, onChanged: event('storage') },
+    browsingData: { async remove(filter, types) { calls.push({ filter: copy(filter), types: copy(types) });
+      if (options.remove) await options.remove(filter, types);
+      if (options.failType && types[options.failType]) throw Error('Unsupported type'); } },
+    alarms: { onAlarm: event('alarm'), async create(name, info) { alarms.set(name, { scheduledTime: info.when }); },
+      async get(name) { return alarms.get(name); }, async clear(name) { alarms.delete(name); } },
+    runtime: { onStartup: event('startup') } } };
+  vm.createContext(ctx); vm.runInContext(SOURCE, ctx);
+  const api = ctx.WO_CLEANER;
+  if (!options.private) await api.wake();
+  return { api, store, calls, ctx, alarms, listeners, writes: () => writes, advance: ms => { now += ms; }, now: () => now };
 }
-
-function between(src, startMark, endMark, what) {
-  const a = src.indexOf(startMark);
-  if (a < 0) throw new Error('cannot find the start of ' + what);
-  const b = src.indexOf(endMark, a + startMark.length);
-  if (b < 0) throw new Error('cannot find the end of ' + what);
-  return src.slice(a, b);
+async function run(h, types, extra = {}) {
+  const preview = await h.api.preview({ types, sinceMs: 0, scope: 'all', ...extra });
+  return h.api.run(preview.previewId);
 }
-
-/* ---- 1. the three sets ------------------------------------------------------------ */
-
-/* every checkbox in the cleaner panel, which is bounded by its own Clean selected button */
-const PANEL = between(HTML, 'id="cl-since"', 'id="cl-run"', 'the cleaner panel');
-const boxes = [...PANEL.matchAll(/<input type="checkbox" id="(cl-[a-z]+)"/g)].map((m) => m[1]);
-
-/* the types object the click handler builds and sends */
-const SENDER = between(POPUP, "$('cl-run').addEventListener('click'", "const out = $('cl-result')",
-  'the cleaner click handler');
-const sent = new Map();                       // request field -> element id
-for (const m of SENDER.matchAll(/([A-Za-z]+):\s*\$\('(cl-[a-z]+)'\)\.checked/g)) {
-  sent.set(m[1], m[2]);
-}
-
-/* every field the worker branches on */
-const HANDLER = between(BG, "if (msg && msg.kind === 'clean-browser' && msg.types) {",
-  '// ---- Local Extension Security Centre ----', 'the clean-browser handler');
-const read = new Set([...HANDLER.matchAll(/\bt\.([A-Za-z]+)\b/g)].map((m) => m[1]));
-
-/* These three only guard against a parse that found nothing -- a slice whose anchor moved
-   would otherwise report "every checkbox is wired" about an empty set. The real work is the
-   set comparison below, which needs no expected count and so cannot go stale when a control
-   is legitimately added or removed. */
-check('the cleaner panel was found and has its controls', boxes.length > 0, boxes.join(', '));
-check('the click handler was found', sent.size > 0, [...sent.keys()].join(', '));
-check('the worker handler was found', read.size > 0, [...read].join(', '));
-
-const unsentBoxes = boxes.filter((id) => ![...sent.values()].includes(id));
-check('every checkbox in the panel is read by the click handler', unsentBoxes.length === 0,
-  unsentBoxes.join(', ') + ' -- a control the reader can tick that reaches nothing');
-
-const unreadFields = [...sent.keys()].filter((f) => !read.has(f));
-check('every field the popup sends is read by the worker', unreadFields.length === 0,
-  unreadFields.join(', ') + ' -- sent and ignored');
-
-const unsentFields = [...read].filter((f) => !sent.has(f));
-check('every field the worker reads is sent by the popup', unsentFields.length === 0,
-  unsentFields.join(', ') + ' -- the worker gates work on a field no sender sets, which is '
-  + 'exactly how the consent sweep spent a release doing nothing');
-
-/* the specific pair, by name, so neither end can be renamed in isolation */
-check('cl-consent maps to consentCookies', sent.get('consentCookies') === 'cl-consent',
-  'the one link that was missing');
-check('and the worker still gates the sweep on that field',
-  /t\.consentCookies/.test(HANDLER) && /cleanConsentAndTrackingCookies\(\)/.test(HANDLER));
-
-/* ---- 2. run the shipped handler --------------------------------------------------- */
-
-function runHandler(types) {
-  const calls = { sweep: 0, removeArgs: null };
-  const ctx = {
-    Date, Number, Object, Array, String, JSON, Promise, console: { log() {}, warn() {} },
-    chrome: {
-      browsingData: {
-        remove(opts, dataTypes) { calls.removeArgs = { opts, dataTypes }; return Promise.resolve(); },
-      },
-    },
-    cleanConsentAndTrackingCookies() {
-      calls.sweep++;
-      return Promise.resolve({ removed: 143, kept: 900, sites: 62 });
-    },
-    resetSensitiveSitePermissionsGlobally() { return Promise.resolve({ reset: ['Camera'] }); },
-  };
-  ctx.globalThis = ctx;
-  vm.createContext(ctx);
-  return new Promise((resolve) => {
-    ctx.sendResponse = (res) => resolve({ res, calls });
-    ctx.msg = { kind: 'clean-browser', types, sinceMs: 0 };
-    vm.runInContext('(function (msg, sendResponse) {\n' + HANDLER + '\n})(msg, sendResponse);', ctx);
-  });
-}
-
-(async () => {
-  /* the default state of the panel: consent ticked, cookies not */
-  {
-    const { res, calls } = await runHandler({ consentCookies: true });
-    check('a consent-only clean runs the sweep', calls.sweep === 1);
-    check('and does not call browsingData.remove at all', calls.removeArgs === null,
-      'there is no browsingData type for "the consent cookies only"');
-    check('and answers ok rather than "nothing selected"', res.ok === true, JSON.stringify(res));
-    check('and returns the counts the popup prints',
-      res.consent && res.consent.removed === 143 && res.consent.sites === 62,
-      JSON.stringify(res.consent));
-    check('and reports no browsingData categories cleared',
-      Array.isArray(res.cleared) && res.cleared.length === 0);
+async function main() {
+  let h = await harness();
+  const defaults = copy((await h.api.get()).config);
+  assert.deepEqual(Object.keys(defaults.manualTypes).filter(k => defaults.manualTypes[k]), ['cache']);
+  assert.equal(defaults.automatic.enabled, false); assert.equal(defaults.automatic.onStartup, false);
+  assert.equal(h.writes(), 0, 'default cold starts do not write cleaner state');
+  const config = copy(defaults); config.protectedOrigins = ['https://mail.example.com'];
+  await h.api.save(config);
+  const report = await run(h, { cache: true, cacheStorage: true, fileSystems: true, history: true, downloads: true });
+  assert.equal(report.ok, true); assert.equal(report.completed.length, 5);
+  for (const call of h.calls.filter(x => x.types)) {
+    const global = call.types.history || call.types.downloads;
+    assert.deepEqual(call.filter.excludeOrigins, global ? undefined : ['https://mail.example.com']);
+    assert.equal(call.filter.origins, undefined);
   }
-
-  /* both ticked: the sweep is subsumed, and its sentence would contradict the wipe */
-  {
-    const { res, calls } = await runHandler({ consentCookies: true, cookies: true });
-    check('ticking all cookies too skips the redundant sweep', calls.sweep === 0,
-      'it would delete cookies moments before browsingData deletes them all, and then print '
-      + '"so you are still signed in" above a wholesale sign-out');
-    check('and the wholesale cookie wipe still happens',
-      calls.removeArgs && calls.removeArgs.dataTypes.cookies === true);
-    check('and no consent sentence is offered to the popup', res.consent === null,
-      JSON.stringify(res.consent));
+  assert(!h.calls.some(c => c.security || c.learning || c.removed), 'browser history must not erase WardenOne observations');
+  await run(h, { consentCookies: true });
+  assert.deepEqual(h.calls.find(c => c.consent).consent.protectedOrigins, ['https://mail.example.com']);
+  const swept = h.calls.filter(c => c.consent).length;
+  await run(h, { consentCookies: true, cookies: true });
+  assert.equal(h.calls.filter(c => c.consent).length, swept, 'all-cookie cleanup subsumes name-based sweep');
+  await assert.rejects(() => run(h, { cookies: true }, { scope: 'site', origin: 'https://shop.example.com' }), /protected/);
+  await assert.rejects(() => run(h, { storage: true }, { scope: 'site', origin: 'https://mail.example.com' }), /protected/);
+  await run(h, { cookies: true, storage: true }, { scope: 'site', origin: 'https://other.test' });
+  assert.deepEqual(h.calls.filter(c => c.types).at(-1).filter.origins, ['https://other.test']);
+  await assert.rejects(() => run(h, { history: true }, { scope: 'site', origin: 'https://other.test' }), /only/);
+  await run(h, { securityHistory: true, trackerLearning: true, scriptDrift: true });
+  assert(h.calls.some(c => c.security === false)); assert(h.calls.some(c => c.learning));
+  assert(h.calls.some(c => c.removed === 'wardenone_script_drift_baselines'));
+  for (const bad of [{ cache: 1 }, { passwords: true }, { cache: 'true' }, JSON.parse('{"__proto__":true}')]) await assert.rejects(() => run(h, bad));
+  for (const site of ['file:///secret', 'https://user:pass@example.com', 'https://example.com/path', 'https://example.com/?q=1', 'https://example.com/#a']) {
+    await assert.rejects(() => h.api.save({ ...config, protectedOrigins: [site] }));
   }
-
-  /* unticked stays unticked */
-  {
-    const { res, calls } = await runHandler({ cache: true });
-    check('an unticked consent box runs nothing', calls.sweep === 0);
-    check('and the rest of the clean is unaffected',
-      calls.removeArgs && calls.removeArgs.dataTypes.cache === true && res.ok === true);
+  await assert.rejects(() => run(h, { cache: true }, { sinceMs: -1 }));
+  let preview = await h.api.preview({ types: { cache: true }, sinceMs: 0, scope: 'all' });
+  await h.api.run(preview.previewId); await assert.rejects(() => h.api.run(preview.previewId), /Preview expired/);
+  preview = await h.api.preview({ types: { cache: true }, sinceMs: 0, scope: 'all' });
+  await assert.rejects(() => h.api.save(config), /another window/);
+  await h.api.save((await h.api.get()).config); await assert.rejects(() => h.api.run(preview.previewId), /Preview expired|settings changed/);
+  preview = await h.api.preview({ types: { cache: true }, sinceMs: 0, scope: 'all' });
+  h.advance(6 * 60000); await assert.rejects(() => h.api.run(preview.previewId), /expired/);
+  h = await harness({ inactive: true });
+  await assert.rejects(() => run(h, { cache: true }, { scope: 'site', origin: 'https://other.test' }), /Open/);
+  h = await harness({ failType: 'fileSystems' });
+  const partial = await run(h, { cache: true, fileSystems: true });
+  assert.equal(partial.ok, false); assert.equal(partial.completed.length, 1); assert.equal(partial.failed.length, 1);
+  assert.equal((await h.api.get()).history[0].ok, false);
+  assert(!JSON.stringify(h.store[STATE]).includes('https://'), 'cleanup history contains no site addresses');
+  h = await harness({ failState: true }); await assert.rejects(() => run(h, { cache: true }), /Disk/);
+  assert.equal(h.calls.length, 0, 'a failed journal write prevents deletion');
+  h = await harness();
+  const auto = copy(defaults); auto.automatic.enabled = true; auto.automatic.onStartup = true; auto.automatic.notify = true;
+  await h.api.save(auto); const next = h.store[STATE].nextRun;
+  h.advance(next - h.now() + 2 * 86400000);
+  await h.api.wake(); await h.api.wake(); await h.api.wake(true);
+  assert.equal(h.calls.filter(c => c.types).length, 1, 'missed schedules and simultaneous startup coalesce');
+  assert.equal(h.calls.filter(c => c.notify).length, 1); assert(h.store[STATE].nextRun > h.now());
+  assert.equal(new Date(h.api.nextDate(Date.UTC(2026, 0, 31), 'monthly')).toISOString(), '2026-02-28T00:00:00.000Z');
+  const store = copy(h.store); store[STATE].pending = { at: h.now(), source: 'scheduled', scope: 'all' };
+  h = await harness({ store, now: store[STATE].pending.at + 60000 }); await h.api.wake(true);
+  assert.equal(h.calls.length, 0, 'interrupted cleanup is not replayed by a simultaneous startup');
+  assert.equal(store[STATE].history[0].ok, false); assert.match(store[STATE].history[0].failed[0], /interrupted/);
+  await h.api.clearHistory(); assert.equal((await h.api.get()).history.length, 0);
+  store[SETTINGS].protectedOrigins = ['broken origin']; await assert.rejects(() => h.api.wake());
+  assert.equal(h.calls.length, 0, 'corrupt protection list prevents cleanup');
+  h = await harness({ private: true }); await h.api.wake(true);
+  await assert.rejects(() => h.api.get(), /normal/); assert.equal(h.calls.length, 0); assert.equal(h.writes(), 0);
+  let unblock;
+  h = await harness({ remove: () => new Promise(resolve => { unblock = resolve; }) });
+  preview = await h.api.preview({ types: { cache: true }, sinceMs: 0, scope: 'all' });
+  const running = h.api.run(preview.previewId); await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(() => h.api.run(preview.previewId), /already running/);
+  const drained = h.api.pauseAndDrain(); unblock(); await assert.rejects(() => running, /reset/); await drained;
+  const definitions = (await (await harness()).api.get()).definitions;
+  const fieldBlock = UI.slice(UI.indexOf('const fields ='), UI.indexOf('let config,'));
+  for (const key of Object.keys(definitions)) {
+    const id = fieldBlock.match(new RegExp('\\b' + key + ": '(cl-[a-z-]+)'"));
+    assert(id, key + ' needs a control mapping'); assert(HTML.includes('id="' + id[1] + '"'));
   }
-
-  /* ---- 3. the popup path around it ------------------------------------------------ */
-
-  check('the "pick at least one" guard now counts the consent box',
-    /const anyChecked = Object\.values\(types\)\.some\(Boolean\)/.test(SENDER + POPUP),
-    'it is computed from the same types object, so adding the field fixes the guard too');
-
-  const CONFIRM = between(POPUP, 'const anyChecked', "chrome.runtime.sendMessage({ kind: 'clean-browser'",
-    'the confirmation block');
-  check('the sign-out warning is still tied to the all-cookies box only',
-    /const willSignOut = types\.cookies \?/.test(CONFIRM),
-    'a consent sweep that warns about signing you out defeats the point of it');
-  check('and the consent box does not trigger it',
-    !/types\.consentCookies/.test(CONFIRM));
-
-  const RESULT = between(POPUP, 'if (res && res.ok) {', 'if (res.perms)', 'the result renderer');
-  check('the result sentence the changelog promised is rendered', /if \(res\.consent\)/.test(RESULT));
-  check('it reports removed, sites and kept', /c\.removed/.test(RESULT) && /c\.sites/.test(RESULT)
-    && /c\.kept/.test(RESULT));
-  check('it has a sentence for a clean profile too',
-    /No consent or tracking cookies left to remove/.test(RESULT));
-
-  /* ---- 4. the promise printed on the control -------------------------------------- */
-
-  check('the control still promises it keeps you signed in',
-    /Keeps you signed in/.test(PANEL));
-
-  /* Which cookies are safe to delete is NOT asserted here -- tools/test-cookie-cleaner.js
-     already attacks that classifier from the side that matters, and a second copy of those
-     cases would drift from the first. What is asserted here is the thing that suite cannot
-     see: that this sweep uses the same classifier at all. A private copy of the rules inside
-     cleanConsentAndTrackingCookies would leave test-cookie-cleaner.js green while the manual
-     path deleted whatever it liked. */
-  /* Both bodies sit at column 0, so their for-loops close with a bare "}" line too; the first
-     blank line is the only reliable end of either function. */
-  const sweep = between(BG, 'async function cleanConsentAndTrackingCookies() {',
-    '\n\n', 'the profile-wide sweep');
-  const onLeave = between(BG, 'async function clearCookiesForDomain(domain) {', '\n\n',
-    'the clear-on-leave sweep');
-  check('the sweep slice reached its return statement', /return \{ removed, kept:/.test(sweep),
-    'the slice ended early and the assertions below are reading a fragment');
-  check('the profile-wide sweep classifies with the shared cookieIsDisposable',
-    /if \(!cookieIsDisposable\(cookie\)\) continue;/.test(sweep),
-    'the keep/remove rules are tested once, in tools/test-cookie-cleaner.js, and both sweeps '
-    + 'have to be the thing that suite is testing');
-  check('and so does the clear-on-leave sweep it shares its lists with',
-    /if \(!cookieIsDisposable\(cookie\)\) continue;/.test(onLeave));
-  check('the profile-wide sweep counts what it kept, which is the reassuring half',
-    /kept: all\.length - removed/.test(sweep));
-
-  console.log('');
-  if (failures) { console.log(failures + ' check(s) failed'); process.exit(1); }
-  console.log('all Privacy Cleaner wiring checks passed');
-})();
+  for (const kind of ['clean-browser-preview', 'clean-browser', 'privacy-cleaner-save', 'privacy-cleaner-get', 'privacy-cleaner-clear-history']) {
+    assert(BG.includes("msg.kind === '" + kind + "'"));
+    const allowed = BG.slice(BG.indexOf('const TAB_CONTEXT_ALLOWED_MESSAGES'), BG.indexOf('const TAB_CONTEXT_RATE_LIMITS'));
+    assert(!allowed.includes("'" + kind + "'"), kind + ' must be private UI only');
+  }
+  assert(!HTML.slice(HTML.indexOf('<h2>Privacy cleaner'), HTML.indexOf('<h2>Security Centre')).includes('Keeps you signed in'));
+  assert(HTML.includes('src="popup-privacy-cleaner.js"'));
+  console.log('[ok] cleaner defaults, controls, protected/site scope, separate records, partial results, schedules, interruption, private context and hostile settings');
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

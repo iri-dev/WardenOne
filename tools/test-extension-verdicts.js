@@ -58,12 +58,12 @@ const engine = loadEngine();
 function database() {
   const result = engine.validateExtensionReputationDatabase(DB, { origin: 'bundled' });
   assert(result.ok, 'the bundled database no longer validates: ' + (result.errors || []).join('; '));
-  return result.database;
+  return Object.assign({ available: true }, result.database);
 }
 
 const DB_READY = database();
 
-function assess(id, overrides) {
+function assess(id, overrides, reviews, alerts, db) {
   const extension = Object.assign({
     id,
     type: 'extension',
@@ -76,7 +76,7 @@ function assess(id, overrides) {
     permissions: ['storage'],
     hostPermissions: [],
   }, overrides || {});
-  return engine.buildExtensionAssessment(extension, DB_READY, {}, [], []);
+  return engine.buildExtensionAssessment(extension, db || DB_READY, reviews || {}, alerts || [], []);
 }
 
 // --- the complaint ----------------------------------------------------------
@@ -136,7 +136,7 @@ function assess(id, overrides) {
     wrongName.reputation.status + ' / ' + wrongName.verdict.code);
   const copiedName = assess('abcdefghijklmnopabcdefghijklmnop', { name: 'Volume Master', permissions });
   check('a copied name at another ID does not inherit recognition',
-    copiedName.reputation.status !== 'recognized_identity' && copiedName.verdict.needsAttention,
+    copiedName.reputation.status === 'no_record' && copiedName.capabilities.profile === null,
     copiedName.reputation.status + ' / ' + copiedName.verdict.code);
   const sideloaded = assess(VOLUME_MASTER, { permissions, installType: 'development' });
   check('an unpacked copy with the official ID still warns',
@@ -176,8 +176,8 @@ function assess(id, overrides) {
     /proxy/i.test(a.recommendedAction), a.recommendedAction);
   check('the expected capabilities are not counted against it',
     a.capabilities.unexpected.length === 1, JSON.stringify(a.capabilities.unexpected.map((s) => s.id)));
-  check('a critical unexpected capability reads as danger',
-    a.verdict.tone === 'danger', a.verdict.tone);
+  check('a critical unexpected capability asks for review without claiming an incident',
+    a.verdict.tone === 'warning' && a.verdict.category === 'needs_security_review', a.verdict.tone);
 }());
 
 (function debuggerOnAPasswordManagerFires() {
@@ -207,17 +207,15 @@ function assess(id, overrides) {
   check('and it still says remove', /remove/i.test(a.recommendedAction), a.recommendedAction);
 }());
 
-(function anUnknownPowerfulExtensionStillGetsALook() {
-  /* What REVIEW ACCESS was always trying to say, and could not, while it also
-     fired on everything known. Powerful AND unidentified is the combination
-     that deserves someone's attention. */
+(function anUnknownPowerfulExtensionIsInformational() {
   const a = assess('abcdefghijklmnopabcdefghijklmnop', {
     name: 'Some new tab thing',
     permissions: ['storage', 'scripting', 'webRequest'],
     hostPermissions: ['<all_urls>'],
   });
-  check('an unrecognised powerful extension is still surfaced',
-    a.verdict.needsAttention === true, a.verdict.label);
+  check('an unrecognised powerful extension has informational exposure',
+    !a.verdict.needsAttention && a.verdict.tone === 'info'
+      && a.verdict.category === 'powerful_permissions', a.verdict.label);
   check('and the advice says it is unknown rather than merely powerful',
     /not in the local catalogue/i.test(a.recommendedAction), a.recommendedAction);
 }());
@@ -736,8 +734,9 @@ function assess(id, overrides) {
   check('an imported record cannot add an exact-id capability exception',
     checked.database.entries[id].capabilityContract === null,
     JSON.stringify(checked.database.entries[id].capabilityContract));
-  check('the imported browser-agent claim does not suppress powerful access',
-    imported.verdict.needsAttention === true, imported.verdict.code);
+  check('the imported browser-agent claim does not excuse powerful access',
+    imported.verdict.code === 'powerful_access' && imported.access.level === 'critical'
+      && imported.capabilities.profile === null, imported.verdict.code);
 }());
 
 (function changeEventsArePurposeAwareWithoutLosingOlderWarnings() {
@@ -752,7 +751,7 @@ function assess(id, overrides) {
     hostPermissions: ['<all_urls>'],
   }, DB_READY, {}, installed, []);
   check('a verified expected install stays in the timeline without becoming an alarm',
-    expectedInstall.verdict.code === 'expected_install_change' && !expectedInstall.verdict.needsAttention,
+    expectedInstall.verdict.code === 'recognized_expected' && !expectedInstall.verdict.needsAttention,
     expectedInstall.verdict.code);
 
   const id = 'bcdefghijklmnopabcdefghijklmnopa';
@@ -803,10 +802,115 @@ function assess(id, overrides) {
   check('a quiet catalogue match is informative rather than alarming',
     low.verdict.code === 'catalogued_listing' && !low.verdict.needsAttention, low.verdict.code);
   const powerful = assess(id, { name: record.name, permissions: ['scripting'], hostPermissions: ['<all_urls>'] });
-  check('a catalogue listing alone cannot excuse powerful access',
-    powerful.verdict.code === 'catalogued_powerful' && powerful.verdict.needsAttention, powerful.verdict.code);
+  check('a catalogue listing retains powerful exposure without a security accusation',
+    powerful.verdict.code === 'catalogued_powerful' && !powerful.verdict.needsAttention
+      && powerful.capabilities.profile === null && powerful.access.level !== 'low', powerful.verdict.code);
 }());
-// ---------------------------------------------------------------------------
+
+(function permissionExposureDoesNotEstablishMaliciousBehavior() {
+  const id = 'abcdefghijklmnopabcdefghijklmnop';
+  [
+    ['storage'],
+    ['storage', 'bookmarks'],
+    ['storage', 'debugger', 'nativeMessaging'],
+  ].forEach((permissions) => {
+    const result = assess(id, { permissions });
+    check('unknown ' + permissions.join(', ') + ' is informational without adverse evidence',
+      !result.verdict.needsAttention && result.reputation.status === 'no_record', result.verdict.code);
+  });
+  const unusualSource = assess(id, { installType: 'sideload', permissions: ['storage'] });
+  check('an unusual install source is reviewed separately from permission exposure',
+    unusualSource.verdict.needsAttention && unusualSource.verdict.code === 'nonstandard_install'
+      && unusualSource.access.level === 'low', unusualSource.verdict.code);
+}());
+
+(function busterHasAnEvidenceBackedPurpose() {
+  const id = 'mpbjkejclgfgadiemmefgebjfooflfhl';
+  const permissions = ['storage', 'notifications', 'webRequest', 'declarativeNetRequest',
+    'webNavigation', 'nativeMessaging', 'offscreen', 'scripting'];
+  const current = assess(id, { permissions, hostPermissions: ['<all_urls>'] });
+  check('official Buster native messaging is documented rather than suspicious',
+    current.verdict.code === 'recognized_expected' && !current.verdict.needsAttention
+      && current.capabilities.expected.some((c) => c.id === 'native-program-bridge'), current.verdict.code);
+  check('Buster capability evidence explains its optional client',
+    /optional.*client/i.test(current.capabilities.profile.evidence)
+      && /github.com\/dessant\/buster/.test(current.capabilities.profile.reference));
+  const disabled = assess(id, { enabled: false, permissions, hostPermissions: ['<all_urls>'] });
+  check('disabled Buster has no immediate security decision',
+    disabled.verdict.code === 'disabled' && !disabled.verdict.needsAttention, disabled.verdict.code);
+  const debuggerAccess = assess(id, { permissions: permissions.concat('debugger'), hostPermissions: ['<all_urls>'] });
+  check('Buster recognition cannot excuse debugger access',
+    debuggerAccess.verdict.code === 'unexpected_capability' && debuggerAccess.verdict.needsAttention
+      && debuggerAccess.capabilities.unexpected.some((c) => c.id === 'debugger-control'));
+  const copiedName = assess('abcdefghijklmnopabcdefghijklmnop', { name: current.name, permissions });
+  check('a Buster name at another ID has no expected-access allowance', copiedName.capabilities.profile === null);
+}());
+
+(function claudeAccountIdentityRemainsReviewable() {
+  const id = 'fcoeoabgfenejglbffodgkkbkcdhcgfn';
+  const documented = { permissions: ['sidePanel', 'storage', 'scripting', 'debugger', 'tabGroups',
+    'tabs', 'alarms', 'notifications', 'system.display', 'webNavigation',
+    'declarativeNetRequestWithHostAccess', 'offscreen', 'nativeMessaging', 'downloads', 'unlimitedStorage'],
+  hostPermissions: ['<all_urls>'] };
+  check('Claude documented capabilities remain expected', !assess(id, documented).verdict.needsAttention);
+  const withIdentity = Object.assign({}, documented, { permissions: documented.permissions.concat('identity') });
+  const first = assess(id, withIdentity);
+  check('undocumented Claude identity access asks for verification',
+    first.verdict.code === 'unexpected_capability' && first.verdict.tone === 'warning'
+      && first.capabilities.unexpected.some((c) => c.id === 'account-identity-tokens'));
+  const reviews = { [id]: { reviewedAt: 1, snapshot: first.review.snapshot } };
+  const acknowledged = assess(id, withIdentity, reviews);
+  check('acknowledging the exact Claude snapshot suppresses the repeated advisory',
+    acknowledged.review.reviewed && !acknowledged.verdict.needsAttention
+      && acknowledged.capabilities.unexpected.some((c) => c.id === 'account-identity-tokens'));
+  const versionUpdate = assess(id, Object.assign({}, withIdentity, { version: '3.0.0' }), reviews);
+  check('a version-only update retains the acknowledgment', versionUpdate.review.reviewed && !versionUpdate.verdict.needsAttention);
+  [
+    { permissions: withIdentity.permissions.concat('proxy') },
+    { hostPermissions: ['<all_urls>', 'file:///*'] },
+    { name: 'Another publisher' },
+    { installType: 'development' },
+  ].forEach((delta) => {
+    const changed = assess(id, Object.assign({}, withIdentity, delta), reviews);
+    check('material Claude change reopens review: ' + Object.keys(delta)[0],
+      changed.review.stale && changed.verdict.needsAttention, changed.verdict.code);
+  });
+}());
+
+(function acknowledgmentsNeverSuppressNewEvidence() {
+  const id = 'abcdefghijklmnopabcdefghijklmnop';
+  const previous = assess(id, { permissions: ['storage'] });
+  const reviews = { [id]: { reviewedAt: 1, snapshot: previous.review.snapshot } };
+  const gain = [{ id, eventId: 'gain', kind: 'permissions_changed', severity: 'critical',
+    when: 10, reviewedAt: null, gainedPermissions: ['debugger', '<all_urls>'], accessChanged: true }];
+  const current = { permissions: ['storage', 'debugger'], hostPermissions: ['<all_urls>'] };
+  const changed = assess(id, current, reviews, gain);
+  check('an unknown extension gaining debugger and all-site access demands review',
+    changed.review.stale && changed.verdict.needsAttention && changed.pendingChange.eventId === 'gain');
+  const matchingReview = { [id]: { reviewedAt: 1, snapshot: changed.review.snapshot } };
+  check('a matching access snapshot does not hide an unread later change',
+    assess(id, current, matchingReview, gain).verdict.needsAttention);
+  ['known_harmful', 'reported_harmful', 'historical_incident'].forEach((status) => {
+    const record = Object.assign({}, DB_READY.entries[GREAT_SUSPENDER], { id, status });
+    const adverse = Object.assign({}, DB_READY, { entries: { [id]: record } });
+    [true, false].forEach((enabled) => {
+      const flagged = assess(id, { enabled }, {}, [], adverse);
+      const forcedReview = { [id]: { reviewedAt: 1, snapshot: flagged.review.snapshot } };
+      const reviewed = assess(id, { enabled }, forcedReview, [], adverse);
+      check(status + ' remains visible while enabled=' + enabled + ', even with a matching review',
+        reviewed.verdict.code === status && reviewed.verdict.needsAttention && reviewed.verdict.tone === 'danger');
+    });
+    check('new ' + status + ' evidence invalidates the prior decision',
+      assess(id, {}, reviews, [], adverse).review.stale);
+  });
+  const reenabled = [{ id, eventId: 'legacy-enable', kind: 'enabled', severity: 'high',
+    reviewedAt: null, when: 20, gainedPermissions: [] }];
+  check('an old re-enable alert alone cannot rearm security review',
+    !assess(id, current, {}, reenabled).verdict.needsAttention);
+  const withRealGain = assess(id, current, {}, reenabled.concat(gain));
+  check('an old re-enable alert cannot bury an actual permission increase',
+    withRealGain.verdict.needsAttention && withRealGain.pendingChange.eventId === 'gain');
+}());
 
 if (failures.length) {
   console.error('FAIL (' + failures.length + ')');

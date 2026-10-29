@@ -131,7 +131,7 @@ function oddReleaseLinks(text) {
   const settings = job('browser-settings');
   check('the Settings page runs in Edge on a Windows runner, every suite',
     /runs-on: windows-2025/.test(settings)
-      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 17
+      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 18
       && /run: node tools\/browser-settings-data\.js/.test(settings)
       && /run: node tools\/browser-settings-arrange\.js/.test(settings)
       && /run: node tools\/browser-config-race\.js/.test(settings)
@@ -144,6 +144,7 @@ function oddReleaseLinks(text) {
       && /run: node tools\/browser-reputation-bypass\.js/.test(settings)
       && /run: node tools\/browser-image-logger-loads\.js/.test(settings)
       && /run: node tools\/browser-media-security\.js/.test(settings)
+      && /run: node tools\/browser-badge-csp\.js/.test(settings)
       && /run: node tools\/browser-grabber-switches\.js/.test(settings)
       && /run: node tools\/browser-eyeshield-frames\.js/.test(settings)
       && /run: node tools\/browser-memory-frames\.js/.test(settings)
@@ -176,7 +177,8 @@ function oddReleaseLinks(text) {
     /runs-on: windows-2022/.test(minimum) && /WARDENONE_SOFTWARE_GL: '1'/.test(minimum)
       && browserSteps[0].includes('id: runtime') && browserSteps[0].includes('browser-runtime-smoke.js'));
   check('every extension suite requires the pinned Chrome and a working graphics runtime',
-    suites.length === 17 && suites.every(step => step.includes("steps.chrome.outcome == 'success'")
+    suites.length === 18 && suites.some(step => step.includes('run: node tools/browser-badge-csp.js'))
+      && suites.every(step => step.includes("steps.chrome.outcome == 'success'")
       && step.includes("steps.runtime.outcome == 'success'")) && /id: chrome/.test(minimum));
   check('legacy Chrome reload scenarios use normal browser windows',
     ['browser-config-race.js', 'browser-audit-highs.js'].every(file => {

@@ -234,9 +234,13 @@ async function testStrandedRecovery() {
   }
 
   {
-    const s = loadStores({ items: [pausedItem(15)], storage: { wardenone_config: { enabled: true, downloadReputation: false } } });
+    const s = loadStores({ items: [pausedItem(15)], storage: { wardenone_config: { enabled: true, downloadReputation: false, forcedDownloadProtection: false } } });
     const n = await s.api.recoverStrandedPausedDownloads();
-    check('nothing is recovered while the guard is off', n === 0 && s.scans.length === 0);
+    check('nothing is recovered while both download guards are off', n === 0 && s.scans.length === 0);
+  }
+  {
+    const s = loadStores({ items: [pausedItem(17)], storage: { wardenone_config: { enabled: true, downloadReputation: false, forcedDownloadProtection: true } } });
+    check('intent protection can recover with Download Shield off', (await s.api.recoverStrandedPausedDownloads()) === 1 && s.scans.length === 1);
   }
 
   {

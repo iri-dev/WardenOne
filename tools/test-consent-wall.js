@@ -420,6 +420,13 @@ console.log('\nfull-screen consent walls\n');
   check('keeps a short-but-real front page open (does not judge on text length)', r.wallGone);
 }
 
+{
+  const r = run({ host: 'empty-layout.invalid', stack: [WALL], cmpGlobal: '_sp_',
+    contentAfter: { scrollHeight: 80000, text: 'Empty layout' } });
+  check('a tall empty layout restores its consent wall', !r.wallGone);
+  check('a tall empty layout is removed only once', r.removalEvents === 1);
+}
+
 /* ---- the flicker ------------------------------------------------------------------ */
 
 /* Reported as a page that "faded but was flickering many times a second, and it was

@@ -193,14 +193,22 @@ async function run() {
       ['ad path', 'https://audio-fa.scdn.co/mp3-ad/creative.mp3', 3],
       ['ad host', 'https://adstudio-assets.scdn.co/creative.mp4', 9],
     ];
-    for (const [label, url, ruleId] of spotifyCases) {
-      const outcome = await evaluate(worker, `chrome.declarativeNetRequest.testMatchOutcome({
-        url: ${JSON.stringify(url)}, initiator: 'https://open.spotify.com/', type: 'media'
-      }).then((r) => r.matchedRules)`);
-      assert(outcome.some((rule) => rule.rulesetId === 'spotify_media' && rule.ruleId === ruleId),
-        label + ' selected Spotify rule ' + ruleId + ': ' + JSON.stringify(outcome));
-      assert(!outcome.some((rule) => rule.rulesetId === 'spotify_media' && rule.ruleId !== ruleId),
-        label + ' matched another Spotify rule: ' + JSON.stringify(outcome));
+    /* Header rules outrank every allow so GPC survives allowances, and testMatchOutcome then reports
+       only them for an allowed request. Set them aside while reading the packaged matcher. */
+    const headerRules = await evaluate(worker, "chrome.declarativeNetRequest.getSessionRules().then((rules) => rules.filter((r) => r.action.type === 'modifyHeaders'))");
+    await evaluate(worker, `chrome.declarativeNetRequest.updateSessionRules({ removeRuleIds: ${JSON.stringify(headerRules.map((r) => r.id))} }).then(() => true)`);
+    try {
+      for (const [label, url, ruleId] of spotifyCases) {
+        const outcome = await evaluate(worker, `chrome.declarativeNetRequest.testMatchOutcome({
+          url: ${JSON.stringify(url)}, initiator: 'https://open.spotify.com/', type: 'media'
+        }).then((r) => r.matchedRules)`);
+        assert(outcome.some((rule) => rule.rulesetId === 'spotify_media' && rule.ruleId === ruleId),
+          label + ' selected Spotify rule ' + ruleId + ': ' + JSON.stringify(outcome));
+        assert(!outcome.some((rule) => rule.rulesetId === 'spotify_media' && rule.ruleId !== ruleId),
+          label + ' matched another Spotify rule: ' + JSON.stringify(outcome));
+      }
+    } finally {
+      await evaluate(worker, `chrome.declarativeNetRequest.updateSessionRules({ addRules: ${JSON.stringify(headerRules)} }).then(() => true)`);
     }
 
     /* 2b. The config the engine acts on is the one the bridge delivers, not its built-in defaults:

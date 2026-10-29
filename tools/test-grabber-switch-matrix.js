@@ -73,6 +73,7 @@ async function check(master, resources, warnings, malware) {
     GRABBER_FEED_RULE_BASE: 740000, GRABBER_FEED_MAX: 1000,
     GRABBER_NAV_RULE_ID: 741000, GRABBER_MALWARE_NAV_RULE_ID: 741001,
     GRABBER_FEED_DOMAINS: new Set(['feedlogger.example']), GRABBER_FEED_RULE_HOSTS: hosts,
+    __grabberFeedReady: true,
     readFeedConfig: async () => cfg,
     getDynamicRulesInBand: async (base, count) => [...dynamic.values()]
       .filter((rule) => rule.id >= base && rule.id < base + count),

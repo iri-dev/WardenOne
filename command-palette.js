@@ -11,12 +11,7 @@
 (function () {
   'use strict';
 
-  /* Read here, but SET only once the overlay is actually on the page, at the bottom of
-     this file. Setting it up front looked equivalent and was not: if anything below threw
-     -- one unsupported call on one browser -- the flag stayed true and every later press
-     returned here silently, so the palette was dead on that page for the rest of its life.
-     "Does nothing" is the hardest failure to tell apart from "the key is not bound", and
-     leaving a poisoned flag behind is a good way to manufacture it. */
+  /* Set the installed flag only after mounting succeeds, so a failed initialization remains retryable. */
   if (window.__wardenOnePaletteOpen) return;
 
   /* The labels only. Which of these actually runs is the background's decision -- this
@@ -198,11 +193,8 @@
     /* The id, and nothing else. The background looks it up in its own list and dispatches
        through the same path the keyboard shortcuts use; a command name invented here
        reaches nothing. */
-    /* And the grant for this opening: the nonce the background set on this isolated window
-       just before it injected this file (MV3-06). Read now rather than at load, because a
-       second press of the shortcut mints a new grant and sets a new nonce while this palette is
-       still on screen; the pick has to spend the grant that exists. The page world cannot read
-       this window, so it cannot hold the nonce. */
+    /* MV3-06: read the isolated-world nonce at selection time; another shortcut press can replace the grant while the
+       palette is open. */
     let grant = '';
     try { grant = String(window.__wardenOnePaletteGrant || ''); } catch (_) { grant = ''; }
     try { chrome.runtime.sendMessage({ kind: 'palette-run', command: item.id, grant: grant }, () => { void chrome.runtime.lastError; }); } catch (_) { /* worker asleep */ }

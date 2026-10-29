@@ -53,7 +53,6 @@ function world(options) {
   return { logs, sent, beacon: (url, data) => sandbox.navigator.sendBeacon(url, data) };
 }
 
-// ---------------------------------------------------------------------------
 {
   const w = world();
   const out = w.beacon('https://stats.g.doubleclick.net/collect', 'x');
@@ -128,7 +127,6 @@ function world(options) {
     out === true && w.sent.length === 1, { out, sent: w.sent });
 }
 
-// ---------------------------------------------------------------------------
 {
   check('it ships on by default', /logThirdPartyBeacons:!0/.test(SRC));
   /* No toggle. Nothing is blocked and nothing is drawn on the page, so there was never any

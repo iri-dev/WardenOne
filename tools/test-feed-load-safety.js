@@ -51,15 +51,12 @@ const LIFTED = [
   constLine('GRABBER_MALWARE_NAV_RULE_ID'),
   constLine('MINER_FEED_RULE_BASE'), constLine('MINER_FEED_MAX'), constLine('MINER_POOL_RULE_OFFSET'),
   constLine('SUPPLEMENTAL_LIST_STORAGE_KEY'),
-  constLine('FEED_LOAD_RETRY_MS', 'const FEED_LOAD_RETRY_MS = [];'),
-  constLine('__feedLoadRetries', 'const __feedLoadRetries = new Map();'),
+  BG.slice(BG.indexOf('const FEED_LOAD_RETRY_MS = '), BG.indexOf('/* In place: readers hold the Set itself')),
   'const GRABBER_FEED_DOMAINS = new Set(); const GRABBER_FEED_RULE_HOSTS = new Map(); const MINER_HOSTS = new Set(); const MINER_POOL_HOSTS = new Set();',
   grabFn(BG, 'dnrValueMatches'), grabFn(BG, 'dnrBandUnchanged'),
   has(BG, 'getDynamicRulesInBand') ? dynamicRuleIo.prelude(BG, [[740000, 1000], [741000, 1], [741001, 1], [742000, 1000]])
     : 'async function getDynamicRulesInBand() { return chrome.declarativeNetRequest.getDynamicRules(); }',
   orElse('localGetStrict', 'function localGetStrict(keys) { return localGet(keys); }'),
-  orElse('scheduleFeedLoadRetry', 'function scheduleFeedLoadRetry() { return false; }'),
-  orElse('clearFeedLoadRetry', 'function clearFeedLoadRetry() {}'),
   orElse('replaceFeedSet', 'function replaceFeedSet(t, n) { t.clear(); for (const v of n) t.add(v); }'),
   orElse('readFeedConfig', "async function readFeedConfig() { const s = await localGet('wardenone_config'); return Object.assign({}, DEFAULT_CONFIG, (s && s.wardenone_config) || {}); }"),
   orElse('grabberFeedDisabled', 'function grabberFeedDisabled(cfg) { return cfg.enabled === false || (cfg.blockGrabberResources === false && cfg.warnGrabberDomains === false && cfg.blockMalwareSites === false); }'),
@@ -84,12 +81,28 @@ function browser() {
     },
     packagedFails: false, storageFails: false,
     counts: { writes: 0, warns: 0 },
-    timers: [], timerId: 0,
+    timers: [], timerId: 0, alarms: new Map(), session: {}, now: Date.now(),
   };
   const clone = (v) => JSON.parse(JSON.stringify(v));
   const chrome = {
     runtime: { lastError: null, getURL: (p) => 'chrome-extension://wo/' + p },
     storage: {
+      session: {
+        async get(keys) {
+          if (state.checkpointReadFails) throw Error('checkpoint read');
+          return Object.fromEntries((Array.isArray(keys) ? keys : [keys]).filter((key) => key in state.session).map((key) => [key, clone(state.session[key])]));
+        },
+        async set(values) {
+          if (state.checkpointWriteFails) throw Error('checkpoint write');
+          Object.assign(state.session, clone(values));
+          if (state.holdCheckpointAck) await state.holdCheckpointAck(values);
+        },
+        async remove(key) {
+          if (state.checkpointRemoveFails) throw Error('checkpoint remove');
+          if (state.holdCleanup) await state.holdCleanup(key);
+          delete state.session[key];
+        },
+      },
       local: {
         get(keys, cb) {
           if (state.storageFails) {
@@ -104,15 +117,22 @@ function browser() {
         },
       },
     },
+    alarms: {
+      get: async (name) => state.alarms.get(name),
+      create: async (name, details) => state.alarms.set(name, { name, scheduledTime: details.when }),
+      clear: async (name) => state.alarms.delete(name),
+    },
     declarativeNetRequest: {
       getDynamicRules: async (filter) => {
         const ids = filter && Array.isArray(filter.ruleIds) ? new Set(filter.ruleIds) : null;
         return [...state.dynamic.values()].filter((rule) => !ids || ids.has(rule.id)).map(clone);
       },
       updateDynamicRules: async (u) => {
+        if (state.ruleWriteFails) throw Error('DNR rejected');
         state.counts.writes++;
         for (const id of (u.removeRuleIds || [])) state.dynamic.delete(id);
         for (const r of (u.addRules || [])) state.dynamic.set(r.id, clone(r));
+        if (state.holdRuleAck) await state.holdRuleAck(u);
       },
     },
   };
@@ -133,9 +153,12 @@ function wake(b) {
     chrome: b.chrome,
     console: { warn() { state.counts.warns++; }, log() {}, error() {} },
     Promise, Object, Array, String, Number, Boolean, Set, Map, JSON, Math, Error, TypeError, RegExp,
+    Date: class extends Date { static now() { return state.now; } },
     setTimeout: (fn, ms) => { const id = ++state.timerId; state.timers.push({ id, fn, ms }); return id; },
     clearTimeout: (id) => { state.timers = state.timers.filter((t) => t.id !== id); },
     fetch: async (url) => {
+      state.fetches = (state.fetches || 0) + 1;
+      if (state.holdFetch) await state.holdFetch(url);
       if (state.packagedFails) throw new TypeError('Failed to fetch');
       const file = String(url).split('/').pop();
       const data = state.packaged[file];
@@ -144,9 +167,12 @@ function wake(b) {
     /* localGet as the worker has it: the config from its cache, any other key straight from
        Chrome's callback -- which, on a failed read, is nothing. */
     localGet: (key) => (key === 'wardenone_config'
+      && state.configFails ? Promise.resolve({ unreadable: true }) : key === 'wardenone_config'
       ? Promise.resolve({ wardenone_config: JSON.parse(JSON.stringify(state.config)) })
       : new Promise((resolve) => b.chrome.storage.local.get(key, resolve))),
     DEFAULT_CONFIG: { enabled: true, blockGrabberResources: true, warnGrabberDomains: true, blockMalwareSites: true, blockCryptominers: true },
+    readReconcileDegraded: async () => null,
+    scheduleExtensionStateRefresh() {},
     registrableDomainBg: (host) => { const p = String(host || '').toLowerCase().split('.'); return p.length >= 2 ? p.slice(-2).join('.') : String(host || ''); },
     isNeverBlockDomain: (d) => d === 'google.com',
     isUnsafeFeedBlockTarget: (d) => d === 'co.uk',
@@ -156,6 +182,7 @@ function wake(b) {
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(LIFTED + '\nthis.api = { loadGrabberFeed, loadMinerFeed, applyGrabberFeedRules, applyMinerFeedRules, GRABBER_FEED_DOMAINS, MINER_HOSTS, MINER_POOL_HOSTS };', ctx, { filename: 'feed-wake.js' });
+  b.api = sandbox.api;
   return sandbox.api;
 }
 async function coldStart(b) {
@@ -165,9 +192,10 @@ async function coldStart(b) {
   return api;
 }
 async function fire(b) {
-  const due = b.state.timers.splice(0);
-  for (const t of due) t.fn();
-  for (let i = 0; i < 12; i++) await new Promise((r) => setImmediate(r));
+  b.state.now = Math.min(...Array.from(b.state.alarms.values(), (alarm) => alarm.scheduledTime));
+  const due = [...b.state.alarms.values()].filter((alarm) => alarm.scheduledTime <= b.state.now);
+  for (const alarm of due) b.state.alarms.delete(alarm.name);
+  await Promise.all(due.map((alarm) => alarm.name.endsWith('-grabber') ? b.api.loadGrabberFeed(true) : b.api.loadMinerFeed(true)));
 }
 
 (async () => {
@@ -209,10 +237,13 @@ async function fire(b) {
     check('and the cryptominer band', b.minerDomains().join(',') === goodMiner, b.minerBand().length + ' rule(s) left of 3');
     check('with no write to Chrome at all', b.state.counts.writes === writesBefore, (b.state.counts.writes - writesBefore) + ' write(s)');
     check('it says so', b.state.counts.warns - warnsBefore === 2, (b.state.counts.warns - warnsBefore) + ' warning(s)');
-    check('and each feed schedules one retry, soon',
-      b.state.timers.length === 2 && b.state.timers.every((t) => t.ms === 5000), JSON.stringify(b.state.timers.map((t) => t.ms)));
-    check('a set that was not filled is left empty rather than partial, so no reader is told a half-truth',
-      flags.storageFails && flags.packagedFails ? api.GRABBER_FEED_DOMAINS.size === 0 : true);
+    check('and each feed schedules one browser retry at the supported minimum',
+      b.state.alarms.size === 2 && [...b.state.alarms.values()].every((alarm) => alarm.scheduledTime === b.state.now + 30000));
+    check('both retries survive discarding worker timers', b.state.alarms.size === 2);
+    check('both failed loads leave durable recovery intent',
+      !!b.state.session.wardenone_feed_load_grabber && !!b.state.session.wardenone_feed_load_miner);
+    check('unreadable sources retain membership reconstructed from installed rules',
+      flags.storageFails && flags.packagedFails ? [...api.GRABBER_FEED_DOMAINS].sort().join(',') === goodGrabber : true);
   }
 
   /* ---- the retry repopulates without a browser restart ---------------------------------------- */
@@ -221,14 +252,14 @@ async function fire(b) {
     b.state.timers = [];
     b.state.counts.warns = 0;
     const api = await coldStart(b);
-    check('setup: an incomplete start, two retries pending', b.state.timers.length === 2);
+    check('setup: an incomplete start, two retries pending', b.state.alarms.size === 2);
     Object.assign(b.state, { packagedFails: false, storageFails: false });
     b.state.local.wardenone_grabber_domains = ['grab3.example', 'grab5.example'];
     await fire(b);
     check('when the sources come back the retry rebuilds the band, including what changed meanwhile',
       b.grabberDomains().join(',') === 'grab1.example,grab2.example,grab3.example,grab4.example,grab5.example', b.grabberDomains().join(','));
     check('and fills the live set', api.GRABBER_FEED_DOMAINS.has('grab5.example') && api.MINER_HOSTS.size === 2);
-    check('a success clears the retry: nothing further is pending', b.state.timers.length === 0, b.state.timers.length + ' timer(s)');
+    check('a success clears the retry and checkpoint', b.state.alarms.size === 0 && Object.keys(b.state.session).length === 0);
     b.state.local.wardenone_grabber_domains = ['grab3.example'];
     await coldStart(b);
     check('a complete load that legitimately shrank the list shrinks the band -- that is a change, not a failure',
@@ -242,15 +273,30 @@ async function fire(b) {
     b.state.counts.warns = 0;
     await coldStart(b);
     const delays = [];
-    for (let i = 0; i < 6; i++) {
-      if (!b.state.timers.length) break;
-      delays.push(b.state.timers[0].ms);
+    for (let i = 0; i < 3; i++) {
+      delays.push(Math.min(...Array.from(b.state.alarms.values(), (alarm) => alarm.scheduledTime)) - b.state.now);
       await fire(b);
     }
-    check('retries back off and stop: three attempts after the first, then the next start is the retry',
-      delays.join(',') === '5000,30000,120000' && b.state.timers.length === 0, JSON.stringify(delays) + ' then ' + b.state.timers.length + ' pending');
+    check('three rapid retries back off before a daily cooldown', delays.join(',') === '30000,120000,600000'
+      && Object.values(b.state.session).every((item) => item.failures === 4 && item.phase === 'cooldown'
+        && item.retryAt === b.state.now + 86400000));
     check('the band is still exactly what it was through all of it', b.grabberDomains().join(',') === goodGrabber && b.minerDomains().join(',') === goodMiner);
+    const cooldown = JSON.stringify(b.state.session);
+    b.state.alarms.clear();
+    const fresh = wake(b);
+    await Promise.all([fresh.loadGrabberFeed(true), fresh.loadMinerFeed(true)]);
+    check('a worker restart retains the cooldown and its bounded two-record journal', JSON.stringify(b.state.session) === cooldown
+      && Object.keys(b.state.session).length === 2 && b.state.alarms.size === 2);
+    check('missing cooldown alarms restore their daily deadline instead of a 30-second wake loop',
+      [...b.state.alarms.values()].every((alarm) => alarm.scheduledTime === b.state.now + 86400000));
+    for (const alarm of b.state.alarms.values()) alarm.scheduledTime = b.state.now + 30000;
+    const earlyAlarm = wake(b);
+    await Promise.all([earlyAlarm.loadGrabberFeed(true), earlyAlarm.loadMinerFeed(true)]);
+    check('an interrupted backoff update repairs an alarm left earlier than its checkpoint',
+      [...b.state.alarms.values()].every((alarm) => alarm.scheduledTime === b.state.now + 86400000));
     Object.assign(b.state, { packagedFails: false, storageFails: false });
+    await fire(b);
+    check('the daily recovery eventually retries without a settings change', b.state.alarms.size === 0 && Object.keys(b.state.session).length === 0);
   }
 
   /* ---- the one case where an empty band is right ---------------------------------------------- */
@@ -289,15 +335,136 @@ async function fire(b) {
   }
 
   /* ---- the source, for the shape the card asked for ------------------------------------------- */
+  {
+    const recovery = browser();
+    await coldStart(recovery);
+    const validRules = JSON.stringify([...recovery.state.dynamic]);
+    recovery.state.packagedFails = true;
+    await coldStart(recovery);
+    const checkpoint = JSON.stringify(recovery.state.session);
+    const fetches = recovery.state.fetches;
+    recovery.state.alarms.clear();
+    const fresh = wake(recovery);
+    await Promise.all([fresh.loadGrabberFeed(true), fresh.loadMinerFeed(true)]);
+    check('a new realm restores missing alarms without resetting backoff or rereading early', recovery.state.alarms.size === 2
+      && JSON.stringify(recovery.state.session) === checkpoint && recovery.state.fetches === fetches);
+    check('a failed cold load reconstructs enforced domain membership without marking a partial set complete',
+      [...fresh.GRABBER_FEED_DOMAINS].sort().join(',') === recovery.grabberDomains().join(',')
+      && fresh.MINER_HOSTS.has('m1.example') && fresh.MINER_POOL_HOSTS.has('p1.example'));
+    const deadline = [...recovery.state.alarms.values()].map((alarm) => alarm.scheduledTime).join(',');
+    recovery.state.now += 25000;
+    const nearDeadline = wake(recovery);
+    await Promise.all([nearDeadline.loadGrabberFeed(true), nearDeadline.loadMinerFeed(true)]);
+    check('a cold wake near the deadline does not postpone an existing retry alarm',
+      [...recovery.state.alarms.values()].map((alarm) => alarm.scheduledTime).join(',') === deadline);
+    for (const alarm of recovery.state.alarms.values()) alarm.scheduledTime = recovery.state.now + 86400000;
+    const lateAlarm = wake(recovery);
+    await Promise.all([lateAlarm.loadGrabberFeed(true), lateAlarm.loadMinerFeed(true)]);
+    check('a stale later alarm cannot suppress a checkpoint whose retry is due sooner',
+      [...recovery.state.alarms.values()].every((alarm) => alarm.scheduledTime === recovery.state.now + 30000));
+    check('cold reconciliation cannot replace valid rules with an unhydrated empty set',
+      await fresh.applyGrabberFeedRules() === false && await fresh.applyMinerFeedRules() === false
+      && JSON.stringify([...recovery.state.dynamic]) === validRules);
+    recovery.state.packagedFails = false;
+    await fire(recovery);
+    check('the restored browser alarm recovers both feeds in the fresh realm', Object.keys(recovery.state.session).length === 0
+      && recovery.state.alarms.size === 0 && lateAlarm.GRABBER_FEED_DOMAINS.size === 4 && lateAlarm.MINER_HOSTS.size === 2);
+  }
+  for (const boundary of ['holdCheckpointAck', 'holdRuleAck', 'holdCleanup']) {
+    const recovery = browser();
+    let reached = false;
+    recovery.state[boundary] = () => { reached = true; return new Promise(() => {}); };
+    const interrupted = wake(recovery);
+    interrupted.loadGrabberFeed();
+    for (let i = 0; i < 30 && !reached; i++) await new Promise((resolve) => setImmediate(resolve));
+    check(boundary + ': intent and a browser wake exist before interruption', reached
+      && !!recovery.state.session.wardenone_feed_load_grabber && recovery.state.alarms.size === 1);
+    recovery.state[boundary] = null;
+    const writes = recovery.state.counts.writes;
+    const fresh = wake(recovery);
+    await fresh.loadGrabberFeed(true);
+    check(boundary + ': fresh realm finishes and clears intent', recovery.grabberBand().length === 4
+      && recovery.state.alarms.size === 0 && !recovery.state.session.wardenone_feed_load_grabber);
+    if (boundary !== 'holdCheckpointAck') check(boundary + ': replay is idempotent after native commit', recovery.state.counts.writes === writes);
+  }
+  for (const [setting, id] of [['blockGrabberResources', 740000], ['warnGrabberDomains', 741000], ['blockMalwareSites', 741001]]) {
+    const recovery = browser();
+    await coldStart(recovery);
+    recovery.state.config[setting] = false;
+    recovery.state.packagedFails = true;
+    const fresh = wake(recovery);
+    await fresh.loadGrabberFeed();
+    check(setting + ': explicit off removes its rules even when another grabber feature stays on and data is unavailable',
+      !recovery.state.dynamic.has(id) && [740000, 741000, 741001].filter((other) => other !== id).every((other) => recovery.state.dynamic.has(other)));
+  }
+  {
+    const recovery = browser();
+    await coldStart(recovery);
+    const validRules = JSON.stringify([...recovery.state.dynamic]);
+    recovery.state.local.wardenone_grabber_domains = ['new.example'];
+    recovery.state.ruleWriteFails = true;
+    const fresh = wake(recovery);
+    const result = await fresh.loadGrabberFeed();
+    check('DNR rejection retains old rules and durable retry instead of certifying success', result.ok === false
+      && JSON.stringify([...recovery.state.dynamic]) === validRules
+      && recovery.state.session.wardenone_feed_load_grabber.failed.includes('rules'));
+    recovery.state.ruleWriteFails = false;
+    await fire(recovery);
+    check('a failed DNR replacement recovers on its alarm', recovery.grabberDomains().includes('new.example') && recovery.state.alarms.size === 0);
+  }
+  for (const flag of ['checkpointReadFails', 'checkpointWriteFails', 'checkpointRemoveFails', 'configFails']) {
+    const recovery = browser();
+    recovery.state[flag] = true;
+    const fresh = wake(recovery);
+    const result = await fresh.loadGrabberFeed();
+    check(flag + ': failure is visible and keeps a browser-owned retry', result.ok === false && recovery.state.alarms.size === 1);
+    recovery.state[flag] = false;
+    wake(recovery);
+    await fire(recovery);
+    check(flag + ': a fresh worker can recover', recovery.grabberBand().length === 4 && recovery.state.alarms.size === 0);
+  }
+  {
+    const recovery = browser();
+    let release, reached = false;
+    recovery.state.holdFetch = () => { reached = true; return new Promise((resolve) => { release = resolve; }); };
+    const fresh = wake(recovery);
+    const oldLoad = fresh.loadGrabberFeed();
+    for (let i = 0; i < 20 && !reached; i++) await new Promise((resolve) => setImmediate(resolve));
+    check('alarm delivery joins an in-flight load', fresh.loadGrabberFeed(true) === oldLoad);
+    recovery.state.holdFetch = null;
+    recovery.state.local.wardenone_grabber_domains = ['newer.example'];
+    const newer = fresh.loadGrabberFeed();
+    release();
+    check('a superseded read cannot publish its set', (await oldLoad).superseded === true && fresh.GRABBER_FEED_DOMAINS.size === 0);
+    await newer;
+    check('the queued load publishes the newest sources once', recovery.grabberDomains().includes('newer.example') && recovery.state.counts.writes === 1);
+  }
+  {
+    const recovery = browser();
+    await coldStart(recovery);
+    recovery.state.config.enabled = false;
+    recovery.state.packagedFails = true;
+    const fetches = recovery.state.fetches;
+    await coldStart(recovery);
+    check('global off clears bands and recovery metadata without reading failed sources', recovery.grabberBand().length === 0
+      && recovery.minerBand().length === 0 && recovery.state.alarms.size === 0
+      && Object.keys(recovery.state.session).length === 0 && recovery.state.fetches === fetches);
+    recovery.state.config.enabled = true;
+    recovery.state.packagedFails = false;
+    recovery.state.session.wardenone_feed_load_grabber = { version: 1, failures: 999, phase: 'retry', retryAt: Number.MAX_SAFE_INTEGER, failed: [] };
+    const fresh = wake(recovery);
+    await fresh.loadGrabberFeed(true);
+    check('malformed checkpoints cannot defer protection indefinitely', recovery.grabberBand().length === 4 && recovery.state.alarms.size === 0);
+  }
   check('the loaders no longer clear their set before reading',
     !/async function loadGrabberFeed\(\) \{\s*GRABBER_FEED_DOMAINS\.clear\(\);/.test(BG) && !/async function loadMinerFeed\(\) \{\s*MINER_HOSTS\.clear\(\);/.test(BG));
   check('they read storage through a read that reports failure', (BG.match(/await localGetStrict\(\[/g) || []).length >= 2);
   check('a packaged response that is not ok is a failed source, not an empty one',
     (BG.match(/if \(!res \|\| !res\.ok\) throw new Error\('http ' \+ \(res \? res\.status : '\?'\)\);/g) || []).length >= 2);
-  check('the swap happens only on a complete load', /const complete = failed\.length === 0;\s*if \(complete\) \{\s*replaceFeedSet\(GRABBER_FEED_DOMAINS, next\);/.test(BG)
+  check('the swap happens only on a complete current load', /if \(!current\(\)\) return \{ ok: false, superseded: true \};\s*if \(complete\) \{\s*replaceFeedSet\(GRABBER_FEED_DOMAINS, next\);/.test(BG)
     && /if \(complete\) \{\s*replaceFeedSet\(MINER_HOSTS, miners\);\s*replaceFeedSet\(MINER_POOL_HOSTS, pools\);/.test(BG));
   check('both loaders still run at start and both appliers are still serialized',
-    /^loadGrabberFeed\(\);$/m.test(BG) && /^loadMinerFeed\(\);$/m.test(BG)
+    /^loadGrabberFeed\(true\);$/m.test(BG) && /^loadMinerFeed\(true\);$/m.test(BG)
       && /'applyGrabberFeedRules',\s*'applyMinerFeedRules',/.test(BG));
   check('supplemental list writes await one Grabber refresh without a storage-listener duplicate',
     /await localSet\(\{ \[SUPPLEMENTAL_LIST_STORAGE_KEY\]: lists, \[SUPPLEMENTAL_LIST_META_KEY\]: meta \}\);\s*try \{ await loadGrabberFeed\(\);/.test(BG)
