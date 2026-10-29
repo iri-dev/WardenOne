@@ -105,12 +105,8 @@ function woConfigValuesDiffer(a, b) {
   try { return JSON.stringify(a) !== JSON.stringify(b); } catch (_) { return true; }
 }
 
-/* After the lock is let go: is the stored config still descended from this write? Checked twice,
-   since a writer elsewhere may be slower than the first look. A later write that read this one
-   carries its id; one that read before it does not, and wrote over it. Then `again` makes the
-   change once more on what is stored now, and confirms that write in turn -- at most twice in all.
-   A new reset epoch stops any pre-reset retry. For the same key, the operation order tells a
-   delayed older write from a later user edit; retries retain their original order. */
+/* Confirm write ancestry after releasing the lock and retry overlapping writes at most twice. Reset epochs cancel old
+   retries; retain operation order so delayed writes cannot override later edits. */
 function confirmConfigWrite(id, again, triesLeft, changedKeys, operationOrder) {
   if (!id || typeof again !== 'function' || typeof setTimeout !== 'function') return;
   if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.local) return;

@@ -16,9 +16,11 @@ const events = [metadata(7, 1, 'CrBrowserMain'), metadata(7, 2, 'ThreadPoolForeg
   { ...task(2, 110000), name: 'Edge_RunTask' }];
 
 mustFinish(async () => {
-  assert.deepStrictEqual(parseArgs([]), { runs: 1, out: null, traceDir: null });
+  assert.deepStrictEqual(parseArgs([]), { runs: 1, out: null, traceDir: null,extension:null,browser:null,syntheticRules:null });
   assert.deepStrictEqual(parseArgs(['--runs', '3', '--out', 'report.json', '--trace-dir', 'traces']),
-    { runs: 3, out: 'report.json', traceDir: 'traces' });
+    { runs: 3, out: 'report.json', traceDir: 'traces',extension:null,browser:null,syntheticRules:null });
+  assert.equal(parseArgs(['--synthetic-rules','29950']).syntheticRules,29950);
+  for(const value of ['4999','29951','NaN','1.5'])assert.throws(()=>parseArgs(['--synthetic-rules',value]));
   for (const args of [['--runs', '0'], ['--runs', '11'], ['--runs', '1.5'], ['--runs', 'NaN'], ['--out'], ['--unknown', 'x'], ['toString', 'x'], ['--out', '--runs', '2']]) {
     assert.throws(() => parseArgs(args));
   }

@@ -113,7 +113,7 @@ for (const kind of PRIVILEGED) {
 
 /* ---------- forged senders ---------- */
 const extPage = { id: EXT_ID, url: 'chrome-extension://' + EXT_ID + '/popup.html' };
-const realTab = { id: EXT_ID, tab: { id: 7, url: 'https://example.com/page' } };
+const realTab = { id: EXT_ID, frameId: 0, url: 'https://example.com/page', tab: { id: 7, url: 'https://example.com/page' } };
 const noSender = undefined;
 const spoofedId = { id: 'some-other-extension', url: 'chrome-extension://some-other-extension/popup.html' };
 const tabClaimingExtUrl = { id: EXT_ID, tab: { id: 9, url: 'https://evil.example/x' }, url: 'chrome-extension://' + EXT_ID + '/popup.html' };

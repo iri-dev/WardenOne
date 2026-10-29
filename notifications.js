@@ -725,10 +725,11 @@ function bindHistoryControls() {
 }
 
 async function load() {
-  const stored = await storageGet(['wardenone_config', 'wardenone_notifications']);
+  const stored = await storageGet('wardenone_config');
+  const history = await chrome.runtime.sendMessage({ kind: 'history-get' });
   const cfg = stored.wardenone_config || {};
   NC.settings = sanitize(cfg.notificationSettings);
-  NC.items = normalizeItems(stored.wardenone_notifications);
+  NC.items = normalizeItems(history && history.notifications);
 
   renderPrefs();
   renderRules();
@@ -746,8 +747,6 @@ load();
    a snapshot older than the store. */
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes.wardenone_notifications) return;
-    NC.items = normalizeItems(changes.wardenone_notifications.newValue);
-    renderList(); renderBadge();
+    if ((area === 'local' || area === 'session') && (changes.wardenone_notifications || changes.wardenone_config)) void load();
   });
 } catch (_) {}

@@ -107,3 +107,39 @@ function wardenOneIdnLabels(host) {
   return found;
 }
 
+/* Country sites a brand runs under its own name. The exact brand on another suffix is the
+ * strongest look-alike shape, so only suffixes listed here count as the brand's own. Google's
+ * entry is its published supported_domains list (2026-10-29); the rest are retail or bank sites. */
+const WARDENONE_BRAND_COUNTRY_SITES = Object.freeze({
+  google: 'com ad ae com.af com.ag al am co.ao com.ar as at com.au az ba com.bd be bf bg com.bh bi bj com.bn com.bo com.br bs bt co.bw by com.bz ca cd cf cg ch ci co.ck cl cm cn com.co co.cr com.cu cv com.cy cz de dj dk dm com.do dz com.ec ee com.eg es com.et fi com.fj fm fr ga ge gg com.gh com.gi gl gm gr com.gt gy com.hk hn hr ht hu co.id ie co.il im co.in iq is it je com.jm jo co.jp co.ke com.kh ki kg co.kr com.kw kz la com.lb li lk co.ls lt lu lv com.ly co.ma md me mg mk ml com.mm mn com.mt mu mv mw com.mx com.my co.mz com.na com.ng com.ni ne nl no com.np nr nu co.nz com.om com.pa com.pe com.pg com.ph com.pk pl pn com.pr ps pt com.py com.qa ro ru rw com.sa com.sb sc se com.sg sh si sk com.sl sn so sm sr st com.sv td tg co.th com.tj tl tm tn to com.tr tt com.tw co.tz com.ua co.ug co.uk com.uy co.uz com.vc co.ve co.vi com.vn vu ws rs co.za co.zm co.zw cat',
+  amazon: 'com ca com.mx com.br co.uk de fr it es nl se pl com.be com.tr ae sa eg in co.jp com.au sg cn co.za ie',
+  ebay: 'com ca co.uk de fr it es at ch be nl ie pl com.au com.hk com.sg com.my ph in us',
+  yahoo: 'com co.jp',
+  pinterest: 'com at ca ch cl co.kr co.uk com.au com.mx de dk es fr ie it jp nz ph pt ru se',
+  airbnb: 'com ca co.uk com.au de fr es it ie co.in mx com.br jp co.kr nl be ch at dk se no fi pt pl cz gr hu co.nz com.sg com.hk cl com.ar com.co co.id com.my com.ph com.tw co.za ru is',
+  costco: 'com ca co.uk com.mx co.jp co.kr com.tw com.au co.nz es fr is se',
+  bestbuy: 'com ca',
+  walmart: 'com ca com.mx',
+  instacart: 'com ca',
+  capitalone: 'com ca co.uk',
+  nintendo: 'com co.jp co.uk de fr es it nl be at ch pt ru com.au co.nz co.za com.hk co.kr tw',
+  dhl: 'com de',
+  hsbc: 'com co.uk com.hk com.au ca fr de com.mx co.in com.sg ae com.cn com.my com.tw co.id com.ph com.vn lk com.bd com.eg com.mt ch lu com.bh com.qa com.kw co.om com.mo co.mu com.tr bm',
+  citibank: 'com com.sg com.hk ae com.my co.uk com.au co.in co.id com.ph com.tw co.th com.vn pl co.kr',
+  mastercard: 'com us ca co.uk com.au co.in de fr es it ie co.nz com.sg com.hk co.za ae com.br com.mx',
+  barclays: 'com co.uk de',
+});
+
+/* True when the brand is the host's registrable label and what follows it is one listed suffix,
+ * so google.com.au and news.google.ca count and google.ca.evil.example does not. */
+function wardenOneBrandCountrySite(host, brand) {
+  const b = String(brand || '').toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(WARDENONE_BRAND_COUNTRY_SITES, b)) return false;
+  const suffixes = ' ' + WARDENONE_BRAND_COUNTRY_SITES[b] + ' ';
+  const labels = String(host || '').toLowerCase().replace(/\.+$/, '').split('.');
+  for (let i = labels.length - 2; i >= 0 && i >= labels.length - 3; i--) {
+    if (labels[i] === b && suffixes.includes(' ' + labels.slice(i + 1).join('.') + ' ')) return true;
+  }
+  return false;
+}
+

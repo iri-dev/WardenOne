@@ -15,6 +15,9 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const harness = require('./perf-profile.js');
 const SRC = fs.readFileSync(path.join(ROOT, 'tools', 'perf-profile.js'), 'utf8');
+require('assert').equal(harness.parseArgs(['--fingerprint-noise','on']).fingerprintNoise,true);
+require('assert').equal(harness.parseArgs(['--fingerprint-noise','off']).fingerprintNoise,false);
+require('assert').throws(()=>harness.parseArgs(['--fingerprint-noise','unknown']));
 
 let failed = 0;
 let passed = 0;
@@ -39,6 +42,15 @@ check('a profile can focus on DOM churn beside an existing player',
     && /page !== '\/media-churn\.html'/.test(SRC));
 check('a profile can focus on the article without a credential form',
   JSON.stringify(harness.parseArgs(['--pages', '/article-neutral.html']).pages) === '["/article-neutral.html"]');
+check('an offline profile can use two immutable extension snapshots',
+  harness.parseArgs(['--offline', '--candidate', 'candidate', '--baseline', 'reference']).offline === true
+    && harness.parseArgs(['--candidate', 'candidate']).candidate === path.resolve('candidate')
+    && harness.parseArgs(['--baseline', 'reference']).baseline === path.resolve('reference'));
+check('the opt-in tracker policy can be profiled explicitly', harness.parseArgs(['--first-party-trackers']).firstPartyTrackers === true);
+check('CNAME protection can be profiled independently', harness.parseArgs(['--cname-trackers']).cnameTrackers === true
+  && harness.parseArgs(['--cname-trackers']).firstPartyTrackers !== true);
+check('the same build can provide a CNAME-off baseline', harness.parseArgs(['--baseline-cname-off', '--cname-trackers']).baselineCnameOff === true
+  && harness.parseArgs(['--baseline-cname-off', '--cname-trackers']).cnameTrackers === true);
 
 async function checkLaunchScheduling() {
   const launches = [];
@@ -48,7 +60,10 @@ async function checkLaunchScheduling() {
   vm.runInNewContext(SRC + '\nmodule.exports.runVariant = runVariant; freePort = async () => 9222;', {
     __dirname, module: mockedModule, process: mockProcess,
     require: (id) => {
-      if (id === 'fs') return Object.assign({}, fs, { mkdtempSync: () => path.join(ROOT, 'mock-profile'), rmSync: () => {} });
+      if (id === 'fs') return Object.assign({}, fs, {
+        mkdtempSync: () => path.join(ROOT, 'mock-profile'), rmSync: () => {},
+        existsSync: file => String(file).includes('mock-snapshot') || fs.existsSync(file),
+      });
       if (id === 'child_process') return Object.assign({}, require(id), {
         spawn: (_browser, args) => { launches.push(Array.from(args)); return { unref() {} }; },
       });
@@ -72,6 +87,15 @@ async function checkLaunchScheduling() {
       timingFlags.every((flag) => measured.includes(flag)) && features(measured).includes('CalculateNativeWinOcclusion'));
     check(variant + ' performance runs retain the shared Edge feature exclusions',
       features(shared).every((feature) => features(measured).includes(feature)));
+  }
+  for (const variant of ['base', 'on']) {
+    const snapshot = path.join(ROOT, 'mock-snapshot-' + variant);
+    try { await mocked.runVariant(variant, { edge: 'mock-browser', baseline: snapshot, candidate: snapshot, offline: true }); }
+    catch (error) { if (error !== stop) throw error; }
+    const measured = launches.pop();
+    check(variant + ' profile loads the requested immutable snapshot', measured.includes('--load-extension=' + snapshot));
+    check(variant + ' offline profile refuses remote DNS while retaining loopback',
+      measured.includes('--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'));
   }
   check('performance metadata records its unthrottled scheduling', SRC.includes('backgroundThrottlingDisabled: true'));
   check('normal browser runs retain their native renderer', !shared.some(arg => /^--use-(gl|angle)=/.test(arg)));
@@ -191,7 +215,7 @@ check('--baseline names an extension directory, resolved to an absolute path',
 check('the base variant refuses to run without a baseline that holds a manifest',
   /the base variant needs --baseline <extension directory>/.test(SRC));
 check('an "on" variant waits, bounded, for the remote lists and records what it measured with',
-  /remoteListsLoaded\(cdp, ext\.attachedSession, REMOTE_LISTS_WAIT_MS\)/.test(SRC) && /remoteLists, consentRegistered \}/.test(SRC));
+  /remoteListsLoaded\(cdp, ext\.attachedSession, REMOTE_LISTS_WAIT_MS\)/.test(SRC) && /remoteLists, consentRegistered(?:,| \})/.test(SRC));
 check('an "on" variant refuses to profile before dynamic consent registration',
   /await consentScriptReady\(cdp, ext\.attachedSession\)/.test(SRC)
     && /Consent Auto-Reject was not registered; refusing to profile/.test(SRC));
@@ -296,6 +320,13 @@ async function checkSlowExtensionReadiness() {
     clock <= 61000 && error.includes('no running WardenOne worker') && error.includes('"targets":[]'));
 }
 
+{
+  const page='/frame.html',measurement=delta=>({[page]:{cold:{taskMs:{medianDelta:delta}}}});
+  check('explicit baseline comparisons enforce overhead instead of silently skipping it',harness.overheadFailures({featureDeltas:measurement(76),deltas:{}},[page],75).length===1);
+  check('a measured baseline comparison within budget passes',harness.overheadFailures({featureDeltas:measurement(5),deltas:{}},[page],75).length===0);
+  check('extension-off comparisons retain overhead enforcement',harness.overheadFailures({deltas:{on:measurement(76)}},[page],75).length===1);
+  check('missing overhead data cannot pass a requested budget',harness.overheadFailures({deltas:{}},[page],75).length===1);
+}
 Promise.all([checkLaunchScheduling(), checkNavigationCounters(), checkExtensionReadinessContexts(), checkSlowExtensionReadiness()]).then(() => {
   if (failed) { console.error('\n' + failed + ' failed, ' + passed + ' passed'); process.exitCode = 1; }
   else console.log('\nperf profile harness: ' + passed + ' checks passed');

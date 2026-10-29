@@ -54,23 +54,16 @@ function check(name, cond, detail) {
 }());
 
 (function webgpuFeaturesRestOnRequestDeviceValidatingAgainstTheRealAdapter() {
-  /* adapter.features carries a real signal: bc versus etc2 versus astc texture
-     compression splits desktop from mobile. It is left intact because hiding a
-     feature does not stop a page needing it -- the page takes its fallback path
-     or fails outright, which is a visible cost for a partial gain.
-
-     The limits ARE clamped, and that is only safe because requestDevice validates
-     what a page asks for against the real adapter rather than against what was
-     reported. If the wrapper ever starts intercepting requiredLimits, clamping
-     stops being free and becomes a cap on what pages can allocate. */
+  /* Preserve native features and requestDevice validation. Reducing reported limits must not rewrite requiredLimits
+     or cap allocations the real adapter supports. */
   const shieldAt = CONTENT.indexOf('const woGpuLimits=');
   check('the WebGPU shield is present to reason about', shieldAt > 0);
   const shield = CONTENT.slice(shieldAt, shieldAt + 4000);
   check('features are still passed through untouched',
     shield.indexOf('features') < 0, 'features are now rewritten — check the fallback paths still work');
   check('requestDevice still forwards its arguments unchanged',
-    /realDevice\.apply\(real,args\)/.test(shield),
-    'requiredLimits are now being intercepted — clamped limits are no longer free');
+    /realDevice\.apply\((?:real|this===proxy\?real:this),args\)/.test(shield),
+    'requiredLimits must reach the native adapter unchanged');
 }());
 
 // --- Workers: the realm that cannot be reached ------------------------------
@@ -176,7 +169,6 @@ function check(name, cond, detail) {
     !!bridge && bridge.world === 'ISOLATED', bridge && bridge.world);
 }());
 
-// ---------------------------------------------------------------------------
 
 if (failures.length) {
   console.error('FAIL (' + failures.length + ')');

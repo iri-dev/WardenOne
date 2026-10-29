@@ -17,6 +17,8 @@ process.exitCode = 1;
 (async () => {
   const devices = ['videoinput', 'audioinput', 'audiooutput'].map((kind, i) => ({
     kind, deviceId: i ? 'opaque-device-' + i : 'default', label: 'Private hardware ' + i, groupId: 'private-group',
+    toJSON() { return { kind:this.kind,deviceId:this.deviceId,label:this.label,groupId:this.groupId }; },
+    getCapabilities() { assert(devices.includes(this)); return { deviceId:this.deviceId }; },
   }));
   const failure = new Error('native enumeration refused');
   const mediaDevices = {
@@ -27,12 +29,15 @@ process.exitCode = 1;
         ? Promise.resolve('selected') : Promise.reject(new Error('unusable camera ID'));
     },
   };
-  vm.runInNewContext(wrapper, { navigator: { mediaDevices } });
+  vm.runInNewContext(wrapper, { navigator: { mediaDevices }, cloak:fn=>fn });
   for (const device of await mediaDevices.enumerateDevices()) {
     assert(devices.some((d) => d.kind === device.kind && d.deviceId === device.deviceId), 'opaque native ID survives');
     assert.equal(device.label, '');
     assert.equal(device.groupId, '');
     assert.equal(device.toJSON().deviceId, device.deviceId);
+    assert.equal(device.getCapabilities().deviceId,device.deviceId);
+    assert.equal(device.getCapabilities,device.getCapabilities);
+    assert.equal(Object.getPrototypeOf(device),Object.getPrototypeOf(devices[0]));
     if (device.kind === 'videoinput') assert.equal(await mediaDevices.getUserMedia({ video: { deviceId: { exact: device.deviceId } } }), 'selected');
   }
   mediaDevices.fail = true;

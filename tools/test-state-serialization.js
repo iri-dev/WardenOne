@@ -12,7 +12,8 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
-const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const BACKGROUND = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(ROOT, 'background-cname.js'), 'utf8');
 
 // Failure is the default, cleared only when main() actually reaches the end.
 //
@@ -336,7 +337,7 @@ function testCoverage() {
   const listed = new Set(((listMatch ? listMatch[1] : '').match(/'[^']+'/g) || [])
     .map((s) => s.slice(1, -1)));
 
-  const defined = ((BACKGROUND.match(/^(?:async )?function (apply[A-Z]\w*|reconcile\w*Injection|refreshBlocklistRuleset)\(/gm) || [])
+  const defined = ((BACKGROUND.match(/^(?:async )?function (apply[A-Z]\w*|reconcile\w*(?:Injection|Observer)|refreshBlocklistRuleset)\(/gm) || [])
     .map((m) => m.replace(/^(?:async )?function /, '').replace(/\($/, '')));
 
   // applyScriptShieldRules owns its own serialization chain and is excluded on purpose.

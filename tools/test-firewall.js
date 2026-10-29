@@ -119,10 +119,14 @@ check('the rule count is bounded',
   'the dynamic rule budget is shared with every other feature');
 
 /* ---- the decisions beat the lists --------------------------------------- */
-const priorities = [...BG.matchAll(/priority: (\d+)/g)].map((m) => Number(m[1]));
+const signalStart = BG.indexOf('async function applyPrivacyHeaderRule(');
+const signalEnd = BG.indexOf('const PRIVACY_SIGNALS_SCRIPT_ID', signalStart);
+check('the header-only privacy owner is separately identified', signalStart >= 0 && signalEnd > signalStart);
+const requestRules = BG.slice(0, signalStart) + BG.slice(signalEnd);
+const priorities = [...requestRules.matchAll(/priority: (\d+)/g)].map((m) => Number(m[1]));
 check('a firewall allow outranks every blocklist rule',
   priorities.filter((p) => p > api.FIREWALL_PRIORITY).length <= 2,
-  'only the very top safety allows may sit above an explicit per-site decision');
+  'only the very top safety allows may sit above an explicit per-site decision; signal-header contents are checked in test-privacy-signals');
 check('the priority is a named constant, not a literal',
   /priority: FIREWALL_PRIORITY/.test(BG));
 

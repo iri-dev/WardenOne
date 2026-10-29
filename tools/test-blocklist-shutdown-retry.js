@@ -26,6 +26,7 @@ function constant(name) {
   return match[0];
 }
 const constants = ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX',
+  'CNAME_RULE_BASE', 'CNAME_RULES_BUDGET',
   'TRACKER_RULES_BUDGET', 'USER_RULES_BUDGET', 'FIREWALL_RULES_BUDGET', 'FIREWALL_SESSION_RULES_BUDGET',
   'USER_BLOCKLIST_RULES_BUDGET', 'NEVER_BLOCK_ALLOW_RULE_BASE', 'NEVER_BLOCK_ALLOW_MAX',
   'SCRIPT_SHIELD_RULE_BASE', 'SCRIPT_SHIELD_RULE_MAX', 'FINGERPRINT_SCRIPT_RULE_BASE', 'FINGERPRINT_SCRIPT_RULE_MAX',
@@ -81,6 +82,7 @@ function world(options = {}) {
     eyeShieldRegistrationScope: () => ({ matches: [], excludeMatches: [] }),
     resourceSaverScriptFiles: () => [], consentRejectActive: () => false, searchSponsoredCleanupActive: () => false,
     LISTENERS_NOT_REGISTERED: [],
+    readFeedLoadFailures: async () => [],
     ADSHIELD_STATIC_ACTIVE: true,
     __subsystemQueues: new Map(),
     applyLearnedRules: async () => state.learnedResult,

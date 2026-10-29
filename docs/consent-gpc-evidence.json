@@ -1,0 +1,529 @@
+{
+  "schemaVersion": 1,
+  "phase": "G-03",
+  "status": "complete",
+  "date": "2026-10-27T21:37:50.570Z",
+  "runtime": {
+    "version": "1.0.2",
+    "fingerprint": "7a3067a311aef1597cc32a2a10f68c7e99c6d6dc0f0047a85a4a75a32bcc4731",
+    "fileCount": 143,
+    "snapshot": "tmp/ghostery-phase03/snapshot-08/wardenone"
+  },
+  "consent": {
+    "managers": [
+      "OneTrust",
+      "Cookiebot",
+      "TrustArc"
+    ],
+    "outcomes": [
+      "dispatched",
+      "failed",
+      "unverified",
+      "rejected"
+    ],
+    "verification": "Changed, recognized saved-cookie state with optional categories off; banner disappearance alone is insufficient.",
+    "rawCookieValuesLogged": false,
+    "pendingVerificationRevokedOn": [
+      "pause",
+      "disposal",
+      "history erase",
+      "privacy erase"
+    ],
+    "sensitiveInputVeto": true,
+    "closedShadowRoots": "not inspected",
+    "invalidEffectiveConfig": "Stand down and revoke pending checks; valid legacy Boolean choices remain supported."
+  },
+  "gpc": {
+    "pageWorld": "MAIN at document_start",
+    "scope": "Each document uses its own hostname policy; navigation follows the destination, subrequests follow the initiator.",
+    "siteOverridesCoordinated": true,
+    "restoresNativeDescriptors": true,
+    "navRuleId": 900008,
+    "subrequestRuleId": 900000,
+    "existingTrackerCookieRuleId": 900007,
+    "atomicHeaderReplacement": true,
+    "signalHeaderPriority": 100001,
+    "survivesRequestAllowances": true
+  },
+  "validation": {
+    "gate": "pass",
+    "gateLog": "tmp/ghostery-phase03/gate-final-verified.log",
+    "testSuites": 338,
+    "packageBudget": "pass",
+    "native": [
+      {
+        "browser": "Edg/150.0.4078.48",
+        "complete": true,
+        "checks": [
+          "OneTrust direct/settings, late Cookiebot and open-shadow TrustArc fixtures save required-only browser cookies; verification succeeds while banners remain present",
+          "A dispatched click that removes a banner without saving state remains unverified",
+          "Clearing history revokes pending page verification and prevents an erased action from reappearing",
+          "A payment/account/password consent lookalike receives no automatic click",
+          "GPC agrees at the first inline script and navigation receiver for enabled, disabled, paused, allowlisted, site-exempt and resumed documents; live toggle restoration and cross-host subrequests agree",
+          "A cross-origin exempt iframe has no early GPC or navigation signal; a real HTML5 video loads and plays with GPC on its media request",
+          "Original user configuration is restored and granted permissions are unchanged"
+        ],
+        "cases": [
+          {
+            "cmp": "onetrust",
+            "variant": "normal",
+            "clicks": 1,
+            "status": "rejected",
+            "savedStateReadInBrowser": true,
+            "bannerStillPresent": true
+          },
+          {
+            "cmp": "cookiebot",
+            "variant": "late",
+            "clicks": 1,
+            "status": "rejected",
+            "savedStateReadInBrowser": true,
+            "bannerStillPresent": true
+          },
+          {
+            "cmp": "trustarc",
+            "variant": "shadow",
+            "clicks": 1,
+            "status": "rejected",
+            "savedStateReadInBrowser": true,
+            "bannerStillPresent": true
+          },
+          {
+            "cmp": "onetrust",
+            "variant": "settings",
+            "clicks": 2,
+            "status": "rejected",
+            "savedStateReadInBrowser": true,
+            "bannerStillPresent": true
+          },
+          {
+            "label": "enabled",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "active-signals.example.org",
+              "path": "/signal-1",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          },
+          {
+            "label": "disabled",
+            "early": {
+              "gpc": false,
+              "dnt": "",
+              "current": false
+            },
+            "receiver": {
+              "host": "active-signals.example.org",
+              "path": "/signal-2",
+              "gpc": "",
+              "dnt": ""
+            }
+          },
+          {
+            "label": "paused",
+            "early": {
+              "gpc": false,
+              "dnt": "",
+              "current": false
+            },
+            "receiver": {
+              "host": "active-signals.example.org",
+              "path": "/signal-3",
+              "gpc": "",
+              "dnt": ""
+            }
+          },
+          {
+            "label": "allowlisted",
+            "early": {
+              "gpc": false,
+              "dnt": "",
+              "current": false
+            },
+            "receiver": {
+              "host": "except-signals.example.net",
+              "path": "/signal-4",
+              "gpc": "",
+              "dnt": ""
+            }
+          },
+          {
+            "label": "site override",
+            "early": {
+              "gpc": false,
+              "dnt": "",
+              "current": false
+            },
+            "receiver": {
+              "host": "except-signals.example.net",
+              "path": "/signal-5",
+              "gpc": "",
+              "dnt": ""
+            }
+          },
+          {
+            "label": "resumed",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "active-signals.example.org",
+              "path": "/signal-6",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          },
+          {
+            "label": "login compatibility",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "accounts.google.com",
+              "path": "/signal-7",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          },
+          {
+            "label": "media compatibility",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "www.youtube.com",
+              "path": "/signal-8",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          },
+          {
+            "label": "explicit request allowance",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "request-allowed.example.org",
+              "path": "/signal-9",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          }
+        ]
+      },
+      {
+        "browser": "Chrome/121.0.6167.184",
+        "complete": true,
+        "checks": [
+          "OneTrust direct/settings, late Cookiebot and open-shadow TrustArc fixtures save required-only browser cookies; verification succeeds while banners remain present",
+          "A dispatched click that removes a banner without saving state remains unverified",
+          "Clearing history revokes pending page verification and prevents an erased action from reappearing",
+          "A payment/account/password consent lookalike receives no automatic click",
+          "GPC agrees at the first inline script and navigation receiver for enabled, disabled, paused, allowlisted, site-exempt and resumed documents; live toggle restoration and cross-host subrequests agree",
+          "A cross-origin exempt iframe has no early GPC or navigation signal; a real HTML5 video loads and plays with GPC on its media request",
+          "Original user configuration is restored and granted permissions are unchanged"
+        ],
+        "cases": [
+          {
+            "cmp": "onetrust",
+            "variant": "normal",
+            "clicks": 1,
+            "status": "rejected",
+            "savedStateReadInBrowser": true,
+            "bannerStillPresent": true
+          },
+          {
+            "cmp": "cookiebot",
+            "variant": "late",
+            "clicks": 1,
+            "status": "rejected",
+            "savedStateReadInBrowser": true,
+            "bannerStillPresent": true
+          },
+          {
+            "cmp": "trustarc",
+            "variant": "shadow",
+            "clicks": 1,
+            "status": "rejected",
+            "savedStateReadInBrowser": true,
+            "bannerStillPresent": true
+          },
+          {
+            "cmp": "onetrust",
+            "variant": "settings",
+            "clicks": 2,
+            "status": "rejected",
+            "savedStateReadInBrowser": true,
+            "bannerStillPresent": true
+          },
+          {
+            "label": "enabled",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "active-signals.example.org",
+              "path": "/signal-1",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          },
+          {
+            "label": "disabled",
+            "early": {
+              "gpc": false,
+              "dnt": "",
+              "current": false
+            },
+            "receiver": {
+              "host": "active-signals.example.org",
+              "path": "/signal-2",
+              "gpc": "",
+              "dnt": ""
+            }
+          },
+          {
+            "label": "paused",
+            "early": {
+              "gpc": false,
+              "dnt": "",
+              "current": false
+            },
+            "receiver": {
+              "host": "active-signals.example.org",
+              "path": "/signal-3",
+              "gpc": "",
+              "dnt": ""
+            }
+          },
+          {
+            "label": "allowlisted",
+            "early": {
+              "gpc": false,
+              "dnt": "",
+              "current": false
+            },
+            "receiver": {
+              "host": "except-signals.example.net",
+              "path": "/signal-4",
+              "gpc": "",
+              "dnt": ""
+            }
+          },
+          {
+            "label": "site override",
+            "early": {
+              "gpc": false,
+              "dnt": "",
+              "current": false
+            },
+            "receiver": {
+              "host": "except-signals.example.net",
+              "path": "/signal-5",
+              "gpc": "",
+              "dnt": ""
+            }
+          },
+          {
+            "label": "resumed",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "active-signals.example.org",
+              "path": "/signal-6",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          },
+          {
+            "label": "login compatibility",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "accounts.google.com",
+              "path": "/signal-7",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          },
+          {
+            "label": "media compatibility",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "www.youtube.com",
+              "path": "/signal-8",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          },
+          {
+            "label": "explicit request allowance",
+            "early": {
+              "gpc": true,
+              "dnt": "1",
+              "current": true
+            },
+            "receiver": {
+              "host": "request-allowed.example.org",
+              "path": "/signal-9",
+              "gpc": "1",
+              "dnt": "1"
+            }
+          }
+        ]
+      }
+    ],
+    "footprint": {
+      "tree": "f9243c361fcc5399b978d606615b8122d4bba9fc",
+      "metrics": {
+        "stagedZipBytes": 2440083,
+        "unpackedBytes": 11331611,
+        "staticDnrRules": 28369,
+        "manifestScriptEntries": 18,
+        "manifestScriptFiles": 16,
+        "manifestScriptBytes": 1762019,
+        "workerSourceBytes": 1425955
+      }
+    }
+  },
+  "invariants": {
+    "protectionCount": 110,
+    "configurationFields": 147,
+    "storageKeys": 101,
+    "newSettings": false,
+    "newPermissions": false,
+    "newRuntimeFeeds": false,
+    "versionBumped": false,
+    "committed": false,
+    "pushed": false
+  },
+  "artifacts": [
+    {
+      "path": "consent-state.js",
+      "sha256": "549094084540aeb837a73bfbd4af003d92da1d69dec4604aed7cdf5ebb3381b4"
+    },
+    {
+      "path": "consent-reject.js",
+      "sha256": "61efec1b5f441c6e35eba27bddd4a74b29a931a3b49f7fecd0fd4bfdb22eef2d"
+    },
+    {
+      "path": "consent-wall.js",
+      "sha256": "500212267ae122607f98cb86da57c73b7e5bc00c594334b5b6ab4114a7101ce7"
+    },
+    {
+      "path": "privacy-signals.js",
+      "sha256": "8b5072149e1a8bf9567a55d281d385869ca2b2ac70212bc1cf3a023d1a883a6f"
+    },
+    {
+      "path": "src/content.js",
+      "sha256": "84d79b92334ee557cd845d73622daa63c0991e9644fad6fcd2f7ffcf7fa82f47"
+    },
+    {
+      "path": "content.min.js",
+      "sha256": "92e5acfe8facb7f56f0ebaa1d97f9c2dcdf287c292a3347c5d5c8d808f7b416f"
+    },
+    {
+      "path": "background.js",
+      "sha256": "7244b8e3b602210a78f7e98b734862aedfb16e0209383ac76dae65a5ab8eaa1d"
+    },
+    {
+      "path": "history.js",
+      "sha256": "bcff7544df7bbd1a26aafb5e361845178808ca2fd2feb5a55086bfec9f76b3f8"
+    },
+    {
+      "path": "popup.js",
+      "sha256": "89da8da4e3a7896cb97388e0cdc1a2788d24fbad12c72078f1328812ed06aa65"
+    },
+    {
+      "path": "tools/test-consent-outcomes.js",
+      "sha256": "1aecd3045368c04b07324622d607da54a9cd90b78d13e43f2e14f74bba60589e"
+    },
+    {
+      "path": "tools/test-privacy-signals.js",
+      "sha256": "5eff596c7f7cc5564c6a3613acef2caa746476b22d048d748be58a9e5eb1b5d5"
+    },
+    {
+      "path": "tools/test-dnr-budget.js",
+      "sha256": "1949c1b9d37eb740cb07cae6b20a1401ddc2574ba2934eadde44ce90894d2ebc"
+    },
+    {
+      "path": "tools/test-dnr-atomic-replace.js",
+      "sha256": "4f5d3a048ea6bcf369475913051193f20e8e37777626c7f72b4ae5edf39dfbd7"
+    },
+    {
+      "path": "tools/test-hot-path-layout.js",
+      "sha256": "5dd014b662ba1d82b06261dde7e2222a9574cbe7a1ab45d869986c44cc9e483f"
+    },
+    {
+      "path": "tools/test-firewall.js",
+      "sha256": "e07c8a839ec68476e94579370110ee9f2c7c4a87157b64793bf8bcf0a5144f7f"
+    },
+    {
+      "path": "tools/browser-consent-gpc.js",
+      "sha256": "a956d62780364df1984cbc94aab7edcc685c612ae4ca064b2034cab98de72170"
+    },
+    {
+      "path": "docs/consent-gpc-audit.md",
+      "sha256": "7beb1dad501295d846f27fd9a2c387d29a2cc4c482c943326b7d8dc94e601ef8"
+    },
+    {
+      "path": "tmp/ghostery-phase03/verified08-edge.json",
+      "sha256": "b087a6b37689908773728b8d4c7c384800a238684c58b5f4434db4a7c92357b5"
+    },
+    {
+      "path": "tmp/ghostery-phase03/verified08-edge.log",
+      "sha256": "2fd84843336d2bcca57c760bcb8f6c058401783c588a82a568cee0886dc0b29f"
+    },
+    {
+      "path": "tmp/ghostery-phase03/verified08-chrome.json",
+      "sha256": "2347bdea7f025f2643244abe2aac17a61d2d744bf30189df93771ee187a97133"
+    },
+    {
+      "path": "tmp/ghostery-phase03/verified08-chrome.log",
+      "sha256": "37b007af25a8f744ab61d3d1631ae2542ad8d38a1f2af4011821d514b80de88a"
+    },
+    {
+      "path": "tmp/ghostery-phase03/gate-final-verified.log",
+      "sha256": "af53542996616e9cec70037794d028042baa36f846b468ade3d157658756946f"
+    },
+    {
+      "path": "tmp/ghostery-phase03/footprint-final.json",
+      "sha256": "c66477f950506f1cbbdaf833a0592cee5ad5cc8fa4f1d614bdebcc5ea0cbfae2"
+    }
+  ],
+  "finalProvenance": "tmp/ghostery-phase03/final-review/snapshots.json",
+  "limitations": [
+    "Native evidence covers Edge 150.0.4078.48 and Chrome 121.0.6167.184, not every browser build.",
+    "Controlled CMP fixtures use documented state formats and known controls; vendor SDKs and every live customization are not covered.",
+    "Unknown, unchanged or unreadable CMP state stays unverified; saved state is not proof every script honors it.",
+    "Document-start GPC applies after registration/header reconciliation; earlier page reads cannot be retracted.",
+    "Embedded documents follow their own hostname policy.",
+    "Closed shadow roots are not inspected. Media verification uses a real MP4 on the established trusted-media fixture."
+  ],
+  "finalizedOn": "2026-10-28"
+}

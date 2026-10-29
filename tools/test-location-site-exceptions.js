@@ -113,13 +113,13 @@ function rig(options) {
     + '\nglobalThis.api = { apply: applyGlobalLocationBlock, exempt: (typeof locationExemptHosts === "function" ? locationExemptHosts : function () { return []; }),'
     + ' patterns: (typeof locationPatternsFor === "function" ? locationPatternsFor : null), schedule: (typeof scheduleSitePauseExpiry === "function" ? scheduleSitePauseExpiry : null),'
     + ' wake: () => { __globalLocationBlockEnabled = null; __locationExemptKey = null; } };';
-  vm.runInContext(src, sandbox, { filename: 'location-lift.js' });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'site-recovery.js'), 'utf8') + '\n' + src, sandbox, { filename: 'location-lift.js' });
   sandbox.localRemove = async (key) => { delete state.local[key]; state.removed.push(key); };
   return { api: sandbox.api, state, store, effective: store.effective,
     /* The worker is torn down: memory forgets, storage and Chrome's rules remain. */
     wake() { sandbox.api.wake(); state.sets.length = 0; state.written.length = 0; } };
 }
-const cfgWith = (o) => Object.assign({ enabled: true, blockGeolocation: true, allowlist: [], allowlistUntil: {}, siteOverrides: {} }, o || {});
+const cfgWith = (o) => Object.assign({ enabled: true, blockGeolocation: true, allowlist: [], allowlistUntil: {}, siteRecoveryUntil: {}, siteOverrides: {} }, o || {});
 const NOW = 1758240000000;
 const MAPS = 'https://maps-demo.com/route';
 const SUB = 'https://tiles.maps-demo.com/tile/1';
@@ -184,14 +184,17 @@ const STORE = 'https://store-finder.net/';
       r.api.schedule(cfgWith({ allowlistUntil: { 'alpha-site.com': NOW + 300000, 'beta-site.com': NOW + 60000, 'gone-site.com': NOW - 5 } }));
       const created = r.state.alarms.created[0];
       check('one alarm is armed just after the earliest live pause lapses', !!created && created.name === 'wardenone-site-pause-expiry' && created.when === NOW + 61000, created);
+      r.api.schedule(cfgWith({ allowlistUntil: { 'alpha-site.com': NOW + 300000 }, siteRecoveryUntil: { 'recovery-site.com': { key: 'removeOverlays', until: NOW + 60000 } } }));
+      const recoveryAlarm = r.state.alarms.created[1];
+      check('a narrower feature trial can set the earlier expiry alarm', !!recoveryAlarm && recoveryAlarm.when === NOW + 61000, recoveryAlarm);
       r.api.schedule(cfgWith());
       check('with no pause pending the alarm is cleared', r.state.alarms.cleared.includes('wardenone-site-pause-expiry'));
     }
     const listener = BG.slice(BG.indexOf("chrome.alarms?.onAlarm.addListener"), BG.indexOf("chrome.alarms?.onAlarm.addListener") + 1400);
-    check('the alarm re-runs the whole reconcile, which derives the pass and the exception alike', /alarm\.name === SITE_PAUSE_EXPIRY_ALARM\) refreshExtensionState\(\);/.test(listener));
+    check('the alarm refreshes content and re-runs the whole reconcile', /alarm\.name === SITE_PAUSE_EXPIRY_ALARM\) \{[\s\S]{0,200}invalidateContentConfigMemo\(\);[\s\S]{0,200}refreshExtensionState\(\);/.test(listener));
     const reconcile = lift('refreshExtensionState') || '';
     check('the reconcile arms it on every pass, before its own early-out, and never lets that stop the pass', /try \{ scheduleSitePauseExpiry\(cfg\); \} catch \(_\) \{\}[\s\S]{0,400}const stateKey = \[/.test(reconcile));
-    check('the lapse is read through the pause resolver, the one place allowed to read the map', /function nextSitePauseLapse\(cfg\)/.test(BG) && /const earliest = nextSitePauseLapse\(cfg\);/.test(lift('scheduleSitePauseExpiry') || '') && !/cfg\.allowlistUntil/.test(lift('scheduleSitePauseExpiry') || ''));
+    check('the lapse is read through the pause resolver, the one place allowed to read the map', /function nextSitePauseLapse\(cfg\)/.test(BG) && /const pause = nextSitePauseLapse\(cfg\);/.test(lift('scheduleSitePauseExpiry') || '') && !/cfg\.allowlistUntil/.test(lift('scheduleSitePauseExpiry') || ''));
     check('the excused sites are part of the desired state the reconcile keys on', /locationExemptHosts\(cfg\)\.join\(','\),/.test(reconcile));
     check('the reconcile hands them to the applier', /run\('geolocation', \(\) => applyGlobalLocationBlock\(on && cfg\.blockGeolocation === true, locationExemptHosts\(cfg\)\), JSON\.stringify\(\[on && cfg\.blockGeolocation === true, locationExemptHosts\(cfg\)\]\)\);/.test(reconcile));
     check('the standalone refresh does too', /applyGlobalLocationBlock\(on && cfg\.blockGeolocation === true, locationExemptHosts\(cfg\)\);/.test(lift('refreshGlobalLocationBlock') || ''));

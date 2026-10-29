@@ -81,7 +81,8 @@ if (doc) {
   check('it no longer writes the raw parse result',
     !/wardenone_adshield_cosmetic: parsed,/.test(BG));
 
-  const m = BG.match(/const passive = \{([\s\S]{0,320}?)\};/);
+  check('the refresh uses the shared passive boundary', /const passive = passiveCosmeticRules\(parsed\);/.test(BG));
+  const m = BG.match(/function passiveCosmeticRules\(parsed\) \{\s*return \{([\s\S]*?)\};\s*\}/);
   check('the projection is defined', !!m);
   if (m) {
     const body = m[1];
@@ -90,6 +91,12 @@ if (doc) {
     for (const key of ['generic', 'specific', 'exceptions', 'genericHideExclusions']) {
       check('it keeps ' + key, new RegExp('\\b' + key + '\\b').test(body));
     }
+    const project = vm.runInNewContext('(' + m[0] + ')');
+    const projected = project({ generic: ['.ad'], specific: {}, exceptions: {}, genericHideExclusions: [],
+      scriptlets: { 'evil.example': [{ name: 'json-prune', args: ['everything'] }] },
+      procedural: { 'evil.example': ['body:remove()'] }, unexpected: true });
+    check('remote command fields and unknown fields are discarded',
+      Object.keys(projected).sort().join(',') === 'exceptions,generic,genericHideExclusions,specific');
   }
 }
 

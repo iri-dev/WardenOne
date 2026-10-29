@@ -11,8 +11,7 @@
    so an unrecognized result is left alone. */
 (function () {
   'use strict';
-  const WO_GUARD_VERSION = '1.0.2';
-  /* Release the older version’s listeners, observers and timers before replacing it in an open document. */
+  const WO_GUARD_VERSION = '1.0.3';
   if (window.__wardenOneSearchJunk === WO_GUARD_VERSION) return;
   if (window.__wardenOneSearchJunk) {
     try {
@@ -85,13 +84,8 @@
      asked about again on every rescan, and a results page rescans a lot. */
   var verdicts = Object.create(null);
   var notReadyRetries = 0;
-  /* The packaged IP-logger list, from search-loggers.js -- generated from the ruleset
-     (block rules for whole domains, nothing else: the file also carries allow rules for
-     Google and the login hosts) and registered right in front of this script. The worker's
-     answer is the whole picture, but waking it takes most of a second, and a logger link is
-     the one result nobody should have to wait to be told about. There is no other way to
-     have the list in time: a content script cannot fetch a packaged file, and it is kept
-     out of extension storage -- the worker hands pages a bounded snapshot instead. */
+  /* search-loggers.js supplies generated whole-domain block entries before this script runs, so known logger warnings need
+     no worker wake or storage read. */
   var loggerHosts = Object.create(null);
   var LOGGER_LABEL = 'IP logger \u2014 opening it reveals your address';
   function addPackagedLoggers(list) {
@@ -162,11 +156,8 @@
          scraper result is: dimming is for "you probably do not want this", and a
          warning has to stay perfectly readable to be acted on. Nothing is hidden and
          the link still works -- the reader is told, not overruled. */
-      /* The line itself is generated content, read off an attribute on the result block,
-         rather than a node placed inside it. Bing sweeps foreign nodes out of its result
-         items within seconds -- the attribute stayed, the line went, and five marked
-         results showed nothing -- and a pseudo-element is not a node anything can remove.
-         attr() is text: a domain that reached a feed cannot put markup on the page. */
+      /* Bing removes inserted result nodes. Use attribute-backed pseudo-element text, which survives its sweep and cannot
+         inject markup. */
       /* No box and no colour of its own: the symbol carries the warning, the words say what
          it is, and the page's own text colour keeps it readable on a light page and a dark
          one alike (the page's theme is not the OS theme, so nothing here may key on
@@ -424,12 +415,8 @@
     return false;
   }
 
-  /* The warning pass does not wait to be told it is wanted. Asking the worker meant a
-     round trip that, on a worker asleep after 30 s of idling, came AFTER the results were
-     on screen; and the page is kept out of extension storage. So the worker puts the answer
-     in the registration: it registers this script only while WardenOne is on and a pass is
-     wanted, and puts search-loggers.js in front of it only while the warning pass is on.
-     The list being here is the switch. Known loggers are named at once; the rest is asked. */
+  /* Registration controls whether this pass runs; search-loggers.js presence enables immediate logger warnings. Ask the
+     worker for remaining verdicts. */
   doWarn = typeof WO_SEARCH_LOGGERS !== 'undefined' && Array.isArray(WO_SEARCH_LOGGERS);
   if (doWarn) {
     addPackagedLoggers(WO_SEARCH_LOGGERS);

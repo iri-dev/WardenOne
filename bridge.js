@@ -9,7 +9,7 @@
 (function () {
   'use strict';
 
-  const BRIDGE_VERSION = '1.0.2';
+  const BRIDGE_VERSION = '1.0.3';
   if (window.__wardenOneBridgeVersion === BRIDGE_VERSION) {
     /* A same-version injection may replay config but must never reinstall listeners, even without a replay hook. */
     try {
@@ -101,11 +101,8 @@
   // handed off synchronously at document_start and never replayed. Signed
   // sequence payloads prevent forgery; late engine injection reloads the tab
   // because no private MAIN-world hand-off remains after page scripts run.
-  /* HMAC-SHA256 over UTF-8 text, in plain JS. crypto.subtle is absent on http: pages and
-     asynchronous everywhere, and this has to answer inside a synchronous DOM event. Every
-     reference it needs is captured here, before the page runs, so a page that rewrites
-     TextEncoder or Uint8Array later changes nothing about what it computes. Not a general
-     library: fixed 32-byte key (hex), text in, hex out. */
+  /* Synchronous DOM replies need HMAC without crypto.subtle, which is async and unavailable on HTTP. Capture built-ins
+     before page scripts; keys are fixed 32-byte hex values. */
   /* AUTH-BEGIN: shared by MAIN-world receivers and the isolated bridge. */
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
@@ -450,13 +447,8 @@
       }
       style.textContent = selectors.map((selector) => selector + '{display:none!important;}').join('\n');
 
-      /* The in-page Zapper marks what it hid with an attribute as well as
-         relying on this stylesheet, and that attribute outlives the rule being
-         deleted -- so dropping a selector left the element gone until the page
-         was reloaded. That is exactly why undo in the popup used to reload the
-         tab after EVERY item, which on a site with a few saved rules looked
-         like a reload loop and tripped WardenOne's own detector. Clearing the
-         mark here makes undo take effect in place, so nothing has to reload. */
+      /* Undo must clear the Zapper's hide attribute as well as its stylesheet, allowing deleted rules to reveal elements
+         without reloading. */
       try {
         const marked = document.querySelectorAll('[data-wardenone-zapped="true"]');
         for (let i = 0; i < marked.length; i++) {
@@ -619,12 +611,8 @@
     return computed;
   }
 
-  // A lower-case DNS name -- the form the worker stores every list host in -- comes back from
-  // the URL parser exactly as it went in, so it need not be parsed. Building that URL was most
-  // of the ~10 ms the top frame spent re-checking the ~3,600 remote list hosts on every page
-  // load. Two shapes the parser does rewrite stay on the slow path: a last label it reads as
-  // an IPv4 number (all digits, or 0x hex), and punycode, which it validates. Every check after
-  // the parse still runs. tools/test-bridge-host-lists.js holds this against the parser.
+  // Lowercase DNS hosts can skip URL parsing. Numeric final labels and punycode retain parser validation;
+  // test-bridge-host-lists.js checks equivalence.
   function hostParsesAsItself(raw) {
     if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(raw) || raw.indexOf('xn--') !== -1) return false;
     return !/^(?:[0-9]+|0x[0-9a-f]*)$/.test(raw.slice(raw.lastIndexOf('.') + 1));
@@ -671,11 +659,7 @@
   // first token it sees at document_start and locks it in.
   postToPage({ source: 'wardenone-handshake', token: TOKEN });
 
-  // The host lists below (learned grabbers, the remote supplemental lists, the reader's own
-  // extras) are read by the engine alone, and the engine (content.min.js, all_frames: false)
-  // runs in the top frame alone. A child frame that fetched them paid, in every frame of every
-  // page, to receive ~50 KB of hosts, re-normalise them, sign them and have two MAIN-world
-  // scripts verify them -- and never read one.
+  // Only the top-frame engine reads these host lists. Child frames must not fetch, normalize or authenticate unused copies.
   const BRIDGE_TOP_FRAME = window === window.top;
   let learnedGrabberDomains = [];
   let supplementalLists = { adultDomainsExtra: [], grabberDomainsExtra: [], trustedPaymentHostsExtra: [] };
@@ -794,10 +778,18 @@
     if (!added.length) return false;
     if (added.length === 1) return !!(added[0].querySelector && added[0].querySelector('script[src]'));
     const inBatch = new Set(added);
-    for (const node of added) {
+    const clear = new Set();
+    const chain = [];
+    for (const node of inBatch) {
       let parent = node.parentElement;
-      while (parent && !inBatch.has(parent)) parent = parent.parentElement;
-      if (!parent && node.querySelector && node.querySelector('script[src]')) return true;
+      chain.length = 0;
+      while (parent && !inBatch.has(parent) && !clear.has(parent)) {
+        chain.push(parent);
+        parent = parent.parentElement;
+      }
+      if (parent && inBatch.has(parent)) continue;
+      for (const ancestor of chain) clear.add(ancestor);
+      if (node.querySelector && node.querySelector('script[src]')) return true;
     }
     return false;
   }
@@ -935,12 +927,7 @@
         }
         return placed;
       },
-      // Make this overlay behave as the modal it already looks like (M20).
-      //
-      // Called after the contents exist, because the accessible name has to point at a heading that
-      // is already there. The W3C pattern is explicit that aria-modal must not be set on something
-      // that does not actually behave modally, so the semantics and the keyboard containment are
-      // applied together here rather than separately.
+      // M20: apply modal semantics and keyboard containment together, after the referenced heading exists.
       dialog(opts) {
         const o = opts || {};
         if (!shadow || !host) return false;
@@ -1884,11 +1871,8 @@
     return bridgeHostMatchesList(location.hostname, bridgeActiveAllowlist(bridgeConfig));
   }
 
-  // ---- fingerprint noise in this frame (SEC-05) --------------------------------------------
-  // The page's hosts, seen from any frame. ancestorOrigins lists every ancestor's origin, top
-  // last, cross-origin ones included; an opaque ancestor reads "null". A window with no host in
-  // its URL still has an origin worth reading: about:blank inherits its creator's, blob: carries
-  // its creator's.
+  // ---- fingerprint noise in this frame (SEC-05)
+  // ancestorOrigins includes cross-origin ancestors; about:blank and blob: retain their creators' origins.
   function bridgeHostOfOrigin(origin) {
     try {
       const o = String(origin || '');
@@ -2111,11 +2095,155 @@
     }, true);
   } catch (_) {}
 
+  /* Download intent stays in ISOLATED world. Page messages cannot manufacture trusted clicks. */
+  const downloadDocumentStartedAt = Date.now();
+  let downloadGesture = null;
+  let downloadOffer = null;
+  const downloadApprovedLinks = new WeakSet();
+  const DOWNLOAD_INTENT_MS = 30000;
+  const DOWNLOAD_FILE_PATTERN = /\.(?:exe|msi|msix|scr|bat|cmd|ps1|vbs|js|jar|apk|dmg|pkg|zip|7z|rar|pdf|docx?|xlsx?|csv|png|jpe?g|mp[34]|webm)(?:$|[?#])/i;
+  const DOWNLOAD_ACTIVE_PATTERN = /\.(?:exe|msi|msix|scr|bat|cmd|ps1|vbs|js|jar|apk|dmg|pkg)$/i;
+
+  function forcedDownloadGuardOn() {
+    if (!bridgeConfigReady || bridgeConfig.enabled === false || bridgeConfig.forcedDownloadProtection === false || bridgeHostAllowedByUser()) return false;
+    for (const host of [bridgeOwnHost(), bridgeTopHost()]) {
+      const off = bridgeSiteOverridesFor(bridgeConfig, host);
+      if (off.enabled === false || off.forcedDownloadProtection === false) return false;
+    }
+    return true;
+  }
+  function downloadControl(event) {
+    const path = event.composedPath ? event.composedPath() : [event.target];
+    for (const node of path) {
+      if (node && node.closest) {
+        const control = node.closest('a[href],area[href],button,input[type="submit"],input[type="button"],[role="button"]');
+        if (control) return control;
+      }
+    }
+    return null;
+  }
+  function downloadControlVisible(control) {
+    if (!control || !control.isConnected) return false;
+    const style = getComputedStyle(control);
+    const rect = control.getBoundingClientRect();
+    return !control.hidden && style.display !== 'none' && style.visibility !== 'hidden'
+      && Number(style.opacity) !== 0 && rect.width >= 3 && rect.height >= 3;
+  }
+  function downloadControlDetails(control) {
+    const label = String(control.innerText || control.value || control.getAttribute('aria-label') || '').trim().slice(0, 160);
+    const rawHref = String(control.href || '');
+    const href = rawHref.length <= 8192 ? rawHref : '';
+    const rawClaimed = String(control.getAttribute('download') || '');
+    const claimed = rawClaimed.length <= 255 ? rawClaimed : '';
+    const requested = /\b(download|save|export|install|generate|build)\b/i.test(label)
+      || /\bget\s+(?:the\s+)?(?:app|installer|file|setup)\b/i.test(label) || DOWNLOAD_FILE_PATTERN.test(label)
+      || (DOWNLOAD_FILE_PATTERN.test(href) && /\b(windows|macos|linux|android|ios)\b/i.test(label));
+    return { label, href, claimed, requested };
+  }
+  function downloadProductMismatch(details, filename) {
+    if (!DOWNLOAD_ACTIVE_PATTERN.test(filename) || !/\/downloads?\//i.test(location.pathname)
+      || !/\bdownload\b/i.test(details.label)) return false;
+    try { if (new URL(details.href).origin === location.origin) return false; } catch (_) { return false; }
+    const deliveredWords = filename.toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length >= 3
+      && !/^(exe|msi|msix|setup|installer|install|windows|win|x64|x86|amd64|arm64|latest|release|update|download)$/.test(word));
+    if (deliveredWords.length < 2) return false;
+    const heading = document.querySelector('main h1,article h1,h1');
+    const product = String(heading && heading.textContent || '').toLowerCase().slice(0, 160);
+    const tokens = product.match(/[a-z0-9]{3,}/g) || [];
+    const meaningful = tokens.filter(word => !/^(download|windows|macos|linux|free|software|latest|version|installer|setup)$/.test(word));
+    const file = filename.toLowerCase().replace(/[^a-z0-9]/g, '');
+    return meaningful.length >= 2 && !meaningful.some(word => file.includes(word));
+  }
+  function offerUnexpectedDownload(details, why) {
+    if (downloadOffer) downloadOffer.destroy();
+    const offer = woOwnedOverlay('wo-unexpected-download');
+    const root = offer.root();
+    if (!root) return;
+    downloadOffer = offer;
+    const box = document.createElement('div');
+    box.setAttribute('style', WO_MODAL.panel('390px', '14px')
+      + 'position:fixed!important;bottom:16px!important;right:16px!important;z-index:2147483647!important;pointer-events:auto!important;');
+    const title = document.createElement('strong');
+    title.setAttribute('style', WO_MODAL.title);
+    title.textContent = 'WardenOne — Unexpected download stopped';
+    const text = document.createElement('p');
+    text.setAttribute('style', WO_MODAL.body);
+    let destination;
+    try { destination = new URL(details.href, location.href); } catch (_) { return; }
+    text.textContent = why + ' Destination: ' + destination.hostname + destination.pathname.slice(-160);
+    const allow = document.createElement('button');
+    allow.textContent = 'Download once';
+    allow.setAttribute('style', WO_MODAL.button(true, '12px'));
+    woOn(allow, 'click', event => {
+      if (!event.isTrusted) return;
+      offer.destroy(); downloadOffer = null;
+      const link = document.createElement('a');
+      link.href = destination.href;
+      if (details.claimed) link.download = details.claimed;
+      link.rel = 'noopener';
+      downloadApprovedLinks.add(link);
+      downloadGesture = { at: Date.now(), requested: true, href: destination.href, label: 'Download once', claimed: details.claimed };
+      (document.body || document.documentElement).appendChild(link);
+      link.click(); link.remove();
+    });
+    const cancel = document.createElement('button');
+    cancel.textContent = 'Cancel';
+    cancel.setAttribute('style', WO_MODAL.button(false, '12px'));
+    woOn(cancel, 'click', event => { if (event.isTrusted) { offer.destroy(); downloadOffer = null; } });
+    box.append(title, text, allow, cancel); root.appendChild(box);
+    offer.dialog({ label: 'WardenOne unexpected download', description: why });
+    offer.mount();
+  }
+  function observeDownloadGesture(event) {
+    const control = downloadControl(event);
+    if (control && downloadApprovedLinks.has(control)) return;
+    const details = control ? downloadControlDetails(control) : { label: '', href: '', claimed: '', requested: false };
+    const fileLink = DOWNLOAD_FILE_PATTERN.test(details.href) || !!(control && control.hasAttribute('download'));
+    const visible = control && (details.requested || fileLink) && downloadControlVisible(control);
+    const trusted = event.isTrusted === true;
+    const previous = downloadGesture;
+    if (trusted) downloadGesture = Object.assign({ at: Date.now() }, details,
+      { requested: !!(visible && details.requested) || (event.type === 'contextmenu' && !!details.href) });
+    if (!forcedDownloadGuardOn() || !control || !details.href || !/^https?:|^blob:|^data:/i.test(details.href)) return;
+    if (!fileLink || event.type === 'contextmenu') return;
+    const recentRequest = previous && previous.requested && Date.now() - previous.at <= DOWNLOAD_INTENT_MS;
+    let filename = '';
+    try { filename = decodeURIComponent(new URL(details.href).pathname.split('/').pop()); } catch (_) {}
+    let why = '';
+    if (!trusted && !recentRequest) why = 'The page started this download without a visible download request.';
+    else if (trusted && !visible) why = 'A hidden control tried to start this download.';
+    else if (trusted && DOWNLOAD_ACTIVE_PATTERN.test(filename) && !details.requested) why = 'This control did not identify itself as a download.';
+    else if (trusted && downloadProductMismatch(details, filename)) why = 'This installer filename does not match the product heading on this page.';
+    if (!why) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    downloadGesture = previous;
+    offerUnexpectedDownload(details, why);
+  }
+  woOn(window, 'click', observeDownloadGesture, true);
+  woOn(window, 'auxclick', observeDownloadGesture, true);
+  woOn(window, 'contextmenu', observeDownloadGesture, true);
+  woOn(window, 'keydown', event => {
+    if (!event.isTrusted) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+      downloadGesture = { at: Date.now(), requested: true, href: '', claimed: '', label: 'Save page' };
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      const control = downloadControl(event);
+      const details = control ? downloadControlDetails(control) : { requested: false, href: '', claimed: '', label: '' };
+      downloadGesture = Object.assign({ at: Date.now() }, details, { requested: !!(control && details.requested && downloadControlVisible(control)) });
+    }
+  }, true);
+  woOnMessage((msg, sender, respond) => {
+    if (!msg || msg.kind !== 'download-intent-query' || sender.id !== chrome.runtime.id || sender.tab) return;
+    const gesture = downloadGesture && Date.now() - downloadGesture.at <= DOWNLOAD_INTENT_MS ? downloadGesture : null;
+    respond({ ok: true, configured: bridgeConfigReady, enabled: forcedDownloadGuardOn(), url: location.href, startedAt: downloadDocumentStartedAt, hadGesture: !!downloadGesture,
+      gesture, productMismatch: !!(gesture && downloadProductMismatch(gesture, String(msg.filename || '').slice(0, 200))) });
+  });
+
   const FRAME_CONFIG_FIELDS = [
     'enabled', 'allowlist', 'frameSite', 'frameNoise', 'webglDisabled',
     'blockForcedPopups', 'strictPopupShield', 'blockPopupTricks',
     'blockTokenExfil', 'detectSkimmers', 'paymentCardGuard', 'gestureWindowMs',
-    'blockThirdPartyCookies', 'blockSupercookies', 'storageAccessGuard',
+    'blockThirdPartyCookies', 'frameCookieIsolation', 'blockSupercookies', 'storageAccessGuard',
     'blockAllStorageAccess', 'commandPasteGuard', 'permissionChainGuard',
     'adShield', 'twitchAdBlock', 'twitchSteadyPlayback',
   ];
@@ -2282,13 +2410,8 @@
   /* ---- engine watchdog -------------------------------------------------------------
      ISOLATED watches for a missing or disposed MAIN engine and asks the worker to restore it.
      MAIN is page-controlled, so this detects outages rather than preventing all interference. */
-  /* The engine has to PROVE it is there. "installed" counts only when it carries the key's
-     signature, and a live engine is one that answers a challenge with the key: the bridge
-     dispatches wo-ping with a fresh nonce and the engine, still inside that dispatch, emits a
-     signed pong. A page can dispatch wo-event all day; it cannot sign. So a disposed engine
-     with its markers put back looks, from here, exactly like no engine at all -- which is what
-     it is. The worker is told what this bridge saw and whether it was here at document_start,
-     and it reloads the tab rather than injecting into a document the page has already had. */
+  /* The engine has to PROVE it is there. SEC-03: require signed installed and synchronous challenge replies.
+     Report document_start timing; repair reloads rather than injecting into a page-controlled document. */
   let bridgeEngineSeen = false;
   let bridgeEngineChecks = 0;
   let bridgePendingPong = null;
@@ -2537,12 +2660,7 @@
   // Only one acquisition runs at a time; a new one (a refresh, a page shown again) supersedes
   // whatever an older one was still waiting for.
   let configAcquisition = 0;
-  // Sibling requests that arrive while a refresh is on its way wait for it. Answering them from
-  // the snapshot being replaced undid settings changes: on a change the worker tells every tab
-  // to refresh, and Eye Shield -- told the same thing -- asked here while this bridge's own
-  // re-fetch was still in flight, got the old snapshot, and put the old mode back. Nothing
-  // told it again when the new snapshot landed, so an open tab kept the mode it had until the
-  // reader pressed Save a second time.
+  // Sibling requests must await an in-flight refresh; returning the old snapshot could undo newly saved settings.
   let acquisitionInFlight = false;
   const acquisitionWaiters = [];
   const releaseAcquisitionWaiters = () => {
@@ -2570,12 +2688,8 @@
   woOn(document, 'visibilitychange', () => {
     if (document.visibilityState === 'visible' && !bridgeConfigReady) requestContentConfig();
   });
-  // For the other isolated scripts in this frame. `window` here is the isolated world's, which
-  // the page can never see, so nothing crosses to MAIN through this. A caller that needs only
-  // what this bridge already fetched is answered from the applied snapshot without a round
-  // trip; any other need is a retrying request of its own, on a shorter budget (four attempts,
-  // about five seconds): those scripts fall back to their defaults when unanswered, and a
-  // default-on protection should not wait half a minute to start on a worker that is gone.
+  // Other isolated scripts use the applied snapshot when sufficient, otherwise a shorter retry budget. This isolated-world
+  // handle is inaccessible to the page.
   const SIBLING_CONFIG_ATTEMPTS = 4;
   // How long a sibling waits on a refresh in flight before it is answered from what is held: a
   // worker that has gone away must not leave Eye Shield without any answer.
@@ -2686,12 +2800,8 @@
     });
   } catch (_) {}
 
-  // Safe Browsing relay: MAIN-world guards ask for a URL reputation verdict, but
-  // only the background worker can read the saved API key. Results are posted
-  // back with the same per-load token used by config messages.
-  // A verdict is signed over its request id and its body, so the page -- which sees the id
-  // leave -- cannot answer first with a clean one (SEC-02). The engine keeps the request
-  // pending until a reply that verifies arrives.
+  // A verdict is signed over its request id and its body (SEC-02), preventing forged clean replies.
+  // Only the worker reads the Safe Browsing key.
   const postSafeBrowsingReply = (id, result) => {
     postToPage(signed('safe-browsing', id + '\n' + JSON.stringify(result), { source: 'wardenone-safe-browsing', token: TOKEN, id, result }));
   };
@@ -2768,12 +2878,6 @@
         if (![60, 120, 480, 0].includes(minutes)) return null;
         if (!relayRequestSigned(msg, { kind: 'mute-toast', type: msg.type, minutes: msg.minutes })) return null;
         return { kind: 'mute-toast', type, minutes };
-      }
-      if (msg.kind === 'domain-age') {
-        const domain = regDomain(msg.domain);
-        if (!domain || !/^[a-z0-9.-]+$/i.test(domain)) return null;
-        if (!relaySamePageHost(domain)) return null;
-        return { kind: 'domain-age', domain };
       }
       return null;
     };
@@ -2988,12 +3092,8 @@
       };
     }
   } catch (_) {}
-  // MAIN-world (content.js Media Shield) can tell us media went active/inactive. This flag is
-  // answered back to Memory Shield in the memory-form-check reply, so a page that could post
-  // {source:'wardenone-media', active:false} could present a live camera or microphone as idle
-  // and become eligible to be slept or discarded. The token alone could not stop that -- a page
-  // script can read it -- so the report is signed under the key, over a number that only moves
-  // forward and the state it reports (pageNoticeSigned); anything else is ignored.
+  // Sign media state with its sequence: the public token cannot authorize an idle report that would make live
+  // camera/microphone use eligible for sleep.
   let relayMediaActive = false;
   try {
     woOn(window, 'message', (e) => {
@@ -3396,10 +3496,31 @@
         if (laChecked || laShown || !loginAgeGuardOn() || !laVisiblePassword()) return;
         laChecked = true;
         try {
-          chrome.runtime.sendMessage({ kind: 'login-domain-age', domain: location.hostname, url: location.href }, (res) => {
-            if (chrome.runtime.lastError || !res || !res.ok) return;
-            if (res.hardBlock || res.isNew) laInterstitial(res);
+          const offer = woOwnedOverlay('wo-login-age-check');
+          const root = offer.root();
+          if (!root) return;
+          const box = document.createElement('div');
+          box.setAttribute('style', 'position:fixed!important;bottom:16px!important;right:16px!important;z-index:2147483647!important;'
+            + WO_MODAL.panel('360px', '12px'));
+          const text = document.createElement('p');
+          text.textContent = 'Check this sign-in domain’s age? Sends ' + location.hostname + ' to RDAP or your enabled WhoisXML service.';
+          const check = document.createElement('button');
+          check.textContent = 'Check domain age';
+          check.setAttribute('style', WO_MODAL.button(true, '12px'));
+          woOn(check, 'click', event => {
+            if (!event.isTrusted) return;
+            offer.destroy();
+            chrome.runtime.sendMessage({ kind: 'login-domain-age', domain: location.hostname, url: location.href }, res => {
+              if (chrome.runtime.lastError || !res || !res.ok) return;
+              if (res.hardBlock || res.isNew) laInterstitial(res);
+            });
           });
+          const dismiss = document.createElement('button');
+          dismiss.textContent = 'Dismiss';
+          dismiss.setAttribute('style', WO_MODAL.button(false, '12px'));
+          woOn(dismiss, 'click', event => { if (event.isTrusted) offer.destroy(); });
+          box.appendChild(text); box.appendChild(check); box.appendChild(dismiss);
+          root.appendChild(box); offer.mount();
         } catch (_) {}
       };
       if (document.readyState === 'loading') woOn(document, 'DOMContentLoaded', laCheck, { once: true });

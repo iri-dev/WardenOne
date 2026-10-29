@@ -6,6 +6,7 @@
    with the date, and to keep these notices intact. */
 ;(function(){
   var inp=document.getElementById('wo-settings-search');
+  var $=function(id){return document.getElementById(id);};
   if(inp){
     var nores=document.getElementById('wo-noresult');
     var clearBtn=document.getElementById('wo-search-clear');
@@ -271,14 +272,16 @@
     }
     function saveSearchSoon(){
       if(restoringSearch)return;
+      writePopupMemoryMirror(POPUP_SEARCH_KEY,{q:(inp.value||'').trim(),at:Date.now()});
       clearTimeout(searchSaveTimer);
       searchSaveTimer=setTimeout(persistSearch,120);
     }
     function flushSearch(){ if(restoringSearch)return; clearTimeout(searchSaveTimer); persistSearch(); }
     restorePopupSearch=function(done){
-      popupScrollStore().get(POPUP_SEARCH_KEY,function(res){
+      readInitialPopupMemory(function(res){
         var e=res&&res[POPUP_SEARCH_KEY];
-        var saved=String((e&&typeof e==='object'?e.q:e)||'');
+        var query=e&&typeof e==='object'?e.q:e;
+        var saved=typeof query==='string'?query:'';
         if(saved){ restoringSearch=true; inp.value=saved; run(); restoringSearch=false; }
         if(typeof done==='function')done();
       });
@@ -287,3 +290,5 @@
     document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='hidden')flushSearch(); });
   }
 })();
+
+restorePopupMemoryLayout();

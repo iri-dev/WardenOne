@@ -985,6 +985,10 @@
   .site-dash-check small { display: block; color: var(--ink-faint); font-size: 10.5px; }
   .site-dash-empty { padding: 9px 0; color: var(--ink-faint); font-size: 11.5px; }
   .site-dash-more { display: block; width: 100%; margin: 2px 0 6px; padding: 6px; border: 0; background: none; color: var(--plum); font: 700 11px/1 var(--display); cursor: pointer; }
+  .site-dash-controls .card-group { padding-right: 6px; }
+  .site-allowlist-row { gap: 12px; }
+  .site-allowlist-row > div { flex: 1; min-width: 0; }
+  .site-allowlist-row .btn { flex: none; white-space: nowrap; }
   .site-dash-actions { display: flex; gap: 7px; margin-top: 14px; }
   .site-dash-actions .btn { flex: 1; padding: 9px 8px; font-size: 11px; }
   .site-dash-foot { margin-top: 10px; color: var(--ink-faint); font-size: 10.5px; line-height: 1.45; text-align: center; }
@@ -996,10 +1000,12 @@
 </style>
 <link rel="stylesheet" href="theme.css">
 <script src="theme.js"></script>
+<script src="popup-scroll-memory.js"></script>
+<link rel="preload" href="popup-settings-search.js" as="script">
 </head>
 <body>
   <div class="head">
-    <div class="credit"><span>by</span><strong>iri.dev</strong></div>
+    <div class="credit"><span>by</span><strong>iri-dev</strong></div>
     <div class="wo-theme-quick" role="group" aria-label="Quick theme switch">
       <button type="button" class="wo-theme-option" data-wardenone-theme="light" aria-pressed="true" aria-label="Use light theme" title="Light theme">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"></path></svg>
@@ -1171,7 +1177,7 @@
       <label class="tg"><input type="checkbox" data-key="removeOverlays"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Auto-skip download ads</div><div class="desc">On download-gate pages, silently follows the site's own "No thanks", "continue", or real download path so the ad layer disappears and the intended file can continue. Useful for fake "Download Now" ad funnels.</div></div>
+      <div><div class="name">Auto-skip download ads</div><div class="desc">After you click a download link, skips a visible ad gate only when its continuation matches your request. Leaves unfamiliar gates for you to handle.</div></div>
       <label class="tg"><input type="checkbox" data-key="autoSkipDownloadAds"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1233,11 +1239,11 @@
       <div><div class="name">Download Shield</div><div class="desc">No-account scanner. Grades downloads A-F from the URL, source, filename, file type, Chrome signals, trust list, and local blocklists. Known-bad sources are blocked outright; risky ones show a review you can cancel.</div></div>
       <label class="tg"><input type="checkbox" data-key="downloadReputation"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <!-- The manual half of Download Shield. Download Shield only sees files that
-         arrive through the browser, and even then it cannot read the saved bytes --
-         it fingerprints the URL. This reads the real file, so it is where the
-         Discord/USB/email question gets answered. Not hidden behind Advanced: it is
-         the most ordinary security question anyone has. -->
+    <div class="row">
+      <div><div class="name">Forced Download Protection</div><div class="desc">Stops clear automatic or disguised download links and holds unexpected files for review. Intentional downloads, exports and Save link as stay available. Checks intent locally, separately from Download Shield. Some browser Save As dialogs can still appear.</div></div>
+      <label class="tg"><input type="checkbox" data-key="forcedDownloadProtection"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <!-- File Shield reads the selected file's bytes; Download Guard fingerprints a URL re-fetch. -->
     <div class="row" style="display:block;">
       <div class="name">File Shield &mdash; check a file yourself</div>
       <div class="desc" style="margin-bottom:7px;">For anything that did not come through the browser: Discord, a USB
@@ -1445,7 +1451,7 @@
       <label class="tg"><input type="checkbox" data-key="blockFraudVendorScripts"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block third-party cookies</div><div class="desc">Strips Set-Cookie from third-party pixels and beacons so they cannot store new cross-site tracking cookies, and clears cookies and storage inside frames belonging to known trackers. It is deliberately not applied to frames, scripts and XHR in general: sign-in and federation set their cookies on exactly those, and stripping them signs you out. Cookies a site already saved can still be sent. First-party logins keep working.</div></div>
+      <div><div class="name">Block third-party cookies</div><div class="desc">Removes cookie headers for known trackers, confirmed tracking aliases and reviewed Google, Stripe, Spotify and Facebook resources. Supported protected frames also lose cookie API access before their scripts run. Direct visits, first-party service use and media workarounds retain cookies. Turn off for one site if needed. Unknown hosts keep existing policy.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockThirdPartyCookies"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1457,11 +1463,15 @@
       <label class="tg"><input type="checkbox" data-key="blockAllCookies"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block first-party trackers</div><div class="desc">Catch analytics proxied through the site's own domain (the trick used to dodge blocklists). Opt-in.</div></div>
+      <div><div class="name">Block first-party trackers</div><div class="desc">Catch known analytics paths served from the site's own domain. Opt-in.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockFirstPartyTrackers"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Local tracker learner</div><div class="desc">Notices third-party domains that behave like trackers across several of your sites, and asks you before blocking one everywhere. No browsing profile leaves this device.</div></div>
+      <div><div class="name">Block CNAME-cloaked trackers</div><div class="desc">On by default. Block confirmed tracking aliases from a local list; turn off for any site that needs an exception.</div></div>
+      <label class="tg"><input type="checkbox" data-key="blockCnameTrackers"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Local tracker learner</div><div class="desc">Suggests repeated tracker domains and flags suspected URL identifiers in Activity. Identifier detection leaves URLs intact. Domain blocks need your approval; observations stay local.</div></div>
       <label class="tg"><input type="checkbox" data-key="trackerLearner"><span class="track"></span><span class="knob"></span></label>
     </div>
     <!-- What the learner noticed is a proposal until the reader decides (SEC-04): a page can
@@ -1796,7 +1806,7 @@
       <label class="tg"><input type="checkbox" data-key="detectPhishing"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Login page age check</div><div class="desc">When a site asks for a password, checks how recently its domain was registered. A brand-new domain with a login form is a strong phishing signal, so it warns before you sign in. Free, no API key. <b>Off by default because it is the one feature that leaves your device:</b> it sends that site's domain (nothing else — no URL, no page content) to the public RDAP service at rdap.org, which would not otherwise see your browsing. Answers are cached on your device.</div></div>
+      <div><div class="name">Login page age check</div><div class="desc">Offers a Check domain age button when a site asks for a password. Only pressing it sends the domain to rdap.org, or your enabled WhoisXML service, to check its registration date. No page contents or typed values are sent. A recently registered domain can be a phishing signal. Off by default; answers are cached locally.</div></div>
       <label class="tg"><input type="checkbox" data-key="loginAgeCheck"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1944,11 +1954,7 @@
     <div class="list-update-action"><button class="btn" id="update-now" type="button">Update now</button></div>
     </div>
 
-<!-- Two things a bundled list can never cover: a rule only this person wants, and
-     a list only this person subscribes to. Neither gets a shield toggle -- a rule
-     you wrote is on because you wrote it, and each list carries its own switch.
-     Collapsed as an advanced disclosure: nobody needs filter syntax for WardenOne
-     to work, so it must not read as something left unfinished. -->
+<!-- User rules are active when saved; subscriptions have individual switches. -->
 <details class="rewind-drop" id="my-filters-drop">
       <summary>My filters (advanced)<span class="rewind-caret" aria-hidden="true">&#9662;</span></summary>
     <div class="card-group">
@@ -1989,9 +1995,6 @@
       <div class="adv-status" id="custom-lists-status" role="status" aria-live="polite"></div>
       <div id="custom-lists-rows"></div>
     </div>
-    <!-- The observability half of the same system. Once you can write rules and
-         subscribe to lists you can also break a site, and the logger is how you
-         find out which rule did it. -->
     <div class="row" style="display:block;border-bottom:none;">
       <div class="name" style="font-size:12px;">Network logger</div>
       <div class="desc" style="margin-bottom:7px;">Every request, whether WardenOne blocked or allowed it,
@@ -1999,30 +2002,21 @@
         anything that looks like a secret. Open it when a site breaks and you need to know what stopped it.</div>
       <button class="btn" id="open-logger" type="button" style="width:100%;">Open network logger</button>
     </div>
-    <!-- The self-test answers a different question from Verify &amp; repair. That one asks
-         whether WardenOne's own parts are installed; this one asks what a page can
-         actually read with them running, which is the thing a reader can check for
-         themselves rather than take on trust. -->
+    <!-- Privacy tests measure page-visible behavior; Verify &amp; repair checks extension components. -->
     <div class="row" style="display:block;border-bottom:none;">
       <div class="name">Privacy test</div>
       <div class="desc">Runs live probes against the page in your current tab and reports what it could actually read &mdash; canvas, GPU, audio, screen, local addresses, tracking parameters, hyperlink auditing and the rest. <strong>Nothing is read off this settings screen:</strong> each probe runs twice on the same page, once with WardenOne's shields and once without, and the two answers are compared. If a browser update ever quietly breaks a shield, the two start agreeing and the test says so.</div>
       <button class="btn" id="open-privacy-test" type="button" style="width:100%;margin-top:8px;">Run the privacy test</button>
     </div>
-    <!-- Keyboard shortcuts. Read from the browser rather than restated here: the reader can
-         rebind any of these, and a hard-coded table would start lying the moment they
-         did. Extensions cannot force an assignment, so the button opens the browser's page. -->
+    <!-- Read current shortcuts from the browser because users can rebind them. -->
     <div class="row" style="display:block;border-bottom:none;">
       <div class="name">Keyboard shortcuts</div>
       <div class="desc">Your browser owns these keys. WardenOne suggests up to four; a suggestion may remain <em>Not set</em> if the key is unavailable or you cleared it. WardenOne cannot assign or restore a key over your browser settings. The remaining commands intentionally have no suggested key.</div>
       <div id="shortcut-list" class="shortcut-list">Loading&hellip;</div>
       <button class="btn" id="open-shortcuts" type="button" style="width:100%;margin-top:8px;">Change these in your browser</button>
-      <!-- So the palette is reachable whether or not its key is bound. It is the way the
-           rest of the tools are found, and a discovery surface that needs a shortcut
-           nobody has set yet is one nobody discovers. -->
+      <!-- Keep the palette reachable without an assigned shortcut. -->
       <button class="btn" id="open-palette" type="button" style="width:100%;margin-top:6px;">Open the command palette on this page</button>
     </div>
-    <!-- Dynamic filtering. Deliberately the last thing in Advanced: it is the only
-         tool here that can stop a site working outright. -->
     <div class="row" style="display:block;border-bottom:none;">
       <div class="name" style="font-size:12px;">Site firewall</div>
       <div class="desc" style="margin-bottom:7px;">A matrix for the site you are on: every domain it loads, and
@@ -2208,47 +2202,101 @@
       </div>
     </div>
 <h2>Privacy cleaner</h2>
+    <div class="card-group row cleaner-panel" id="privacy-cleaner">
+      <details class="row memory-sites cleaner-section" id="cl-section-now" open>
+        <summary><div><div class="name">Clean browser data</div><div class="desc">Choose data, then preview.</div></div><span class="memory-manage" id="cl-summary-now">1 selected</span></summary>
+        <div class="cleaner-section-body" id="cl-panel-now">
+<div id="cl-choices">
+          <div class="cleaner-field-grid">
+            <label class="cleaner-field" for="cl-mode">Preset<span class="cleaner-select"><select class="api-field" id="cl-mode"><option value="quick">Quick Clean</option><option value="balanced">Balanced Clean</option><option value="deep">Deep Clean</option><option value="custom">Custom</option></select></span></label>
+            <label class="cleaner-field" for="cl-since">Time range<span class="cleaner-select"><select class="api-field" id="cl-since"><option value="0">Everything</option><option value="3600000">Last hour</option><option value="86400000">Last 24 hours</option><option value="604800000">Last 7 days</option><option value="2592000000">Last 30 days</option></select></span></label>
+          </div>
+          <div class="cleaner-choices">
+          <div class="cleaner-option"><label class="ck" for="cl-cache"><input type="checkbox" id="cl-cache" checked><span>Browser cache</span></label><button class="cleaner-info" type="button" aria-label="About Browser cache" aria-expanded="false" aria-controls="cl-help-cache"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-cache" hidden>Files the browser can download again.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-cookies"><input type="checkbox" id="cl-cookies"><span>Cookies &amp; sign-ins</span></label><button class="cleaner-info" type="button" aria-label="About Cookies and sign-ins" aria-expanded="false" aria-controls="cl-help-cookies"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-cookies" hidden>May sign you out. Cookie deletion can affect sibling subdomains.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-history"><input type="checkbox" id="cl-history"><span>Browsing history</span></label><button class="cleaner-info" type="button" aria-label="About Browsing history" aria-expanded="false" aria-controls="cl-help-history"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-history" hidden>Browser history only. Protected websites cannot be excluded.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-storage"><input type="checkbox" id="cl-storage"><span>Website storage</span></label><button class="cleaner-info" type="button" aria-label="About Website storage" aria-expanded="false" aria-controls="cl-help-storage"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-storage" hidden>Local storage and IndexedDB. May erase website settings, sign-ins and unsaved work.</p></div>
+          </div>
+          <details class="cleaner-disclosure" id="cl-advanced">
+            <summary>Advanced cleaning options <span class="cleaner-count" id="cl-advanced-count"></span></summary>
+            <div class="cleaner-details-body">
+              <label class="cleaner-field" for="cl-scope">Site scope<span class="cleaner-select"><select class="api-field" id="cl-scope"><option value="all">All websites</option><option value="site" id="cl-site-option">Current website</option></select></span></label>
+              <p class="desc" id="cl-scope-note">Protected origins are excluded from supported data. Browser records are global.</p>
+          <div class="cleaner-option"><label class="ck" for="cl-cache-storage"><input type="checkbox" id="cl-cache-storage"><span>Website caches</span></label><button class="cleaner-info" type="button" aria-label="About Website caches" aria-expanded="false" aria-controls="cl-help-cache-storage"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-cache-storage" hidden>Cache Storage, including offline resources.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-consent"><input type="checkbox" id="cl-consent"><span>Recognized tracking cookies</span></label><button class="cleaner-info" type="button" aria-label="About Recognized tracking cookies" aria-expanded="false" aria-controls="cl-help-consent"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-consent" hidden>Recognized consent and tracking cookie names only. Sign-ins cannot be guaranteed; consent banners may return. This sweep covers all cookie ages.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-downloads"><input type="checkbox" id="cl-downloads"><span>Download history</span></label><button class="cleaner-info" type="button" aria-label="About Download history" aria-expanded="false" aria-controls="cl-help-downloads"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-downloads" hidden>Removes download records; downloaded files stay on disk.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-files"><input type="checkbox" id="cl-files"><span>Website file system data</span></label><button class="cleaner-info" type="button" aria-label="About Website file system data" aria-expanded="false" aria-controls="cl-help-files"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-files" hidden>Files websites store through supported storage APIs.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-sw"><input type="checkbox" id="cl-sw"><span>Service workers</span></label><button class="cleaner-info" type="button" aria-label="About Service workers" aria-expanded="false" aria-controls="cl-help-sw"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-sw" hidden>May interrupt offline features until the website reloads.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-form"><input type="checkbox" id="cl-form"><span>Saved form data</span></label><button class="cleaner-info" type="button" aria-label="About Saved form data" aria-expanded="false" aria-controls="cl-help-form"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-form" hidden>Global; protected websites cannot be excluded.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-perms"><input type="checkbox" id="cl-perms"><span>WardenOne permission rules</span></label><button class="cleaner-info" type="button" aria-label="About WardenOne permission rules" aria-expanded="false" aria-controls="cl-help-perms"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-perms" hidden>Removes rules set by this extension. Browser-granted permissions remain.</p></div>
+              <button class="btn cleaner-small" id="cl-open-permissions" type="button">Browser site permissions</button>
+              <div class="cleaner-subheading">WardenOne records</div>
+          <div class="cleaner-option"><label class="ck" for="cl-security"><input type="checkbox" id="cl-security"><span>Activity &amp; notifications</span></label><button class="cleaner-info" type="button" aria-label="About Activity and notifications" aria-expanded="false" aria-controls="cl-help-security"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-security" hidden>Clears all WardenOne activity and notification records.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-learning"><input type="checkbox" id="cl-learning"><span>Tracker observations</span></label><button class="cleaner-info" type="button" aria-label="About Tracker observations" aria-expanded="false" aria-controls="cl-help-learning"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-learning" hidden>Clears tracker learning observations; preserves approved blocks and firewall choices.</p></div>
+          <div class="cleaner-option"><label class="ck" for="cl-drift"><input type="checkbox" id="cl-drift"><span>Script Drift baselines</span></label><button class="cleaner-info" type="button" aria-label="About Script Drift baselines" aria-expanded="false" aria-controls="cl-help-drift"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 10v7m0-11v1"/></svg></button><p class="cleaner-help" id="cl-help-drift" hidden>Clears all saved script comparison baselines.</p></div>
+              <details class="cleaner-disclosure" id="cl-preset-tools"><summary>Manage presets</summary><div class="cleaner-details-body"><label class="cleaner-field" for="cl-preset-name">Preset name<input class="api-field" id="cl-preset-name" maxlength="40" placeholder="Name this selection"></label><div class="cleaner-actions"><button class="btn cleaner-small" id="cl-save-preset" type="button">Save preset</button><button class="btn cleaner-small" id="cl-delete-preset" type="button">Delete selected preset</button></div></div></details>
+              <details class="cleaner-disclosure" id="cl-record-tools">
+                <summary>Saved data &amp; reset</summary>
+                <div class="row cleaner-reset-row">
+                  <p class="desc">Inspect or erase WardenOne&rsquo;s saved records, settings and site choices.</p>
+                  <button class="btn cleaner-small" id="privacy-data-inspect" type="button">See what&rsquo;s saved</button>
+                  <div id="privacy-data-preview" class="cleaner-help" role="status" aria-live="polite"></div>
+                  <label class="cleaner-field privacy-data-mode-row" for="privacy-data-mode">Keep after reset<span class="cleaner-select"><select class="api-field" id="privacy-data-mode"><option value="all">Nothing (full reset)</option><option value="settings">Basic settings</option><option value="settings-and-keys">Basic settings and API keys</option></select></span></label>
+                  <button class="btn privacy-erase-btn" id="privacy-data-erase" type="button">Reset WardenOne</button>
+                  <button class="btn privacy-erase-btn" id="privacy-data-erase-site" type="button">Clear records for this site</button>
+                  <div id="privacy-data-result" class="cleaner-help" role="status" aria-live="polite"></div>
+                  <details class="cleaner-disclosure"><summary>Privacy of saved data</summary><p class="desc cleaner-details-body">Your saved activity stays in this browser. Optional reputation checks can send a website and your API key to the chosen provider.</p></details>
+                </div>
+              </details>
+            </div>
+          </details>
+          <p class="cleaner-preserved"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m12 3 8 3v6c0 5-8 9-8 9S4 17 4 12V6l8-3Z"/><path d="m8 12 3 3 5-6"/></svg><span id="cl-preserved-note">Protected sites are preserved where supported.</span></p>
+          <button class="btn cleaner-primary" id="cl-run" type="button" disabled>Preview cleaning</button>
+        </div>
+        <section class="cleaner-preview" id="cl-preview" tabindex="-1" aria-label="Review cleanup" hidden></section>
+        </div>
+      </details>
+      <details class="row memory-sites cleaner-section" id="cl-section-auto">
+        <summary><div class="name">Automatic cleaning</div><span class="memory-manage" id="cl-summary-auto">Off</span></summary>
+        <div class="cleaner-section-body" id="cl-panel-auto">
+<div class="cleaner-heading"><div class="name">Automatic cleaning</div><p class="desc">Clean on your schedule, with your own selection.</p></div>
+        <label class="ck cleaner-check"><input type="checkbox" id="cl-auto-enabled"> Enable scheduled cleaning</label>
+        <div class="cleaner-field-grid">
+          <label class="cleaner-field" for="cl-auto-frequency">Frequency<span class="cleaner-select"><select class="api-field" id="cl-auto-frequency"><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select></span></label>
+          <label class="cleaner-field" for="cl-auto-range">Time range<span class="cleaner-select"><select class="api-field" id="cl-auto-range"><option value="0">Everything</option><option value="3600000">Last hour</option><option value="86400000">Last 24 hours</option><option value="604800000">Last 7 days</option><option value="2592000000">Last 30 days</option></select></span></label>
+        </div>
+        <label class="ck cleaner-check"><input type="checkbox" id="cl-auto-startup"> Clean on browser startup</label>
+        <label class="ck cleaner-check"><input type="checkbox" id="cl-auto-notify"> Notify after cleaning</label>
+        <details class="cleaner-disclosure" id="cl-auto-options"><summary>Cleaning categories <span class="cleaner-count" id="cl-auto-count"></span></summary><div class="cleaner-details-body"><div id="cl-auto-options-list"></div><button class="btn cleaner-small" id="cl-auto-use-selection" type="button">Copy Clean now choices</button></div></details>
+        <p class="desc cleaner-selection" id="cl-auto-categories">Browser cache</p>
+        <p class="cleaner-warning" id="cl-auto-warning" role="status" hidden></p>
+        <details class="cleaner-disclosure"><summary>How scheduling works</summary><p class="desc cleaner-details-body">Off by default. Cleaning respects protected websites and runs in normal windows. Browser sleep or closure can delay it; one overdue cleanup runs when the browser resumes. Nothing runs on shutdown.</p></details>
+        <p class="desc cleaner-selection" id="cl-next-run"></p>
+        <button class="btn cleaner-small" id="cl-save-auto" type="button">Review and save schedule</button>
+        </div>
+      </details>
+      <details class="row memory-sites cleaner-section" id="cl-section-protected">
+        <summary><div class="name">Protected websites</div><span class="memory-manage" id="cl-summary-protected">0 saved</span></summary>
+        <div class="cleaner-section-body" id="cl-panel-protected">
+<div class="cleaner-heading"><div class="name">Protected websites</div><p class="desc">Keep important website data out of supported cleanups.</p></div>
+        <label class="cleaner-field" for="cl-protected">Website origins<textarea class="api-field" id="cl-protected" rows="4" spellcheck="false" placeholder="https://example.com"></textarea></label>
+        <div class="cleaner-actions"><button class="btn cleaner-small" id="cl-protect-current" type="button">Add current site</button><button class="btn cleaner-small" id="cl-save-protected" type="button">Save list</button></div>
+        <details class="cleaner-disclosure"><summary>What protection covers</summary><p class="desc cleaner-details-body">Use one complete origin per line, without paths. Add each scheme, subdomain and port you use. Cookie exclusions cover the registered domain; storage exclusions are exact. Browser history, download records, saved forms and WardenOne records are global. Emergency logout and Forget Me have their own controls.</p></details>
+        </div>
+      </details>
+      <details class="row memory-sites cleaner-section" id="cl-section-history">
+        <summary><div class="name">Cleaning history</div><span class="memory-manage" id="cl-summary-history">0 runs</span></summary>
+        <div class="cleaner-section-body" id="cl-panel-history">
+<div class="cleaner-heading cleaner-heading-actions"><div class="name">Cleaning history</div><button class="btn cleaner-small" id="cl-clear-history" type="button">Clear log</button></div>
+        <p class="desc">Your last 20 cleanups within 30 days.</p>
+        <div id="cl-history-list" class="cleaner-history-list"></div>
+        <details class="cleaner-disclosure"><summary>About these results</summary><p class="desc cleaner-details-body">Results include failures and interrupted operations. Exact freed space is unavailable. Private windows do not run this cleaner.</p></details>
+        </div>
+      </details>
+      <div id="cl-result" class="cleaner-status" role="status" aria-live="polite" style="display:none;"></div>
+    </div>
+<h2>Security Centre</h2>
     <div class="card-group">
-      <div class="row" style="display:block;">
-        <div class="name" style="margin-bottom:6px;">Clean browser data</div>
-        <div class="desc" style="margin-bottom:9px;">Select what to clear, then clean. This wipes the chosen data for all sites on this device.</div>
-        <label class="ck" style="margin-bottom:8px;">Time range
-          <select id="cl-since" style="margin-left:6px;">
-            <option value="0">Everything</option>
-            <option value="3600000">Last hour</option>
-            <option value="86400000">Last 24 hours</option>
-            <option value="604800000">Last 7 days</option>
-            <option value="2592000000">Last 30 days</option>
-          </select>
-        </label>
-        <label class="ck"><input type="checkbox" id="cl-cache" checked> Cache</label>
-        <label class="ck ck-2"><input type="checkbox" id="cl-consent" checked><span class="ck-t"><span class="ck-n">Consent banners &amp; tracking cookies</span><span class="ck-s keep">Keeps you signed in</span></span></label>
-        <label class="ck ck-2"><input type="checkbox" id="cl-cookies"><span class="ck-t"><span class="ck-n">All cookies &amp; sign-ins</span><span class="ck-s out">Signs you out of every site</span></span></label>
-        <label class="ck"><input type="checkbox" id="cl-history"> Browsing history &mdash; and WardenOne&rsquo;s own where-you-have-been records (tracker learner observations, Script Drift baselines)</label>
-        <label class="ck"><input type="checkbox" id="cl-downloads"> Download history</label>
-        <label class="ck"><input type="checkbox" id="cl-storage"> Local storage &amp; IndexedDB</label>
-        <label class="ck"><input type="checkbox" id="cl-sw"> Service workers</label>
-        <label class="ck"><input type="checkbox" id="cl-form"> Saved form data</label>
-        <label class="ck ck-2"><input type="checkbox" id="cl-perms"><span class="ck-t"><span class="ck-n">Camera, mic &amp; location permissions</span><span class="ck-s keep">Sites will ask again next time</span></span></label>
-        <button class="btn" id="cl-run" style="width:100%;margin-top:10px;">Clean selected</button>
-        <div id="cl-result" style="margin-top:8px;font-size:11.5px;line-height:1.5;display:none;"></div>
-      </div>
-      <div class="row" style="display:block;">
-        <div class="name" style="margin-bottom:6px;">What WardenOne saves</div>
-        <div class="desc" style="margin-bottom:9px;">Your settings, site choices, protection lists and security records are saved in this browser. Your saved activity is not uploaded. If you turn on an optional reputation check, it may send the site being checked and your API key to that provider.</div>
-        <button class="btn" id="privacy-data-inspect" type="button" style="width:100%;">See what&rsquo;s saved</button>
-        <div id="privacy-data-preview" role="status" aria-live="polite" style="margin-top:8px;font-size:11.5px;line-height:1.5;"></div>
-        <label class="ck privacy-data-mode-row">What to keep after reset
-          <select id="privacy-data-mode">
-            <option value="all">Nothing (full reset)</option>
-            <option value="settings">Basic settings</option>
-            <option value="settings-and-keys">Basic settings and API keys</option>
-          </select>
-        </label>
-        <button class="btn privacy-erase-btn" id="privacy-data-erase" type="button">Reset WardenOne</button>
-        <button class="btn privacy-erase-btn" id="privacy-data-erase-site" type="button">Clear records for this site</button>
-        <div id="privacy-data-result" role="status" aria-live="polite" style="margin-top:8px;font-size:11.5px;line-height:1.5;"></div>
-      </div>
       <div class="row">
         <div><div class="name">Watch installed-extension changes</div><div class="desc">Keeps a local inventory of versions, permissions and enabled state. Harmless updates stay in the timeline; new powerful access is highlighted and explained. On by default.</div></div>
         <label class="tg"><input type="checkbox" data-key="watchExtensionPermissions"><span class="track"></span><span class="knob"></span></label>
@@ -2265,10 +2313,6 @@
         <button class="btn" id="startup-clear" style="width:100%;margin-top:6px;font-size:11px;display:none;">Clear report</button>
       </div>
       <div class="row" style="display:block;" id="ext-alerts-row">
-        <!-- Plain text. It was brand-purple inside a bold heading, so it
-             inherited the weight and read as part of the title; then a pill,
-             which was more furniture than a one-word note deserves. It is just
-             a quiet aside, so it looks like one. -->
         <div class="name" style="margin-bottom:3px;">Extension alerts <span style="font-weight:400;color:var(--wo-text-soft);">Local</span></div>
         <div class="desc" style="margin-bottom:8px;">Shows urgent exact-ID reputation findings and unreviewed version or access changes. Use the review panel below for every installed extension.</div>
         <div id="ext-security-summary" style="font-size:11.5px;font-weight:700;color:var(--ink);margin-bottom:3px;"></div>
@@ -2308,6 +2352,9 @@
           <button class="btn perm-link" data-perm="location">Location</button>
         </div>
       </div>
+    </div>
+<h2>Browser health</h2>
+    <div class="card-group">
       <div class="row update-guardian">
         <div class="ug-head">
           <div class="name">Update Guardian</div>
@@ -2327,6 +2374,24 @@
   <section class="group site-controls-section" id="site-controls-group" aria-labelledby="site-controls-title">
   <h2 id="site-controls-title">This site</h2>
   <div class="card-group" id="site-controls" aria-labelledby="site-controls-title">
+    <div class="row" style="display:block;">
+      <div class="name">Site not working?</div>
+      <div class="desc">Check recent WardenOne actions, then try one protection off on this host and its subdomains for 15 minutes. Malware and phishing blocks are not suggested. Trials are unavailable in private windows.</div>
+      <button class="btn" id="site-recovery-open" type="button" aria-expanded="false" style="margin-top:8px;">Find a narrow fix</button>
+      <div id="site-recovery-panel" hidden>
+        <div class="desc" id="site-recovery-context" role="status" aria-live="polite" style="margin-top:9px;"></div>
+        <div id="site-recovery-suggestions" style="margin-top:8px;"></div>
+        <div id="site-recovery-active" class="desc" style="margin-top:8px;"></div>
+        <button class="btn" id="site-recovery-undo" type="button" hidden>Undo trial</button>
+        <button class="btn" id="site-recovery-reload" type="button" hidden>Reload site to test</button>
+        <div class="desc" style="margin-top:10px;">For a single blocked request, open Network Logger, reload this site, and inspect the matching rule before allowing it.</div>
+        <button class="btn" id="site-recovery-logger" type="button" style="margin-top:6px;">Inspect exact request</button>
+        <div class="desc" style="margin-top:10px;">Need to report a problem? Preview a small local diagnostic first. It contains the host and action types, with no page text, URL path, query, or screenshot.</div>
+        <button class="btn" id="site-recovery-preview" type="button" style="margin-top:6px;">Preview diagnostic</button>
+        <pre id="site-recovery-report" hidden style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font-size:11px;"></pre>
+        <button class="btn" id="site-recovery-export" type="button" hidden>Save diagnostic file</button>
+      </div>
+    </div>
     <div class="row site-pause-row">
       <div>
         <div class="name">Pause everything here</div>
@@ -2394,8 +2459,6 @@
     </a>
   </div>
 
-  <script src="engine-compat.js"></script>
-  <script src="domain-utils.js"></script>
   <div class="wo-footer-link">
     <a id="wo-perms-link" href="permissions.html" target="_blank" rel="noopener">
       <span class="wo-footer-icon" aria-hidden="true">
@@ -2460,6 +2523,9 @@
   </div>
   <div class="site-dash-foot" id="site-dash-foot"></div>
 </section>
+<script src="popup-settings-search.js"></script>
+<script src="engine-compat.js"></script>
+<script src="domain-utils.js"></script>
 <script src="build-profile.js"></script>
 <script src="build-update.js"></script>
 <script src="eyeshield-profiles.js"></script>
@@ -2481,11 +2547,11 @@
 </section>
 
 <script src="popup-health.js"></script>
-<script src="popup-scroll-memory.js"></script>
 <script src="site-dashboard-shared.js"></script>
+<script src="site-recovery.js"></script>
 <script src="config-lock.js"></script>
 <script src="popup.js"></script>
-<script src="popup-settings-search.js"></script>
+<script src="popup-privacy-cleaner.js"></script>
 <script src="popup-diagnostics.js"></script>
 </body>
 </html>

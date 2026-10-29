@@ -47,20 +47,23 @@ let STORE = {};
 vm.runInContext([
   'const SCRIPT_DRIFT_BASELINE_KEY = "wardenone_script_drift_baselines";',
   'const SCRIPT_DRIFT_MAX_BASELINES = 700;',
+  (/let scriptDriftEraseGeneration = [^;]+;/.exec(BG) || [''])[0],
+  (/let scriptDriftWrites = [^;]+;/.exec(BG) || [''])[0],
   /* Lifted from the source rather than restated, so the age this asserts is the age that
      ships. Missing it made loadScriptDriftBaselines throw into its own .catch and return
      an empty store -- which several of the checks below then passed on trivially. */
   (/const SCRIPT_DRIFT_MAX_AGE_MS = [^;]+;/.exec(BG) || [''])[0],
   'let __written = null;',
   'const localGet = (k) => Promise.resolve(globalThis.__store);',
-  'const localSet = (o) => { __written = o[SCRIPT_DRIFT_BASELINE_KEY]; return Promise.resolve(); };',
+  'const localSet = async (o) => { __written = o[SCRIPT_DRIFT_BASELINE_KEY]; if (globalThis.__hold) await globalThis.__hold(); };',
+  'const chrome = {storage:{local:{remove:async () => { __written = null; }}}};',
   'const sha256TextHex = async (t) => { let h = 2166136261 >>> 0;'
   + ' for (let i = 0; i < t.length; i++) { h = Math.imul(h ^ t.charCodeAt(i), 16777619) >>> 0; }'
   + ' return (h.toString(16).padStart(8, "0")).repeat(8).slice(0, 64); };',
   lift(['scriptDriftKey', 'scriptDriftFresh', 'scriptDriftLegacyKey',
-    'loadScriptDriftBaselines', 'saveScriptDriftBaselines']),
+    'loadScriptDriftBaselines', 'saveScriptDriftBaselines', 'clearScriptDriftBaselines']),
   'globalThis.api = { scriptDriftKey, scriptDriftFresh, scriptDriftLegacyKey,'
-  + ' loadScriptDriftBaselines, saveScriptDriftBaselines, written: () => __written };',
+  + ' loadScriptDriftBaselines, saveScriptDriftBaselines, clearScriptDriftBaselines, generation: () => scriptDriftEraseGeneration, written: () => __written };',
 ].join('\n'), ctx);
 
 const api = ctx.api;
@@ -117,6 +120,19 @@ const DAY = 24 * 60 * 60 * 1000;
   check('saving keeps only fresh digest-keyed records',
     Object.keys(written).length === 1 && Object.keys(written)[0] === 'f'.repeat(32),
     Object.keys(written).join(', '));
+
+  const generation = api.generation();
+  let release;
+  ctx.__hold = () => new Promise(resolve => { release = resolve; });
+  const pendingWrite = api.saveScriptDriftBaselines({ ['f'.repeat(32)]: { hash: 'fff', lastSeen: now } });
+  await new Promise(resolve => setImmediate(resolve));
+  const cleared = api.clearScriptDriftBaselines(); release(); await pendingWrite; await cleared;
+  ctx.__hold = null;
+  check('clearing waits for in-flight baseline writes', api.written() === null);
+  await api.saveScriptDriftBaselines({ ['f'.repeat(32)]: { hash: 'fff', lastSeen: now } }, generation);
+  check('a scan started before clearing cannot restore erased baselines', api.written() === null);
+  await api.saveScriptDriftBaselines({ ['f'.repeat(32)]: { hash: 'fff', lastSeen: now } });
+  check('new scans can save fresh baselines after clearing', api.written() !== null);
 
   /* ---- the age cut behaves ------------------------------------------------------ */
   check('a record seen today is fresh', api.scriptDriftFresh({ hash: 'h', lastSeen: now }, now));

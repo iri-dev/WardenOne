@@ -2,9 +2,11 @@
 
 Audited 16 October 2026 against the local extension at `5e822baa08710d6a2f73cb84e59d73237aa8edc6`, with the documentation and VirusTotal URL-sanitizing edits made during this audit. The GitHub `main` README matched the pre-edit local file (blob `1444adca81471cad79a87b4faba0ced562f1890e`). This is a documentation audit, not a live-browser effectiveness test.
 
+The maintained inventory was updated on 27 October 2026 for Forced Download Protection, the independent CNAME control and bidirectional cookie policy.
+
 ## Scope and result
 
-The source registry has **105 independently counted protection switches** and **3 watch-only protections**. The popup also has **24 non-protection checkbox controls** and **1 second-level WebRTC control**. Eight further popup controls use custom widgets. These make **141 registry, watch-only and popup entries** in the first inventory. The Settings page declares **21 more mode, value and presentation controls**, inventoried separately below. `antiFingerprint` is a legacy alias of `antiFingerprintNoise`, not another control.
+The source registry has **107 independently counted protection switches** and **3 watch-only protections**. The popup also has **24 non-protection checkbox controls** and **1 second-level WebRTC control**. Eight further popup controls use custom widgets. These make **143 registry, watch-only and popup entries** in the first inventory. The Settings page declares **21 more mode, value and presentation controls**, inventoried separately below. `antiFingerprint` is a legacy alias of `antiFingerprintNoise`, not another control.
 
 The Settings navigation has 23 pages and subviews, cross-checked below. Standalone pages, modes and actions are listed separately from switches so they cannot silently disappear from the audit.
 
@@ -15,11 +17,11 @@ Each row links to the README section that explains the behavior, sometimes as pa
 - Added descriptions for high-confidence phishing blocks, behavioural detection, risky-site mode, script drift, warnings for redirecting and shortened links, third-party logging warnings, click-to-load social embeds, tracker supercookie cleanup, De-AMP, and opt-in fraud-script blocking.
 - Clarified the distinct VirusTotal URL-content hash check and WhoisXML choices, Twitch buffering and the two rewind modes, Tab Limit, Forget Me history cleanup, notification sound controls, diagnostics, and WardenOne data erasure. Updated the OAuth provider examples.
 - Documented the popup's manual VirusTotal URL scanner separately from automatic download checks. Corrected the privacy policy's VirusTotal disclosure and removed URL credentials from automatic VirusTotal requests.
-- The 108 count remains correct. The popup and Health images were recaptured directly from the extension, and new Settings, arrangement, privacy, fingerprinting and Resource Saver images accompany their descriptions. Other feature screenshots may still show earlier builds.
+- Forced Download Protection brings the current total to 110; the CNAME switch accounts for the preceding addition; bidirectional tracker-cookie isolation uses the existing cookie switch. Existing popup, Health and feature screenshots can show earlier builds and counts.
 
 ## Switch and control inventory
 
-### Protection switches (105)
+### Protection switches (107)
 
 | Source key | Reader-facing control | README coverage | Status |
 | --- | --- | --- | --- |
@@ -45,6 +47,7 @@ Each row links to the README section that explains the behavior, sometimes as pa
 | `blockFraudVendorScripts` | Block fraud and bot-check scripts | [Anti-fingerprinting](../README.md#anti-fingerprinting) | Explained |
 | `blockThirdPartyCookies` | Block third-party cookies | [Cookie and storage controls](../README.md#cookie-and-storage-controls) | Explained |
 | `blockFirstPartyTrackers` | Block first-party trackers | [First-party Tracker Protection](../README.md#first-party-tracker-protection) | Explained |
+| `blockCnameTrackers` | Block CNAME-cloaked trackers | [CNAME Tracker Protection](../README.md#cname-tracker-protection) | Explained |
 | `sessionShield` | SessionShield | [SessionShield](../README.md#sessionshield) | Explained |
 | `blockTokenExfil` | Protect session tokens | [Session Token Guard](../README.md#session-token-guard) | Explained |
 | `continuousTokenScan` | Continuous token watch | [Session Token Guard](../README.md#session-token-guard) | Explained |
@@ -53,6 +56,7 @@ Each row links to the README section that explains the behavior, sometimes as pa
 | `forceHttps` | Force HTTPS | [HTTPS & Certificate Protection](../README.md#https--certificate-protection) | Explained |
 | `insecureLoginGuard` | Warn before an insecure sign-in | [Insecure Sign-in Guard](../README.md#insecure-sign-in-guard) | Explained |
 | `loginAgeCheck` | Login page age check | [Phishing & Look-Alike Protection](../README.md#phishing--look-alike-protection) | Explained |
+| `forcedDownloadProtection` | Forced Download Protection | [Forced Download Protection](../README.md#forced-download-protection) | Explained |
 | `downloadReputation` | Download Shield | [Download Shield](../README.md#download-shield) | Explained |
 | `downloadDomainAge` | Check download domain age | [Download Shield](../README.md#download-shield) | Explained |
 | `downloadSafeBrowsing` | Google Safe Browsing URL checks | [Download Shield](../README.md#download-shield) | Explained |
@@ -202,7 +206,7 @@ Each row links to the README section that explains the behavior, sometimes as pa
 
 ## Settings mode and value controls
 
-These are the 21 `choice`, `pick`, `flag`, `slider` and `num` controls declared in the Settings navigation in `settings.js`. The three `notice*` flags are Settings-only switches. Other rows are modes or values rather than extra protections.
+These are the 22 `choice`, `pick`, `flag`, `slider` and `num` controls declared in the Settings navigation in `settings.js`. The three `notice*` flags are Settings-only switches. Other rows are modes or values rather than extra protections.
 
 | Source key | Reader-facing control | README coverage |
 | --- | --- | --- |
@@ -218,6 +222,7 @@ These are the 21 `choice`, `pick`, `flag`, `slider` and `num` controls declared 
 | `noticeGroup` | Group repeated notices | [Notification Centre](../README.md#notification-centre) |
 | `noticeBadge` | Toolbar unread count | [Notification Centre](../README.md#notification-centre) |
 | `noticeRetention` | Notice history retention | [Notification Centre](../README.md#notification-centre) |
+| `historyMode` | Activity and notification history storage | [Activity Centre](../README.md#activity-centre) |
 | `noticeSound` | Play sounds | [Notification Centre](../README.md#notification-centre) |
 | `noticeSoundMode` | Which notices make sound | [Notification Centre](../README.md#notification-centre) |
 | `noticeVolume` | Sound volume | [Notification Centre](../README.md#notification-centre) |

@@ -66,7 +66,11 @@ function makeRealGpu(overrides) {
   adapter.features = new Set(['texture-compression-bc', 'depth-clip-control']);
   adapter.info = { vendor: 'amd', architecture: 'rdna-3', device: 'Radeon 780M', description: 'real hardware' };
   adapter.isFallbackAdapter = false;
-  adapter.requestDevice = function () { return Promise.resolve(device); };
+  adapter.requestDevice = function (descriptor) {
+    if (this !== adapter) throw new TypeError('Illegal invocation');
+    adapter.lastDescriptor=descriptor;
+    return adapter.nativeFailure ? Promise.reject(adapter.nativeFailure) : Promise.resolve(device);
+  };
   adapter.requestAdapterInfo = function () { return Promise.resolve(adapter.info); };
 
   return {
@@ -78,8 +82,8 @@ function makeRealGpu(overrides) {
   };
 }
 
-function harness(gpuPick) {
-  const real = makeRealGpu();
+function harness(gpuPick, limits) {
+  const real = makeRealGpu(limits);
   const probes = [];
   const cloaked = [];
   const sandbox = {
@@ -94,6 +98,29 @@ function harness(gpuPick) {
 }
 
 const pending = [];
+pending.push((async function nativeValidationAndArgumentsSurvive() {
+  const h=harness(),adapter=await h.sandbox.navigator.gpu.requestAdapter();
+  const descriptor={requiredLimits:{maxTextureDimension2D:10000}};
+  await adapter.requestDevice(descriptor);
+  check('the exact descriptor reaches native requestDevice even above the reported limit',h.real.adapter.lastDescriptor===descriptor&&descriptor.requiredLimits.maxTextureDimension2D===10000);
+  let badReceiver=false;try{adapter.requestDevice.call({},descriptor);}catch(e){badReceiver=e instanceof TypeError;}
+  check('a borrowed requestDevice preserves native receiver validation',badReceiver);
+  const failure=new Error('native limit validation');h.real.adapter.nativeFailure=failure;
+  let caught;try{await adapter.requestDevice(descriptor);}catch(e){caught=e;}
+  check('native requestDevice rejection propagates unchanged',caught===failure);
+}()));
+pending.push((async function nativeCapabilitiesBoundTheProfile() {
+  const h = harness(null,{maxTextureDimension2D:4096,minUniformBufferOffsetAlignment:512});
+  h.real.adapter.info.isFallbackAdapter=true;h.real.adapter.info.subgroupMinSize=16;
+  const adapter=await h.sandbox.navigator.gpu.requestAdapter();
+  check('a weak adapter is never reported stronger than its native maximum',adapter.limits.maxTextureDimension2D===4096);
+  check('minimum alignment is never reported weaker than the native requirement',adapter.limits.minUniformBufferOffsetAlignment===512);
+  check('unsupported limit names are not invented','maxTextureArrayLayers' in adapter.limits===false&&adapter.limits.maxTextureArrayLayers===undefined);
+  check('native fallback state is preserved',adapter.info.isFallbackAdapter===true);
+  check('native subgroup capability is preserved',adapter.info.subgroupMinSize===16);
+  check('unavailable subgroup fields stay unavailable',!('subgroupMaxSize' in adapter.info)&&adapter.info.subgroupMaxSize===undefined);
+  check('info retains its native prototype',Object.getPrototypeOf(adapter.info)===Object.getPrototypeOf(h.real.adapter.info));
+}()));
 
 // --- the invariant that makes this worth doing at all -----------------------
 
@@ -308,7 +335,6 @@ pending.push((async function absentWebGpuIsNotAnError() {
     !/data-key="webgpu/i.test(fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8')));
 }());
 
-// ---------------------------------------------------------------------------
 
 Promise.all(pending).then(() => {
   if (failures.length) {

@@ -1,0 +1,951 @@
+{
+  "schemaVersion": 1,
+  "roadmapSha256": "e9d43c330ee34d1d5e06370b2dbc34c29027dcbb9903085128359d0dac1db109",
+  "scope": "Ghostery-only roadmap. Existing WardenOne protections remain enabled according to their own defaults; no opponent-specific work is removed to shape a comparison.",
+  "baseline": {
+    "phase": "00",
+    "status": "complete",
+    "owner": "tools/prepare-ghostery-baseline.js",
+    "audit": "docs/ghostery-baseline-audit.md",
+    "checklist": [
+      {
+        "done": true,
+        "task": "Confirm the current WardenOne commit, version, default settings, enabled protections, and whether G-01 through G-09 already exist in some form."
+      },
+      {
+        "done": true,
+        "task": "Preserve the Ghostery reference as **tag `v10.6.7`**; note that later Ghostery releases may differ."
+      },
+      {
+        "done": true,
+        "task": "Capture WardenOne's current tests, release gate, browser versions, and feature coverage."
+      },
+      {
+        "done": true,
+        "task": "Record the precise measurement environment: browser version, operating system, CPU, RAM, ruleset versions, profile state, and settings."
+      },
+      {
+        "done": true,
+        "task": "Record known issues from the review without treating untested hypotheses as confirmed defects."
+      },
+      {
+        "done": true,
+        "task": "Establish a short before/after regression list for consent, tracker identity, fingerprinting, website recovery, DNR writes, and upgrades."
+      },
+      {
+        "done": true,
+        "task": "Create an issue/checklist entry for each G-phase; link its code changes and passing test results when completed."
+      }
+    ],
+    "validationReferences": [
+      "docs/ghostery-baseline.json",
+      "tmp/ghostery-phase00/gate.log",
+      "tmp/ghostery-phase00/probe-edge-final.json",
+      "tmp/ghostery-phase00/probe-chrome-final.json"
+    ]
+  },
+  "executionOrder": [
+    "00",
+    "08",
+    "03",
+    "09",
+    "04",
+    "05",
+    "01",
+    "02",
+    "07",
+    "06"
+  ],
+  "phases": [
+    {
+      "id": "G-01",
+      "title": "Tracker identity and attribution",
+      "status": "complete",
+      "coverage": "implemented within the documented catalog scope",
+      "owners": [
+        "tracker-attribution.js",
+        "tracker-catalog.json",
+        "history.js",
+        "logger.js",
+        "tools/build-tracker-catalog.js"
+      ],
+      "existing": "Activity and Network Logger show local product, organization and category attribution with source links, explicit unknown identities and separate request outcomes.",
+      "gap": "Catalog coverage is intentionally partial; automatic metadata feeds and URL-path classification are outside this phase.",
+      "regressions": [
+        "tools/test-tracker-evidence.js",
+        "tools/test-tracker-evidence-corpus.js",
+        "tools/test-site-dashboard-counts.js",
+        "tools/test-tracker-attribution.js"
+      ],
+      "checklist": [
+        {
+          "done": true,
+          "task": "Audit existing WardenOne tracker metadata and UI before adding another database."
+        },
+        {
+          "done": true,
+          "task": "Choose an explicitly licensed, versioned source of tracker **names, organizations, categories, and matching domains/patterns**. Check attribution, redistribution, update rights, and maintenance costs."
+        },
+        {
+          "done": true,
+          "task": "Define a compact local metadata schema: tracker ID, name, organization, category, match evidence, dataset version, and confidence/provenance."
+        },
+        {
+          "done": true,
+          "task": "Support exact hostname/subdomain boundaries and, where supported, relevant request-pattern matches; avoid substring matching (`notexample.com` must not match `example.com`)."
+        },
+        {
+          "done": true,
+          "task": "Distinguish **known tracker**, **blocked unknown request**, and **locally suspected tracker**. A domain match alone must not falsely imply proven malicious intent."
+        },
+        {
+          "done": true,
+          "task": "Separate **attribution** from **enforcement**: adding metadata must not silently create a block rule."
+        },
+        {
+          "done": true,
+          "task": "Make metadata updates recoverable, size-bounded, and atomic from the UI's perspective; invalidate in-memory caches when data changes."
+        },
+        {
+          "done": true,
+          "task": "Expose useful attribution in the existing Activity/site details interface without flooding users with labels."
+        },
+        {
+          "done": true,
+          "task": "Known tracker maps to the intended tracker and organization."
+        },
+        {
+          "done": true,
+          "task": "Two tracker products belonging to one company remain distinguishable."
+        },
+        {
+          "done": true,
+          "task": "Unknown domain is not mislabeled; lookalike and shared-hosting domains stay separate."
+        },
+        {
+          "done": true,
+          "task": "Replacing the metadata database changes displayed identities without requiring a browser restart."
+        },
+        {
+          "done": true,
+          "task": "Corrupt or stale metadata fails safely and never removes otherwise valid security rules."
+        }
+      ],
+      "changeReferences": [
+        "tracker-attribution.js",
+        "tracker-catalog.json",
+        "tools/build-tracker-catalog.js",
+        "history.js",
+        "logger.js",
+        "docs/source-licensing.json"
+      ],
+      "validationReferences": [
+        "docs/tracker-attribution-audit.md",
+        "docs/tracker-attribution-evidence.json",
+        "tmp/ghostery-phase01/gate-verified.log",
+        "tmp/ghostery-phase01/verified-edge.json",
+        "tmp/ghostery-phase01/verified-chrome.json"
+      ]
+    },
+    {
+      "id": "G-02",
+      "title": "Adaptive identifier evidence",
+      "status": "complete",
+      "coverage": "implemented as detection only within the documented conservative scope",
+      "owners": [
+        "identifier-detector.js",
+        "background-identifiers.js",
+        "background.js",
+        "history.js"
+      ],
+      "existing": "Browser-verified unfamiliar-value reuse produces a separate suspected-identifier Activity row under Tracker learner, using ephemeral HMAC sketches and conservative sensitive-flow exclusions.",
+      "gap": "Adaptive identifier enforcement remains unimplemented; current evidence deliberately proves the original value reaches the server intact. A separate temporary explicit-name DNR capability test is not a shipped feature.",
+      "regressions": [
+        "tools/test-copy-clean-link.js",
+        "tools/test-clean-copy.js",
+        "tools/test-history-url-clean.js",
+        "tools/test-identifier-detector.js"
+      ],
+      "checklist": [
+        {
+          "done": true,
+          "task": "First document which tracking parameters WardenOne already removes and where (navigation, copied links, selected requests)."
+        },
+        {
+          "done": true,
+          "task": "Prototype **detection only** for high-entropy values reused across independent first-party contexts. Prefer bounded, privacy-preserving local sketches to raw browsing histories."
+        },
+        {
+          "done": true,
+          "task": "Define minimum evidence and expiration rules so a single random-looking value is never automatically declared a tracker."
+        },
+        {
+          "done": true,
+          "task": "Exclude likely signed URLs, OAuth and other login flows, CSRF/session tokens, payments, downloads, application IDs, and other legitimate parameters."
+        },
+        {
+          "done": true,
+          "task": "Keep a separate label for **suspected identifier**, distinct from a confirmed known tracker."
+        },
+        {
+          "done": true,
+          "task": "Determine exactly which URL transformations **Chromium MV3 DNR** can enforce at request time; do not assume a `webRequest` observation callback can rewrite requests."
+        },
+        {
+          "done": true,
+          "task": "Before any enforcement, prove with a network trace that the identifier is removed **before the request leaves the browser**."
+        },
+        {
+          "done": true,
+          "task": "Make any future experimental removal opt-in or narrowly allowlisted until false-positive testing justifies broader use."
+        },
+        {
+          "done": true,
+          "task": "Familiar parameter cleanup still works."
+        },
+        {
+          "done": true,
+          "task": "An unfamiliar repeated identifier can be detected with sufficient evidence."
+        },
+        {
+          "done": true,
+          "task": "One-off values and legitimate tokens are not automatically stripped."
+        },
+        {
+          "done": true,
+          "task": "Redirects, OAuth, downloads, signed URLs, and API calls do not break."
+        },
+        {
+          "done": true,
+          "task": "If a requested transformation is impossible under ordinary MV3 APIs, the feature reports **detection only**, not fake blocking."
+        }
+      ],
+      "changeReferences": [
+        "identifier-detector.js",
+        "background-identifiers.js",
+        "background.js",
+        "history.js",
+        "popup.html",
+        "PRIVACY.md"
+      ],
+      "validationReferences": [
+        "docs/identifier-detection-audit.md",
+        "docs/identifier-detection-evidence.json",
+        "tmp/ghostery-phase02/gate.log",
+        "tmp/ghostery-phase02/verified-edge.json",
+        "tmp/ghostery-phase02/verified-chrome121.json"
+      ],
+      "enforcementAcceptance": "Conditional enforcement items are satisfied by shipping no adaptive-removal feature; original-value receipt and explicit detection-only labeling are verified. Future removal still requires opt-in or narrow allowlisting and new pre-egress evidence."
+    },
+    {
+      "id": "G-03",
+      "title": "Consent outcomes and GPC",
+      "status": "complete",
+      "coverage": "implemented with documented CMP-format and document-policy limits",
+      "owners": [
+        "consent-reject.js",
+        "consent-state.js",
+        "consent-wall.js",
+        "privacy-signals.js",
+        "background.js",
+        "src/content.js"
+      ],
+      "existing": "Truthful failed/dispatched/unverified/saved-state consent outcomes, guarded known-CMP flows, open-shadow discovery and cancellation on erasure or invalid settings. GPC uses early MAIN registration, reversible descriptors and atomic document/initiator-scoped headers that survive request allowances.",
+      "gap": "Custom CMPs, unreadable state and closed roots remain conservative; native coverage uses controlled fixtures and named browser builds.",
+      "regressions": [
+        "tools/test-consent-reject.js",
+        "tools/test-consent-outcomes.js",
+        "tools/test-consent-wall.js",
+        "tools/test-privacy-signals.js",
+        "tools/test-dnr-budget.js",
+        "tools/test-dnr-atomic-replace.js",
+        "tools/test-site-override-scope.js",
+        "tools/test-hot-path-layout.js",
+        "tools/test-firewall.js",
+        "tools/test-history-modes.js",
+        "tools/test-privacy-data-erase.js"
+      ],
+      "checklist": [
+        {
+          "done": true,
+          "task": "Inspect `consent-reject.js` and correct the **attempted click vs. successful action** distinction: do not report `true` just because `.click()` was invoked or after `.click()` threw."
+        },
+        {
+          "done": true,
+          "task": "Model results as `attempted`, `dispatched`, `rejected`, `unverified`, and `failed` (or equivalent), rather than claiming consent was rejected from an event alone."
+        },
+        {
+          "done": true,
+          "task": "Implement explicit, testable flows for the most common CMPs encountered by WardenOne users (for example OneTrust, Cookiebot, TrustArc), retaining the generic heuristic fallback."
+        },
+        {
+          "done": true,
+          "task": "Verify a saved opt-out using CMP state/cookies or other reliable, noninvasive evidence when available; otherwise say **unverified**."
+        },
+        {
+          "done": true,
+          "task": "Preserve sensitive-dialog exclusions and protections around login, payment, account, and security flows."
+        },
+        {
+          "done": true,
+          "task": "Review consent-wall restoration when no underlying content is available."
+        },
+        {
+          "done": true,
+          "task": "If GPC is enabled, expose `navigator.globalPrivacyControl === true` at the appropriate document-start page-world boundary **as well as** sending `Sec-GPC: 1`."
+        },
+        {
+          "done": true,
+          "task": "Keep the JavaScript GPC value, header, site exceptions, and extension pause state consistent."
+        },
+        {
+          "done": true,
+          "task": "`element.click()` throwing is a failure, not a reported rejection."
+        },
+        {
+          "done": true,
+          "task": "A dispatched click without evidence of saved consent is **unverified**."
+        },
+        {
+          "done": true,
+          "task": "Known CMP procedures survive late loading and open shadow DOM where supported."
+        },
+        {
+          "done": true,
+          "task": "No false interaction with checkout, password, permissions, or security dialogs."
+        },
+        {
+          "done": true,
+          "task": "GPC's JavaScript property and network header agree for enabled, disabled, and exempt sites."
+        },
+        {
+          "done": true,
+          "task": "Browser E2E tests validate saved consent where measurable, not just banner disappearance."
+        }
+      ],
+      "changeReferences": [
+        "consent-reject.js",
+        "consent-state.js",
+        "privacy-signals.js",
+        "consent-wall.js",
+        "background.js",
+        "src/content.js",
+        "history.js",
+        "popup.js"
+      ],
+      "validationReferences": [
+        "docs/consent-gpc-audit.md",
+        "docs/consent-gpc-evidence.json",
+        "tmp/ghostery-phase03/gate-final-verified.log",
+        "tmp/ghostery-phase03/verified08-edge.json",
+        "tmp/ghostery-phase03/verified08-chrome.json"
+      ]
+    },
+    {
+      "id": "G-04",
+      "title": "Fingerprint consistency",
+      "status": "complete",
+      "coverage": "implemented-with-documented-limits",
+      "owners": [
+        "src/fingerprint-realm.js",
+        "src/content.js",
+        "fingerprint-realm.js"
+      ],
+      "existing": "Adversarial conversion/brand/audio/reflection regressions and native realm, linkability, GPU and application checks complete. Noise stays opt-in; raw signals and workers remain visible.",
+      "gap": "No claim of universal indistinguishability or anonymity. Population measurements and matched Ghostery performance remain outside G-04.",
+      "regressions": [
+        "tools/test-fingerprint-adversarial.js",
+        "tools/test-fingerprint-consistency.js",
+        "tools/test-fingerprint-surfaces.js",
+        "tools/test-fingerprint-media.js",
+        "tools/test-webgpu-shield.js",
+        "tools/test-worker-realm-guard.js"
+      ],
+      "checklist": [
+        {
+          "done": true,
+          "task": "Inventory every currently altered surface in `fingerprint-realm.js` and related code (canvas text, WebGL, WebGPU, audio, screen, voices, Client Hints, etc.)."
+        },
+        {
+          "done": true,
+          "task": "Verify whether window, iframe, `about:blank`, cross-origin frame, and worker values contradict one another. Explicitly record surfaces that MV3 cannot or should not spoof."
+        },
+        {
+          "done": true,
+          "task": "Test WebGL vendor/renderer values against exposed capabilities and WebGPU information; don't claim a profile that the remaining API values disprove."
+        },
+        {
+          "done": true,
+          "task": "Test wrappers' `toString`, constructors, prototypes, property descriptors, object brands, errors, and timing where practical."
+        },
+        {
+          "done": true,
+          "task": "Verify audio noise cannot corrupt meaningful application samples or accumulate unpredictably."
+        },
+        {
+          "done": true,
+          "task": "Keep intentional compatibility boundaries: don't automatically add canvas-pixel rewriting, CPU-count spoofing, or blanket WebGPU masking."
+        },
+        {
+          "done": true,
+          "task": "Run repeated-visit and across-site linkability checks, not just one fingerprint-hash check."
+        },
+        {
+          "done": true,
+          "task": "Test real graphics, audio, gaming, document editing, video, and login scenarios."
+        },
+        {
+          "done": true,
+          "task": "No new cross-API contradictions introduced."
+        },
+        {
+          "done": true,
+          "task": "Known worker/iframe limitations are documented and tested."
+        },
+        {
+          "done": true,
+          "task": "Repeated visits have the intended stability behavior."
+        },
+        {
+          "done": true,
+          "task": "Common applications keep working and existing fingerprint regressions pass."
+        },
+        {
+          "done": true,
+          "task": "Any claim of improved anonymity is supported by a linkability or uniqueness measurement, not merely changed API values."
+        }
+      ],
+      "changeReferences": [
+        "src/content.js",
+        "content.min.js",
+        "fingerprint-realm.js",
+        "tools/test-fingerprint-adversarial.js",
+        "tools/browser-fingerprint-resistance.js",
+        "docs/fingerprint-resistance-audit.md"
+      ],
+      "validationReferences": [
+        "docs/fingerprint-resistance-evidence.json",
+        "tmp/ghostery-phase04/gate-verified.log",
+        "tmp/ghostery-phase04/release-chrome-resistance.json",
+        "tmp/ghostery-phase04/release-chrome-consistency.json",
+        "tmp/ghostery-phase04/release-edge-resistance.json",
+        "tmp/ghostery-phase04/release-edge-consistency.json",
+        "tmp/ghostery-phase04/release-live-video.json"
+      ]
+    },
+    {
+      "id": "G-05",
+      "title": "Matched performance",
+      "status": "complete",
+      "coverage": "measured-with-explicit-limits",
+      "owners": [
+        "tools/perf-profile.js",
+        "tools/perf-real-sites.js",
+        "tools/browser-ghostery-baseline.js"
+      ],
+      "existing": "Five-arm frozen-updated-data serial benchmark, exact presets, distributions, profiler attribution, worker lifecycle and separate public-page observations recorded.",
+      "gap": "No universal winner or equal-protection claim. Public failures and narrow machine/sample scope remain explicit.",
+      "regressions": [
+        "tools/test-ghostery-performance.js",
+        "tools/test-remote-input-boundaries.js",
+        "tools/test-feed-check-coverage.js",
+        "tools/test-list-fetch-broker.js",
+        "tools/test-perf-profile.js",
+        "tools/test-real-site-readiness.js"
+      ],
+      "checklist": [
+        {
+          "done": true,
+          "task": "Use the **same browser/version/machine**, clean but comparable profiles, identical site corpus, and warmed filter updates."
+        },
+        {
+          "done": true,
+          "task": "Benchmark **no extension**, **WardenOne only**, and **Ghostery only**."
+        },
+        {
+          "done": true,
+          "task": "Measure both **recommended default** and **maximum practical protection** configurations; publish exact enabled settings."
+        },
+        {
+          "done": true,
+          "task": "Run ordinary article pages, heavy DOM changes, eight-frame pages, 30-frame stress pages, real media, and auth-heavy apps."
+        },
+        {
+          "done": true,
+          "task": "Record page task time, long tasks, page-load/interaction timing, extension worker activity, renderer/process memory, idle overhead, and worker wake/restart behavior."
+        },
+        {
+          "done": true,
+          "task": "Repeat runs, capture distributions (not only best runs), and exclude run order/cache artifacts."
+        },
+        {
+          "done": true,
+          "task": "Identify WardenOne's highest-cost feature initialization paths; optimize only where correctness is preserved."
+        },
+        {
+          "done": true,
+          "task": "Rerun identical benchmarks after each meaningful performance change; retain unfavorable outcomes."
+        },
+        {
+          "done": true,
+          "task": "Environment and scripts are repeatable."
+        },
+        {
+          "done": true,
+          "task": "Both competitors are configured and measured comparably."
+        },
+        {
+          "done": true,
+          "task": "No security module is silently disabled to win a benchmark."
+        },
+        {
+          "done": true,
+          "task": "Results report medians/spread, relevant exceptions, and measurement uncertainty."
+        }
+      ],
+      "changeReferences": [
+        "background.js",
+        "tools/check-feeds.js",
+        "tools/prepare-ghostery-performance.js",
+        "tools/browser-ghostery-performance.js",
+        "tools/browser-ghostery-performance-lifecycle.js",
+        "docs/ghostery-performance-audit.md"
+      ],
+      "validationReferences": [
+        "docs/ghostery-performance-evidence.json",
+        "tmp/ghostery-phase05/gate-phase05-final.log",
+        "tmp/ghostery-phase05/controlled-five-runs.json",
+        "tmp/ghostery-phase05/lifecycle-03/report.json",
+        "tmp/ghostery-phase05/public-three-runs-03.json"
+      ]
+    },
+    {
+      "id": "G-06",
+      "title": "Outbound privacy contract",
+      "status": "complete",
+      "coverage": "implemented and verified within documented native and source-inventory scope",
+      "owners": [
+        "background.js",
+        "background-downloads.js",
+        "history-store.js",
+        "PRIVACY.md"
+      ],
+      "existing": "Machine-checkable outbound inventory, native optional-provider request-shape checks, local observation, retention, erasure and uninstall/reinstall evidence.",
+      "gap": "The ordinary-browsing trace is bounded to a disposable synthetic site; dynamic page resource destinations and intentionally retained URL paths are disclosed.",
+      "regressions": [
+        "tools/test-remote-input-boundaries.js",
+        "tools/test-privacy-data-erase.js",
+        "tools/test-history-modes.js",
+        "tools/test-privacy-disclosure.js",
+        "tools/test-outbound-inventory.js",
+        "tools/test-privacy-erase-write.js",
+        "tools/test-history-retention.js"
+      ],
+      "checklist": [
+        {
+          "done": true,
+          "task": "Inventory all outbound destinations initiated by WardenOne itself: list updates, build/version checks, optional reputation services, media APIs, and other documented fetches."
+        },
+        {
+          "done": true,
+          "task": "In a disposable profile, monitor outgoing extension-origin network traffic during ordinary browsing with optional services disabled."
+        },
+        {
+          "done": true,
+          "task": "Assert that tracker-learner observations, per-site browsing history, and local activity data are not sent to a WardenOne-owned reporting endpoint."
+        },
+        {
+          "done": true,
+          "task": "Verify **each optional provider** is called only when enabled and receives only the documented minimum data."
+        },
+        {
+          "done": true,
+          "task": "Test URL query/fragment/token redaction before logging and before any allowed external request."
+        },
+        {
+          "done": true,
+          "task": "Verify site-data clearing, full deletion/reset, expiration, and extension removal leave no unexpected records accessible to WardenOne."
+        },
+        {
+          "done": true,
+          "task": "Keep `PRIVACY.md`, permission descriptions, and actual behavior aligned as new features are added."
+        },
+        {
+          "done": true,
+          "task": "Outbound destination inventory is machine-checkable."
+        },
+        {
+          "done": true,
+          "task": "Normal browsing generates no developer telemetry."
+        },
+        {
+          "done": true,
+          "task": "Optional provider toggles and sensitive-data redaction pass browser-level tests."
+        },
+        {
+          "done": true,
+          "task": "Data deletion and retention match disclosures."
+        }
+      ],
+      "changeReferences": [
+        "background.js",
+        "docs/outbound-destinations.json",
+        "docs/message-boundaries.json",
+        "docs/storage-inventory.json",
+        "docs/protection-contracts.json",
+        "tools/lib/outbound-hosts.js",
+        "tools/lib/outbound-inventory.js",
+        "tools/build-outbound-inventory.js",
+        "tools/browser-outbound-privacy.js",
+        "tools/browser-uninstall-privacy.js",
+        "tools/browser-privacy-site-erase.js",
+        "tools/browser-privacy-erase.js",
+        "tools/test-privacy-data-erase.js",
+        "tools/test-content-config-memo.js",
+        "tools/check-maintainability.js",
+        "CHANGELOG.md"
+      ],
+      "validationReferences": [
+        "docs/ghostery-outbound-privacy-audit.md",
+        "docs/ghostery-outbound-privacy-evidence.json",
+        "tmp/ghostery-phase06/outbound-verified-02.json",
+        "tmp/ghostery-phase06/site-erase-fixed-02.log",
+        "tmp/ghostery-phase06/full-erase-fixed-02.log",
+        "tmp/ghostery-phase06/history-modes.log",
+        "tmp/ghostery-phase06/uninstall-preflight.json",
+        "tmp/ghostery-phase06/gate-verified.log"
+      ]
+    },
+    {
+      "id": "G-07",
+      "title": "Guided site recovery",
+      "status": "complete",
+      "coverage": "implemented for mapped recent page actions and bounded single-feature recovery trials",
+      "owners": [
+        "popup.js",
+        "background.js",
+        "network-policy.js"
+      ],
+      "existing": "Guided current-site panel, exact-request investigation link, 15-minute scoped trials, automatic expiry, undo and previewed local diagnostic export.",
+      "gap": "Only mapped page actions yield suggestions; network-only matches require the existing Network Logger. Native fixture results do not establish arbitrary real-site compatibility.",
+      "regressions": [
+        "tools/test-site-override-scope.js",
+        "tools/test-site-dashboard-counts.js",
+        "tools/test-reconcile-honesty.js",
+        "tools/test-firewall-semantics.js",
+        "tools/test-site-recovery.js",
+        "tools/test-message-boundaries.js",
+        "tools/test-settings-io.js",
+        "tools/test-privacy-data-erase.js"
+      ],
+      "checklist": [
+        {
+          "done": true,
+          "task": "Design a user-facing **\"Site not working?\"** flow that identifies likely recently triggered protections or rules."
+        },
+        {
+          "done": true,
+          "task": "Offer the **narrowest reasonable override first**: one rule, one tracker, or one feature on that site, not an all-protection pause."
+        },
+        {
+          "done": true,
+          "task": "Make temporary exceptions expire automatically and clearly show remaining time and affected protections."
+        },
+        {
+          "done": true,
+          "task": "Keep malware/phishing/high-trust security decisions protected from low-authority automatic compatibility exceptions."
+        },
+        {
+          "done": true,
+          "task": "Record enough local diagnostic context to explain a failure without collecting passwords, page content, or full sensitive URLs."
+        },
+        {
+          "done": true,
+          "task": "Support safe undo/revert of a diagnostic exception and restoration of original protection after expiry/restart."
+        },
+        {
+          "done": true,
+          "task": "Consider a compact, **user-initiated** issue-report export with a preview of redacted diagnostics (no default screenshot or silent upload)."
+        },
+        {
+          "done": true,
+          "task": "Test shared hosts, public suffixes, authentication providers, media sites, payments, and browser app pages."
+        },
+        {
+          "done": true,
+          "task": "An isolated false positive can be fixed without disabling unrelated protection."
+        },
+        {
+          "done": true,
+          "task": "Exception scope is correct for lookalike hosts and tenant-hosted sites."
+        },
+        {
+          "done": true,
+          "task": "Expiration, reload, restart, and manual undo restore the original rule state."
+        },
+        {
+          "done": true,
+          "task": "Diagnostics are redacted and require an explicit user action to share."
+        }
+      ],
+      "changeReferences": [
+        "site-recovery.js",
+        "background.js",
+        "popup.html",
+        "popup.js",
+        "settings.js",
+        "README.md",
+        "PRIVACY.md",
+        "CHANGELOG.md",
+        "settings-data.js",
+        "tools/package-allowlist.json",
+        "tools/browser-site-recovery.js",
+        "tools/test-site-recovery.js",
+        "tools/test-message-boundaries.js",
+        "tools/test-settings-io.js",
+        "tools/test-privacy-data-erase.js",
+        "tools/check-maintainability.js"
+      ],
+      "validationReferences": [
+        "docs/ghostery-site-recovery-audit.md",
+        "docs/ghostery-site-recovery-evidence.json",
+        "tmp/ghostery-phase07/browser-network.json",
+        "tmp/ghostery-phase07/gate-network.log"
+      ]
+    },
+    {
+      "id": "G-08",
+      "title": "Adversarial boundaries and failure",
+      "status": "complete",
+      "coverage": "reviewed message and DNR boundaries with simulated regressions and disposable Chromium profiles",
+      "owners": [
+        "background.js",
+        "bridge.js",
+        "config-lock.js",
+        "network-policy.js"
+      ],
+      "existing": "Endpoint inventory, sender/payload fuzzing, signed page-world configuration, atomic DNR batches, quotas, priority and interruption coverage are retained. Hostile regex and scope parsing, native invalid transactions and host-permission changes were added or verified.",
+      "gap": "The browser evidence uses disposable local fixtures and installed Chromium builds; it does not prove compatibility or permission behavior in every browser or on arbitrary websites.",
+      "regressions": [
+        "tools/test-message-boundaries.js",
+        "tools/test-main-world-authority.js",
+        "tools/test-filter-compilation.js",
+        "tools/test-dnr-atomic-replace.js",
+        "tools/test-reconcile-dnr-batch.js",
+        "tools/test-remote-input-boundaries.js"
+      ],
+      "checklist": [
+        {
+          "done": true,
+          "task": "Keep a complete inventory of `runtime.onMessage`, `onConnect`, page-world bridges, and externally exposed extension pages."
+        },
+        {
+          "done": true,
+          "task": "Verify website/content-script messages cannot perform settings changes, broad allowlisting, data reads, or privileged network operations."
+        },
+        {
+          "done": true,
+          "task": "Regression-test authenticated page-world configuration against forgery, replay, mutated payloads, and worker restarts."
+        },
+        {
+          "done": true,
+          "task": "Test hostile custom filter inputs: consecutive unsupported regexes, malformed filters, quota exhaustion, ID collisions, and invalid DNR conditions."
+        },
+        {
+          "done": true,
+          "task": "Assert **atomic replacement**: a rejected candidate leaves the previous valid rules installed."
+        },
+        {
+          "done": true,
+          "task": "Test simultaneous updates by unrelated rule owners; one invalid owner must not erase successful owners or bypass rule authority."
+        },
+        {
+          "done": true,
+          "task": "Verify automatic compatibility rules cannot outrank high-priority security blocks without an explicitly trusted user decision."
+        },
+        {
+          "done": true,
+          "task": "Test service-worker interruption between preparing changes, storage acknowledgement, DNR commit, and recovery."
+        },
+        {
+          "done": true,
+          "task": "Check permission changes and removal/revocation paths against actual browser behavior."
+        },
+        {
+          "done": true,
+          "task": "Invalid input never causes an empty security-rule band."
+        },
+        {
+          "done": true,
+          "task": "All privileged message routes enforce appropriate sender and payload validation."
+        },
+        {
+          "done": true,
+          "task": "Ownership and security-priority tests hold under failure and restart."
+        },
+        {
+          "done": true,
+          "task": "Browser E2E tests supplement, rather than replace, simulated unit tests."
+        }
+      ],
+      "changeReferences": [
+        "background.js",
+        "tools/test-filter-compilation.js",
+        "tools/test-user-filters.js",
+        "tools/test-main-world-authority.js",
+        "tools/test-reconcile-dnr-batch.js",
+        "tools/browser-adversarial-dnr.js",
+        "tools/browser-message-boundaries.js",
+        "tools/check-maintainability.js",
+        "docs/message-boundaries.json",
+        "docs/storage-inventory.json",
+        "docs/protection-contracts.json",
+        "CHANGELOG.md"
+      ],
+      "validationReferences": [
+        "docs/ghostery-adversarial-audit.md",
+        "docs/ghostery-adversarial-evidence.json",
+        "tmp/ghostery-phase08/browser-adversarial-dnr.json",
+        "tmp/ghostery-phase08/browser-dnr-reconcile.log",
+        "tmp/ghostery-phase08/browser-message-boundaries.json",
+        "tmp/ghostery-phase08/permissions/results.json",
+        "tmp/ghostery-phase08/browser-worker-interruption.json",
+        "tmp/ghostery-phase08/gate-verified.log"
+      ]
+    },
+    {
+      "id": "G-09",
+      "title": "Saved-profile upgrades and maintainability",
+      "status": "complete",
+      "coverage": "tested in pinned unpacked Edge profile lanes, with published-asset provenance and documented Store and browser limits",
+      "owners": [
+        "background.js",
+        "upgrade-config.js",
+        "tools/browser-saved-profile-upgrade.js",
+        "tools/run-saved-profile-upgrades.js",
+        ".github/workflows/gate.yml"
+      ],
+      "existing": "Archive provenance and ownership contracts exist. Existing build-update tests do not establish a real older-release-to-candidate upgrade in the same profile.",
+      "gap": "Oldest-supported and latest-to-next upgrades preserve decisions, DNR, schemas and cleanup across GitHub/Store profiles; measured small extractions only.",
+      "regressions": [
+        "tools/test-upgrade-config.js",
+        "tools/test-network-compatibility.js",
+        "tools/test-secret-hygiene.js",
+        "tools/test-state-serialization.js",
+        "tools/test-optional-history-permission.js"
+      ],
+      "checklist": [
+        {
+          "done": true,
+          "task": "Build an E2E upgrade harness that installs a **real older WardenOne release**, seeds realistic local user state, and then upgrades to a candidate build in the **same browser profile**."
+        },
+        {
+          "done": true,
+          "task": "Seed custom filters, site overrides, tracker learner approvals, firewall decisions, consent/GPC settings, and bounded history (excluding real personal data)."
+        },
+        {
+          "done": true,
+          "task": "Verify settings, protection state, DNR ownership, schema migrations, scheduled cleanups, and stored user decisions survive the upgrade."
+        },
+        {
+          "done": true,
+          "task": "Test worker startup/recovery after upgrade, interrupted migrations, failed writes, and revoked permissions."
+        },
+        {
+          "done": true,
+          "task": "Check both the normal GitHub build and the Store build profile where their included features differ."
+        },
+        {
+          "done": true,
+          "task": "Document which prior release versions are supported for direct upgrades; add representative oldest-supported and latest-to-next tests."
+        },
+        {
+          "done": true,
+          "task": "Gradually extract small, stable responsibilities from `background.js` behind tested interfaces; avoid a whole-file rewrite."
+        },
+        {
+          "done": true,
+          "task": "Keep exact build/provenance gates, source-to-ZIP inventory checks, and permission-change checks."
+        },
+        {
+          "done": true,
+          "task": "Review third-party dependencies and external rule-data revisions as part of release preparation."
+        },
+        {
+          "done": true,
+          "task": "Old-to-new upgrade works without wiping user decisions or silently disabling protections."
+        },
+        {
+          "done": true,
+          "task": "DNR rules and extension state match the newly saved configuration after recovery."
+        },
+        {
+          "done": true,
+          "task": "The packaged release bytes match the reviewed source and pass existing release gates."
+        },
+        {
+          "done": true,
+          "task": "Any modularization is behavior-preserving and benchmarked for startup regression."
+        }
+      ],
+      "changeReferences": [
+        "background.js",
+        "upgrade-config.js",
+        "tools/browser-saved-profile-upgrade.js",
+        "tools/run-saved-profile-upgrades.js",
+        "tools/browser-upgrade-startup.js",
+        ".github/workflows/gate.yml",
+        "tools/package-allowlist.json",
+        "CHANGELOG.md",
+        "docs/ghostery-upgrade-audit.md"
+      ],
+      "validationReferences": [
+        "docs/ghostery-upgrade-evidence.json",
+        "tmp/ghostery-phase09/final-run/oldest.json",
+        "tmp/ghostery-phase09/final-run/published.json",
+        "tmp/ghostery-phase09/final-run/store.json",
+        "tmp/ghostery-phase09/startup-report.json",
+        "tools/test-upgrade-config.js",
+        "tmp/ghostery-phase09/gate-final.log"
+      ]
+    }
+  ],
+  "finalAcceptance": [
+    {
+      "done": false,
+      "task": "Every adopted change solves an identified problem, with a before/after demonstration."
+    },
+    {
+      "done": false,
+      "task": "No new high-frequency alerts or excessive false positives."
+    },
+    {
+      "done": false,
+      "task": "No compatibility exception silently overrides a critical protection."
+    },
+    {
+      "done": false,
+      "task": "No unnecessary telemetry, central account, or reporting service is introduced."
+    },
+    {
+      "done": false,
+      "task": "New source data has verified licensing/provenance."
+    },
+    {
+      "done": false,
+      "task": "Chromium MV3 supports every claimed enforcement behavior."
+    },
+    {
+      "done": false,
+      "task": "Real-browser tests pass, including saved-state upgrades."
+    },
+    {
+      "done": false,
+      "task": "Performance and privacy regressions are measured, not assumed away."
+    },
+    {
+      "done": false,
+      "task": "User-facing claims and the protection count are updated **only after** implementation and verification."
+    }
+  ]
+}

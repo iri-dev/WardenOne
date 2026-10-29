@@ -13,7 +13,8 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.resolve(__dirname, '..');
-const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8')
+  + '\n' + fs.readFileSync(path.join(ROOT, 'background-cname.js'), 'utf8');
 
 let failures = 0;
 function check(label, condition, extra) {
@@ -59,10 +60,15 @@ function fakeSession() {
    that died and came back. */
 function worker({ session, config, configUnreadable, behaviour }) {
   const calls = [];
+  const alarms = new Map();
   const ctx = {
     console: { warn() {}, log() {} },
     Promise, Object, Array, String, Number, JSON, Date, Math, setTimeout, clearTimeout,
     chrome: {
+      alarms: {
+        create(name, details) { alarms.set(name, details); return Promise.resolve(); },
+        clear(name) { alarms.delete(name); return Promise.resolve(true); },
+      },
       runtime: { lastError: null },
       storage: {
         local: {
@@ -121,13 +127,21 @@ function worker({ session, config, configUnreadable, behaviour }) {
   vm.runInContext(CONFIG_CACHE + '\n' + ORCHESTRATOR + '\nglobalThis.api = { refreshExtensionState,'
     + ' scheduleExtensionStateRefresh, retryDegradedReconcileOnWake, readReconcileDegraded, localGet,'
     + ' key: () => __refreshExtensionStateLastKey, RECONCILE_RETRY_MAX, RECONCILE_RETRY_MIN_MS };', ctx);
-  return { api: ctx.api, calls };
+  return { api: ctx.api, calls, alarms };
 }
 
 const settle = (ms) => new Promise((r) => setTimeout(r, ms || 40));
 
 (async () => {
   check('the orchestrator runs a known set of named appliers', RUN_CALLS.length >= 20, RUN_CALLS.length + ' found');
+  {
+    const w = worker({ session: fakeSession(), config: {} });
+    w.api.scheduleExtensionStateRefresh();
+    check('the debounce immediately arms a durable reconciliation backstop', w.alarms.get('wardenone-reconcile')?.delayInMinutes === 0.5
+      && w.calls.length === 0);
+    await settle(220);
+    check('a completed reconciliation clears its alarm', !w.alarms.has('wardenone-reconcile'));
+  }
 
   /* ---- 1. success commits the key and clears any marker ---------------------------- */
   {
@@ -290,17 +304,17 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 40));
   }
 
   /* ---- 6. Protection Health says so -------------------------------------------- */
-  async function health(marker, cfg) {
+  async function health(marker, cfg, feeds = []) {
     const issues = [];
     const labels = (/const RECONCILE_COMPONENT_LABELS = \{([\s\S]*?)\n\};/.exec(BG) || [])[1] || '';
     // eslint-disable-next-line no-new-func
     const run = new Function('chrome', 'cfg', 'addIssue', '__blocklistRulesetError',
-      'readReconcileDegraded', 'RECONCILE_COMPONENT_LABELS', 'RECONCILE_RETRY_MAX', 'LISTENERS_NOT_REGISTERED',
+      'readReconcileDegraded', 'RECONCILE_COMPONENT_LABELS', 'RECONCILE_RETRY_MAX', 'LISTENERS_NOT_REGISTERED', 'readFeedLoadFailures',
       '"use strict";return (async()=>{' + HEALTH_BLOCK + '\nreturn true;})();');
     await run({ declarativeNetRequest: { getEnabledRulesets: async () => ['grabbers', 'adshield_easylist', 'trackers'] } },
       Object.assign({ enabled: true }, cfg || {}),
       (severity, text, topLevel) => issues.push({ severity, text, topLevel: topLevel === true }),
-      '', async () => marker, new Function('return {' + labels + '\n};')(), 6, []);
+      '', async () => marker, new Function('return {' + labels + '\n};')(), 6, [], async () => feeds);
     return issues;
   }
   {
@@ -323,6 +337,11 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 40));
     const issues = await health(null);
     check('no marker, no issue', !issues.some((i) => /not in effect|could not read its settings/.test(i.text)));
   }
+  {
+    const issues = await health(null, {}, ['grabber', 'miner']);
+    check('pending feed recovery is a visible top-level danger issue', issues.some((issue) => issue.severity === 'danger'
+      && issue.topLevel && /IP-logger and cryptominer/.test(issue.text) && /automatic recovery is pending/.test(issue.text)));
+  }
 
   /* ---- 7. every applier the orchestrator runs signals a swallowed failure --------- */
   for (const { name, fn } of RUN_CALLS) {
@@ -331,7 +350,7 @@ const settle = (ms) => new Promise((r) => setTimeout(r, ms || 40));
     if (start < 0) continue;
     const end = BG.indexOf('\n}\n', start);
     const body = BG.slice(start, end);
-    const catches = [...body.matchAll(/\} catch \((?:e|_)\) \{([\s\S]*?)(?=\n\s*\}|\}\s*$)/g)];
+    const catches = [...body.matchAll(/\} catch \([A-Za-z_$][\w$]*\) \{([\s\S]*?)(?=\n\s*\}|\}\s*$)/g)];
     const last = catches.length ? catches[catches.length - 1][1] : '';
     const signals = /return false/.test(last) || (fn === 'applyHttpsUpgradeRule' && /if \(!sessionOk\) return false;/.test(body));
     check('applier ' + fn + ' (' + name + ') returns false when it swallows a failure', signals,

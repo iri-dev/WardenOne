@@ -7,7 +7,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const background = fs.readFileSync('background.js', 'utf8');
-const start = background.indexOf('function parseCosmeticFilters(text) {');
+const start = background.indexOf('function cosmeticGenericHideDomain(');
 const end = background.indexOf('// Fetch + parse the cosmetic lists', start);
 assert(start >= 0 && end > start, 'cosmetic parser source was not found');
 

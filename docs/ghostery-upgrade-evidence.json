@@ -1,0 +1,215 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-10-28T20:58:48.045Z",
+  "candidateTree": "335bb78249311604e029ae9c366f6938cd4f68ce",
+  "publishedRelease": {
+    "commit": "273c43a0051d6c3fe12c6871944ed7e8822d8af3",
+    "assetSha256": "d34d4722777b08fad4bfad61a6d562172e762f64d68699ce5424065bfd227843",
+    "assetFingerprint": "531507cda66c30cb4d86594a6012c7454f3e3a75f1ad4dcc4637247dc749ece8",
+    "sourceArchiveFingerprint": "531507cda66c30cb4d86594a6012c7454f3e3a75f1ad4dcc4637247dc749ece8"
+  },
+  "oldestSource": {
+    "commit": "42448d1823c0de7c35884c772af9a68012b3ba71",
+    "version": "1.0.1",
+    "publicationVerified": false
+  },
+  "packages": {
+    "full": {
+      "sha256": "557249da63449a911c66e08e3216d2fa1f0a056491fe37132f1039065e4e6c5d",
+      "fileCount": 147,
+      "fingerprint": "990680d25b73846fe559f589f4a60d128bde5936747b4e100b7f9b537c22254a",
+      "matchedSourceFiles": 147
+    },
+    "store": {
+      "sha256": "844b2c387fa689f9672fd1f156f4dfcb2e437c1fd2ff0c44e1f91a0a2e4374b0",
+      "fileCount": 146,
+      "fingerprint": "e932e713cf29d68ef11a981abe5586aae8428b07e2388caa5c95df37eefb4a7d",
+      "matchedSourceFiles": 146,
+      "sourceTree": "2d921b14a99a186d3cbc6f924153b3eae611db66"
+    }
+  },
+  "permissions": {
+    "oldestToCandidate": {
+      "added": [
+        "declarativeNetRequestFeedback",
+        "contextMenus",
+        "offscreen"
+      ],
+      "removed": [
+        "history",
+        "tabGroups"
+      ]
+    },
+    "publishedToCandidate": {
+      "added": [],
+      "removed": []
+    },
+    "publishedOptionalToCandidate": {
+      "added": [],
+      "removed": []
+    }
+  },
+  "data": [
+    {
+      "file": "cname-trackers.json",
+      "beforeSha256": null,
+      "afterSha256": "080313299d9c96a6a9f67329029faefc3c4ba71b3e68f8b68d7ddb0006de2aca",
+      "changed": true
+    },
+    {
+      "file": "tracker-catalog.json",
+      "beforeSha256": null,
+      "afterSha256": "568530d4d3f664f20376ba304fc5dacab1bb5d3a85f97e806dd3806388f7747e",
+      "changed": true
+    },
+    {
+      "file": "malware-hashes.json",
+      "beforeSha256": "f8adeb455cb1138ff6cf271bd04f66c99043bc9c487bf59857ba546cbf1bf485",
+      "afterSha256": "f8adeb455cb1138ff6cf271bd04f66c99043bc9c487bf59857ba546cbf1bf485",
+      "changed": false
+    },
+    {
+      "file": "rules.json",
+      "beforeSha256": "3939ac3a6a033fd50b3372262b2f09ae2a536eb121830137c5db5e2f8ea4cfc9",
+      "afterSha256": "3939ac3a6a033fd50b3372262b2f09ae2a536eb121830137c5db5e2f8ea4cfc9",
+      "changed": false
+    },
+    {
+      "file": "rules-trackers.json",
+      "beforeSha256": "50199c7e66d5314c52c2879b213c07c490b90371ae4f91ab2c8a772291f050c7",
+      "afterSha256": "50199c7e66d5314c52c2879b213c07c490b90371ae4f91ab2c8a772291f050c7",
+      "changed": false
+    },
+    {
+      "file": "rules-adshield.json",
+      "beforeSha256": "7f1dc36bd827cb57457da4d758c185e2532e012dd5ebbf5394f83a515fb82a54",
+      "afterSha256": "7f1dc36bd827cb57457da4d758c185e2532e012dd5ebbf5394f83a515fb82a54",
+      "changed": false
+    },
+    {
+      "file": "rules-easyprivacy.json",
+      "beforeSha256": "6511869ab74a22ba16fcc4de1e1d492c1148d2f28653245aee3af37eb6515cab",
+      "afterSha256": "6511869ab74a22ba16fcc4de1e1d492c1148d2f28653245aee3af37eb6515cab",
+      "changed": false
+    },
+    {
+      "file": "search-junk-domains.json",
+      "beforeSha256": "52a6948df75fea8216fdc4e963d1d764abcf60bb85a72059ecaa63779a910b3e",
+      "afterSha256": "52a6948df75fea8216fdc4e963d1d764abcf60bb85a72059ecaa63779a910b3e",
+      "changed": false
+    },
+    {
+      "file": "CREDITS.md",
+      "beforeSha256": "7ea3e26aa684697cef2ae873b95a8e89da34542560982e56da8720801583f126",
+      "afterSha256": "fb7163e586e026447a318097e9b989ce35b4eb218b02892fa015af87fbf51980",
+      "changed": true
+    },
+    {
+      "file": "NOTICE",
+      "beforeSha256": "5aea2648121ce94da8fbb14dcf2dccd90328ae13fde69e76682b16684992e8be",
+      "afterSha256": "5aea2648121ce94da8fbb14dcf2dccd90328ae13fde69e76682b16684992e8be",
+      "changed": false
+    },
+    {
+      "file": "THIRD_PARTY_NOTICES.html",
+      "beforeSha256": "475a562202e8ae9d634ae496fc627e33f3df85ac447cb650027f04786665ef8e",
+      "afterSha256": "0f20d85c67a8b71f08f9b1c340a6e559f61403b8581d6476bc41ca33ac4a8164",
+      "changed": true
+    }
+  ],
+  "startup": {
+    "createdAt": "2026-10-28T20:48:09.806Z",
+    "browserSha256": "09cb2b4740af493fafd1e4c16f9960a19f967c2087da0b702f681d34101f7385",
+    "before": {
+      "fingerprint": "994306e9a9bd7eacfeaf5f6f70240261ed5f3712d5d1306bae8fa8a1a084a806",
+      "samplesMs": [
+        1043,
+        1018,
+        1022
+      ],
+      "medianMs": 1022
+    },
+    "after": {
+      "fingerprint": "7245343622a3842adeee67e7a72d33469b8423670bb9eb12dcdb7c1ff483db18",
+      "samplesMs": [
+        995,
+        1024,
+        1008
+      ],
+      "medianMs": 1008
+    },
+    "browser": "Edg/150.0.4078.48",
+    "deltaMs": -14,
+    "deltaPercent": -1.4
+  },
+  "native": {
+    "oldest": {
+      "reportSha256": "49a1be2432735c43b587ee86e664962377ab94bc91ca36af0c09dd6ee3fd1e27",
+      "oldVersion": "1.0.1",
+      "candidateVersion": "1.0.2",
+      "browser": "Edg/150.0.4078.48",
+      "browserSha256": "09cb2b4740af493fafd1e4c16f9960a19f967c2087da0b702f681d34101f7385",
+      "sameExtensionId": true,
+      "startupMs": [
+        1036,
+        461,
+        500
+      ],
+      "userRuleCount": 0,
+      "firewallRuleCount": 0,
+      "learnerVersion": 4,
+      "historyPermissionBefore": true,
+      "historyPermissionRemoved": true,
+      "historyPermissionAfter": false,
+      "cleanerScheduled": true,
+      "restartedAlarms": true
+    },
+    "published": {
+      "reportSha256": "90f990d1e751702c18a22b00cb499b5413f442abbbe7c98d28f812e921c1bd5d",
+      "oldVersion": "1.0.2",
+      "candidateVersion": "1.0.2",
+      "browser": "Edg/150.0.4078.48",
+      "browserSha256": "09cb2b4740af493fafd1e4c16f9960a19f967c2087da0b702f681d34101f7385",
+      "sameExtensionId": true,
+      "startupMs": [
+        1072,
+        444,
+        450
+      ],
+      "userRuleCount": 1,
+      "firewallRuleCount": 1,
+      "learnerVersion": 4,
+      "historyPermissionBefore": false,
+      "historyPermissionRemoved": false,
+      "historyPermissionAfter": false,
+      "cleanerScheduled": true,
+      "restartedAlarms": true
+    },
+    "store": {
+      "reportSha256": "1f7212393f41e5375a4cee3d7341cae50900a50618775a4318baa6eaea52e002",
+      "oldVersion": "1.0.2",
+      "candidateVersion": "1.0.2",
+      "browser": "Edg/150.0.4078.48",
+      "browserSha256": "09cb2b4740af493fafd1e4c16f9960a19f967c2087da0b702f681d34101f7385",
+      "sameExtensionId": true,
+      "startupMs": [
+        1045,
+        469,
+        451
+      ],
+      "userRuleCount": 1,
+      "firewallRuleCount": 1,
+      "learnerVersion": 4,
+      "historyPermissionBefore": false,
+      "historyPermissionRemoved": false,
+      "historyPermissionAfter": false,
+      "cleanerScheduled": true,
+      "restartedAlarms": true
+    }
+  },
+  "archivedStoreZip": {
+    "version": "1.0.1",
+    "publicationVerified": false,
+    "initializedInEdge": false
+  }
+}

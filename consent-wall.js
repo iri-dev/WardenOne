@@ -305,11 +305,7 @@
   // quite a lot to lose -- the retry is what the reader sees as flickering.
   let stoodDown = false;
 
-  // Our own writes are mutations too, and the observer cannot tell them from the site's.
-  // Removing the wall fires it, and so does putting the wall back, so a page we decided to
-  // restore immediately looked like a page with a fresh wall on it. That loop -- remove,
-  // measure, restore, observe our own restore, remove again -- is the flicker, and it ran
-  // as fast as the debounce allowed until the pass cap stopped it.
+  // Ignore our own restore mutations so an intentionally restored wall cannot trigger a remove/restore loop.
   let selfWriting = false;
 
   // What we have already taken out once. A wall that comes back is a site that intends to
@@ -357,18 +353,14 @@
     });
   }
 
-  // Did lifting the wall actually reveal a page? derstandard.at answers no: the sheet comes
-  // off and what is behind it is a copyright line. Scroll height is the reliable half of
-  // this -- a real front page runs to tens of thousands of pixels, a gate to about one
-  // viewport. Text length is the corroborating half and cannot lead, because a healthy front
-  // page of short headlines reads as under 2,000 characters.
+  // Require real content behind the removed wall. Scroll height leads; text length only corroborates because headline-heavy
+  // pages can be short.
   function pageHasContent() {
     try {
       const tall = document.documentElement.scrollHeight > window.innerHeight * 1.4;
-      if (tall) return true;
       const text = String(document.body && document.body.innerText || '').replace(/\s+/g, ' ').trim();
-      return text.length >= 3000;
-    } catch (_) { return true; }
+      return (tall && text.length >= 120) || text.length >= 3000;
+    } catch (_) { return false; }
   }
 
   function restoreAll(why) {

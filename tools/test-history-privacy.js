@@ -108,7 +108,7 @@ check('XSS safe source/sink and assessment labels survive sanitization',
 
 // queueHistory must be the choke point, so no caller can reintroduce this.
 const queueBody = source.slice(source.indexOf('function queueHistory(entry)'),
-  source.indexOf('function queueHistory(entry)') + 700);
+  source.indexOf('// Prepend session recovery', source.indexOf('function queueHistory(entry)')));
 check('queueHistory sanitizes url before buffering',
   /safe\.url = safeUrlForLog\(safe\.url\)/.test(queueBody));
 check('queueHistory sanitizes detail before buffering',
@@ -340,7 +340,7 @@ console.log('\nhistory privacy checks passed');
 // ---------------------------------------------------------------------------
 {
   const writerFrom = source.indexOf('function scheduleHistoryFlush()');
-  const writerTo = source.indexOf('// Reset the count when a tab starts loading');
+  const writerTo = source.indexOf('function discardProtectionHistoryBuffers()');
   if (writerFrom < 0 || writerTo <= writerFrom) throw new Error('history writer source markers not found');
 
   function runWriter(storedValue, opts) {
@@ -370,6 +370,7 @@ console.log('\nhistory privacy checks passed');
       setTimeout: (fn) => { timers.push(fn); return timers.length; },
       clearTimeout: () => {},
       persistHistBuffer() { box.persistCalls++; },
+      safeUrlForLog, sanitizeHistoryDetail,
       pruneStorageIfNeeded: () => ({ catch: () => ({ finally: (f) => { f(); } }) }),
       chrome: {
         runtime: { lastError: options.getError || null },
@@ -403,6 +404,12 @@ console.log('\nhistory privacy checks passed');
       __histPersistTimer: { get: () => box.__histPersistTimer, set: (v) => { box.__histPersistTimer = v; }, configurable: true },
     });
     vm.createContext(sandbox);
+    sandbox.WO_HISTORY = {
+      epoch: 0, changing: false,
+      read: (key, callback) => sandbox.chrome.storage.local.get(key, callback),
+      write: (values, callback) => sandbox.chrome.storage.local.set(values, callback),
+      journal: entries => sandbox.chrome.storage.session.set({ __wardenone_hist_buffer: entries }),
+    };
     /* The writer prunes by time before it caps (PRIV-08); the pruner and its two constants sit
        above the slice, so they come along. */
     const pruneFrom = source.indexOf('const HISTORY_MAX = ');

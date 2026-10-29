@@ -17,6 +17,7 @@ function region(start, end) {
 }
 function world(store = {}) {
   let now = 1700000000000;
+  const activeTabs = new Map();
   const calls = [], updates = [], history = [];
   const session = {
     async get(key) { return structuredClone({ [key]: store[key] }); },
@@ -26,7 +27,11 @@ function world(store = {}) {
   const box = {
     URL, TextEncoder, Uint8Array, crypto: webcrypto, console,
     Date: class extends Date { static now() { return now; } },
-    chrome: { storage: { session }, runtime: { id: ORIGIN.split('/')[2], getURL: p => ORIGIN + p } },
+    chrome: { storage: { session }, runtime: { id: ORIGIN.split('/')[2], getURL: p => ORIGIN + p,
+      getContexts: async () => [...activeTabs].map(([tabId, tab]) => ({ ...tab, tabId, frameId: 0,
+        documentUrl: tab.url, contextType: 'TAB' })) },
+      webNavigation: { getFrame: async ({ tabId }) => ({ documentId: activeTabs.get(tabId)?.documentId }) } },
+    INCOGNITO_CONTEXT: false,
     isLocalOrPrivateHost: host => host === '127.0.0.1' || host === 'localhost' || host.endsWith('.local'),
     isLocalTrustHost: () => false,
     trustHostFromUrl: raw => new URL(raw).hostname,
@@ -34,7 +39,7 @@ function world(store = {}) {
     urlReputationConfig: async () => ({ enabled: true }),
     locallyBlockedReputationHost: async () => '',
     urlReputationLookupUrl: async url => { calls.push(url); return { ok: true, hit: true, threats: ['MALWARE'] }; },
-    tabsGet: async () => ({}), tabsUpdate: async (...args) => updates.push(args),
+    tabsGet: async id => ({ id, ...activeTabs.get(id) }), tabsUpdate: async (...args) => updates.push(args),
     bumpBadge() {}, safeBrowsingThreatLabel: () => 'malware',
     safeBrowsingBlockPageUrl: async () => ORIGIN + 'safe-browsing-block.html?w=' + HANDLE,
   };
@@ -44,22 +49,36 @@ function world(store = {}) {
     region('const WARNING_RECORD_PREFIX = ', '\nfunction warningRecordHandle'),
     'const safeBrowsingNavigationChecks = new Set();',
     region('const SAFE_BROWSING_BYPASS_KEY = ', '\nasync function checkVirusTotalUrl'),
+    region('async function messageSenderStillCurrent(', '\nfunction messageCleanHost('),
     'globalThis.api = { addSafeBrowsingBypass, consumeSafeBrowsingBypass, clearSafeBrowsingBypass, handleSafeBrowsingNavigation, key: SAFE_BROWSING_BYPASS_KEY };',
   ].join('\n'), box);
   const sender = (tabId = 7, handle = HANDLE) => ({
-    id: box.chrome.runtime.id, frameId: 0, tab: { id: tabId }, url: ORIGIN + 'safe-browsing-block.html?w=' + handle,
+    id: box.chrome.runtime.id, frameId: 0, documentId: 'document-a', tab: { id: tabId }, url: ORIGIN + 'safe-browsing-block.html?w=' + handle,
   });
   const seed = (tabId = 7, url = URL_A, handle = HANDLE, fields = {}) => {
+    activeTabs.set(tabId, { url: ORIGIN + 'safe-browsing-block.html?w=' + handle, documentId: 'document-a', incognito: false });
     store['wardenone_warning:' + handle] = { kind: 'safe-browsing', context: 'page', tabId, url, at: now, ...fields };
     return sender(tabId, handle);
   };
-  const navigate = (tabId = 7, url = URL_A, frameId = 0) => box.api.handleSafeBrowsingNavigation({ tabId, url, frameId });
-  return { ...box.api, store, session, seed, sender, navigate, calls, updates, history, advance(ms) { now += ms; } };
+  const navigate = (tabId = 7, url = URL_A, frameId = 0) => {
+    if (frameId === 0) activeTabs.set(tabId, { url, documentId: 'document-a', incognito: false });
+    return box.api.handleSafeBrowsingNavigation({ tabId, url, frameId });
+  };
+  return { ...box.api, store, session, seed, sender, navigate, calls, updates, history, advance(ms) { now += ms; },
+    active(url, document = 'document-a', privateTab = false) { activeTabs.set(7, { url, documentId: document, incognito: privateTab }); } };
 }
 async function grant(w, tabId = 7, url = URL_A, handle = HANDLE) {
   assert.equal((await w.addSafeBrowsingBypass(handle, w.seed(tabId, url, handle))).ok, true);
 }
 async function run() {
+  for (const [url, document, privateTab] of [['https://elsewhere.example/', 'document-a', false],
+    [ORIGIN + 'safe-browsing-block.html?w=' + HANDLE, 'document-b', false],
+    [ORIGIN + 'safe-browsing-block.html?w=' + HANDLE, 'document-a', true]]) {
+    const w = world(), sender = w.seed();
+    w.active(url, document, privateTab);
+    assert.equal((await w.addSafeBrowsingBypass(HANDLE, sender)).ok, false, 'a stale or cross-context warning cannot issue a grant');
+    assert(!w.store[w.key]);
+  }
   {
     const w = world(); await grant(w);
     assert(!w.store['wardenone_warning:' + HANDLE]);
@@ -117,6 +136,7 @@ async function run() {
     s => ({ ...s, url: 'https://evil.example/' }), s => ({ ...s, url: ORIGIN + 'popup.html' }),
     s => ({ ...s, url: s.url + '&other=1' }), s => ({ ...s, tab: { id: 8 } }),
     s => ({ ...s, tab: undefined }), s => ({ ...s, frameId: undefined }),
+    s => ({ ...s, documentId: undefined }), s => ({ ...s, documentId: 'replaced-document' }),
   ];
   for (const change of forged) {
     const w = world();

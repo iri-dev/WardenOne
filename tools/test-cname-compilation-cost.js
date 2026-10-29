@@ -1,0 +1,22 @@
+/* WardenOne — Copyright (C) 2026 iri; GPL-3.0-or-later. See LICENSE. */
+'use strict';
+const assert = require('assert/strict');
+const fs = require('fs');
+const vm = require('vm');
+const source=fs.readFileSync('cname-utils.js','utf8');
+let sites=0,checks=0;
+const ctx=vm.createContext({URL,wardenOneIsPublicSuffix:()=>false,siteIdentity:host=>{sites++;return host.split('.').slice(-2).join('.');}});
+vm.runInContext(source+';this.api=WOCname',ctx);
+const rows=Array.from({length:100},(_,n)=>['a'+n+'.shop.example.org','collector.etracker.com']);
+const mapping=ctx.api.validateEntries(rows), options={base:730000,excludedInitiatorDomains:['accounts.google.com'],protectedHost:()=>{checks++;return false;}};
+const first=JSON.stringify(ctx.api.compile(mapping,options));
+assert.equal(sites,101,'validation and both rule owners reuse stable site identities');
+assert.equal(checks,101,'repeated canonical targets share a compatibility decision within one compilation');
+const second=JSON.stringify(ctx.api.compile(mapping,options));
+assert.equal(first,second);assert.equal(sites,101,'a second owner must not repeat the PSL work');
+assert.equal(ctx.api.compile(mapping,{...options,protectedHost:()=>true}).length,0,'compatibility decisions must refresh for each policy compilation');
+const changed=new Map(mapping);changed.set(rows[0][0],'assets.benign.example');
+assert(!ctx.api.compile(changed,options).some(r=>r.condition.requestDomains.includes(rows[0][0])),'an old target decision cannot authorize a new mapping');
+const same=ctx.api.validateEntries([['a.etracker.com','collector.etracker.com']]);
+assert.equal(ctx.api.compile(same,options).length,0,'site identity reuse preserves same-party exemption');
+console.log('[ok] bounded CNAME site reuse and per-compilation compatibility preserve rule scope');

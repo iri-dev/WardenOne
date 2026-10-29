@@ -10,7 +10,7 @@
 (function wardenOneTwitchAdblock() {
   'use strict';
 
-  const VERSION = '1.0.2';
+  const VERSION = '1.0.3';
   // Hook-status chatter is opt-in: it printed into every twitch.tv page console
   // on every load. Ad-time logging stays on, since that is what makes a missed
   // ad diagnosable after the fact.
@@ -108,13 +108,8 @@
       } catch (_) {}
     }
   };
-  /* The page globals this copy replaced -- fetch, XHR open, Worker, Storage getItem. Each entry
-     puts back what it found, but only while the global still holds this copy's hook, so a page or
-     another extension that wrapped it later keeps its wrapper. A hook that cannot be taken back
-     goes inert instead: once disposed, every wrapper passes straight through to what it wrapped,
-     so it can never act on settings this copy has stopped listening to. The disposer is marked
-     __woReleases so a newer copy knows it may take this one's place. Chained rather than folded
-     into the registry above, which every guard shares byte for byte. */
+  /* Restore globals only while they still hold this copy's hooks. Other wrappers remain intact; unreleasable hooks pass
+     through after disposal. __woReleases permits replacement without changing the shared registry. */
   const woRestore = [];
   let woDisposed = false;
   const woTwitchResourceDispose = window.__wardenOneTwitchAdblockDispose;
@@ -2061,12 +2056,8 @@
     const BACKUP_WARM_MAX = 16;
     const BACKUP_WARM_HISTORY_MAX = 128;
     const NATIVE_BRIDGE_MAX_MS = 6 * 1000;
-    // A pre-roll is the one break where nothing is playing yet, so holding the
-    // first media playlist costs start-up latency instead of freezing video the
-    // viewer is already watching. A cold pre-roll loses the 900ms race by only a
-    // few hundred ms -- every leg is cold because there is no preceding clean
-    // poll to have warmed anything -- so give just that case a longer budget. A
-    // mid-roll keeps the short one on purpose.
+    // Give cold pre-rolls a longer playlist budget before playback starts. Mid-rolls keep the shorter limit to avoid
+    // freezing active video.
     const PREROLL_BACKUP_WAIT_MS = 2500;
     // Clean alternate media legs on distant Twitch regions can take 700-900ms
     // while cold. A 650ms abort discarded a valid popout/mobile stream before
@@ -3152,11 +3143,8 @@
       const backup = sequenceTail(cleanText);
       if (!backup) return null;
       const firstTimeline = state.seqServedHead === null || state.seqServedHead === undefined;
-      /* Cache acquisition time cannot prove playback progress: a frozen route can
-         be reacquired as a new candidate carrying the same already-consumed edge.
-         Keep the last edge per exact playback profile outside the candidate cache.
-         Equal edges are normal for a few fast HLS polls, but after the stale bound
-         the intervention must fail open until that exact route actually advances. */
+      /* Track edge progress per exact profile outside candidate caches. Reacquiring the same frozen edge must not reset the
+         stale bound; fail open until it advances. */
       const now = Date.now();
       const progressKey = String(profileKey || source || '?');
       const progress = state.backupProgress[progressKey];
@@ -3381,13 +3369,8 @@
     function ordinaryMediaPlaylist(text) {
       const skipped = sequenceSkippedSegments(text);
       if (skipped === null) return '';
-      /* A clean session's prefetch hints are kept. A Low Latency player stays about two segments
-         ahead of the listed edge by downloading them, and through a break it needs the same lead:
-         without it, the switch left nothing new to fetch until the alternate listed two more
-         entries, and a buffer of about 2.5 s ran dry. Measured live 2026-10-18 on a 2-second
-         channel: 3.0 s spinner at the start of every break, buffer down to 0.4 s through it. The
-         alternates once listed no hints; mobile_feed, popout, embed and mobile_web all do now. A
-         hint inside an announced ad is dropped with the rest (below), never served. */
+      /* Keep clean-session prefetch hints so low-latency playback retains its segment lead across switches. Drop hints
+         inside announced ads. */
       let stripped = stripLowLatency(text, true);
       if (skipped) {
         /* The listed segments follow SKIPPED-SEGMENTS omitted entries. Removing
@@ -3823,13 +3806,8 @@
 
     async function backupAttempt(info, playerType, controllers) {
       const epoch = backupEpoch;
-      // A pre-roll is decided before the master has necessarily been mapped, so
-      // info.channel can still be empty or malformed on the very first poll. The
-      // token request then goes out with an unusable login and Twitch answers
-      // HTTP 200 carrying a null token, which surfaces as "missing access token"
-      // and loses every clean-backup route for the one break that needs it most.
-      // The master URL the worker already holds carries the channel, so recover
-      // it from there rather than asking for a token we know cannot be minted.
+      // Recover an unmapped pre-roll channel from the master URL before requesting a token; Twitch can return HTTP 200 with
+      // a null token for invalid logins.
       const channel = workerChannelName(info.channel) || channelFromMaster(info.master);
       const token = await accessToken(channel, playerType);
       if (!active || epoch !== backupEpoch) throw new Error('stale backup session');
@@ -4124,12 +4102,8 @@
       }
     }
 
-    /* A detached playlist is useful only after its first media bytes reach MSE.
-       Starting a partial Range request did not accomplish that: Twitch immediately
-       opened a separate full request and still waited through a cold CDN leg. Start
-       the real resource here and let the worker hand that exact Response to the
-       player's first matching GET. The one-shot entry keeps bodies from being
-       replayed, while the controller and short TTL bound resources never claimed. */
+    /* Prefetch the full media resource and hand its Response to the first matching GET. One-shot consumption, cancellation
+       and a short TTL bound unused bodies. */
     function startWarmedBackupResource(url) {
       if (!active || !/^https?:\/\//i.test(String(url || '')) || warmedBackupResources.has(url)) return;
       const now = Date.now();
@@ -4434,13 +4408,8 @@
        an unmarked switch can freeze or end playback. Keep decisions across playlist
        refreshes, but do not add a discontinuity sequence: Twitch's own sliding
        windows omit it and renditions would otherwise disagree. */
-    /* Bounded, oldest touched out first. The player polls the rendition it plays (and the next
-       while it switches), and every refresh re-lists that playlist and every address in it, so
-       only what nobody plays falls out: a live window is 7-23 entries, far inside 64 and 512.
-       History is lost only if more than 7 other playlists, or some 500 other segment addresses,
-       pass between a refresh of the playing one and the downloads after it. A switch then goes
-       unmarked, as before markers existed, or is marked a few segments off, on media that
-       continues -- which measured harmless. Tested in that shape well past all three bounds. */
+    /* Evict least-recently-touched playlists and segment addresses within fixed bounds. Active refreshes renew them;
+       evicted history may lose switch markers without blocking media. */
     const SPLICE_TRACKS_MAX = 8;
     const SPLICE_HISTORY = 64;
     const SPLICE_SEGMENTS_MAX = 512;
@@ -4471,12 +4440,8 @@
       return track;
     }
 
-    /* Noted when the player asks, not when the bytes land: a playlist refreshed while the request
-       is in flight must already treat that entry as the one the player is taking.
-       Each request is its own attempt. The player can ask for an entry again while an earlier
-       request for it is still in flight -- a retry, or the same number from the other session
-       across a switch -- and the media it holds is the earliest attempt that has not failed. One
-       record per number let an older request's failure wipe out a newer one's success. */
+    /* Record each request attempt before bytes arrive. Retries can overlap, so an older failure must not erase a newer
+       success for the same segment number. */
     const SPLICE_ATTEMPTS_MAX = 8;
     function noteSpliceDownload(url) {
       const entry = spliceSegments.get(url);
@@ -4674,13 +4639,8 @@
       return response;
     }
 
-    // During an ad break Twitch serves a media playlist URL that is not one of the
-    // master's variant URLs, so an exact-URL lookup misses even though the channel
-    // and codec profile are already known. That is precisely when the backup is
-    // needed, and a miss skipped the whole clean-backup path. backupAttempt only
-    // needs the profile, not the ad URL, so fall back to the active profile or the
-    // best video/source variant and bind it to this URL. Never let a last-listed
-    // audio-only rendition become the detached video's replacement profile.
+    // Ad playlists may be absent from the master variants. Bind the active or best video profile to that URL; never
+    // substitute an audio-only rendition.
     function fallbackProfileScore(candidate) {
       const codecs = String(candidate && candidate.codecs || '');
       const hasVideoCodec = /(?:avc1|av01|hev1|hvc1|vp0?9)/i.test(codecs) ? 1 : 0;

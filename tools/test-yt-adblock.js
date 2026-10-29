@@ -577,10 +577,36 @@ async function main() {
     const rawResponse = JSON.parse(await resp.text());
     ok("master off leaves /player request body untouched", !sent.params && !sent.playbackContext.contentPlaybackContext.lactMilliseconds);
     ok("master off leaves player response ads intact", rawResponse.adPlacements && rawResponse.playerAds && rawResponse.adSlots);
+    const initialPlayer = coldSample();
+    ctx.window.ytInitialPlayerResponse = initialPlayer;
+    ok("master off leaves cold-load bootstrap player data unchanged", !adsGone(initialPlayer)
+      && initialPlayer.adPlacements && initialPlayer.playerAds && initialPlayer.adSlots && streamingIntact(initialPlayer));
+    const initialData = { playerResponse: coldSample() };
+    ctx.window.ytInitialData = initialData;
+    ok("master off leaves cold-load nested bootstrap data unchanged", initialData.playerResponse.adPlacements
+      && initialData.playerResponse.playerAds && initialData.playerResponse.adSlots && streamingIntact(initialData.playerResponse));
     bridge.sendConfig({ enabled: true });
     const resumed = await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", { method: "POST", body: JSON.stringify(body) });
     ok("signed master on restores response pruning", adsGone(JSON.parse(await resumed.text())));
     ok("signed master on restores request shaping", !!JSON.parse(receivedBody).params);
+  }
+
+  {
+    for (const delayBody of [false, true]) {
+      let release;
+      const raw = new FakeResponse(JSON.stringify(coldSample()), { status: 200 });
+      const ctx = newCtx("{}");
+      if (delayBody) raw.text = () => new Promise(resolve => { release = () => resolve(raw._t); });
+      ctx.self.fetch = () => delayBody ? Promise.resolve(raw) : new Promise(resolve => { release = () => resolve(raw); });
+      vm.runInContext(src, ctx);
+      const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+      const pending = ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x");
+      if (delayBody) await Promise.resolve();
+      bridge.sendConfig({ enabled: false });
+      release();
+      const response = await pending;
+      ok("master off preserves the original in-flight " + (delayBody ? "response body" : "response"), response === raw);
+    }
   }
 
   console.log("22) authenticated configuration:");

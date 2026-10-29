@@ -743,11 +743,8 @@
       + nativeNav + '{background-color:transparent !important;box-shadow:none !important;text-shadow:none !important;-webkit-text-fill-color:initial !important;}'
       + '#navcnt a,#navcnt a span,#foot a,#bres a,#swml a{color:#1a0dab !important;-webkit-text-fill-color:currentColor !important;text-decoration:none !important;}'
       + '#navcnt .csb,#navcnt span[style*="background-position"],#foot .csb,#foot span[style*="background-position"]{background-image:url("/images/nav_logo321.webp") !important;background-repeat:no-repeat !important;background-color:transparent !important;color:transparent !important;-webkit-text-fill-color:transparent !important;}'
-      // "People also search for" / related-search tiles live in the BOTTOM area
-      // (#botstuff/#bres/#brs), which the result-scope text rules don't reach, so their
-      // text kept Google's native light grey -> near-invisible on white. Force that text
-      // (incl. inside the tile <a>) dark, and give the suggestion tiles a real chip
-      // surface + border so they read as tiles. PASF tiles link to /search?q=...
+      // Related-search tiles sit outside result scopes. Give their text sufficient contrast and retain distinct chip
+      // surfaces.
       + '#botstuff,#bres,#brs,#botabar,#extrares{background-color:transparent !important;}'
       + '#botstuff :where(p,li,span,div,h3,b,em,cite,a,a *,[role="link"],[role="link"] *),#bres :where(p,li,span,div,h3,b,em,cite,a,a *,[role="link"],[role="link"] *),#brs :where(p,li,span,div,h3,b,em,cite,a,a *,[role="link"],[role="link"] *){color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       // chip surface for PASF/related tiles ONLY — exclude pagination & nav (their links are
@@ -809,12 +806,8 @@
       + inputSel + '{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + text + ' !important;background:transparent !important;background-color:transparent !important;border-color:transparent !important;border-bottom-color:transparent !important;box-shadow:none !important;outline:0 !important;}'
       + inputSel + '::placeholder{color:' + muted + ' !important;-webkit-text-fill-color:' + muted + ' !important;opacity:1 !important;}'
       + iconSel + '{background-color:transparent !important;color:' + icon + ' !important;fill:currentColor !important;stroke:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
-      // The dropdown is ONE opaque surface: paint only the OUTER wrapper (.UUbT9) and
-      // give IT the single shadow + border. Make every inner layer transparent so the
-      // nested panels (incl. the right-hand "People also ask / People also search for"
-      // rich panel) inherit it instead of stacking shadows/borders or leaking native
-      // (dark) colours through. The old panel selector painted bg+shadow+border on all 5
-      // nested layers -> concentric outlines + a dingy/off box in every mode.
+      // Paint the dropdown's outer wrapper only. Transparent inner layers prevent stacked borders/shadows and native-color
+      // leaks.
       + googleSuggestRoot + '{background-color:' + panel + ' !important;color:' + text + ' !important;border-color:' + border + ' !important;box-shadow:none !important;text-shadow:none !important;}'
       + googleSuggestInner + '{background-color:transparent !important;color:' + text + ' !important;border-color:transparent !important;box-shadow:none !important;text-shadow:none !important;}'
       + googleSuggestStrongRoot + '{background-color:' + panel + ' !important;color:' + text + ' !important;border-color:' + border + ' !important;box-shadow:none !important;text-shadow:none !important;}'
@@ -826,11 +819,7 @@
       // "People also search for" tile THUMBNAILS (Google renders them as background-image
       // on a div). This keeps the single-surface look while preserving thumbnails.
       + '.UUbT9 :is(div,section,ul,ol,li,table,tbody,tr,td,g-inner-card,g-section-with-header,block-component):not([role="option"]):not([role="option"] *):not([style*="url"]):not(a):not(a *){background-color:' + panel + ' !important;border-color:transparent !important;box-shadow:none !important;}'
-      // Google paints a subtle elevation GRADIENT (background-image) on the panel /
-      // "People also ask" / rich-panel boxes. It can survive colour overrides and
-      // render as a lighter box. Strip it so the dropdown is one flat surface, but
-      // EXCLUDE anything inside a tile link (a / [role=link]) or with an inline url(),
-      // which is where the "People also search for" THUMBNAILS live - don't touch those.
+      // Remove panel elevation gradients without touching linked thumbnails or inline url() images.
       + '.UUbT9 :where([style*="gradient" i],[class*="gradient" i],[class*="fade" i],[class*="overlay" i],[class*="shadow" i]):not([role="option"]):not([role="link"]):not([role="link"] *):not(a):not(a *):not([style*="url"]){background-image:none !important;}'
       // Newer Google search dropdowns use nested rich panels for "People also ask"
       // and "People also search for". Flatten those containers to the dropdown
@@ -878,13 +867,8 @@
       + '#search p,#search li,#rso p,#rso li,#search span,#rso span,.VuuXrf,.IsZvec,.VwiC3b,.MUxGbd,.hgKElc,.LEwnzc,.kno-rdesc,.kb0PBd{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + '#search p *,#search li *,#rso p *,#rso li *,.VuuXrf *,.IsZvec *,.VwiC3b *,.MUxGbd *,.hgKElc *,.LEwnzc *{color:inherit !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + '#search a,#rso a,#rhs a,#search a *,#rso a *,#rhs a *{color:' + link + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      // Light mode has had this since it was written; dark and ultra never did,
-      // which is why a results page in either one read as entirely unvisited.
-      // The generic a[href]:visited rule cannot reach here -- an #id selector
-      // outranks it -- so the Google sheet has to say it again. The descendant
-      // half matters as much as the anchor: a result title is an h3 inside the
-      // link, and without it the title keeps the unvisited colour while only
-      // the bare anchors change.
+      // Google's id-scoped rules outrank generic visited links. Style both visited anchors and their nested title elements
+      // in each mode.
       + '#search a:visited,#rso a:visited,#rhs a:visited,#search a:visited *,#rso a:visited *,#rhs a:visited *{color:' + visited + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + '[aria-label="AI Overview"],[aria-label="AI Overview"]{background:' + bg + ' !important;background-color:' + bg + ' !important;color:' + text + ' !important;border-color:' + border + ' !important;text-shadow:none !important;}'
       + '[aria-label="AI Overview"] *,[aria-label="AI Overview"] ~ div *{text-shadow:none !important;}'
@@ -894,11 +878,8 @@
       + '#search .related-question-pair:hover,#search .CBPhSb:hover,#search .Wt5Tfe:hover,#search [role="button"]:hover{background:' + raised + ' !important;background-color:' + raised + ' !important;color:' + text + ' !important;}'
       + '#search h1,#search h2,#search h3,#rso h2,#rso h3,#rhs h2,#rhs h3{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + '#search cite,#search small,#search .MUxGbd,#search .hgKElc,#search .LEwnzc,#search .VwiC3b,#rso cite,#rso small{color:' + muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      // FLATTEN result containers to the page bg (verified live). The old surface/row rules
-      // boxed every organic result + PAA + group container into a grey rectangle that Google's
-      // native dark mode never shows ("weird boxes / you still see backgrounds"). Forcing them to
-      // bg (not transparent) keeps them flat AND still overrides a light-served Google. Late rule
-      // => same specificity as the surface/row rules above but wins by source order.
+      // Use page-background colors for result containers. A late rule overrides earlier surface styling and still covers
+      // light-served Google pages.
       + '#search .Ww4FFb,#search .wHYlTd,#search .tF2Cxc,#search .ULSxyf,#search .Wt5Tfe,#search .related-question-pair,#search .dnXCYb,#search .EyBRub,#search .LGOjhe,#search .X5LH0c,#search .g,#rso .Ww4FFb,#rso .ULSxyf,#rso .tF2Cxc{background:' + bg + ' !important;background-color:' + bg + ' !important;border-color:transparent !important;box-shadow:none !important;}'
       // Use higher specificity than #search a * and #search h3 to keep result titles blue
       // and the separate site-name anchor in the text colour.

@@ -53,7 +53,7 @@ function listenerBody(name) {
   return balanced(BG, at + ("registerListener('" + name + "', () => ").length);
 }
 
-const SLICE = between(BG, 'const CONSENT_COOKIE_EXACT = new Set([', 'async function cleanConsentAndTrackingCookies() {', 'the clear-on-leave block');
+const SLICE = between(BG, 'const CONSENT_COOKIE_EXACT = new Set([', 'async function cleanConsentAndTrackingCookies(options = {}) {', 'the clear-on-leave block');
 const NOW = 1758240000000;
 const DAY = 86400000;
 

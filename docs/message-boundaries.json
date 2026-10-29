@@ -1,0 +1,3567 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "file": "animated-image-saver.js",
+      "sha256": "c36de6e175d21ef215cc58621cb2d56734712cfcbe7c2affbe459c69f91d8135",
+      "world": "ISOLATED",
+      "endpoints": 1
+    },
+    {
+      "file": "anti-redirect.js",
+      "sha256": "9725e1739bbe0ff97c4e46b5cf2bfab095f9408920c49d5a03f822050420dda6",
+      "world": "MAIN",
+      "endpoints": 6
+    },
+    {
+      "file": "background.js",
+      "sha256": "95861a5794f6eb48a1be43e4fe451443e551ae8d151ab7fa34501b13885fe23b",
+      "world": "WORKER",
+      "endpoints": 8
+    },
+    {
+      "file": "bridge.js",
+      "sha256": "e85c88310fa1ba96917991e0b01f38ca8fa60cb286816b4ae2ad9441859d45e2",
+      "world": "ISOLATED",
+      "endpoints": 21
+    },
+    {
+      "file": "consent-reject.js",
+      "sha256": "1d5f5b99c839f9b32ede3e6a10480cced9fea1a3f7dbc403369eef21c89f8b78",
+      "world": "ISOLATED",
+      "endpoints": 2
+    },
+    {
+      "file": "consent-wall.js",
+      "sha256": "500212267ae122607f98cb86da57c73b7e5bc00c594334b5b6ab4114a7101ce7",
+      "world": "ISOLATED",
+      "endpoints": 2
+    },
+    {
+      "file": "content.min.js",
+      "sha256": "df36d28ba48b0f0f0299061de7061213bf5e9b3bef6a3b3bfb00881799309111",
+      "world": "MAIN",
+      "endpoints": 35
+    },
+    {
+      "file": "cookie-access.js",
+      "sha256": "dd31af85166efeb87f617d9faa047d4028e1bff1ea36cb06acaa861d2a8d64bc",
+      "world": "MAIN",
+      "endpoints": 2
+    },
+    {
+      "file": "cryptominer-detect.js",
+      "sha256": "dd4c5c677e72dfb11e2203a92762b7f33dddd7654708201101a978b790cd3057",
+      "world": "DOCUMENT",
+      "endpoints": 4
+    },
+    {
+      "file": "download-review.js",
+      "sha256": "9ac03444df78e6554995cb26fa43a9de497fb96a621c3c8755dddee9caa3a953",
+      "world": "DOCUMENT",
+      "endpoints": 1
+    },
+    {
+      "file": "eyeshield.js",
+      "sha256": "191b0bf42b790ae72afdfbfd551fb6cd7d419049f8ef4e9294f832d0c3917d7e",
+      "world": "ISOLATED",
+      "endpoints": 2
+    },
+    {
+      "file": "fingerprint-realm.js",
+      "sha256": "0cb02073aff9fb3060e4c7a5dfc4597419c7d00a169955225d5b37e598dd4213",
+      "world": "MAIN",
+      "endpoints": 5
+    },
+    {
+      "file": "firewall.js",
+      "sha256": "b2f5b5d0aee8d90178b1bee330a9c7b7369e3548ecb65bf34b7d064a08e52a6c",
+      "world": "DOCUMENT",
+      "endpoints": 1
+    },
+    {
+      "file": "frame-image-logger.js",
+      "sha256": "8bad2a72d5c565649648434c097cb70cf8c916c888371ec44399c1ac6a02de2d",
+      "world": "ISOLATED",
+      "endpoints": 1
+    },
+    {
+      "file": "logger.js",
+      "sha256": "dc973172445d6fadc87c028b583faa7eaecfdf73758b31c1c880c598d285d25e",
+      "world": "DOCUMENT",
+      "endpoints": 2
+    },
+    {
+      "file": "mail-shield.js",
+      "sha256": "9a72a65497ac0d3305f503953a400135ba7872faa6abdc38d279296811bceab1",
+      "world": "ISOLATED",
+      "endpoints": 1
+    },
+    {
+      "file": "oauth-guard.js",
+      "sha256": "4484ee7730f798f318ac0185be9f922acc5b24fded182b7e351bf5f8aed70a85",
+      "world": "ISOLATED",
+      "endpoints": 1
+    },
+    {
+      "file": "offscreen.js",
+      "sha256": "f37cbd7014f36e2fc780135a438eb891ac4ed9e445b5c54460ada045b9b0115a",
+      "world": "DOCUMENT",
+      "endpoints": 1
+    },
+    {
+      "file": "permission-chain.js",
+      "sha256": "c47abd30b27674bb64c7dda08e9a9542a61dc12aef9a08cc36d1788b5b8b2f17",
+      "world": "MAIN",
+      "endpoints": 5
+    },
+    {
+      "file": "resource-saver.js",
+      "sha256": "cc7a7a42b55cd47763ea796d72885fe15cfa6055c7a8cbf5741d0910969a4b43",
+      "world": "ISOLATED",
+      "endpoints": 1
+    },
+    {
+      "file": "spotify-adblock.js",
+      "sha256": "7624982cde396ef625a620e1992c6bd93e0d93d064a1e34a3bc8776977a14a53",
+      "world": "MAIN",
+      "endpoints": 4
+    },
+    {
+      "file": "src/content.js",
+      "sha256": "956f100e4e64bd62ebdbf01af7640589b2045ada856f0858849d44a672c1bfb8",
+      "world": "DOCUMENT",
+      "endpoints": 35
+    },
+    {
+      "file": "src/fingerprint-realm.js",
+      "sha256": "0253945cb1f9d5f817aa53085405d9fe3dd3300b14b8843456b5257ea8d9fbd1",
+      "world": "DOCUMENT",
+      "endpoints": 5
+    },
+    {
+      "file": "twitch-adblock.js",
+      "sha256": "7aaa95284f9d59535acce3191ca9bfcdbd2ce8d0cd8f5700bf8e7c7907411cc0",
+      "world": "MAIN",
+      "endpoints": 15
+    },
+    {
+      "file": "twitch-rewind.js",
+      "sha256": "544962a70a643cf53ca038484614b806f2bc11df6081ff2ee37277b6121a3c0b",
+      "world": "ISOLATED",
+      "endpoints": 2
+    },
+    {
+      "file": "twitch-vod-rewind.js",
+      "sha256": "373404ac80d01463ea60c7a6b659c295182b5b44de58cfd3f770cf8e4e1f420c",
+      "world": "ISOLATED",
+      "endpoints": 1
+    },
+    {
+      "file": "yt-adblock.js",
+      "sha256": "450dbad8815ef6ca44d4d3b0e4b061fddd89a76886eddf096b188f701a2122e1",
+      "world": "MAIN",
+      "endpoints": 4
+    }
+  ],
+  "endpoints": [
+    {
+      "file": "animated-image-saver.js",
+      "line": 221,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "animated-image-saver.js"
+    },
+    {
+      "file": "anti-redirect.js",
+      "line": 1746,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "anti-redirect.js"
+    },
+    {
+      "file": "anti-redirect.js",
+      "line": 4006,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "anti-redirect.js"
+    },
+    {
+      "file": "anti-redirect.js",
+      "line": 792,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "anti-redirect.js"
+    },
+    {
+      "file": "anti-redirect.js",
+      "line": 1534,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "anti-redirect.js"
+    },
+    {
+      "file": "anti-redirect.js",
+      "line": 3999,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "anti-redirect.js"
+    },
+    {
+      "file": "anti-redirect.js",
+      "line": 4042,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "anti-redirect.js"
+    },
+    {
+      "file": "background.js",
+      "line": 619,
+      "operation": "runtime-message",
+      "policy": "worker-activity",
+      "sourceFile": "background.js"
+    },
+    {
+      "file": "background.js",
+      "line": 21679,
+      "operation": "runtime-message",
+      "policy": "worker-router",
+      "sourceFile": "background.js"
+    },
+    {
+      "file": "background.js",
+      "line": 6086,
+      "operation": "runtime-connect",
+      "policy": "logger-worker",
+      "sourceFile": "background.js"
+    },
+    {
+      "file": "background.js",
+      "line": 6100,
+      "operation": "port-message",
+      "policy": "logger-worker",
+      "sourceFile": "background.js"
+    },
+    {
+      "file": "background.js",
+      "line": 5908,
+      "operation": "post-message",
+      "policy": "worker-router",
+      "sourceFile": "background.js"
+    },
+    {
+      "file": "background.js",
+      "line": 6004,
+      "operation": "post-message",
+      "policy": "worker-router",
+      "sourceFile": "background.js"
+    },
+    {
+      "file": "background.js",
+      "line": 6092,
+      "operation": "post-message",
+      "policy": "worker-router",
+      "sourceFile": "background.js"
+    },
+    {
+      "file": "background.js",
+      "line": 6104,
+      "operation": "post-message",
+      "policy": "worker-router",
+      "sourceFile": "background.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 56,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 547,
+      "operation": "post-message",
+      "policy": "isolated-content",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 492,
+      "operation": "message-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2235,
+      "operation": "message-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2729,
+      "operation": "message-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2998,
+      "operation": "message-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 3099,
+      "operation": "message-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 3107,
+      "operation": "message-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 303,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 362,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 375,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2387,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2403,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2424,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2467,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2534,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2810,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2887,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 3269,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 3413,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "bridge.js",
+      "line": 3528,
+      "operation": "dom-event",
+      "policy": "bridge-untrusted",
+      "sourceFile": "bridge.js"
+    },
+    {
+      "file": "consent-reject.js",
+      "line": 50,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "consent-reject.js"
+    },
+    {
+      "file": "consent-reject.js",
+      "line": 1164,
+      "operation": "message-event",
+      "policy": "isolated-content",
+      "sourceFile": "consent-reject.js"
+    },
+    {
+      "file": "consent-wall.js",
+      "line": 53,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "consent-wall.js"
+    },
+    {
+      "file": "consent-wall.js",
+      "line": 516,
+      "operation": "message-event",
+      "policy": "isolated-content",
+      "sourceFile": "consent-wall.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "cookie-access.js",
+      "line": 178,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "cookie-access.js"
+    },
+    {
+      "file": "cookie-access.js",
+      "line": 177,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "cookie-access.js"
+    },
+    {
+      "file": "cryptominer-detect.js",
+      "line": 244,
+      "operation": "message-event",
+      "policy": "private-ui",
+      "sourceFile": "cryptominer-detect.js"
+    },
+    {
+      "file": "cryptominer-detect.js",
+      "line": 238,
+      "operation": "dom-event",
+      "policy": "private-ui",
+      "sourceFile": "cryptominer-detect.js"
+    },
+    {
+      "file": "cryptominer-detect.js",
+      "line": 273,
+      "operation": "dom-event",
+      "policy": "private-ui",
+      "sourceFile": "cryptominer-detect.js"
+    },
+    {
+      "file": "cryptominer-detect.js",
+      "line": 345,
+      "operation": "dom-event",
+      "policy": "private-ui",
+      "sourceFile": "cryptominer-detect.js"
+    },
+    {
+      "file": "download-review.js",
+      "line": 459,
+      "operation": "runtime-message",
+      "policy": "private-ui",
+      "sourceFile": "download-review.js"
+    },
+    {
+      "file": "eyeshield.js",
+      "line": 55,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "eyeshield.js"
+    },
+    {
+      "file": "eyeshield.js",
+      "line": 2645,
+      "operation": "message-event",
+      "policy": "isolated-content",
+      "sourceFile": "eyeshield.js"
+    },
+    {
+      "file": "fingerprint-realm.js",
+      "line": 105,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "fingerprint-realm.js",
+      "line": 28,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "fingerprint-realm.js",
+      "line": 90,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "fingerprint-realm.js",
+      "line": 98,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "fingerprint-realm.js",
+      "line": 125,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "firewall.js",
+      "line": 62,
+      "operation": "port-message",
+      "policy": "private-ui",
+      "sourceFile": "firewall.js"
+    },
+    {
+      "file": "frame-image-logger.js",
+      "line": 216,
+      "operation": "dom-event",
+      "policy": "isolated-content",
+      "sourceFile": "frame-image-logger.js"
+    },
+    {
+      "file": "logger.js",
+      "line": 160,
+      "operation": "port-message",
+      "policy": "logger-client",
+      "sourceFile": "logger.js"
+    },
+    {
+      "file": "logger.js",
+      "line": 457,
+      "operation": "post-message",
+      "policy": "logger-client",
+      "sourceFile": "logger.js"
+    },
+    {
+      "file": "mail-shield.js",
+      "line": 254,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "mail-shield.js"
+    },
+    {
+      "file": "oauth-guard.js",
+      "line": 507,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "oauth-guard.js"
+    },
+    {
+      "file": "offscreen.js",
+      "line": 101,
+      "operation": "runtime-message",
+      "policy": "offscreen",
+      "sourceFile": "offscreen.js"
+    },
+    {
+      "file": "permission-chain.js",
+      "line": 347,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "permission-chain.js"
+    },
+    {
+      "file": "permission-chain.js",
+      "line": 310,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "permission-chain.js"
+    },
+    {
+      "file": "permission-chain.js",
+      "line": 334,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "permission-chain.js"
+    },
+    {
+      "file": "permission-chain.js",
+      "line": 340,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "permission-chain.js"
+    },
+    {
+      "file": "permission-chain.js",
+      "line": 367,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "permission-chain.js"
+    },
+    {
+      "file": "resource-saver.js",
+      "line": 220,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "resource-saver.js"
+    },
+    {
+      "file": "spotify-adblock.js",
+      "line": 663,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "spotify-adblock.js"
+    },
+    {
+      "file": "spotify-adblock.js",
+      "line": 664,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "spotify-adblock.js"
+    },
+    {
+      "file": "spotify-adblock.js",
+      "line": 713,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "spotify-adblock.js"
+    },
+    {
+      "file": "spotify-adblock.js",
+      "line": 841,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "spotify-adblock.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 2211,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 18225,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 18239,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1173,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1246,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1934,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 15336,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 35,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1062,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1086,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1099,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1135,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1199,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1210,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1225,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1230,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1265,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1287,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1307,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 1600,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 2004,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 3204,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 8365,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 8844,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 11452,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 12866,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 15649,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 17964,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 21044,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 21799,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 21809,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 22498,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 22527,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 22623,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/content.js",
+      "line": 22640,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/content.js"
+    },
+    {
+      "file": "src/fingerprint-realm.js",
+      "line": 105,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "src/fingerprint-realm.js",
+      "line": 28,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "src/fingerprint-realm.js",
+      "line": 90,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "src/fingerprint-realm.js",
+      "line": 98,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "src/fingerprint-realm.js",
+      "line": 125,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "src/fingerprint-realm.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 801,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 1367,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 1433,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 1482,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 1881,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 1929,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 2164,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 5233,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 5235,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 5238,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 5242,
+      "operation": "post-message",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 1106,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 5025,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 1105,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 5329,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "twitch-adblock.js"
+    },
+    {
+      "file": "twitch-rewind.js",
+      "line": 53,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "twitch-rewind.js"
+    },
+    {
+      "file": "twitch-rewind.js",
+      "line": 1543,
+      "operation": "message-event",
+      "policy": "isolated-content",
+      "sourceFile": "twitch-rewind.js"
+    },
+    {
+      "file": "twitch-vod-rewind.js",
+      "line": 153,
+      "operation": "runtime-message",
+      "policy": "isolated-content",
+      "sourceFile": "twitch-vod-rewind.js"
+    },
+    {
+      "file": "yt-adblock.js",
+      "line": 249,
+      "operation": "message-event",
+      "policy": "page-untrusted",
+      "sourceFile": "yt-adblock.js"
+    },
+    {
+      "file": "yt-adblock.js",
+      "line": 188,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "yt-adblock.js"
+    },
+    {
+      "file": "yt-adblock.js",
+      "line": 207,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "yt-adblock.js"
+    },
+    {
+      "file": "yt-adblock.js",
+      "line": 1155,
+      "operation": "dom-event",
+      "policy": "page-untrusted",
+      "sourceFile": "yt-adblock.js"
+    }
+  ],
+  "messages": [
+    {
+      "kind": "ack-extension-alerts",
+      "line": 22340,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "adshield-cosmetic",
+      "line": 23112,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "hostname",
+          "playerPage"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 12,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "apply-onboarding-max-privacy",
+      "line": 22044,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "apply-onboarding-recommended",
+      "line": 22036,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "blocklist-add",
+      "line": 23189,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "pattern",
+          "scope"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "blocklist-clear",
+      "line": 23261,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "blocklist-get",
+      "line": 23181,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "blocklist-remove",
+      "line": 23243,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "id"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clean-browser",
+      "line": 22234,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "previewId"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clean-browser-preview",
+      "line": 22230,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "request"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clean-current-address",
+      "line": 21793,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clear",
+      "line": 6102,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clear-exposed-tokens",
+      "line": 23783,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "items",
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clear-extension-alerts",
+      "line": 22328,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clear-imported-extension-reputation",
+      "line": 22302,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clear-learned",
+      "line": 23625,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clear-site-data",
+      "line": 23915,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "origin"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "clear-startup-report",
+      "line": 22366,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "consent-accepted",
+      "line": 21973,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "clearedStorage"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 12,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "content-config-get",
+      "line": 21875,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "need"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 500,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "cookie-audit",
+      "line": 23881,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "custom-list-add",
+      "line": 23492,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "custom-list-remove",
+      "line": 23550,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "id"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "custom-list-toggle",
+      "line": 23534,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "enabled",
+          "id"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "custom-list-update",
+      "line": 23526,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "id"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "custom-lists-get",
+      "line": 23483,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "domain-age",
+      "line": 23662,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "domain"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": {
+        "max": 12,
+        "windowMs": 60000
+      },
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "download-review-decision",
+      "line": 22071,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "decision",
+          "id"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "download review, trust or explicit file lookup",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "download-review-get",
+      "line": 22060,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "id"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "download review, trust or explicit file lookup",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "download-trust-add",
+      "line": 22199,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "host"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "download review, trust or explicit file lookup",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "download-trust-list",
+      "line": 22192,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "download review, trust or explicit file lookup",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "download-trust-remove",
+      "line": 22206,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "host"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "download review, trust or explicit file lookup",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "extension-check",
+      "line": 23149,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "name",
+          "reference"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "extension-check-store",
+      "line": 23163,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "reference"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "extension-security-report",
+      "line": 22242,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "reloadDatabase",
+          "trigger"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "eyeshield-bootstrap",
+      "line": 21858,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 500,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "file-scan-known",
+      "line": 23379,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "sha256"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "download review, trust or explicit file lookup",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "file-scan-vt",
+      "line": 23394,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "sha256"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "download review, trust or explicit file lookup",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "firewall-allow-once",
+      "line": 23336,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "column",
+          "domain",
+          "site"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "firewall-get",
+      "line": 23274,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "site"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "firewall-reset",
+      "line": 23343,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "all",
+          "site"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "firewall-set",
+      "line": 23295,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "column",
+          "domain",
+          "site",
+          "verdict"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "force-list-update",
+      "line": 22053,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "forget-extension-review",
+      "line": 22280,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "id"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "forget-site-now",
+      "line": 23090,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "host",
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "get-javascript-state",
+      "line": 22753,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "site permission or browser setting",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "get-startup-report",
+      "line": 22353,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "grabber-navigation-status",
+      "line": 21682,
+      "sender": "own exact top-level IP-logger warning page and browser warning record",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "harden-site-cookies",
+      "line": 23837,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "hidden-add",
+      "line": 23560,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "hostname",
+          "selector"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 30,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "hidden-clear",
+      "line": 23568,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "hostname"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "hidden-list",
+      "line": 23581,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "hostname"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 60,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "hidden-remove",
+      "line": 23564,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "hostname",
+          "selector"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 30,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "history-clear",
+      "line": 21746,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "observations"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "history-get",
+      "line": 21742,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "history-mode-set",
+      "line": 21750,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "mode"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "import-extension-reputation",
+      "line": 22291,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "database"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "list-learned",
+      "line": 23601,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "login-domain-age",
+      "line": 23034,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "domain",
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 8,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-close-duplicates",
+      "line": 23002,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-close-tab",
+      "line": 23030,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "tabId"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-duplicates",
+      "line": 22998,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-free-ram",
+      "line": 22994,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-heavy-tabs",
+      "line": 23006,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-never-sleep-list",
+      "line": 22983,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-never-sleep-set",
+      "line": 22987,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "host",
+          "on"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-never-sleep-state",
+      "line": 22978,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "host"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-score",
+      "line": 22974,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-sleep-tab",
+      "line": 23022,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "tabId"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-sleep-tab-now",
+      "line": 23026,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "tabId"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-tabs",
+      "line": 23010,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "memory-zombie-tabs",
+      "line": 23014,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "hours"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "tab inventory or tab action",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "menu-opening",
+      "line": 23575,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "pageUrl"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 60,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "mute-toast",
+      "line": 21968,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "minutes",
+          "type"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 20,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "notification-sound-preview",
+      "line": 21957,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "sound",
+          "volume"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "notifications-update",
+      "line": 22254,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "action",
+          "ids"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "oauth-grant",
+      "line": 22008,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 8,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "open-installed-extension-details",
+      "line": 22313,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "id"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "open-site-settings",
+      "line": 22032,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "site permission or browser setting",
+      "rate": {
+        "max": 2,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "palette-open",
+      "line": 21893,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "palette-run",
+      "line": 21911,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "command",
+          "grant"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "single-use grant or scoped compatibility escape",
+      "rate": {
+        "max": 30,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "panic-logout",
+      "line": 23753,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "origin",
+          "scope"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "permission-chain",
+      "line": 22563,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "site permission or browser setting",
+      "rate": {
+        "max": 30,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "privacy-cleaner-clear-history",
+      "line": 22222,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "privacy-cleaner-get",
+      "line": 22218,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "privacy-cleaner-save",
+      "line": 22226,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "settings"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "privacy-data-erase",
+      "line": 22000,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "mode"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "privacy-data-erase-site",
+      "line": 22004,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "dryRun",
+          "host"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "privacy-data-inspect",
+      "line": 21996,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "browser data, permissions or local erasure",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "privacy-test-run",
+      "line": 21813,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "tabId"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "protection-health",
+      "line": 21754,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "tabId"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "redirect-bootstrap-get",
+      "line": 21887,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 500,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "redirect-warning",
+      "line": 21987,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "detail"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 8,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "remove-learned",
+      "line": 23612,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "domain"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "reset-site-permissions",
+      "line": 22953,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "site permission or browser setting",
+      "rate": {
+        "max": 2,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "resource-saver-state",
+      "line": 21862,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 500,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "review-extension-snapshot",
+      "line": 22267,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "id"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "rg-block",
+      "line": 633,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "detail",
+          "type"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 300,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "rg-tally",
+      "line": 625,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "n",
+          "pageStart",
+          "type"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 300,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "run-startup-check",
+      "line": 22357,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "extension inventory, management or reputation",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "safe-browsing-allow-once",
+      "line": 22361,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "handle"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "single-use grant or scoped compatibility escape",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "safe-browsing-check",
+      "line": 22103,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "context",
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 45,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "scan-site-permissions",
+      "line": 22576,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "site permission or browser setting",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "scan-url-virustotal",
+      "line": 22160,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "script-drift-scan",
+      "line": 22012,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 6,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "script-trust-add",
+      "line": 22813,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "host"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "script-trust-list",
+      "line": 22806,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "script-trust-remove",
+      "line": 22820,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "host"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "search-result-check",
+      "line": 21931,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "hosts"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 40,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "set-javascript-state",
+      "line": 22827,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "block",
+          "scope",
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "site permission or browser setting",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "set-script-shield-mode",
+      "line": 22786,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "mode",
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "set-site-permission",
+      "line": 22877,
+      "sender": "private UI; top isolated same-origin tab only for cookies=allow",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "key",
+          "setting",
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "site permission or browser setting",
+      "rate": {
+        "max": 3,
+        "windowMs": 60000
+      },
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "site-breach",
+      "line": 23676,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "domain"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "site-dashboard",
+      "line": 21771,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "tabId"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "site-recovery",
+      "line": 21785,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "smart-player-context",
+      "line": 22016,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 8,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "smart-player-intent",
+      "line": 22020,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 12,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "smart-script-status",
+      "line": 22024,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 4,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "smart-script-trust-site",
+      "line": 22028,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": {
+        "max": 2,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "test-reputation-provider-key",
+      "line": 22096,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "key",
+          "provider"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "test-safe-browsing-key",
+      "line": 22089,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "key"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "test-virustotal-key",
+      "line": 22082,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "key"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "toast-shown",
+      "line": 21950,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "type"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 60,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "tracker-learner-decide",
+      "line": 23648,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "decision",
+          "domain"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "tracker-learner-decide-all",
+      "line": 23652,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "decision"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "tracker-learner-proposals",
+      "line": 23644,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "tracker-learner-set-site",
+      "line": 23638,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "domain",
+          "mode",
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "tracker-learner-status",
+      "line": 23633,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "user-rules-get",
+      "line": 23416,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "user-rules-set",
+      "line": 23435,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "source",
+          "text",
+          "untrustedRules"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "persistent user policy or rule ownership",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "verify-repair",
+      "line": 23958,
+      "sender": "own private extension origin; WAR denied",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "private extension control or diagnostic",
+      "rate": "trusted UI operation; handler-specific concurrency/state limits",
+      "provenance": "packaged extension UI code and browser-owned state",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "warning-ui-compromised",
+      "line": 21991,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 2,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "wo-engine-check",
+      "line": 21978,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 8,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    },
+    {
+      "kind": "wo-nav-signal",
+      "line": 21982,
+      "sender": "own isolated tab; handler scope and grants apply",
+      "schema": {
+        "envelope": "own kind string; control keys rejected",
+        "observedFields": [
+          "host",
+          "signal",
+          "url"
+        ],
+        "validation": "handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536"
+      },
+      "capability": "bounded observation, scoped lookup or page UI",
+      "rate": {
+        "max": 180,
+        "windowMs": 60000
+      },
+      "provenance": "browser sender metadata; message body remains untrusted page data",
+      "failure": "reject without capability; observations do not grant persistent blocks"
+    }
+  ],
+  "webAccessibleResources": [
+    {
+      "resources": [
+        "spotify-silent-1s.mp4"
+      ],
+      "matches": [
+        "https://open.spotify.com/*"
+      ]
+    },
+    {
+      "resources": [
+        "ip-logger-warning.html",
+        "ip-logger-warning.css",
+        "ip-logger-warning.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ],
+      "use_dynamic_url": true
+    }
+  ],
+  "externallyConnectable": null,
+  "generated": {
+    "content.min.js": "src/content.js (byte-exact build gate)",
+    "fingerprint-realm.js": "src/fingerprint-realm.js (byte-exact build gate)"
+  },
+  "notes": [
+    "Lexical census includes sender and receiver sites, including embedded worker text. Policy review and precise schemas are in docs/message-security-audit.md.",
+    "Observed fields identify review locations, not an authorization allowlist. All branch-specific checks remain executable in the named handler."
+  ]
+}

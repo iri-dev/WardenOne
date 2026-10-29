@@ -123,6 +123,9 @@ check('every exit from the scorer is either null or a warning',
   check('the handler is restricted to the search engines it runs on',
     /SEARCH_WARN_ENGINE_HOST\.test/.test(handler),
     'anywhere else this answers "is my domain on your blocklist yet" for anyone who asks');
+  check('which include every Google country site, not a dozen of them',
+    /\/\^\(\?:www\\\.\)\?google\\\.\/i\.test\(senderHost\) && wardenOneBrandCountrySite\(senderHost, 'google'\)/.test(handler),
+    'search-junk.js runs on any google.* results page; google.co.jp was refused an answer');
   check('and only for a tab, never an extension page',
     /messageSenderIsTab\(sender\)/.test(BG.slice(handlerAt - 120, handlerAt + 200)));
   check('the batch is capped', /SEARCH_WARN_MAX_HOSTS/.test(BG));
@@ -265,6 +268,12 @@ check('the pressure trim cuts the count with the array',
     const idnSubdomain = score('xn--l-7sba6dbr.evil.example', CTX);
     check('an encoded brand subdomain names its target', idnSubdomain && /PayPal/.test(idnSubdomain.label), JSON.stringify(idnSubdomain));
     check('an unrelated IDN is not called suspicious', score('xn--bcher-kva.example', CTX) === null);
+    /* Reported on a results page: google.ca was marked "Looks like Google, but is not Google". */
+    check('a Google country site is not called a Google look-alike', score('google.ca', CTX) === null, JSON.stringify(score('google.ca', CTX)));
+    check('nor any other on Google\'s list', ['google.co.jp', 'www.google.de', 'google.com.mx'].every((x) => score(x, CTX) === null));
+    check('nor an Amazon marketplace', score('amazon.com.mx', CTX) === null);
+    const swapped = score('google.xyz', CTX);
+    check('the exact name on a suffix Google does not run still warns', swapped && /^Looks like Google, but is not Google$/.test(swapped.label), JSON.stringify(swapped));
   }
 }
 {

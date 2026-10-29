@@ -1,0 +1,144 @@
+{
+  "protectedOriginRetained": {
+    "local": "retained",
+    "cookies": "cleaner_cookie=retained; _ga=disposable; sessionid=auth",
+    "databases": [
+      "cleaner-fixture"
+    ],
+    "caches": [
+      "cleaner-fixture"
+    ],
+    "playing": true
+  },
+  "unprotectedOriginCleaned": {
+    "local": null,
+    "cookies": "",
+    "databases": [],
+    "caches": [],
+    "playing": true
+  },
+  "browserHistoryPreservedWardenOneRecords": true,
+  "recognizedCookieExclusions": true,
+  "singleUsePreview": true,
+  "siteScopeVerified": true,
+  "nativeAlarm": true,
+  "browserRestartCatchup": true,
+  "startupCallbackCoverage": "worker harness; startup-only native event unverified",
+  "duplicateScheduledRuns": false,
+  "popupPresetAndCleanup": true,
+  "popup": {
+    "ready": true,
+    "overflow": false
+  },
+  "layout": {
+    "tabs": 0,
+    "expanded": 1,
+    "common": 4,
+    "advanced": false,
+    "defaultHeight": 508.78125,
+    "preset": "quick",
+    "overflow": false,
+    "appearance": "none"
+  },
+  "scrollChecks": [
+    {
+      "selector": "#cl-section-auto > summary",
+      "opening": true,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-section-auto > summary",
+      "opening": false,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-section-protected > summary",
+      "opening": true,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-section-protected > summary",
+      "opening": false,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-section-history > summary",
+      "opening": true,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-section-history > summary",
+      "opening": false,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-advanced > summary",
+      "opening": true,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-preset-tools > summary",
+      "opening": true,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-record-tools > summary",
+      "opening": true,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-record-tools > summary",
+      "opening": false,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-preset-tools > summary",
+      "opening": false,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-advanced > summary",
+      "opening": false,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-section-now > summary",
+      "opening": false,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-section-auto > summary",
+      "opening": true,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-section-auto > summary",
+      "opening": false,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    },
+    {
+      "selector": "#cl-section-now > summary",
+      "opening": true,
+      "scrollDelta": 0,
+      "headingDelta": 0
+    }
+  ],
+  "keyboardSections": true,
+  "inlinePreviewDoesNotDelete": true,
+  "visibleDestructiveWarnings": true
+}

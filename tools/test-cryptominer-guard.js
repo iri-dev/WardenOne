@@ -143,7 +143,7 @@ function run() {
     /blockCryptominers:\s*true/.test(BG));
   check('the toggle reapplies rules when it changes',
     /o\.blockCryptominers\s*!==\s*n\.blockCryptominers/.test(BG));
-  check('the feed loads at startup', /^loadMinerFeed\(\);$/m.test(BG));
+  check('the feed resumes durable loading at startup', /^loadMinerFeed\(true\);$/m.test(BG));
   check('the guard counts toward the protection health score',
     /'blockCryptominers'/.test(BG.slice(BG.indexOf('HEALTH_SHIELD_KEYS'))));
   check('popup exposes the toggle', /data-key="blockCryptominers"/.test(POPUP_HTML));

@@ -421,7 +421,6 @@ pending.push((async function overlappingRuleUpdatesUseTheProductionQueue() {
     /DNR blocks private-address requests from every realm/.test(note));
 }());
 
-// ---------------------------------------------------------------------------
 
 Promise.all(pending).then(() => {
   if (failures.length) {

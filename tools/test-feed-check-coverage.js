@@ -28,15 +28,15 @@ assert.deepEqual([source('/openphish/public_feed/').maxBytes, source('/openphish
   [6 * 1024 * 1024, 6500], 'optional OpenPhish uses its shorter timeout and cap');
 assert.equal(source('/TMAFE/anti-grabify/').maxBytes, 8 * 1024 * 1024,
   'a source shared with supplemental lists uses the stricter cap');
-assert.equal(source('/filter_3_Spyware/').maxBytes, 12 * 1024 * 1024,
-  'a source shared with cosmetic filtering uses the cosmetic cap');
+assert.equal(source('/filter_3_Spyware/').maxBytes, 16 * 1024 * 1024,
+  'the reviewed tracking source has a bounded individual growth allowance');
 assert.equal(source('/blocklistproject/Lists/master/scam.txt').maxBytes, 18 * 1024 * 1024,
   'an ordinary network list uses the network cap');
 assert.deepEqual([
   source('/urlhaus-filter-online.txt').maxBytes,
   source('/sources/bazaar.abuse.ch.sha256.txt').maxBytes,
   source('/sources/urlhaus.abuse.ch.sha256.txt').maxBytes,
-], [9 * 1024 * 1024, 9 * 1024 * 1024, 9 * 1024 * 1024], 'Download Guard feeds use their own cap');
+], [16 * 1024 * 1024, 9 * 1024 * 1024, 9 * 1024 * 1024], 'the reviewed URL feed grows independently of fixed-split hash feeds');
 assert(policies.every((policy) => Number.isSafeInteger(policy.maxBytes) && policy.maxBytes > 0
   && Number.isSafeInteger(policy.timeoutMs) && policy.timeoutMs > 0));
 

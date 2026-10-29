@@ -273,8 +273,9 @@ const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
   check('the storage.onChanged hook clears the memo before it tells the pages to refresh',
     /\|\| changes\.wardenone_search_junk_domains\)\) \{\s*invalidateContentConfigMemo\(\);\s*scheduleContentConfigRefresh\(\);/.test(BG));
   check('and the worker\'s own writes clear it before that event can arrive',
-    /function localSet\(obj\) \{[\s\S]{0,800}invalidateContentConfigMemo\(\)/.test(BG));
-  check('the handler passes what the caller asked for and the top site', /respond\(buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\), topHost\), sendResponse\);/.test(BG));
+    /function localSet\(obj, writeToken\) \{[\s\S]{0,800}invalidateContentConfigMemo\(\)/.test(BG));
+  check('the handler passes what the caller asked for and the top site', /await buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\), topHost\)/.test(BG));
+  check('frame cookie authority is resolved from the browser sender', /snapshot\.overrides\.frameCookieIsolation = await frameCookieIsolationFor\(sender, snapshot\.overrides\)/.test(BG));
   for (const file of REQUESTERS) {
     const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
     const asks = src.match(/kind: 'content-config-get'[^}]*\}/g) || [];

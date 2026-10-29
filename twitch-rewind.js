@@ -10,7 +10,7 @@
 (function () {
   'use strict';
 
-  const WO_GUARD_VERSION = '1.0.2';
+  const WO_GUARD_VERSION = '1.0.3';
   /* Replace an older copy only when its captured disposer advertises __woReleases and succeeds.
      Legacy disposers leave recorders or controls running; keep them in charge until tab reload. */
   if (window.top !== window) return;
@@ -288,13 +288,8 @@
     }
   }
 
-  // The local copy is recorded at up to 30 fps. At the stream's own 60 fps the encoder did twice
-  // the work for a buffer people mostly scrub through: measured on a live 720p60 Twitch stream on
-  // a six-core desktop, VP8 at 60 fps added 0.66-0.84 of a CPU core and at 30 fps 0.33-0.36, and
-  // under the heavier load Twitch's own picture dropped frames and stepped down to 480p. With the
-  // whole feature running, the browser went from 2.55 cores to 2.03-2.27. The live picture is
-  // untouched; only what the rewind plays back is 30 fps. A browser that refuses the constraint
-  // records as before.
+  // Cap the local recording at 30 fps to reduce encoding load; live playback is unchanged. Browsers that reject the
+  // constraint retain native recording behavior.
   const RECORD_MAX_FPS = 30;
   function capRecordingFrameRate(stream) {
     try {
@@ -896,13 +891,8 @@
     if (pending.video && pending.video !== frontVideo) resetReplayVideo(pending.video);
   }
 
-  // Reveal the incoming surface only once it is genuinely presenting new frames,
-  // so a rewind or follow-live swap never flashes the frozen seek target. The
-  // outgoing surface (or the live picture, on the very first rewind) keeps
-  // showing until then. On a composited tab requestVideoFrameCallback fires the
-  // instant a real frame is painted (the crispest possible cut); "timeupdate"/
-  // "playing" and a hard cap are the fallback for a backgrounded/offscreen tab
-  // that withholds paint callbacks, so the reveal never blocks.
+  // Keep the outgoing surface visible until the incoming one presents frames. Use playback events and a hard timeout when
+  // background tabs withhold video-frame callbacks.
   function revealWhenAdvancing(video, sessionToken, commit) {
     const startTime = Number(video.currentTime) || 0;
     let done = false;

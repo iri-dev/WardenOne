@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "phase": "G-02",
+  "status": "complete",
+  "date": "2026-10-27T20:50:04.190Z",
+  "runtime": {
+    "version": "1.0.2",
+    "fingerprint": "b0a309e5bd80653846a73c623f08681be13f804f2ae9036f01d0b0fc1bc22465",
+    "fileCount": 141,
+    "snapshot": "tmp/ghostery-phase02/snapshot-01/snapshots.json"
+  },
+  "scope": "Detection only under the existing Tracker learner control; unfamiliar query values are never removed by this phase.",
+  "thresholds": {
+    "independentSites": 3,
+    "observationsPerSite": 2,
+    "minimumSpacingMs": 1000,
+    "ttlMs": 1800000,
+    "maximumEntries": 256,
+    "maximumSitesPerEntry": 3,
+    "maximumPending": 8,
+    "maximumRequestsPerMinute": 120,
+    "maximumCandidateValuesPerRequest": 4
+  },
+  "privacy": {
+    "rawValuesStored": false,
+    "rawFirstPartySitesStored": false,
+    "parameterNamesStored": false,
+    "persistentSketches": false,
+    "sessionSketches": false,
+    "externalLookups": false,
+    "incognitoObservations": false,
+    "ephemeralHmac": "HMAC-SHA-256 truncated to 128 bits with a nonextractable worker key; discarded after 30 minutes, clear, config change or worker restart"
+  },
+  "validation": {
+    "gate": "pass",
+    "testSuites": 336,
+    "packageBudget": "pass",
+    "native": [
+      {
+        "browser": "Edg/150.0.4078.48",
+        "complete": true,
+        "checks": [
+          "Six real HTTPS requests across three verified sites create one detection-only finding; receiver gets the original value",
+          "OAuth, signed URLs, downloads, APIs and redirects retain their parameters; familiar copy cleanup still works",
+          "An isolated test-only explicit-name DNR query transform removes its marker before server receipt; the temporary rule is removed",
+          "Shipped rules, configuration and permissions remain unchanged; no identifier-enforcement rule is created",
+          "Activity labels suspected identifier evidence separately from known tracker attribution and blocking"
+        ],
+        "network": {
+          "repeatedRequestsReceived": 6,
+          "unfamiliarValuePreserved": true,
+          "suspectedFindings": 1
+        }
+      },
+      {
+        "browser": "Chrome/121.0.6167.184",
+        "complete": true,
+        "checks": [
+          "Six real HTTPS requests across three verified sites create one detection-only finding; receiver gets the original value",
+          "OAuth, signed URLs, downloads, APIs and redirects retain their parameters; familiar copy cleanup still works",
+          "An isolated test-only explicit-name DNR query transform removes its marker before server receipt; the temporary rule is removed",
+          "Shipped rules, configuration and permissions remain unchanged; no identifier-enforcement rule is created",
+          "Activity labels suspected identifier evidence separately from known tracker attribution and blocking"
+        ],
+        "network": {
+          "repeatedRequestsReceived": 6,
+          "unfamiliarValuePreserved": true,
+          "suspectedFindings": 1
+        }
+      }
+    ],
+    "benchmark": {
+      "node": "v24.18.0",
+      "rejected": {
+        "iterations": 20000,
+        "totalMs": 32.1479
+      },
+      "candidate": {
+        "iterations": 20000,
+        "totalMs": 117.96789999999999
+      },
+      "hmac": {
+        "iterations": 120,
+        "totalMs": 19.660799999999995,
+        "maxCandidatesPerRequest": 4,
+        "stats": {
+          "entries": 120,
+          "pending": 0
+        }
+      },
+      "afterExpiry": {
+        "entries": 0,
+        "pending": 0
+      },
+      "limits": {
+        "url": 8192,
+        "parameters": 20,
+        "values": 4,
+        "entries": 256,
+        "sites": 3,
+        "ttlMs": 1800000,
+        "repeatMs": 1000,
+        "pending": 8,
+        "requestsPerMinute": 120
+      },
+      "scope": "Development microbenchmark on this machine; not a browser or Ghostery performance comparison."
+    },
+    "footprint": {
+      "tree": "24549e28ec8846e2d63b6fe1e4918a858127f220",
+      "metrics": {
+        "stagedZipBytes": 2435384,
+        "unpackedBytes": 11316403,
+        "staticDnrRules": 28369,
+        "manifestScriptEntries": 18,
+        "manifestScriptFiles": 16,
+        "manifestScriptBytes": 1762490,
+        "workerSourceBytes": 1422068
+      }
+    },
+    "followupRegression": "Focused identifier suite also passes the additional pending-browser-frame clear case."
+  },
+  "invariants": {
+    "protectionCount": 110,
+    "newSettings": false,
+    "newPermissions": false,
+    "newRuntimeFeeds": false,
+    "identifierEnforcement": false,
+    "versionBumped": false,
+    "committed": false,
+    "pushed": false
+  },
+  "artifacts": [
+    {
+      "path": "identifier-detector.js",
+      "sha256": "2c9939d5198b1fd75755b6ce9eeb62f1fb87175f66017f0fde737572870f6e6c"
+    },
+    {
+      "path": "background-identifiers.js",
+      "sha256": "6a2a5a80e7ae09a0f2977a34ecbddd4227366b1d7a73595ebc6a9a4d3e1e76e3"
+    },
+    {
+      "path": "tools/test-identifier-detector.js",
+      "sha256": "3c971e7d78a8401a5d65deb763a6b0905be2e82a50c6a1bddcc0f9f0ec7b84dd"
+    },
+    {
+      "path": "tools/browser-identifier-detector.js",
+      "sha256": "c803c8013bc997fc03e756a8ec145940877b9eeb6bf9a60ae0251a267a2fa2ba"
+    },
+    {
+      "path": "tools/bench-identifier-detector.js",
+      "sha256": "9ea5050bdb1d270a0a80c29b279ba23cc315a884e907f018126cc83ee96ac2e5"
+    },
+    {
+      "path": "tmp/ghostery-phase02/verified-edge.json",
+      "sha256": "feea467985492bcda97c5eb2a7deb19d667a8de9a32b0b08ea8de41c6a44cc24"
+    },
+    {
+      "path": "tmp/ghostery-phase02/verified-edge.log",
+      "sha256": "68cb6e79b2907a665e50f9bafe5175343c799c1f304b184c86eecb3dac7cd7b2"
+    },
+    {
+      "path": "tmp/ghostery-phase02/verified-chrome121.json",
+      "sha256": "8684a5f69fbeca99ab29fd4ceaf35402b53c27e20ee82a81f5e5241b1084403e"
+    },
+    {
+      "path": "tmp/ghostery-phase02/verified-chrome121.log",
+      "sha256": "fba43cb6014dc5087b069a5922634728b6f7e1362776db879bbd3c1b4409d1a5"
+    },
+    {
+      "path": "tmp/ghostery-phase02/gate.log",
+      "sha256": "4f7a116366d0c228da61ac1a489be98de82f07d7bc7945f789a75b516197b1d5"
+    },
+    {
+      "path": "tmp/ghostery-phase02/benchmark.json",
+      "sha256": "9eba72d3b2800b56e35ce436712c6e3561a63e445eceba6cbb10f54e3b563942"
+    },
+    {
+      "path": "tmp/ghostery-phase02/footprint.json",
+      "sha256": "cad8e2c90051f7e3f8a9bd8804195233169c813bfc2a9d863bdadaecd16f78f7"
+    }
+  ],
+  "finalProvenance": "tmp/ghostery-phase02/final-review/snapshots.json",
+  "limitations": [
+    "Current Chrome installed on this machine did not load the unpacked extension; native Chrome evidence uses the available Chrome 121 compatibility build.",
+    "Short worker lifetimes and conservative exclusions reduce recall.",
+    "A public random-looking configuration value can also be reused across sites; evidence is labeled suspected, not confirmed tracking.",
+    "The temporary native DNR marker-removal test establishes explicit-name API behavior only; there is no shipped adaptive-removal rule.",
+    "On-device microbenchmark results are not a browser or Ghostery performance comparison."
+  ]
+}

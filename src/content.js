@@ -2,7 +2,7 @@
 !function(){
   "use strict";
   if("function"==typeof wardenOneEngineLoginUrl&&wardenOneEngineLoginUrl(location.href))return;
-  const __WO_RUNTIME_VERSION="1.0.2";
+  const __WO_RUNTIME_VERSION="1.0.3";
   if("string"==typeof window.__wardenOneReadyVersion&&window.__wardenOneReadyVersion)return;
 
   /* Only the authenticated bridge handler may update the closure-owned config.
@@ -29,9 +29,7 @@
   catch(_){
 
   }
-  /* Told to this document, so a same-origin child that arrived before the config did and
-     found no record can adopt it now instead of deciding alone. A page can dispatch this
-     event itself; a child that hears it only re-reads the record above. */
+  /* A realm-settled event only prompts children to re-read the protected record; page dispatches confer no authority. */
   const __woRealmSettled=()=>{
     try{
       document.dispatchEvent(new CustomEvent("wo-realm-settled"))
@@ -63,12 +61,8 @@
   }
   /* WEBGL-SAVER-END */
   const __woWebGLControl=__woWebGLSaver();
-  /* The window that opened this one, captured now rather than when the noise gate runs: `opener`
-     is replaceable, and a same-origin opener could point it at an object of its own choosing in
-     the meantime. A popup a page opens onto its own site is a second top-level realm the page
-     can compare with the first, so the popup borrows the opener's SEED -- only the seed, only
-     when the opener has noise on, and only the same-origin opener can be read at all. The
-     verdict stays this page's own (WO), whatever the opener says. */
+  /* Capture the replaceable opener before page scripts run. Same-origin popups share its noise seed, while retaining their
+     own protection verdict. */
   let __woOpenerAtStart=null;
   try{
     __woOpenerAtStart=window.opener||null
@@ -123,17 +117,12 @@
       return out
     }
   };
-  /* The node buildOverlay most recently created, so mountBlocker can hold the element it
-     actually built instead of looking one up by id. Private to this closure: a page can plant
-     an element with our id, but it cannot reach this. */
+  /* Keep the built overlay's identity private; a page can forge its id. */
   let __woLastOverlay=null;
   const __woAmazonHost=/(^|\.)amazon\.(com|com\.au|com\.be|com\.br|com\.co|com\.mx|com\.tr|co\.jp|co\.uk|co\.za|ae|ca|cl|cn|de|eg|es|fr|ie|in|it|nl|ng|pl|sa|se|sg)$/i;
   /* Dispose the previous engine’s observers and timers before replacing it in an open tab.
      Do not unwind prototype wrappers: restoring them out of order can leave partially patched APIs. */
-  /* Nothing here calls a previous engine's teardown any more. There is no published one to
-     call (SEC-03), and there is no longer a path that injects a second engine into a live
-     document: the worker reloads the tab instead, and the guard above refuses to run beside
-     an engine of any version. */
+  /* SEC-03: engines expose no teardown. Repair reloads the tab, and the guard refuses a second live engine. */
   const __woKeep=[];
   const __woHold=(item)=>{
     try{
@@ -147,11 +136,7 @@
   const __woObserver=(...a)=>__woHold(new MutationObserver(...a));
   const __woIntersection=(...a)=>__woHold(new IntersectionObserver(...a));
   const __woInterval=(...a)=>__woHold(setInterval(...a));
-  /* One signal for every listener the engine puts on document or window, so dispose
-     detaches all of them with a single abort() instead of 66 matching removeEventListener
-     calls -- each of which would have to reproduce the original capture flag to work at
-     all. Options are merged rather than replaced, so a listener registered with capture,
-     or with once, keeps that behaviour. */
+  /* One AbortSignal owns document/window listeners. Merge options to preserve capture and once semantics. */
   const __woAbort=new AbortController();
   const __woOpts=(o)=>{
     const base=(o&&typeof o==="object")?Object.assign({},o):(o===!0?{
@@ -230,10 +215,7 @@
     }
 
   };
-  /* Internal bridge listeners must bypass XSS Behavior Guard's MessageEvent.data
-     instrumentation. Otherwise WardenOne itself becomes the "page consumer" that
-     registers every window message as attacker-controlled input before application
-     code has read it, destroying source-to-sink causality. */
+  /* Internal bridge reads bypass XSS source tracking so they cannot make unread page messages count as consumed input. */
   const __woNativeMessageDataGetter=(()=>{
     try{
       const proto=window.MessageEvent&&MessageEvent.prototype,
@@ -826,11 +808,8 @@
       socialWidgetGuard:gate(cfg.socialWidgetGuard),
       blockSupercookies:gate(cfg.blockSupercookies),
       gestureWindowMs:cfg.gestureWindowMs,
-      /* Not gated by the master switch: these decide whether to STAY QUIET, so
-         losing them can only ever produce more noise, never less protection.
-         They are here at all because buildConfig is a whitelist, not a copy --
-         a key the worker writes and the engine reads is invisible until it is
-         named here, and nothing anywhere throws to say so. */
+      /* Retain suppression settings even when protection is off. buildConfig must explicitly include each worker-provided
+         key. */
       toastMutes:cfg.toastMutes&&"object"==typeof cfg.toastMutes?cfg.toastMutes:null,
       toastMemory:cfg.toastMemory&&"object"==typeof cfg.toastMemory?cfg.toastMemory:null
     };
@@ -851,11 +830,8 @@
      sign installed/challenge replies too. Page-visible bus traffic alone carries no authority. */
   let __woKey=null,
   __woLastSeq=0;
-  /* HMAC-SHA256 over UTF-8 text, in plain JS. crypto.subtle is absent on http: pages and
-     asynchronous everywhere, and this has to answer inside a synchronous DOM event. Every
-     reference it needs is captured here, before the page runs, so a page that rewrites
-     TextEncoder or Uint8Array later changes nothing about what it computes. Not a general
-     library: fixed 32-byte key (hex), text in, hex out. */
+  /* Synchronous DOM replies need HMAC without crypto.subtle, which is async and unavailable on HTTP. Capture built-ins
+     before page scripts; keys are fixed 32-byte hex values. */
   /* AUTH-BEGIN: shared by MAIN-world receivers and the isolated bridge. */
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
@@ -1061,11 +1037,7 @@
     message.mac=__woAuth.hmac(__woKey,kind+"\n"+__woNoticeSeq+"\n"+String(extra||""));
     return message
   }
-  /* SEC-14: "hide this kind of notice" and "I showed this notice" reach the worker through the
-     bridge, and a page could send both with the public token alone: one forged mute silenced a
-     class of security notices on every site for good, and a forged "shown" quietened the
-     page's own warnings for half an hour. The engine now signs them with the key the page never
-     sees, and the bridge relays neither without the signature. */
+  /* SEC-14: sign mute and shown reports; the public token alone must not suppress security notices. */
   let __woRequestSeq=0;
   function __woSignedRequest(message){
     const m=Object.assign({},message);
@@ -1085,13 +1057,8 @@
   __woWeakDelete=WeakMap.prototype.delete,
   __woMicrotask="function"==typeof queueMicrotask?queueMicrotask:null,
   __woApply=Reflect.apply;
-  /* Keyed on the event, an accepted event stays accepted for as long as the page holds it, and
-     a page can dispatch the same object again after it has gone round. So the memory lasts one
-     dispatch: this capture listener on the window is registered before any page script, so its
-     clean-up is queued ahead of anything a page listener queues, and runs once every listener of
-     the dispatch has seen the event -- a wo-event is always dispatched from script, so no
-     microtask runs in the middle of one. A copy dispatched again afterwards meets the sequence
-     number, which has already moved on. */
+  /* Expire event authentication after this synchronous dispatch. Re-dispatch must face the advanced sequence number; queue
+     cleanup before page listeners can queue work. */
   woOn(window,"wo-event",e=>{
     if(!__woMicrotask||!e||"object"!=typeof e)return;
     try{__woApply(__woMicrotask,void 0,[()=>{try{__woApply(__woWeakDelete,__woEventAccepted,[e])}catch(_){}}])}catch(_){}
@@ -1226,10 +1193,8 @@
     }
 
   });
-  /* SEC-06: a child frame refused a command-shaped clipboard write. It has no engine to warn
-     with, so the worker relays the fact to this top frame through bridge.js, token-carried
-     like config. The detail is parked here and the guard below is poked with an empty event:
-     a page can dispatch "wo-frame-clickfix" itself, but it cannot fill this slot. */
+  /* SEC-06: only the authenticated bridge fills this child-frame clipboard-warning slot. A page-generated wake event cannot
+     supply warning details. */
   let __woFrameClickfix=null;
   woOn(document,"wo-key",
   e=>{
@@ -1256,9 +1221,7 @@
     __woRequestQueue.length;
     )__woDispatchRequest(__woRequestQueue.shift())
   });
-  /* The bridge's liveness challenge (SEC-03): answered synchronously, inside its dispatch, and
-     only with the key. Disposing this engine aborts this listener with every other one, and a
-     page that put the markers back afterwards cannot answer for it. */
+  /* SEC-03: answer liveness challenges synchronously with the private key. Disposing the engine aborts this listener. */
   woOn(document,"wo-ping",
   e=>{
     const nonce=String(e&&e.detail&&e.detail.nonce||"");
@@ -1338,21 +1301,16 @@
 
     }
   });
-  /* If the bridge was injected before this engine -- the order of manifest entries is not
-     promised across worlds -- the key it handed over found no listener. Ask for it again now
-     that every listener exists. The bridge answers only while nothing but content scripts can
-     be running, so a page dispatching the same event gains nothing. */
+  /* Cross-world injection order is unspecified. Retry the key handoff after listeners exist; the bridge serves it only
+     during document_start. */
   try{
     document.dispatchEvent(new CustomEvent("wo-bridge-replay"))
   }
   catch(_){
 
   }
-  /* notification ask observer: whether this page has asked for the notification permission,
-     noted from document_start so that an ask made at load -- before the config and the guard
-     that reads it have arrived -- still counts. Both ways a prompt can be raised are watched:
-     Notification.requestPermission, and a push subscription. Each is passed straight through;
-     permission-chain.js reports the prompt, this only remembers that it happened. */
+  /* notification ask observer: record notification and push requests from document_start so early prompts count.
+     permission-chain.js owns reporting; these wrappers pass through. */
   let __woNotifAsked=!1,
   __woNotifAskHook=null;
   const __woNoteNotifAsk=()=>{
@@ -1445,13 +1403,8 @@
         sourceOnly:sourceOnly
       };
       const inBatch=new Set(added),
-      /* An outermost node has to climb to the document root before it can be
-         sure nothing above it was added, and on a page delivering many small
-         batches that climb dominated the saving -- 4.2ms of a 4.7ms win on one
-         measured load. Every element passed on the way up is proof that the
-         chain above it holds no added node, so remembering them makes the
-         second climb through the same ancestors stop immediately. Scoped to
-         this batch, since it is only true relative to this batch's added set. */
+      /* Memoize ancestor paths within this mutation batch to avoid repeated root walks. The result depends on this batch's
+         added nodes. */
       clear=new Set,
       chain=[],
       roots=[];
@@ -1533,9 +1486,7 @@
     /* Pause only named protections that can disrupt YouTube playback or UI.
        Keep the popup disclosure in sync; tools/test-youtube-compat.js checks it. */
     const YT_COMPAT_PAUSED=[
-      /* Rewrites or hides page furniture. The overlay cleaner has hidden real
-      controls before -- it drops any sticky, elevated element whose text looks
-      like a notice, which is a fair description of the player chrome. */
+      /* Overlay cleanup can mistake elevated player controls for notices. */
       "removeOverlays",
       "autoRejectConsent",
       /* Reaches the player or the media element. */
@@ -1578,10 +1529,8 @@
       /* Sign-in prompts and course notices look like overlays and banners. */
       "removeOverlays",
       "autoRejectConsent",
-      /* Moving between the university, its identity provider and its course tools: meta
-      refreshes, chains of redirects and sign-in windows are how it works. The pop-up and redirect
-      guards themselves are in anti-redirect.js, which has always run here with its own sign-in
-      allowances, and still does; only names the engine reads belong in this list. */
+      /* Education sign-in flows need refreshes and redirect chains. anti-redirect.js retains its own sign-in allowances;
+         this list covers engine settings only. */
       "blockMetaRefresh",
       "detectRedirectChains",
       "backTrapGuard",
@@ -1632,9 +1581,7 @@
         youtube?safe.__youtubeCompatibilityMode=!0:hostedApp?safe.__hostedAppCompatibilityMode=!0:safe.__educationCompatibilityMode=!0;
         next=safe
       }
-      /* Keys the new config no longer carries are dropped, or a setting turned off upstream would
-         survive here forever. The derived Amazon and YouTube copies are rebuilt on every sync for
-         the same reason -- deriving once would leave them stale the moment the config changed. */
+      /* Drop removed keys and rebuild derived site configs on every sync so upstream changes cannot leave stale settings. */
       for(const k of Object.keys(WO))k in next||delete WO[k];
       Object.assign(WO,next),
       __woWebGLControl.set(!0===next.webglDisabled);
@@ -1658,15 +1605,10 @@
       return !0
     })(),
     WO_TOP=window===window.top,
-    /* Hoisted from the autoplay block below so the scam-lock scanner can use it too. It was
-       declared several thousand lines further down, which put it in the temporal dead zone for
-       anything earlier -- and the scam scan can run synchronously when body already exists. One
-       definition, per the house rule, rather than a second copy of the same list. */
+    /* Shared with the autoplay and synchronous scam scanners; initialize before either can run. */
     trustedMediaHost=/(^|\.)((youtube|youtu)\.be|youtube\.com|youtube-nocookie\.com|googlevideo\.com|ytimg\.com|twitch\.tv|ttvnw\.net|jtvnw\.net|twitchcdn\.net|spotify\.com|spotifycdn\.com|scdn\.co|x\.com|twitter\.com|twimg\.com)$/i.test(location.hostname),
-    /* Discord's server setup and member-profile dialogs are first-party app UI.
-       The generic popup/overlay shape tests cannot tell a short role prompt from
-       click bait there. Keep this separate from trustedMediaHost: Discord still
-       needs its other protections, including link and request checks. */
+    /* Discord's role/profile dialogs resemble click bait. Exempt only overlay heuristics; keep link and request checks
+       active. */
     discordAppHost=/^(?:discord\.com|discordapp\.com|canary\.discord\.com|ptb\.discord\.com)$/i.test(location.hostname),
     /* Assistant conversations can quote scam instructions, so skip page-text heuristics on exact hosts.
        Clipboard actions remain checked. */
@@ -1677,11 +1619,8 @@
     regDomain=h=>String(h||"").replace(/^www\./,
     "").toLowerCase(),
     /* Stop walking text nodes at the cap instead of allocating the whole page’s text on every scan. */
-    /* Run something when the browser has slack, but never later than `timeout`.
-       The periodic cosmetic sweeps are not urgent -- the stylesheet has already
-       hidden what they hide -- but a 0.7ms scan landing inside a frame is what
-       turns a churn burst into a dropped frame. Idle time is where they belong.
-       Falls back to a timer where requestIdleCallback is missing. */
+    /* Defer periodic cosmetic sweeps to idle time, with a timeout and timer fallback. Stylesheets already hide their
+       targets. */
     __woIdle=(fn,timeout)=>{
       try{
         if("function"==typeof window.requestIdleCallback)return void window.requestIdleCallback(fn,{
@@ -2265,10 +2204,8 @@
         catch(_){
 
         }
-        /* The notice itself is built by the isolated bridge, not here. A node created in
-           world MAIN belongs to the page as much as to us, so a page could plant a copy of
-           the allow button, label it anything, and have a genuine click on it turn into a
-           cookie permission change. The bridge owns the real one in a closed shadow root. */
+        /* The isolated bridge owns the notice in a closed shadow root. MAIN-world nodes cannot authorize cookie changes
+           because pages can forge them. */
         const askBridgeForNotice=()=>{
             try{
               window.postMessage(__woSignedNotice({
@@ -2476,10 +2413,7 @@
         let changed=!1;
         for(const key of[...u.searchParams.keys()])(TRACKING_PARAMS.some(re=>re.test(key))||COPY_CLEAN_GLOBAL.test(key)||siteRe&&siteRe.test(key))&&(u.searchParams.delete(key),
         changed=!0);
-        /* Chrome text fragments copy the selected sentence into the address
-           after :~:text=. It is not needed to reach the page and can expose a
-           large piece of what somebody was reading. Keep a real section anchor
-           that comes before the directive, but drop the text directive itself. */
+        /* Text fragments can expose selected text. Remove the directive while retaining any preceding section anchor. */
         const textDirective=String(u.hash||"").indexOf(":~:");
         textDirective>=0&&(u.hash=textDirective>1?u.hash.slice(0,
         textDirective):"",
@@ -2924,10 +2858,7 @@
 
       },
       ensureOverlay=()=>{
-        /* Identity, not id. The old check asked the page whether our overlay was there, so a page
-           shipping <div id="rg-phish-block"> in its own markup answered yes: paint never ran, the
-           page-hiding stylesheet went up anyway, and the only thing left visible was the
-           attacker's element -- WardenOne rendering the attacker's idea of a block screen. */
+        /* A page can plant <div id="rg-phish-block">; check owned node identity before hiding the page beneath it. */
         if(hostEl&&hostEl.isConnected)return;
         if(hostEl){
           /* Removed rather than never built: put the SAME node back. Nothing is rebuilt, so the
@@ -2952,9 +2883,7 @@
       };
       ensureStyle(),
       ensureOverlay();
-      /* The same invariant at mount time, not only on self-heal: paint() can throw, and a
-         stylesheet installed over a page with nothing drawn on top of it is the same black
-         screen arrived at from the other direction. */
+      /* Do not hide the page unless paint() mounted the owned overlay successfully. */
       if(!hostEl)dropStyle();
       const check=()=>{
         scheduled=0;
@@ -3043,10 +2972,7 @@
           }
           return 0
         };
-        /* A search results page is never the site being searched for. Its title is whatever was
-           typed into the box, so searching for an explicit word gated the results page itself --
-           on the search engine, before going anywhere. And "take me back" from a results page
-           lands on the engine's home page, which is what that looked like from the outside. */
+        /* Search-result titles reflect the query, not the search engine's content category. */
         const onSearchResults=searchResultsHost;
         /* A suggestive title only corroborates domain evidence; search/news titles alone must not reach the gate. */
         score>0&&(score+=checkTitle()),
@@ -3319,10 +3245,7 @@
         const removed=[];
         for(const key of[...u.searchParams.keys()])(TRACKING_PARAMS.some(re=>re.test(key))||COPY_CLEAN_GLOBAL.test(key))&&(u.searchParams.delete(key),
         removed.push(key));
-        /* Null when there was nothing to do, so the page's own argument is passed
-        through untouched -- including a relative one, which is what most apps
-        actually pass. Rewriting every call to an absolute URL would be a change
-        with no cleaning in it. */
+        /* Return null when unchanged so native callers retain their original argument, including relative URLs. */
         return removed.length?{
           url:u.toString(),
           removed:removed
@@ -3378,13 +3301,8 @@
     !1!==WO.enabled&&WO.stripTrackingParams&&(patchHistoryClean("pushState"),
     patchHistoryClean("replaceState"));
     try{
-      /* The right-click "Copy link address" the browser draws itself never
-         reaches a page at all -- no copy event, no clipboard call -- so the
-         only way to clean that one is WardenOne's own menu entry, which asks
-         for this. Exposed the way the engine's other cross-world handles are.
-         The caller does not trust the answer: it checks the host came from the
-         link it started with, so a page swapping this out cannot put a
-         destination of its own on the clipboard. */
+      /* Native Copy link address emits no page copy event. The extension menu uses this handle and validates the returned
+         host before writing to the clipboard. */
       window.__wardenOneCleanCopyUrl=raw=>cleanCopyUrl(String(raw||""));
       let cleanCopyLogCount=0;
       const noteCleanCopy=()=>{
@@ -3393,11 +3311,7 @@
 
         })
       };
-      /* Capture, on window. A page that handles copy itself and calls
-         stopPropagation -- paywalls, attribution appenders, share widgets --
-         reaches the bubble phase first and the cleaner never ran. Verified in
-         Chrome: with a page handler stopping propagation, a bubble listener on
-         window sees nothing and a capture one still sees the copy. */
+      /* Capture on window so page copy handlers cannot bypass cleaning with stopPropagation. */
       woOn(window,"copy",
       e=>{
         try{
@@ -3490,9 +3404,8 @@
     function freshGesture(){
       return Date.now()-lastGestureAt<gestureWindowMs()&&!gestureSpent
     }
-    /* Presence rather than a gesture to spend: was the reader at this page in the last ms? The
-       navigation guards consume a gesture so one click cannot open two windows; a prompt the
-       browser itself puts up is not that kind of thing, so this one is never spent. */
+    /* Prompt presence is not consumed like a navigation gesture: one interaction can precede multiple native permission
+       checks. */
     function recentPresence(ms){
       return Date.now()-lastGestureAt<ms
     }
@@ -3535,11 +3448,8 @@
 
       },
       killMeta=(muts,added,roots)=>{
-        /* The shared observer reports child-list changes. Re-querying the entire
-           document for a meta element after a player replaced one volume text node
-           made a fixed security check scale with unrelated UI churn. The first pass
-           still audits the document; later passes inspect only newly added outermost
-           subtrees, which contain every newly inserted refresh element exactly once. */
+        /* Audit the full document once, then inspect only added outermost subtrees for refresh elements; unrelated text
+           churn needs no rescan. */
         if(!muts)return void document.querySelectorAll(META_REFRESH_SELECTOR).forEach(disableMetaRefresh);
         for(let i=0;i<roots.length;i++){
           const root=roots[i];
@@ -3890,12 +3800,8 @@
       };
       sweepNodes(document),
       woObserve((muts,added,roots)=>{
-        /* The src test runs on every added node and reads src off ANY tag,
-           which sweepNodes' img/script/iframe selector would not repeat, so it
-           stays per-node. The subtree scan narrows to the roots. A node with no
-           src loads nothing and is skipped: isGrabberURL(null) parsed "null"
-           against the page address, a URL build per added element, and on a
-           page whose own host is listed it matched every one of them. */
+        /* Check each added node's src, regardless of tag; only subtree scans use outermost roots. Skip absent src values
+           before URL parsing. */
         for(let i=0;
         i<added.length;
         i++){
@@ -4164,7 +4070,11 @@
       WO.monitorLoggerApi){
         const here=regDom(location.hostname),
         isTrustedGoogleNoise=(page,
-        dest)=>/(^|\.)(google\.com|google\.co\.uk|googleusercontent\.com)$/i.test(page)&&/(^|\.)(google\.com|google\.co\.uk|googleapis\.com|gstatic\.com|googleusercontent\.com|gvt1\.com|gvt2\.com|ggpht\.com|youtube\.com|ytimg\.com|googlevideo\.com)$/i.test(dest),
+        dest)=>{
+          const country=h=>"function"==typeof wardenOneBrandCountrySite&&wardenOneBrandCountrySite(h,
+          "google");
+          return(/(^|\.)(google\.com|google\.co\.uk|googleusercontent\.com)$/i.test(page)||country(page))&&(/(^|\.)(google\.com|google\.co\.uk|googleapis\.com|gstatic\.com|googleusercontent\.com|gvt1\.com|gvt2\.com|ggpht\.com|youtube\.com|ytimg\.com|googlevideo\.com)$/i.test(dest)||country(dest))
+        },
         isSuspectApi=input=>{
           const url=u2("string"==typeof input?input:input&&input.url?input.url:String(input));
           if(!url)return null;
@@ -4390,10 +4300,8 @@
         "").toLowerCase(),
         p=u.pathname.toLowerCase();
         if(/^(::|::1|127(?:\.\d{1,3}){0,3})$/i.test(h)||/(^|\.)localhost$/i.test(h))return!0;
-        /* Unique local fc00::/7 and link-local fe80::/10 -- fe80 through febf, not the text
-           "fe80" alone. The hostname is the URL parser's canonical form, so the first group is
-           exactly four digits here. Held to background.js ipv6Range by
-           tools/test-ip-classifier-agreement.js. */
+        /* Match all of fc00::/7 and fe80::/10, including fe80 through febf. Canonical URL hostnames use a four-digit first
+           group; test-ip-classifier-agreement.js checks parity. */
         if(/^(f[cd][0-9a-f]{2}|fe[89ab][0-9a-f]):/i.test(h))return!0;
         /* A local IPv4 address written as IPv4-mapped IPv6 (::ffff:10.0.0.1 is ::ffff:a00:1). */
         if(/^::ffff:([0-9a-f]{1,2}|a[0-9a-f]{2}|7f[0-9a-f]{2}|64[4-7][0-9a-f]|c0a8|a9fe|ac1[0-9a-f]):/i.test(h))return!0;
@@ -4485,17 +4393,10 @@
         }
 
       }
-      /* WebTransport is a full bidirectional channel to the same host over HTTP/3.
-         Guarding fetch, XHR and WebSocket while leaving it open means a page can
-         reach an intranet address by simply choosing a different constructor. */
-      /* Server-sent events reach any URL the page names, so leaving EventSource
-         unwrapped is the same hole WebTransport was: the guard covers fetch, XHR
-         and sockets, and the page picks the one constructor nobody hooked. */
-      /* A worker runs in its own realm with a pristine fetch and a pristine
-         WebSocket, so every hook above is invisible from inside one. What actually
-         holds the line there is the network layer, which sees a request whatever
-         realm made it. This refuses the front door as well, so the attempt is
-         named and recorded rather than only being dropped by a rule. */
+      /* WebTransport can reach intranet hosts over HTTP/3, so it needs the same LAN checks as fetch and sockets. */
+      /* EventSource can also reach arbitrary destinations and needs the same LAN guard. */
+      /* A worker runs in its own realm with pristine network APIs. DNR enforces LAN restrictions there; this front-door
+         check names and records attempts. */
       if(window.Worker){
         const RealWorker=window.Worker;
         window.Worker=function(url,
@@ -4903,14 +4804,9 @@
         }
         /* Same reasoning as the Intranet Guard hook: a transport the guard does not
            know about is a guard the page can walk around. */
-        /* Server-sent events reach any URL the page names, so leaving EventSource
-           unwrapped is the same hole WebTransport was: the guard covers fetch, XHR
-           and sockets, and the page picks the one constructor nobody hooked. */
-        /* A worker runs in its own realm with a pristine fetch and a pristine
-           WebSocket, so every hook above is invisible from inside one. What actually
-           holds the line there is the network layer, which sees a request whatever
-           realm made it. This refuses the front door as well, so the attempt is
-           named and recorded rather than only being dropped by a rule. */
+        /* EventSource needs the same destination checks as fetch and sockets. */
+        /* Workers have pristine network APIs. Network rules enforce restrictions inside them; this constructor check
+           records the attempt. */
         if(window.Worker){
           const RealWorker=window.Worker;
           window.Worker=function(url,
@@ -5155,10 +5051,8 @@
       value)=>{
         const v=String(value||"");
         if(v.length<16)return;
-        /* Rate the EVIDENCE, not just the length. A JWT is unmistakable. A key
-           called access_token is a statement of intent. A long opaque string is
-           neither: it is the shape of every tracking id, cache key and page-state
-           blob on the web, so on its own it is a hint at best. */
+        /* JWTs and credential-named fields carry evidence; an opaque string alone may be a tracking id or application
+           state. */
         const namedLikeToken=TOKEN_KEY.test(key),
         isJwt=looksLikeJWT(v),
         base64ish=/^ey[A-Za-z0-9_-]{8,}$/.test(v),
@@ -5166,10 +5060,7 @@
         inUrl=/^URL/.test(where);
         let confidence=isJwt?"high":namedLikeToken?(opaque||base64ish?"high":"medium"):base64ish?"medium":opaque?"low":"";
         if(!confidence)return;
-        /* In a URL, shape alone is not evidence. Google's own ved= and gs_lp= are
-           40+ opaque characters and neither is a credential -- counting them is
-           what made the most visited page on the internet score a D. A URL
-           finding has to carry a token-shaped key or be an actual JWT. */
+        /* Require a credential-shaped key or JWT in URLs; long tracking values such as ved and gs_lp are not credentials. */
         if(inUrl&&"low"===confidence)return;
         const previewKey=where+"|"+key+"|"+v.slice(0,
         8);
@@ -5431,11 +5322,7 @@
           "t.co"]
         },
         {
-          /* Spotify is NOT repeated here. It is a globalDestination, which covers
-             Discord along with every other app built on Spotify's API -- and a
-             second copy in this family would be a security policy asserting the
-             same thing in two places, which is how one of them later gets removed
-             by someone who believes the other still covers it. */
+          /* Spotify is already covered by globalDestinations; keep that policy in one place. */
           pages:["discord.com",
           "discordapp.com"],
           destinations:["discord.com",
@@ -5503,13 +5390,7 @@
           "googleusercontent.com"]
         },
         {
-          /* Only the sign-in and mail hosts were listed, so every other Microsoft 365
-          surface fell outside the family -- and sharepoint.com, which is where Office
-          actually stores what you upload, was not a global destination either. The
-          result: attaching a file to a Microsoft Form was read as a token leaving
-          forms.office.com for an unrelated host, and the upload was blocked. office.com
-          is matched by suffix, so it covers forms/word/excel/powerpoint and the rest in
-          one entry rather than a list that has to be maintained per product. */
+          /* office.com covers Microsoft 365 app subdomains; SharePoint hosts their uploads across the service family. */
           pages:["login.microsoftonline.com",
           "outlook.office.com",
           "office.com",
@@ -5548,13 +5429,8 @@
           "apple-cloudkit.com",
           "cdn-apple.com"]
         }],
-        /* Apps built on a managed backend send their own session token to their own
-        database host, which sits on a different registrable domain. Blocking that
-        breaks the app outright. Trusting these platforms globally is not acceptable
-        either: anyone can register a project on them in minutes, so a blanket rule
-        would let any page ship tokens to a backend an attacker controls. Trust the
-        destination only when the page itself declares that exact host, which is how
-        a real app configures its own backend. */
+        /* Trust only the exact managed-backend host declared by the page. Platform-wide trust would permit exfiltration to
+           attacker-created projects. */
         managedBackends=["supabase.co",
         "supabase.in",
         "firebaseio.com",
@@ -6002,11 +5878,8 @@
           noteIssued(text,this.responseURL,requestOf(this.__wo_url,this.__wo_body));
         }catch(_){}
       },
-      /* The one exception, as in credentialFramePlaylistFallback: a player sent its source list
-         encrypted decrypts the playlist link itself, so no response holds it. The PLAYLIST alone
-         (.m3u8 / .mpd), by a plain GET from a page showing a video or audio element, goes
-         through unless it carries a token this page stores; what it leads to must still have
-         been handed out. */
+      /* As in credentialFramePlaylistFallback, allow a plain GET for a decrypted .m3u8/.mpd playlist on a media page unless
+         it carries a stored token. Referenced resources still need response evidence. */
       PLAYLIST_PATH=/\.(?:m3u8|m3u|mpd)$/i,
       playlistFallback=(data,url,method)=>{
         if(null!=data&&""!==data)return!1;
@@ -6323,12 +6196,8 @@
 
               })();
               if(!dest)return!1;
-              /* dest is already a REGISTRABLE domain, so the old substring test needed the brand
-                 plus a dot to appear inside it. A subdomain never supplies that -- checkout.evil.com
-                 reduces to evil.com and was correctly still guarded -- but a REGISTRATION does:
-                 checkout.top, stripe.zip and paypal.cheap all satisfied it, and all are buyable. A
-                 skimmer could turn its own exfiltration destination into a trusted processor for
-                 the price of a domain. Matched whole now, against the processors actually meant. */
+              /* Match whole registrable processor domains; substrings such as checkout.top or stripe.zip are
+                 attacker-registerable. */
               if(/^(stripe\.com|stripe\.network|paypal\.com|paypalobjects\.com|braintreegateway\.com|braintree-api\.com|adyen\.com|checkout\.com|google\.com|gstatic\.com|googleapis\.com|apple\.com|microsoft\.com|azure\.com)$/i.test(dest))return!1;
               const hay=((dataToString(data)||"")+" "+url).replace(/\s/g,
               ""),
@@ -7891,10 +7760,8 @@
          Descriptions of the scam can quote the same wording without offering a way to carry it out. */
       SCAM_PHONE=/(?:\+?1[-.\s]?)?\(?8(?:00|33|44|55|66|77|88)\)?[-.\s]?\d{3}[-.\s]?\d{4}\b|\+\d{1,3}[-.\s]?\(?\d{1,4}\)?(?:[-.\s]?\d{2,4}){2,4}\b/,
       SCAM_REMOTE_STEP=/(?:anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|screenconnect|rustdesk|(?:support|remote|cleanup)\s+(?:tool|software|app))[\s\S]{0,160}?\b(?:enter|type|give|read|share|tell|send)\b[^.\n]{0,60}?\b(?:code|id|pin|key|password)\b|\b(?:enter|type|give|read|share|tell|send)\b[^.\n]{0,60}?\b(?:code|id|pin|key|password)\b[\s\S]{0,160}?(?:anydesk|teamviewer|ultraviewer|getscreen|gotoassist|logmein|supremo|aeroadmin|quick\s*assist|screenconnect|rustdesk)/i,
-      /* Behaviour, read when asked: the page opened a dialog in the last minute, holds the
-         pointer, or has taken the whole screen for something that is not a player. A full-screen
-         video, embed or canvas is someone watching or playing, including a video about the scam.
-         A leave-page handler is not counted: every editor with unsaved changes sets one. */
+      /* Dialogs, pointer lock and non-player fullscreen count as coercive behavior. Player fullscreen and unsaved-editor
+         leave handlers do not. */
       SCAM_PLAYER=/^(?:VIDEO|AUDIO|IFRAME|CANVAS|EMBED|OBJECT)$/,
       scamLockTrick=()=>{
         try{
@@ -8218,13 +8085,8 @@
       },
       clickfixVisiblePageText=()=>{
         try{
-          /* On an assistant surface the body text is the conversation, so asking
-             one how ClickFix works writes the whole attack into the page. A search
-             results page is the same: searching how to run a command fills it with
-             other sites' "press Win+R, type ..." steps. The frame's own host is what
-             is checked, so a scam embedded in an iframe is still read normally.
-             Clipboard hooks are untouched: this only removes the text the
-             instruction heuristics read. */
+          /* Exclude assistant and search-result text from instruction heuristics; it may quote attacks. Check each frame's
+             own host and retain clipboard inspection. */
           if(conversationHost||searchResultsHost)return"";
           const body=document.body;
           if(!body)return"";
@@ -8246,12 +8108,7 @@
         instructionHit=instructionEvidence(bodyText,
         commandHit&&commandHit.index),
         instruction=instructionHit?instructionHit.instruction:"",
-        /* The verification wording is held to the same rule as the steps: in quotation marks it
-           is reported speech. WardenOne's own home page says, in one short sentence, that a fake
-           "verify you're human" page tells you to press Win+R and paste a command, and that
-           sentence was warned about as the lure. A lure that quotes its own heading still has to
-           get past the step and paste checks below, and what it puts on the clipboard is read
-           whatever its text says. */
+        /* Quoted verification wording is reported speech. Step, paste and clipboard checks still apply. */
         humanHit=instructionHit&&clickfixNearestRegexHit(bodyText,
         CLICKFIX_HUMAN_VERIFICATION,
         instructionHit.index,
@@ -8702,11 +8559,8 @@
         return warned
       };
       if(WO_TOP){
-        /* The cheap token stage the page read is gated on (PERF-03): an instruction pattern in
-           the text a batch added. Every warning the scan can raise needs an instruction match,
-           so a batch without one cannot change the answer -- and body.innerText, a forced
-           layout, is read only once instruction-shaped text has actually arrived. The clipboard
-           hooks above read the page directly and are not gated. */
+        /* PERF-03: every text warning needs an instruction match. Gate body.innerText reads on added instruction-shaped
+           text; clipboard hooks remain immediate. */
         const clickfixGuard=__woTextScan.add({
           id:"clickfix",
           delay:800,
@@ -8809,10 +8663,7 @@
        Paste checks alone miss typed credentials. */
     if(WO.insecureLoginGuard!==!1)try{
       const host=String(location.hostname||"").toLowerCase(),
-      /* A router, NAS or printer on the LAN is reached over http because there
-         IS no https alternative, so warning there is pure noise. The paste guard
-         only excludes loopback, which would have made every 192.168.x.x admin
-         page nag. Anything without a dot is an intranet name for the same reason. */
+      /* Local devices and intranet names often have no HTTPS alternative; exempt them from this HTTP warning. */
       isLocalNetworkHost=/^(localhost|[^.]+|.*\.local|.*\.internal|.*\.home\.arpa|127(?:\.\d{1,3}){0,3}|0\.0\.0\.0|10(?:\.\d{1,3}){3}|192\.168(?:\.\d{1,3}){2}|169\.254(?:\.\d{1,3}){2}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}|\[?::1\]?)$/i.test(host),
       pageIsInsecure="http:"===location.protocol&&!isLocalNetworkHost,
       formDowngrades=el=>{
@@ -8890,11 +8741,7 @@
             }),
             row.appendChild(go)
           }
-          /* There is always a way through. A warning that traps someone is one
-             they will learn to route around, and we can be wrong -- an internal
-             site on a plain hostname, a captive portal, a device we did not
-             recognise as local. Say plainly that it is a bad idea and then let
-             them decide; do not make the choice for them. */
+          /* Keep an explicit way through for false positives, including unrecognized local devices and captive portals. */
           const stay=mkBtn("Continue anyway  -  not recommended",
           !1);
           stay.addEventListener("click",
@@ -12618,22 +12465,57 @@
       })
     }
     if(WO.blockAutoplay&&!trustedMediaHost)try{
-      let userGestured=!1;
+      /* Keep intent on the selected media. An empty player gets one bounded first-play grant. */
+      const autoplayApprovedMedia=new WeakSet,
+      autoplayPendingPlayers=new WeakMap,
+      autoplayAllowed=m=>{
+        if(autoplayApprovedMedia.has(m))return!0;
+        try{
+          for(let p=m&&m.parentElement;p;p=p.parentElement){
+            const until=autoplayPendingPlayers.get(p);
+            if(!until)continue;
+            autoplayPendingPlayers.delete(p);
+            if(Date.now()<=until){
+              autoplayApprovedMedia.add(m);
+              return!0
+            }
+          }
+        }
+        catch(_){}
+        return!1
+      },
+      approveAutoplayTarget=target=>{
+        try{
+          const direct=target&&target.closest&&target.closest("video,audio");
+          if(direct){autoplayApprovedMedia.add(direct);return}
+          const control=target&&target.closest&&target.closest("[aria-controls]"),
+          controlled=control&&document.getElementById((control.getAttribute("aria-controls")||"").trim());
+          if(controlled&&/^(VIDEO|AUDIO)$/.test(controlled.tagName)){
+            autoplayApprovedMedia.add(controlled);
+            return
+          }
+          const shell=controlled||playerShellFor(target);
+          if(!shell)return;
+          const media=shell.querySelectorAll("video,audio");
+          if(1===media.length)autoplayApprovedMedia.add(media[0]);
+          else if(!media.length)autoplayPendingPlayers.set(shell,Date.now()+3e4)
+        }
+        catch(_){}
+      };
       ["click",
       "keydown",
       "pointerdown",
       "touchstart"].forEach(ev=>woOn(window,ev,
-      ()=>{
-        userGestured=!0,
-        setTimeout(()=>{
-          userGestured=!1
-        },
-        1e3)
+      e=>{
+        if(!e||!e.isTrusted)return;
+        if("keydown"===e.type&&!/^(Enter| |Spacebar|MediaPlayPause)$/.test(e.key||""))return;
+        if(("click"===e.type||"pointerdown"===e.type)&&0!==e.button)return;
+        approveAutoplayTarget(e.composedPath?e.composedPath()[0]:e.target)
       },
       !0));
       const tameMedia=m=>{
         try{
-          if(userGestured)return;
+          if(!WO.blockAutoplay||autoplayApprovedMedia.has(m))return;
           m.autoplay=!1;
           const isFreeMutedAudio="AUDIO"===m.tagName&&!0===m.muted;
           m.paused||isFreeMutedAudio||m.pause()
@@ -12649,7 +12531,7 @@
           const realPlay=proto.play;
           proto.play=function(){
             const isFreeMutedAudio=this&&"AUDIO"===this.tagName&&!0===this.muted;
-            if(!userGestured&&!isFreeMutedAudio){
+            if(WO.blockAutoplay&&!isFreeMutedAudio&&!autoplayAllowed(this)){
               try{
                 this.pause()
               }
@@ -12671,8 +12553,7 @@
       }
       const sweepMedia=root=>{
         try{
-          /* Skip subtree media scans after the first gesture, when tameMedia no longer acts. */
-          if(userGestured)return;
+          if(!WO.blockAutoplay)return;
           (root||document).querySelectorAll("video[autoplay],audio[autoplay],video,audio").forEach(tameMedia)
         }
         catch(_){
@@ -12683,10 +12564,7 @@
       document.documentElement&&sweepMedia(document);
       try{
         woObserve((muts,added,roots)=>{
-          /* Both branches of this loop bail on userGestured, so after the first
-             click the loop itself is the only thing left doing any work. Gating
-             here rather than inside them skips walking the added nodes at all. */
-          if(userGestured)return;
+          if(!WO.blockAutoplay)return;
           for(let i=0;
           i<added.length;
           i++){
@@ -13642,12 +13520,8 @@
         const reasons=[],
         seenSignals=new Set,
         behaveStartedAt=Date.now(),
-        /* Signals that say something about WHO this site is, rather than what any
-        page does. A warning needs at least one of them: "loaded a cross-site asset
-        before you clicked" plus "measured the canvas" describes every large modern
-        site, and on its own it was firing "Suspicious site behavior" on ordinary
-        browsing -- and at score 60+ the background LEARNS the domain and starts
-        DNR-blocking it. Known-logger hits stand alone; nothing else does. */
+        /* Require site-identity evidence alongside generic behavior signals before warning or learning a domain. Known
+           logger matches stand alone. */
         BEHAVE_HARD_KEYS=["known-logger",
         "known-logger-event",
         "xss-reflection"],
@@ -14242,18 +14116,13 @@
             })
           })
         },
-        /* A code sink is only meaningful when the reflected value is itself shaped
-        like code or markup AND lands where it actually runs -- not inside a string
-        literal. Without both tests any ordinary query string or session id that a
-        page embeds in an analytics config scored 65 points and warned. That is
-        "the site called Function()", which is not evidence of anything. */
+        /* Score reflected code only when it is executable-shaped and lands in an executable position, outside string
+           literals. */
         xssCodeSinkCandidate=(candidate,
         raw)=>!!(candidate&&(candidate.codeShape||candidate.payloadShape||candidate.executableShape||candidate.untrustedMessage)&&xssCandidateInExecutableScript(raw,
         candidate)),
-        /* For a script URL the only question that matters is whether the source
-        controls WHERE the script comes from. A value appended as a query parameter
-        to a first-party or CDN script URL -- cache busting, campaign tags, session
-        ids -- cannot change what executes, so it must not score. */
+        /* A script-URL source must control the destination. Query-only tracking or cache values cannot select the script
+           origin. */
         xssScriptOriginSpan=value=>{
           const raw=String(value||"").trim();
           if(/^(?:javascript\s*:|data\s*:|blob\s*:|vbscript\s*:)/i.test(raw))return raw.length;
@@ -15858,7 +15727,7 @@
           const patchGLProbe=proto=>{
             if(!proto||!proto.getParameter)return;
             const realGetParameter=proto.getParameter;
-            proto.getParameter=function(p){
+            proto.getParameter={getParameter(p){
               try{
                 37445!==p&&37446!==p||noteFingerprint("GPU fingerprint probe")
               }
@@ -15867,7 +15736,7 @@
               }
               return realGetParameter.apply(this,
               arguments)
-            }
+            }}.getParameter
 
           };
           patchGLProbe(window.WebGLRenderingContext&&WebGLRenderingContext.prototype),
@@ -15876,13 +15745,7 @@
         catch(_){
 
         }
-        /* Asking for a WebGPU adapter is the same question as the WebGL vendor
-           probe above, asked with a newer API, so it is counted the same way.
-           Detection lives here and spoofing lives in the noise block, for the
-           same reason patchGLProbe and patchGL are separate: they are two
-           features with two switches, and one must not need the other to be on.
-           Chaining is intentional -- the noise block wraps whatever it finds, so
-           whichever ends up outermost, both still run. */
+        /* WebGPU probe detection and noise use separate switches. Preserve wrapper chaining so both can run independently. */
         try{
           if(navigator.gpu&&navigator.gpu.requestAdapter){
             const gpuProbe=navigator.gpu,
@@ -16016,10 +15879,7 @@
           ageChecked=!0
         }
         }
-        /* addSignal calls this the moment a signal lands, so without the grace
-        window the verdict was decided before the RDAP domain-age answer came back
-        and the "established domain" suppression below could never apply. The 4.5s
-        timer below is the backstop when the lookup is rate-limited or offline. */
+        /* Wait for domain-age evidence before deciding; the 4.5s timer bounds offline or rate-limited lookups. */
         function maybeWarn(){
           const band=riskBand();
           if(!band)return;
@@ -16162,7 +16022,8 @@
         "dropboxusercontent.com"],
         ebay:["ebay.com",
         "ebay.co.uk"],
-        spotify:["spotify.com"],
+        spotify:["spotify.com",
+        "spotify.link"],
         yahoo:["yahoo.com"],
         proton:["proton.me",
         "protonmail.com"],
@@ -16187,8 +16048,10 @@
         trezor:["trezor.io"],
         ledger:["ledger.com"],
         exodus:["exodus.com"],
-        revolut:["revolut.com"],
-        monzo:["monzo.com"],
+        revolut:["revolut.com",
+        "revolut.me"],
+        monzo:["monzo.com",
+        "monzo.me"],
         natwest:["natwest.com"],
         lloyds:["lloydsbank.com"],
         halifax:["halifax.co.uk"],
@@ -16199,13 +16062,14 @@
         amex:["americanexpress.com"],
         mastercard:["mastercard.com"],
         visa:["visa.com"],
-        stripe:["stripe.com"],
+        stripe:["stripe.com","stripe.dev","stripe.network"],
         square:["squareup.com"],
         github:["github.com",
         "githubusercontent.com",
         "githubassets.com",
         "github.io"],
-        gitlab:["gitlab.com"],
+        gitlab:["gitlab.com",
+        "gitlab.io"],
         twitch:["twitch.tv",
         "ttvnw.net",
         "jtvnw.net",
@@ -16213,6 +16077,7 @@
         tiktok:["tiktok.com"],
         snapchat:["snapchat.com"],
         telegram:["telegram.org",
+        "telegram.me",
         "t.me"],
         signal:["signal.org"],
         reddit:["reddit.com"],
@@ -16230,13 +16095,16 @@
         instacart:["instacart.com"],
         costco:["costco.com"],
         bestbuy:["bestbuy.com"],
-        aliexpress:["aliexpress.com"],
+        aliexpress:["aliexpress.com",
+        "aliexpress.us",
+        "aliexpress.ru"],
         alibaba:["alibaba.com"],
         shopify:["shopify.com"],
         etsy:["etsy.com"],
         samsung:["samsung.com"],
         sony:["sony.com"],
-        nintendo:["nintendo.com"],
+        nintendo:["nintendo.com",
+        "nintendo.net"],
         playstation:["playstation.com"],
         xbox:["xbox.com"],
         evri:["evri.com"],
@@ -16244,7 +16112,8 @@
         "dpd.com"],
         usbank:["usbank.com"],
         pnc:["pnc.com"],
-        tdbank:["td.com"],
+        tdbank:["td.com",
+        "tdbank.com"],
         truist:["truist.com"]
       };
       try{
@@ -16364,6 +16233,8 @@
         const nc=visualNorm(cand),
         nb=visualNorm(brand);
         if(nc===nb)return!0;
+        /* Short names collide too often for spelling distance alone; exact visual substitutions still count. */
+        if(brand.length<4)return!1;
         if(cand.length===brand.length&&1===lev(cand,
         brand))return!0;
         if(nc.length===nb.length&&1===lev(nc,
@@ -16383,21 +16254,27 @@
         }
         return!1
       },
-      /* Some brands own their own top-level domain, and serve real products from it: Microsoft
-         runs the Office web apps on word.cloud.microsoft, Google publishes on blog.google. The
-         subdomain-spoof rule below asks parts.includes(brand), and on those hosts the brand name
-         IS the TLD -- so the most first-party address a brand can have looked like the strongest
-         possible spoof of itself. Owning the TLD is the ownership proof; nothing else can claim it,
-         because a registry will not sell "microsoft" as a TLD to anyone but Microsoft. Checked as
-         the last label only, so evil-microsoft.com and microsoft.evil.com are untouched. */
+      /* Recognize owned brand TLDs such as .microsoft and .google only in the final label; ordinary brand-bearing domains
+         still need spoof checks. */
       BRAND_TLDS={
         microsoft:["microsoft"],
         google:["google"],
         apple:["apple"],
         amazon:["amazon"]
       },
-      isLegit=brand=>((BRAND_TLDS[brand]||[]).includes(parts[parts.length-1])||(BRANDS[brand]||[]).some(d=>fullHost===d||fullHost.endsWith("."+d))),
+      isLegit=brand=>((BRAND_TLDS[brand]||[]).includes(parts[parts.length-1])||(BRANDS[brand]||[]).some(d=>fullHost===d||fullHost.endsWith("."+d))||"function"==typeof wardenOneBrandCountrySite&&wardenOneBrandCountrySite(fullHost,
+      brand)),
+      /* Place names and ordinary words too: halifax.ca is a city, nationwide.com an insurer. */
       COMMON_WORD_BRANDS=new Set(["apple",
+      "halifax",
+      "nationwide",
+      "lloyds",
+      "santander",
+      "tsb",
+      "ledger",
+      "exodus",
+      "blockchain",
+      "kraken",
       "target",
       "visa",
       "square",
@@ -16437,7 +16314,8 @@
           }
 
         }
-        else if((BRANDS[brand]||[]).some(d=>here.startsWith(d+".")||here.includes("."+d+"."))){
+        /* An official domain inside the subdomain labels; santander.com.br merely shares a prefix. */
+        else if((BRANDS[brand]||[]).some(d=>(here.startsWith(d+".")||here.includes("."+d+"."))&&!siteHost.startsWith(d+"."))){
           phishHit={
             brand:brand,
             kind:"subdomain-spoof",
@@ -16724,68 +16602,8 @@
       }
 
     }
-    if(!1!==WO.sendPrivacySignals)try{
-      const defprop=(obj,
-      name,
-      val)=>{
-        try{
-          Object.defineProperty(obj,
-          name,
-          {
-            get:()=>val,
-            configurable:!0,
-            enumerable:!0
-          })
-        }
-        catch(_){
-
-        }
-
-      };
-      defprop(Navigator.prototype,
-      "doNotTrack",
-      "1");
-      try{
-        defprop(navigator,
-        "doNotTrack",
-        "1")
-      }
-      catch(_){
-
-      }
-      defprop(Navigator.prototype,
-      "globalPrivacyControl",
-      !0);
-      try{
-        defprop(navigator,
-        "globalPrivacyControl",
-        !0)
-      }
-      catch(_){
-
-      }
-      try{
-        defprop(window,
-        "doNotTrack",
-        "1")
-      }
-      catch(_){
-
-      }
-
-    }
-    catch(e){
-      log("privacy_signal_failed",
-      {
-        error:String(e)
-      })
-    }
-    /* The noise itself is __woFingerprintNoise below: one function, declared once, hoisted
-       to here. tools/build-content.js copies that function byte for byte into
-       fingerprint-realm.js, the module that runs it in child frames (SEC-05), so the two
-       realms cannot drift apart -- the same wrappers, the same cloak, the same profile draw.
-       Whatever the verdict, the realm record is published and the document told, so a
-       same-origin child created before the config landed can catch up. */
+    /* SEC-05: the build shares __woFingerprintNoise with child realms verbatim. Publish every verdict so children awaiting
+       configuration can adopt it. */
     if(WO.antiFingerprintNoise||WO.antiFingerprint)try{
       __woRealmRecord=__woFingerprintNoise(__woInheritedRealm()),
       log("antifingerprint_active",
@@ -16825,14 +16643,11 @@
 
       };
       let _s=woSeed();
-      /* The shared realm seed remains in the record for child-frame synchronization.
-         _sk stays private to this realm: it keys the text-metric and geometry noise
-         (seededTiny, rectSeed), whose inputs -- a font and a string, a rectangle -- the page
-         knows exactly, so a page that could read that seed could compute the noise and
-         subtract it. A realm that knows the shared seed still cannot recover a width. */
+      /* Only the shared seed is published. Keep _sk private: known text and geometry inputs would otherwise let pages
+         subtract their noise. */
       const _sc=inherited&&"object"==typeof inherited&&Number.isInteger(inherited.seed)&&inherited.seed>=0&&inherited.seed<=4294967295?inherited.seed>>>0:woSeed();
       const __woCloak=new WeakMap;
-      try{const _oFTS=Function.prototype.toString,_cFTS=function toString(){const n=__woCloak.get(this);return void 0!==n?"function "+n+"() { [native code] }":_oFTS.call(this)};__woCloak.set(_cFTS,"toString"),Function.prototype.toString=_cFTS}catch(_){}
+      try{const _oFTS=Function.prototype.toString,_cFTS={toString(){const n=__woCloak.get(this);return void 0!==n?"function "+n+"() { [native code] }":_oFTS.call(this)}}.toString;__woCloak.set(_cFTS,"toString"),Function.prototype.toString=_cFTS}catch(_){}
       const _sk=_s>>>0,
       rnd=()=>(_s=1664525*_s+1013904223>>>0,
       _s/4294967296),
@@ -16865,18 +16680,24 @@
       try{
         const patchMeasureText=proto=>{
           if(!proto||!proto.measureText)return;
-          const orig=proto.measureText;
-          proto.measureText=function(...args){
+          const orig=proto.measureText,font=Object.getOwnPropertyDescriptor(proto,"font")?.get;
+          proto.measureText={measureText(text){
+            const args=arguments;
+            let converted=text;
+            if(text!==null&&("object"===typeof text||"function"===typeof text)){
+              const originalText=text;
+              args[0]={toString(){return converted=String(originalText)}}
+            }
             const metrics=orig.apply(this,
             args);
             try{
-              const n=seededTiny((this.font||"")+"|"+String(args[0]||""),.02);
+              const n=seededTiny(((font?font.call(this):this.font)||"")+"|"+String(converted),.02);
               return new Proxy(metrics,
               {
                 get(target,
                 prop){
                   const v=target[prop];
-                  return"number"==typeof v&&/^(width|actualBoundingBox|fontBoundingBox|emHeight|hangingBaseline|alphabeticBaseline|ideographicBaseline)/.test(String(prop))?v+n:v
+                  return prop==="width"?v===0?0:Math.max(0,v+n):"number"==typeof v&&/^(actualBoundingBox|fontBoundingBox|emHeight|hangingBaseline|alphabeticBaseline|ideographicBaseline)/.test(String(prop))?v+n:v
                 }
 
               })
@@ -16885,7 +16706,7 @@
               return metrics
             }
 
-          }
+          }}.measureText
 
         };
         patchMeasureText(window.CanvasRenderingContext2D&&CanvasRenderingContext2D.prototype),
@@ -16936,11 +16757,35 @@
           if(!proto)return;
           if(proto.getBoundingClientRect){
             const origBox=proto.getBoundingClientRect;
-            proto.getBoundingClientRect=function(...args){
+            proto.getBoundingClientRect={getBoundingClientRect(){
               return wrapRect(origBox.apply(this,
-              args))
-            }
+              arguments))
+            }}.getBoundingClientRect
 
+          }
+          if(proto.getClientRects){
+            const original=proto.getClientRects;
+            proto.getClientRects={getClientRects(){
+              const list=original.apply(this,arguments);
+              let firstValue,firstRect,cache,item,proxy;
+              const rect=value=>{
+                if(!value||"object"!==typeof value)return value;
+                if(value===firstValue)return firstRect;
+                if(!firstValue){firstValue=value;firstRect=wrapRect(value);return firstRect}
+                if(!cache)cache=new WeakMap([[firstValue,firstRect]]);
+                if(!cache.has(value))cache.set(value,wrapRect(value));
+                return cache.get(value)
+              };
+              proxy=new Proxy(list,{get(t,k){
+                if(k==="item"&&"function"===typeof t.item){
+                  if(!item)item=cloak({item(index){return rect(list.item.apply(this===proxy?list:this,arguments))}}.item,"item");
+                  return item
+                }
+                const value=Reflect.get(t,k,t);
+                return"string"===typeof k&&/^(0|[1-9][0-9]*)$/.test(k)?rect(value):value
+              }});
+              return proxy
+            }}.getClientRects
           }
 
         };
@@ -16956,11 +16801,14 @@
           ["getComputedTextLength",
           "getSubStringLength"].forEach(name=>{
             const orig=proto[name];
-            orig&&(proto[name]=function(...args){
-              const v=orig.apply(this,
-              args);
-              return"number"==typeof v?v+seededTiny((this.textContent||"")+name,.02):v
-            })
+            if(orig){
+              const method={ [name](...args){
+                const v=orig.apply(this,args);
+                return"number"==typeof v&&v!==0?Math.max(0,v+seededTiny((this.textContent||"")+name,.02)):v
+              }}[name];
+              Object.defineProperty(method,"length",{value:orig.length,configurable:!0});
+              proto[name]=cloak(method,name)
+            }
           })
         };
         window.SVGTextContentElement&&patchSvgText(SVGTextContentElement.prototype)
@@ -16982,28 +16830,38 @@
       ],"gpu"):null;
       const patchGL=proto=>{
         if(!woGpu||!proto||!proto.getParameter)return;
-        const orig=proto.getParameter;
-        proto.getParameter=function(p){
-          return 37445===p?woGpu.v:37446===p?woGpu.r:orig.call(this,
-          p)
-        };
+        const orig=proto.getParameter,canvas=Object.getOwnPropertyDescriptor(proto,"canvas")?.get,
+        validate=receiver=>{if(canvas)canvas.call(receiver);else orig.call(receiver,7938)};
+        proto.getParameter={getParameter(p){
+          if(!arguments.length)return orig.apply(this,arguments);
+          let enumValue=p;
+          if(p!==null&&("object"===typeof p||"function"===typeof p)){
+            validate(this);
+            enumValue=(+p)>>>0
+          }
+          const value=orig.call(this,enumValue);
+          enumValue=(+enumValue)>>>0;
+          return null==value?value:37445===enumValue?woGpu.v:37446===enumValue?woGpu.r:value
+        }}.getParameter;
         try{
           const getExt=proto.getExtension;
-          getExt&&(proto.getExtension=function(name){
-            return/^WEBGL_debug_renderer_info$/i.test(String(name||""))?null:getExt.apply(this,
-            arguments)
-          })
+          getExt&&(proto.getExtension={getExtension(name){
+            if(!arguments.length||"symbol"===typeof name)return getExt.apply(this,arguments);
+            validate(this);
+            const converted=String(name);
+            return/^WEBGL_debug_renderer_info$/i.test(converted)?null:getExt.call(this,converted)
+          }}.getExtension)
         }
         catch(_){
 
         }
         try{
           const getSupported=proto.getSupportedExtensions;
-          getSupported&&(proto.getSupportedExtensions=function(){
+          getSupported&&(proto.getSupportedExtensions={getSupportedExtensions(){
             const out=getSupported.apply(this,
             arguments);
             return Array.isArray(out)?out.filter(x=>!/^WEBGL_debug_renderer_info$/i.test(String(x||""))):out
-          })
+          }}.getSupportedExtensions)
         }
         catch(_){
 
@@ -17053,21 +16911,15 @@
         /* A real GPUAdapterInfo keeps device and description empty in Chrome
            unless the origin trial for unmasked info is on, so filling them in
            would stand out rather than blend in. */
-        fakeInfo=Object.freeze({
-          vendor:woGpuInfo.vendor,
-          architecture:woGpuInfo.architecture,
-          device:"",
-          description:"",
-          subgroupMinSize:4,
-          subgroupMaxSize:128,
-          isFallbackAdapter:!1
-        }),
-        /* Every value a proxy hands back has to keep the identity a real object
-           would give it. A get trap that returns v.bind(t) fresh each time makes
-           adapter.requestDevice !== adapter.requestDevice, which no real object
-           does, and that inequality is a cleaner extension-detector than any of
-           the values this shield is hiding. So each wrapper memoises what it
-           hands out, and the substituted members are built once per object. */
+        wrapInfo=real=>{
+          if(!real||"object"!=typeof real)return real;
+          return new Proxy(real,{get(t,k){
+            const value=Reflect.get(t,k,t);
+            if("string"!==typeof value)return value;
+            return k==="vendor"?woGpuInfo.vendor:k==="architecture"?woGpuInfo.architecture:k==="device"||k==="description"?"":value
+          }})
+        },
+        /* Memoize bound methods and substituted members so repeated property reads preserve native object identity. */
         stableGet=(target,fixed)=>{
           const memo=new Map;
           return(t,k)=>{
@@ -17083,16 +16935,17 @@
             return bound
           }
         },
-        /* GPUSupportedLimits keeps its values on accessors on the prototype, so
-           the object cannot be copied or assigned over. A proxy answers the known
-           names from the table and forwards anything a newer Chrome adds, which
-           fails open on an unknown limit rather than throwing on it. */
+        /* GPUSupportedLimits uses prototype accessors. Proxy known limits and pass unknown names through for newer Chrome
+           versions. */
         wrapLimits=real=>{
           try{
-            const get=stableGet(real,woGpuLimits);
+            const get=stableGet(real);
             return new Proxy(real,{
-              get:(t,k)=>"string"==typeof k&&Object.prototype.hasOwnProperty.call(woGpuLimits,k)?woGpuLimits[k]:get(t,k),
-              has:(t,k)=>Object.prototype.hasOwnProperty.call(woGpuLimits,k)||Reflect.has(t,k)
+              get:(t,k)=>{
+                const value=get(t,k);
+                if("number"!==typeof value||!Object.prototype.hasOwnProperty.call(woGpuLimits,k))return value;
+                return k.startsWith("min")?Math.max(value,woGpuLimits[k]):Math.min(value,woGpuLimits[k])
+              }
             })
           }
           catch(_){
@@ -17103,11 +16956,10 @@
         wrapDevice=dev=>{
           if(!dev||"object"!=typeof dev)return dev;
           try{
-            const get=stableGet(dev,{
-              limits:wrapLimits(dev.limits),
-              adapterInfo:fakeInfo
-            });
-            return new Proxy(dev,{get})
+            const fixed={limits:wrapLimits(dev.limits)};
+            if("adapterInfo"in dev)fixed.adapterInfo=wrapInfo(dev.adapterInfo);
+            const get=stableGet(dev,fixed);
+            return new Proxy(dev,{get,set:(t,k,value)=>Reflect.set(t,k,value,t)})
           }
           catch(_){
             return dev
@@ -17117,23 +16969,26 @@
         wrapAdapter=real=>{
           if(!real||"object"!=typeof real)return real;
           try{
+            let proxy;
             const realDevice=real.requestDevice,
             fixed={
               limits:wrapLimits(real.limits),
-              info:fakeInfo,
-              requestAdapterInfo:cloak(function requestAdapterInfo(){
-                return Promise.resolve(fakeInfo)
-              },"requestAdapterInfo")
+              info:wrapInfo(real.info)
             };
-            /* The device carries its own copy of the limits and, in newer Chrome,
-               its own adapterInfo. Wrapping the adapter and leaving the device
-               alone would move the leak one call to the right, which is the most
-               natural way to get this wrong. */
+            if("function"==typeof real.requestAdapterInfo){
+              const originalInfo=real.requestAdapterInfo;
+              fixed.requestAdapterInfo=cloak(function requestAdapterInfo(...args){
+                return Promise.resolve(originalInfo.apply(this===proxy?real:this,args)).then(wrapInfo)
+              },"requestAdapterInfo")
+            }
+            /* Devices expose their own limits and adapterInfo; wrap those too to keep adapter and device identities
+               consistent. */
             "function"==typeof realDevice&&(fixed.requestDevice=cloak(function requestDevice(...args){
-              return Promise.resolve(realDevice.apply(real,args)).then(wrapDevice)
+              return Promise.resolve(realDevice.apply(this===proxy?real:this,args)).then(wrapDevice)
             },"requestDevice"));
             const get=stableGet(real,fixed);
-            return new Proxy(real,{get})
+            proxy=new Proxy(real,{get});
+            return proxy
           }
           catch(_){
             return real
@@ -17143,13 +16998,10 @@
         if(woGpu&&navigator.gpu&&navigator.gpu.requestAdapter){
           const gpu=navigator.gpu,
           realRequest=gpu.requestAdapter;
-          /* No probe reporting here on purpose: this block has no reporter in
-             scope, and reaching for one would throw inside the replacement
-             function -- which would break WebGPU on every page rather than
-             failing quietly. Counting the probe is the detection block's job and
-             is gated on its own switch. */
+          /* Probe reporting belongs to the separate detection block; this shared noise implementation has no reporter in
+             scope. */
           gpu.requestAdapter=cloak(function requestAdapter(...args){
-            return Promise.resolve(realRequest.apply(gpu,args)).then(wrapAdapter)
+            return Promise.resolve(realRequest.apply(this,args)).then(wrapAdapter)
           },"requestAdapter")
         }
 
@@ -17186,7 +17038,7 @@
             const wrapped=cloak(function(...args){
               let out;
               try{
-                out=real.apply(mc,
+                out=real.apply(this,
                 args)
               }
               catch(e){
@@ -17214,48 +17066,25 @@
       if(window.WebGLRenderingContext&&patchGL(WebGLRenderingContext.prototype),
       window.WebGL2RenderingContext&&patchGL(WebGL2RenderingContext.prototype),
       window.AnalyserNode){
-        const af=AnalyserNode.prototype.getFloatFrequencyData;
-        af&&(AnalyserNode.prototype.getFloatFrequencyData=function(arr){
+        const af=AnalyserNode.prototype.getFloatFrequencyData,
+        bins=Object.getOwnPropertyDescriptor(AnalyserNode.prototype,"frequencyBinCount")?.get,
+        length=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Float32Array.prototype),"length")?.get;
+        af&&(AnalyserNode.prototype.getFloatFrequencyData={getFloatFrequencyData(arr){
           af.call(this,
           arr);
           try{
+            const count=Math.min(length?length.call(arr):arr.length,bins?bins.call(this):arr.length);
             for(let i=0;
-            i<arr.length;
-            i+=64)arr[i]=arr[i]+8e-4*(rnd()-.5)
+            i<count;
+            i+=64)if(Number.isFinite(arr[i]))arr[i]=arr[i]+seededTiny("frequency|"+i+"|"+arr[i],8e-4)
           }
           catch(_){
 
           }
 
-        })
+        }}.getFloatFrequencyData)
       }
-      try{
-        if(window.AudioBuffer){
-          const ogcd=AudioBuffer.prototype.getChannelData,
-          _farb=new WeakSet;
-          ogcd&&(AudioBuffer.prototype.getChannelData=function(...a){
-            const arr=ogcd.apply(this,
-            a);
-            try{
-              if(arr&&!_farb.has(arr)){
-                _farb.add(arr);
-                for(let i=0;
-                i<arr.length;
-                i+=100)arr[i]=arr[i]+1e-7*(rnd()-.5)
-              }
-
-            }
-            catch(_){
-
-            }
-            return arr
-          })
-        }
-
-      }
-      catch(_){
-
-      }
+      /* AudioBuffer exposes reusable playback samples. Keep it and sample-rate getters native. */
       try{[
         [HTMLCanvasElement.prototype,"toDataURL"],
         [HTMLCanvasElement.prototype,"toBlob"],
@@ -17266,8 +17095,13 @@
         window.Range&&[Range.prototype,"getBoundingClientRect"],
         window.Range&&[Range.prototype,"getClientRects"],
         window.WebGLRenderingContext&&[WebGLRenderingContext.prototype,"getParameter"],
+        window.WebGLRenderingContext&&[WebGLRenderingContext.prototype,"getExtension"],
+        window.WebGLRenderingContext&&[WebGLRenderingContext.prototype,"getSupportedExtensions"],
         window.WebGL2RenderingContext&&[WebGL2RenderingContext.prototype,"getParameter"],
+        window.WebGL2RenderingContext&&[WebGL2RenderingContext.prototype,"getExtension"],
+        window.WebGL2RenderingContext&&[WebGL2RenderingContext.prototype,"getSupportedExtensions"],
         window.OffscreenCanvasRenderingContext2D&&[OffscreenCanvasRenderingContext2D.prototype,"getImageData"],
+        window.OffscreenCanvasRenderingContext2D&&[OffscreenCanvasRenderingContext2D.prototype,"measureText"],
         window.AudioBuffer&&[AudioBuffer.prototype,"getChannelData"],
         window.AnalyserNode&&[AnalyserNode.prototype,"getFloatFrequencyData"]
       ].forEach(p=>{try{p&&p[0]&&"function"==typeof p[0][p[1]]&&cloak(p[0][p[1]],p[1])}catch(_){}})}catch(_){}
@@ -17470,27 +17304,30 @@
       }
       try{
         if(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices){
-          const origEnum=navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices);
-          navigator.mediaDevices.enumerateDevices=function(){
+          const origEnum=navigator.mediaDevices.enumerateDevices;
+          navigator.mediaDevices.enumerateDevices={enumerateDevices(){
             /* Device IDs are also camera/microphone selection constraints. Keep the
                browser's opaque IDs usable while hiding descriptive metadata. */
-            return Promise.resolve(origEnum()).then(list=>(list||[]).map(d=>({
-              kind:String(d&&d.kind||""),
-              label:"",
-              deviceId:String(d&&d.deviceId||""),
-              groupId:"",
-              toJSON(){
-                return{
-                  kind:this.kind,
-                  label:this.label,
-                  deviceId:this.deviceId,
-                  groupId:this.groupId
+            return Promise.resolve(origEnum.apply(this,arguments)).then(list=>(list||[]).map(d=>{
+              if(!d||"object"!==typeof d)return d;
+              let proxy;
+              const methods=new Map;
+              const json=cloak({toJSON(){const value=d.toJSON.apply(this===proxy?d:this,arguments);return Object.assign({},value,{label:"",groupId:""})}}.toJSON,"toJSON");
+              proxy=new Proxy(d,{get(t,k){
+                if(k==="label"||k==="groupId")return"";
+                if(k==="toJSON"&&"function"===typeof t.toJSON)return json;
+                const value=Reflect.get(t,k,t);
+                if("function"!==typeof value||k==="constructor")return value;
+                if(!methods.has(k)){
+                  const method={ [value.name](...args){return Reflect.apply(value,this===proxy?t:this,args)} }[value.name];
+                  Object.defineProperty(method,"length",{value:value.length,configurable:!0});
+                  methods.set(k,cloak(method,value.name))
                 }
-
-              }
-
-            })))
-          }
+                return methods.get(k)
+              }});
+              return proxy
+            }))
+          }}.enumerateDevices
 
         }
 
@@ -17520,17 +17357,6 @@
           })
         }
 
-      }
-      catch(_){
-
-      }
-      try{
-        window.AudioContext&&defp(AudioContext.prototype,
-        "sampleRate",
-        48000),
-        window.webkitAudioContext&&defp(webkitAudioContext.prototype,
-        "sampleRate",
-        48000)
       }
       catch(_){
 
@@ -18541,7 +18367,7 @@
           realPlay=proto&&proto.play;
           if(realPlay&&!realPlay.__wardenoneHiddenMediaGuard){
             const guardedPlay=function(){
-              const reason=playBlockReason(this);
+              const reason=WO.mediaShield&&!1!==WO.blockAutoplayMedia?playBlockReason(this):"";
               if(reason&&!recentMediaGesture()){
                 noteMedia("blocked_hidden_media",{
                   action:reason,
@@ -18830,10 +18656,7 @@
               }
               if(name==="pushState"&&btUrl()===btTarget(url)&&btLastPop&&btNow-btLastPop<BT_POP_WINDOW&&++btRearms>=2)return void btNotice("Each time you pressed Back this page put the same address straight back into your history, so Back could not leave. Pages that do this are usually trying to keep you on a scam or a fake alert.",
               "The repeat entries were refused, so Back works again.");
-              /* The other shape, and the one that does not need you to press Back at all: the
-              page quietly stacks entries while you read, so that by the time you do press it,
-              Back has to be pressed once for every entry before it can leave. Nothing asked
-              for any of them, which is what separates it from an app you are using. */
+              /* Unprompted history entries can trap Back navigation; distinguish them from user-driven app routes. */
               if(name==="pushState"&&(!btGestureAt||btNow-btGestureAt>BT_GESTURE_WINDOW)){
                 if(!btBurstStarted||btNow-btBurstStarted>BT_REPEAT_WINDOW){
                   btBurstStarted=btNow,
@@ -19062,12 +18885,8 @@
           /* Include the host so an entry remains identifiable after its tab closes; omit the script path. */
           host:location.hostname,
           matched:whole?"whole site":"part of the site",
-          /* The event still goes out when a worker was already there. It has to:
-             the worker keeps the list of sites that have one, and that list is
-             what clear-on-leave acts on -- suppress the message and the cleanup
-             quietly stops working for every site you did not install a worker on
-             during this exact visit. What changes is that this one does not draw
-             a card, and does not claim an installation happened. */
+          /* Report existing service workers for clear-on-leave tracking, without claiming a new installation or showing its
+             card. */
           existing:existing,
           severity:"Medium",
           confidence:"Very high",
@@ -19106,12 +18925,7 @@
       let notifLogged=0,
       notifCoaxPending=0,
       notifAsked=__woNotifAsked;
-      /* The page has asked for the permission -- through Notification.requestPermission or a
-      push subscription, the two ways a prompt can be raised, watched from document_start by
-      the ask observer above. Only then is "press Allow" an instruction aimed at a prompt
-      rather than a sentence about one. A security write-up, a help page, this project's own
-      README rendered on GitHub: all of them say "click Allow" and none of them ask, and every
-      one of them was being reported as bait. */
+      /* Treat Allow instructions as bait only after a notification or push request; articles can quote the same wording. */
       const notifAskedNow=()=>{
         notifAsked=!0;
         try{notifCheckCoax()}catch(_){ }
@@ -19195,9 +19009,7 @@
             }
 
           }),
-          /* requestPermission is deliberately passed straight through. permission-chain.js
-          owns that wrapper and reports the prompt, and the ask observer at document_start
-          already notes that the page asked; doing either here would say it twice. */
+          /* permission-chain.js reports permission requests; the early ask observer already records them here. */
           ["requestPermission"].forEach(name=>{
             try{
               Wrapped[name]=function(...args){
@@ -19233,9 +19045,7 @@
       catch(_){
 
       }
-      /* The coaxing only matters while the answer is still open and the page has asked:
-      once the site has been allowed or blocked the wording is just wording, and until it
-      asks, so is a page that only talks about the prompt. */
+      /* Coaxing matters only after the page asks and while permission remains undecided. */
       const notifCheckCoax=()=>{
         try{
           if(!WO_TOP||!notifAsked)return;
@@ -19317,26 +19127,19 @@
         serial:"High",
         hid:"High",
         bluetooth:"Medium",
-        /* Plain MIDI enumerates the music hardware attached to this machine, which is a
-        fingerprint most people would not guess they were handing over. sysex is a
-        different thing: System Exclusive is the channel a device's own firmware listens
-        on, so a page holding it is not playing notes, it is talking to the hardware --
-        which puts it alongside raw HID rather than alongside Bluetooth. */
+        /* Plain MIDI exposes hardware identity; sysex can send device-specific firmware commands and warrants a higher risk
+           level. */
         midi:"Medium",
         "midi-sysex":"High",
-        /* An immersive AR session is the room you are sitting in: the headset maps the
-        space and the page is handed the tracking. VR is the same machinery pointed at a
-        rendered world rather than yours, so it is a step down and not two. Inline is a
-        preview inside the page with no headset and no room, which is why it is Low. */
+        /* Immersive AR exposes room tracking; VR exposes headset tracking; inline previews expose neither immersive
+           surface. */
         "xr-immersive-ar":"High",
         "xr-immersive-vr":"Medium",
         "xr-inline":"Low",
         /* Answering "do you have a headset" needs no prompt and no session, so it is the
         quiet half of XR -- the same shape as getDevices above. */
         "xr-probe":"Low",
-        /* Writing can be permanent. An NDEF tag can be rewritten and some can be locked
-        read-only, which is not something a page should do to a physical object in your
-        pocket without you understanding why. Reading is a smaller thing. */
+        /* NFC writes can persist on physical tags, and making a tag read-only can be permanent. */
         "nfc-read":"Medium",
         "nfc-write":"High",
         /* Not a threat, and using a controller is not suspicious. The entropy is the
@@ -19344,11 +19147,7 @@
         gamepad:"Low"
       },
       devCounts=Object.create(null),
-      /* copy is optional. The four original surfaces all read as "connect to a <thing>
-      device", which is right for USB and wrong for an NFC tag or a headset -- so the
-      later surfaces pass their own sentence and everything else about the record stays
-      identical. One counter, one event kind, one shape in Activity: this is meant to be
-      one system that knows about eight APIs, not eight shields. */
+      /* Allow API-specific wording while keeping the shared counter, event kind and Activity record shape. */
       noteDevice=(kind,
       api,
       label,
@@ -19400,10 +19199,8 @@
         }
 
       },
-      /* The enumerate call is the quiet one, but an empty list means nothing was
-      ever granted and there is no story to tell -- so the result decides, not the
-      call. The page's own promise is handed back untouched; the inspection runs on
-      a derived one, with its own rejection handler so nothing is left unhandled. */
+      /* Only non-empty enumeration results reveal granted devices. Inspect a derived promise with its own rejection
+         handler; return the native promise unchanged. */
       devWrapEnumerate=(owner,
       name,
       api,
@@ -19462,12 +19259,8 @@
         }
 
       });
-      /* MIDI is the fifth of the family and the one that was missed, largely because it
-      does not fit the shape above: there is no navigator.midi object carrying a request
-      and an enumerate, just a single call. It is wrapped on its own for that reason, and
-      shares everything else -- the same counter, the same notice, the same silence when
-      the guard is off. Nothing is blocked; Chrome asks, and web synths and controller
-      editors are real uses. */
+      /* MIDI uses one navigator call rather than request/enumerate methods. Share reporting without replacing Chrome's
+         consent or blocking music applications. */
       try{
         const realMidi="undefined"!=typeof navigator&&navigator.requestMIDIAccess;
         "function"!=typeof realMidi||realMidi.__wardenoneDeviceGuard||(navigator.requestMIDIAccess=Object.assign(function(...args){
@@ -19722,10 +19515,8 @@
         }
 
       });
-      /* The quiet half. A handle kept from an earlier visit answers "granted" here and the
-      site can go straight to the file; nothing prompts. The page's own promise is handed
-      back untouched and the inspection runs on a derived one, with its own rejection
-      handler so nothing is left unhandled. */
+      /* A previously granted handle can access files without prompting. Inspect a derived promise with a rejection handler
+         and return the native promise unchanged. */
       try{
         const proto=window.FileSystemHandle&&window.FileSystemHandle.prototype,
         realQuery=proto&&proto.queryPermission;
@@ -19796,9 +19587,7 @@
         }
 
       },
-      /* Read only the strip where a window's title bar would be, and only text each
-      node owns. Reading the whole container would find the sign-in form's own
-      "google.com" wording and call every real login modal a fake window. */
+      /* Read only title-strip text owned by each node; whole-container text would include the real sign-in form's domain. */
       fwInspectHeader=(container,
       box)=>{
         const out={
@@ -19913,11 +19702,7 @@
         }
 
       },
-      /* A fake window has to contain either a password field or an embedded frame:
-      the decisive test below refuses to warn without one. Asking that FIRST costs a
-      selector match and no layout at all, and it lets the geometry reads skip nearly
-      every container on the page. Conservative by construction -- anything dropped
-      here could never have produced a warning, so detection is unchanged. */
+      /* Require a password field or frame before geometry reads; no candidate can warn without one. */
       fwCouldBeWindow=el=>{
         try{
           return!!el.querySelector('input[type="password"],input[autocomplete="current-password"],input[autocomplete="new-password"],iframe')
@@ -19927,9 +19712,7 @@
         }
 
       },
-      /* Candidates from one changed node, rather than from the whole document.
-      Walks UP as well as down: the node that changed is usually something inside
-      the window (a field, a logo), not the window container itself. */
+      /* Inspect ancestors as well as descendants of changed nodes; changes often occur inside the window container. */
       fwCollect=(root,
       out)=>{
         try{
@@ -20052,10 +19835,7 @@
       try{
         const observer=__woObserver(muts=>{
           for(const m of muts||[]){
-            /* Attribute changes are watched now, where before only childList was.
-            A container already in the page that is restyled into a positioned
-            window was previously found only by luck -- by whatever unrelated
-            mutation happened to trigger the next whole-document rescan. */
+            /* Watch attributes too: restyling an existing container can create a fake window without adding nodes. */
             if("attributes"===m.type){
               fwNote(m.target);
               continue
@@ -20129,9 +19909,7 @@
         }
 
       },
-      /* Only the strip where a browser's own chrome would have been, and only text a
-      node owns itself -- walking whole subtrees would pick up the page's body copy
-      and call any article that mentions a URL an address bar. */
+      /* Read node-owned text in the browser-chrome strip only; body copy mentioning URLs is not an address bar. */
       fsScanTopBand=()=>{
         const limit=Math.max(48,window.innerHeight*FS_TOP_BAND),
         found={
@@ -20273,9 +20051,7 @@
         }
 
       },
-      /* The fake chrome is painted just after the transition, not before it, so one
-      look on the event itself sees the page as it was. A couple of later passes
-      cost nothing and catch the version that animates in. */
+      /* Recheck after fullscreen transitions so animated fake chrome has time to appear. */
       fsOnChange=()=>{
         try{
           const el=document.fullscreenElement||document.webkitFullscreenElement;
@@ -20353,12 +20129,7 @@
       catch(_){
 
       }
-      /* Pointer lock hides the cursor and hands the page every mouse movement.
-         On its own that is a first-person game. On a page that has already been
-         caught painting browser furniture it removes the last thing separating a
-         fake window from a real one -- you cannot see what you are about to
-         click. Same rule as above: recorded always, refused only after the page
-         has shown what it is. */
+      /* Record pointer lock, but refuse it only after browser impersonation is detected; games need normal pointer lock. */
       try{
         const pl=window.Element&&Element.prototype&&Element.prototype.requestPointerLock;
         pl&&(Element.prototype.requestPointerLock=function requestPointerLock(...args){
@@ -20396,7 +20167,8 @@
     }
     if(WO.removeOverlays&&!trustedMediaHost&&!discordAppHost&&!/(^|\.)twitch\.tv$|(^|\.)mail\.google\.com$|(^|\.)reddit\.com$|(^|\.)(x\.com|twitter\.com)$|(^|\.)github\.com$/i.test(location.hostname)&&(!isGoogleSearchResults()||WO.blockSearchAiAnswers||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup)){
       /* Keep this binding mutable: start and observer teardown assign it. */
-      let cleanerMonitoring=!1;
+      let cleanerMonitoring=!1,
+      autoSkipIntent=null;
       const NUISANCE=/(cookie|consent|gdpr|newsletter|subscribe|sign[\s-]?up for|mailing list|email list|ad ?block|adblock|disable your ad|whitelist|allow ads|notification|paywall|register to (read|continue)|create (a )?free account|allow notifications?|turn on notifications?|enable notifications?|click (the )?bell)/i,
       AD_SIGNAL=/(advertisement|sponsored|ad\s*choices|adchoices|download now|continue to (your )?(download|the site)|no thanks,? (i|continue)|skip ad|your download will (begin|start)|presented by)/i,
       AUTO_SKIP_AD_HINT=/(advert|sponsor|ad\s*choices|adchoices|download|continue|thanks|skip|presented|box-c21|data-campaign)/i,
@@ -20688,10 +20460,7 @@
       isOverlay=el=>{
         try{
           if(!el||1!==el.nodeType||seen.has(el))return!1;
-          /* WardenOne must never clean its own UI. The rg- prefix covered the engine's own
-             widgets but not the bridge's security interstitials, which are wo- prefixed -- so the
-             cleaner could have removed the phishing warning itself. data-wo-ui="1" is the marker
-             EyeShield already uses, and it covers anything added later regardless of its id. */
+          /* Exclude both rg-/wo- widgets and data-wo-ui markers so cleanup cannot remove WardenOne security UI. */
           if("rg-undo-chip"===el.id||el.id&&(el.id.startsWith("rg-")||el.id.startsWith("wo-"))||el.getAttribute&&"1"===el.getAttribute("data-wo-ui"))return!1;
           const cs=getComputedStyle(el),
           pos=cs.position;
@@ -20700,10 +20469,7 @@
           const r=el.getBoundingClientRect();
           if(r.top>innerHeight||r.bottom<0)return!1;
           if(r.width<48||r.height<48)return!1;
-          /* Every way below to answer yes needs a fixed, sticky or absolute box:
-             closeMarkedPlayerPopup refuses anything else, and both final answers
-             require looksModal, which requires positioned. Reject static boxes
-             before reading their geometry or serialising their text. */
+          /* All positive paths require a positioned box. Reject static elements before geometry and text reads. */
           const z=parseInt(cs.zIndex,
           10)||0,
           text=(el.innerText||el.textContent||"").slice(0,
@@ -21054,10 +20820,8 @@
         const candidates=document.querySelectorAll('div,section,aside,a,button,span,i,svg,img,canvas,[onclick],[role="button"],[style*="position:fixed"],[style*="position: fixed"],[style*="position:absolute"],[style*="position: absolute"],[class*="bell"],[id*="bell"],[class*="notif"],[id*="notif"],[class*="notify"],[id*="notify"],[class*="push"],[id*="push"],[class*="subscribe"],[id*="subscribe"]');
         let count=0,
         inspected=0;
-        /* Siblings share parents, so overlayCandidate's verdict on a parent is kept for the
-           sweep, and dropped after a hide, which changes boxes. When no floating parent was
-           found the target IS el, and isOverlay -- pure within a sweep -- is not asked twice:
-           together those were most of the style and layout reads per candidate. */
+        /* Cache parent verdicts within a sweep and invalidate after hiding changes layout. Avoid retesting an
+           already-classified target. */
         const climbs=new Map;
         for(const el of candidates){
           if(inspected++>=600||count>=4)break;
@@ -21071,7 +20835,6 @@
         }
 
       },
-      SAFE_AUTOCLICK=/^(no thanks[ ,!.]*|.*continue downloading.*|continue to download|continue download|skip ad|skip this ad|continue anyway|no thanks i.?ll continue.*)$/i,
       SAFE_DOWNLOAD_URL=u=>{
         try{
           const x=new URL(String(u||""),
@@ -21089,49 +20852,54 @@
       "data-download",
       "data-file-url",
       "data-direct-url"],
+      autoSkipVisible=el=>{
+        try{
+          if(!el||!el.isConnected||el.hidden)return!1;
+          const rect=el.getBoundingClientRect(),
+          style=getComputedStyle(el);
+          return rect.width>2&&rect.height>2&&style.display!=="none"&&style.visibility!=="hidden"&&Number(style.opacity)!==0
+        }
+        catch(_){
+          return!1
+        }
+      },
+      autoSkipRequestedUrl=()=>autoSkipIntent&&Date.now()-autoSkipIntent.at<=3e4?autoSkipIntent.url:"",
       findDownloadUrl=()=>{
-        const roots=document.querySelectorAll('#box-c21-modal,#download-modal,[class*="box-c21"],[data-campaign-id]');
+        const requested=autoSkipRequestedUrl();
+        if(!requested)return null;
+        const roots=document.querySelectorAll('#box-c2l-modal,#box-c21-modal,#download-modal,[class*="box-c2l"],[class*="box-c21"]');
         for(const root of roots){
+          if(!autoSkipVisible(root))continue;
           for(const attr of DL_ATTRS){
-            const el=root.matches&&root.matches("["+attr+"]")?root:root.querySelector("["+attr+"]");
-            if(el){
+            const elements=root.matches&&root.matches("["+attr+"]")?[root]:root.querySelectorAll("["+attr+"]");
+            for(const el of elements){
               const v=el.getAttribute(attr);
-              if(v&&SAFE_DOWNLOAD_URL(v))return{
-                url:v,
-                host:el
+              try{
+                if(v&&SAFE_DOWNLOAD_URL(v)&&new URL(v,location.href).href===requested)return{
+                  url:requested,
+                  host:root
+                }
               }
-
+              catch(_){
+              }
             }
-
           }
-          const a=root.querySelector('a[download],a[href*="download"],a[href*="/dl"],a[href*="/file"]');
-          if(a){
+          for(const a of root.querySelectorAll('a[href]')){
             const v=a.href||a.getAttribute("href");
-            if(v&&SAFE_DOWNLOAD_URL(v))return{
-              url:v,
-              host:a
+            if(v===requested&&autoSkipVisible(a)&&!a.closest('[data-campaign-id]'))return{
+              url:requested,
+              host:root
             }
-
           }
-
         }
         return null
       },
-      removeAdModal=()=>{
-        const sels=["#box-c21-modal",
-        "#download-modal",
-        '[class*="box-c21"]',
-        "[data-campaign-id]"];
-        for(const s of sels)document.querySelectorAll(s).forEach(n=>{
-          try{
-            n.remove()
-          }
-          catch(_){
-
-          }
-
-        })
-
+      removeAdModal=gate=>{
+        try{
+          gate.remove()
+        }
+        catch(_){
+        }
       },
       tryAutoSkip=()=>{
         if(!overlayCleanerOn()||!WO.autoSkipDownloadAds||WO.__autoSkippedOnce)return!1;
@@ -21155,7 +20923,7 @@
         if(!adPresent)return!1;
         const dl=findDownloadUrl();
         if(dl)return WO.__autoSkippedOnce=!0,
-        removeAdModal(),
+        removeAdModal(dl.host),
         log("blocked_overlay",
         {
           matched:"box-c21 download-gate",
@@ -21163,7 +20931,10 @@
         }),
         setTimeout(()=>{
           try{
-            location.href=dl.url
+            if(overlayCleanerOn()&&WO.autoSkipDownloadAds&&autoSkipRequestedUrl()===dl.url){
+              autoSkipIntent=null,
+              location.href=dl.url
+            }
           }
           catch(_){
 
@@ -21172,28 +20943,6 @@
         },
         20),
         !0;
-        const link=findContinueLink(document);
-        if(link){
-          const label=(link.innerText||link.textContent||"").trim();
-          if(SAFE_AUTOCLICK.test(label))return WO.__autoSkippedOnce=!0,
-          setTimeout(()=>{
-            try{
-              link.click()
-            }
-            catch(_){
-
-            }
-
-          },
-          30),
-          log("blocked_overlay",
-          {
-            matched:(link.id||link.className||"continue-link").toString().slice(0,
-            60),
-            why:"download-gate auto-skipped (link)"
-          }),
-          !0
-        }
         return!1
       },
       start=()=>{
@@ -21254,6 +21003,23 @@
         },
         8e3)
       };
+      /* Continuations must match a visible link the reader actually requested; sponsor markup is not download intent. */
+      woOn(document,"click",event=>{
+        if(!event.isTrusted)return;
+        autoSkipIntent=null;
+        if(!overlayCleanerOn()||!WO.autoSkipDownloadAds||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
+        try{
+          const a=event.target&&event.target.closest&&event.target.closest('a[href]');
+          if(!a||!autoSkipVisible(a)||a.closest('[data-campaign-id],.box-c2l-offer,.box-c21-offer'))return;
+          const label=(a.innerText||a.getAttribute("aria-label")||"").trim(),
+          target=(a.getAttribute("target")||"").toLowerCase();
+          if(!/\b(download|save|export)\b/i.test(label)||target&&target!=="_self"||!SAFE_DOWNLOAD_URL(a.href))return;
+          autoSkipIntent={url:new URL(a.href,location.href).href,at:Date.now()},
+          setTimeout(start,0)
+        }
+        catch(_){
+        }
+      },!0);
       const restoreCleanerChanges=()=>{
         for(;
         undoStack.length;
@@ -21570,10 +21336,7 @@
         blocked_hidden_media:{
           title:"Hidden media blocked",
           why:"A hidden audio/video player tried to run in the background.",
-          /* Short enough that the model clamps it to the 3.3s floor, and at the
-             floor it reads as a flicker rather than a notice. Three tenths is
-             not a retune of the pace -- it is this card, which says its whole
-             piece in one line and was going before that line had landed. */
+          /* Give this short card 300ms beyond the minimum dwell so its single line remains readable. */
           dwell:3600
         },
         blocked_suspicious_webrtc:{
@@ -21774,11 +21537,13 @@
           if("behavioral_risk"===type&&detail&&detail.xssObserved)return!0;
           if(!QUIET_GOOGLE_TOAST_TYPES.has(type))return!1;
           const page=quietToastHost(location.hostname);
-          if(!QUIET_GOOGLE_PAGE_RE.test(page))return!1;
+          const googleCountry=h=>"function"==typeof wardenOneBrandCountrySite&&wardenOneBrandCountrySite(h,
+          "google");
+          if(!QUIET_GOOGLE_PAGE_RE.test(page)&&!googleCountry(page))return!1;
           const hosts=[detail&&detail.matched,
           detail&&detail.domain,
           detail&&detail.host].map(quietToastHost).filter(Boolean);
-          return hosts.some(h=>QUIET_GOOGLE_SERVICE_RE.test(h))
+          return hosts.some(h=>QUIET_GOOGLE_SERVICE_RE.test(h)||googleCountry(h))
         }
         catch(_){
           return!1
@@ -21828,9 +21593,7 @@
         toastSeen.add(key);
         if(ACTIVE_BLOCK_TOAST_TYPES.has(type))setTimeout(()=>toastSeen.delete(key),3e4);
         if(OWNED_TOAST_TYPES.has(type))__woEmit({type:"warning_toast",detail:{id:type}});
-        /* Report it once, here, where the decision to show is final -- not at
-           render, which is deferred by the stagger and would double-report a
-           card that never appeared. The worker takes the host from the tab. */
+        /* Report once when display is committed, before deferred rendering. The worker derives the host from the tab. */
         try{
           __woBackgroundRequest(__woSignedRequest({kind:"toast-shown",type:type}))
         }
@@ -22039,10 +21802,7 @@
 
         };
         if(!__woEventTrusted(d,e))return;
-        /* quiet means the guard cleaned something up that the user never saw and
-        never had a decision to make about. It still reaches the Activity Center;
-        it just does not interrupt. Distinct from "silent", which only suppresses
-        the redirect interstitial and deliberately still raises a card. */
+        /* quiet events reach Activity without a card. silent suppresses the redirect interstitial but retains the card. */
         d.detail&&!0===d.detail.quiet||(/^blocked_|^detected_|^warned_/.test(d.type||"")||"behavioral_risk"===d.type)&&showToast(d.type,
         d.detail)
       }),
@@ -22078,10 +21838,7 @@
       badgeLift=0,
       fadeT=null,
       badgeScrollbarWidth=null,
-      /* How long the badge stays legible before it settles back to a hint. It
-      announces itself once, then gets out of the way -- four seconds of that on
-      every page load was long enough to sit in the corner of a search result and
-      be read twice. */
+      /* Keep the badge's initial announcement brief before it settles to a hint. */
       BADGE_FADE_MS=1110,
       badgeEventsBound=!1,
       renderBadge=()=>{
@@ -22127,8 +21884,11 @@
       buildBadgeShadow=root=>{
         if(!root)return;
         clearNode(root);
-        const style=document.createElement("style");
-        style.textContent=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b.inert{pointer-events:none}.b.away{visibility:hidden;opacity:0;pointer-events:none}.b.away+.panel{display:none}.b{position:fixed;bottom:calc(16px + var(--rg-lift,0px));right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.62);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:calc(52px + var(--rg-lift,0px));right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
+        const css=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b.inert{pointer-events:none}.b.away{visibility:hidden;opacity:0;pointer-events:none}.b.away+.panel{display:none}.b{position:fixed;bottom:calc(16px + var(--rg-lift,0px));right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.62);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:calc(52px + var(--rg-lift,0px));right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
+        /* Constructed sheets keep shadow UI styled when page CSP rejects inline style elements. */
+        const sheet=new CSSStyleSheet();
+        sheet.replaceSync(css),
+        root.adoptedStyleSheets=[sheet];
         const badge=document.createElement("div"),
         dot=document.createElement("span"),
         label=document.createElement("span"),
@@ -22150,7 +21910,6 @@
         list.textContent="No blocks shown here yet. Open WardenOne for network activity.",
         panel.appendChild(title),
         panel.appendChild(list),
-        root.appendChild(style),
         root.appendChild(badge),
         root.appendChild(panel)
       },
@@ -22163,8 +21922,7 @@
           const parent=document.body||document.documentElement;
           if(parent){
             const probe=document.createElement("div");
-            probe.setAttribute("style",
-            "all:initial!important;position:absolute!important;top:-9999px!important;left:-9999px!important;width:100px!important;height:100px!important;overflow:scroll!important;visibility:hidden!important;pointer-events:none!important;"),
+            probe.style.cssText="all:initial!important;position:absolute!important;top:-9999px!important;left:-9999px!important;width:100px!important;height:100px!important;overflow:scroll!important;visibility:hidden!important;pointer-events:none!important;",
             parent.appendChild(probe),
             badgeScrollbarWidth=Math.max(0,
             Math.min(40,
@@ -22183,23 +21941,15 @@
       badgeYieldState={at:0,sig:"",route:"",profile:!1,liftApplied:!1},
       /* How long a hover-driven answer stays good while the viewport is unchanged. */
       BADGE_YIELD_CACHE_MS=4000,
-      /* How far up the badge may move to clear something before it gives up and goes
-      inert instead: a bar or a bubble is cleared in well under half the screen, and a
-      badge floating mid-screen would be stranger than one that is momentarily dead. */
+      /* Bound badge movement so it yields input rather than floating into the middle of the page. */
       BADGE_LIFT_MAX_RATIO=.45,
       BADGE_LIFT_GAP=8,
-      /* Twitch's chat column, by Twitch's own readable class names rather than the generated
-      ones beside them, and how far above the badge's corner it may end and still hold it: a
-      logged-out page puts a sign-up bar under the chat. */
+      /* Use Twitch's stable chat classes and allow for the logged-out sign-up bar below the chat. */
       BADGE_TWITCH_CHAT_SELECTOR='[class~="chat-shell"],[class~="stream-chat"],[class~="video-chat"],[data-test-selector="chat-room-component-layout"]',
       BADGE_TWITCH_CHAT_REACH=120,
       badgeTwitchHost=/(^|\.)twitch\.tv$/i.test(location.hostname||""),
-      /* The corner the badge lives in when nothing is in the way: its current box moved
-      back down by whatever lift it carries. Every check below measures HOME, so a lifted
-      badge keeps asking "is the corner free again?" rather than "is this spot free?" --
-      otherwise a badge lifted above a bar would find its new spot empty and drop straight
-      back onto the bar. Kept at its layout size while hidden (visibility, not display),
-      so a forced re-check over a player still measures something. */
+      /* Measure the badge's home corner, not its lifted position, to avoid oscillation. visibility preserves its layout box
+         while hidden. */
       badgeHomeRect=()=>{
         try{
           if(!badgeButton)return null;
@@ -22227,10 +21977,7 @@
         top:r.top-up,
         bottom:r.bottom-up
       }),
-      /* Whether the document itself can be scrolled. A control in the normal flow of a
-      document that cannot scroll -- a full-height app shell like Spotify's, whose panes
-      scroll inside it while the page never moves, or simply a short page -- stays where
-      it is exactly as a fixed one does. */
+      /* Controls in a non-scrolling app shell stay anchored even when their internal panes scroll. */
       badgeDocumentPinned=()=>{
         try{
           const se=document.scrollingElement||document.documentElement,
@@ -22335,12 +22082,8 @@
         try{
           const r=rect||badgeHomeRect();
           if(!r)return!1;
-          /* Asymmetric on purpose. Horizontally the badge only has to clear the control
-          it sits beside; vertically it has to clear a whole player bar, which is 60-100px
-          tall and pins its controls anywhere inside that band. A 32px vertical reach found
-          Spotify's slider on one window size and missed it on another -- the badge stayed
-          sitting on the volume control. The scale of the thing being avoided is what sets
-          the margin, not a single number that looked fine once. */
+          /* Use a larger vertical margin to clear full player bars; their controls can sit anywhere within the bar's
+             height. */
           const padX=32,
           padY=72,
           top=r.top-padY,
@@ -22411,11 +22154,7 @@
         }
 
       },
-      /* Twitch's chat column fills the badge's corner from the Chat button up: the message
-      field, then banners, polls and pinned notices, then the messages. The climb below always
-      found a spot, and every spot was chat someone was reading -- a different one each time a
-      banner came or went, which is why the chip seemed to wander. Hidden there, as on a
-      Discord server; protection and the toolbar badge run as before. */
+      /* Hide the chip over Twitch chat rather than moving it over messages. Protection and the toolbar badge remain active. */
       badgeOnTwitchChat=home=>{
         try{
           if(!badgeTwitchHost||!home)return!1;
@@ -22431,9 +22170,7 @@
         }
         return!1
       },
-      /* Throttled, because the hit test below is a real layout read. Callers are
-      events that can actually change the answer -- entering fullscreen, resizing,
-      or the pointer arriving in the badge's own corner -- never a timer. */
+      /* Throttle hit tests because they force layout; rerun on changes that can affect this corner. */
       updateBadgeYield=force=>{
         try{
           if(!badgeButton||!badgeHost)return;
@@ -22496,28 +22233,20 @@
             }
 
           }
-          /* The hover path never brings a lifted badge back DOWN: the pointer has just
-          arrived where the badge is, and dropping it eighty pixels at that moment is
-          how a click misses. It comes home on the next forced check -- resize,
-          fullscreen, a player starting -- when nobody is aiming at it. */
+          /* Hover never lowers a lifted badge beneath an arriving pointer. Forced resize, fullscreen or playback checks can
+             return it home. */
           !force&&!away&&lift<badgeLift&&(lift=badgeLift);
           (!badgeYieldState.liftApplied||badgeLift!==lift)&&(badgeLift=lift,
           badgeYieldState.liftApplied=!0,
           badgeHost.style.setProperty("--rg-lift",
           lift+"px")),
-          /* Over a player the badge is HIDDEN, not merely inert. It sits on the volume
-          slider and the seek bar, and letting the click through is no comfort when you
-          cannot see the thing you are dragging. Over an ordinary anchored control it
-          moves up; only when it cannot does it stay visible and stop taking input,
-          because vanishing on every page with something in that corner would be worse
-          than the problem. */
+          /* Hide over player controls so sliders remain visible. Over ordinary controls, move up or yield input if movement
+             is exhausted. */
           badgeButton.classList.toggle("away",
           away),
           badgeButton.classList.toggle("inert",
           inert),
-          /* A badge that has just stopped taking input cannot close its own panel, so a panel
-          left open at that moment stayed open with nothing able to dismiss it. Closed here;
-          the badge reopens it the next time it can be pressed. */
+          /* Close the panel when its badge stops accepting input, since the badge can no longer dismiss it. */
           (away||inert)&&badgePanel&&badgePanel.classList.remove("open")
         }
         catch(_){
@@ -22553,19 +22282,14 @@
       mount=()=>{
         if(!1!==WO.showBadge){
           if(!badgeHost||!document.documentElement.contains(badgeHost))try{
-            /* Repair reinstalls the engine in a frame that may already be showing a badge. This
-               copy's badgeHost is null while the previous copy's host is still in the DOM, so
-               building unconditionally leaves the old host and its click listener behind and
-               mounts a second one on top. Adopt by removing whatever is already there: it is not
-               this copy's node, so nothing here can reuse it. */
+            /* Remove a previous copy's badge before building; its host and listener cannot be reused by this closure. */
             const stale=document.getElementById("rg-badge-host");
             stale&&stale!==badgeHost&&stale.remove();
             const host=badgeHost=document.createElement("div");
             host.id="rg-badge-host",
             /* Reset and zero-size the fixed host so page CSS cannot make it a containing block or affect layout.
                Shadow DOM protects descendants, not the host’s transform/filter/contain properties. */
-            host.setAttribute("style",
-            "all:initial!important;position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;z-index:2147483646!important;pointer-events:none!important;"),
+            host.style.cssText="all:initial!important;position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;z-index:2147483646!important;pointer-events:none!important;",
             host.attachShadow({
               mode:"open"
             }),
@@ -22660,13 +22384,8 @@
             },
             !badgeEventsBound){
               badgeEventsBound=!0;
-              /* Twitch also collapses and expands its chat on the same route -- its own
-              button, a shortcut, a narrow window -- and nothing below re-checks for that: the
-              chip stayed hidden over a corner that had come free, or showed over the Chat
-              button when the chat came back. The chat column's own size is the signal. It
-              changes when the column opens or closes, not when a message arrives, because the
-              messages scroll inside it. A column that mounts later is picked up on the route
-              and load follow-ups, and a detached one is let go. */
+              /* Observe chat-column size to detect Twitch collapse/expand without reacting to message churn. Release
+                 detached columns and discover late mounts on route/load follow-ups. */
               const twitchChats=new Set();
               let twitchChatT=0;
               const twitchChatCleanup={disconnect(){
@@ -22697,11 +22416,7 @@
                 updateBadgeYield(!0)
               };
               if(discordAppHost||badgeTwitchHost){
-                /* Both are single-page apps: a channel or a server is entered without a
-                reload, and leaving the chat behind must bring the chip back. A Twitch
-                channel's chat mounts after its route changes, and an offline channel has no
-                play event to re-check on, so a changed route is looked at again once it has
-                had time to render, as at load. */
+                /* Recheck after SPA routes and a rendering delay; Twitch chat can mount without a playback event. */
                 const onRoute=()=>{
                   const before=badgeYieldState.route;
                   badgeRouteChanged(),
@@ -22746,13 +22461,8 @@
               woOn(document,
               "webkitfullscreenchange",
               ()=>updateBadgeYield(!0)),
-              /* Deliberately NOT on pointermove. Watching the pointer meant running a
-              hit test while someone was dragging Spotify's volume slider, and
-              elementsFromPoint forces a synchronous layout -- so the check made the
-              very control it was trying to protect feel laggy, and reacted to the
-              pointer merely passing through the corner. What is underneath the badge
-              only changes when the page does, so this listens for that instead.
-              A player appearing is the case that matters and it is announced. */
+              /* Avoid pointermove hit tests: elementsFromPoint forces layout during slider drags. Recheck on page and
+                 playback changes instead. */
               woOn(document,
               "play",
               ()=>updateBadgeYield(!0),
@@ -22767,10 +22477,7 @@
               {
                 passive:!0
               }),
-              /* Single-page apps mount their player after first paint, and Spotify
-              re-renders its player bar on navigation, so one late look is not enough.
-              Three cheap one-shots cover a bar that arrives seconds in without polling
-              for it. */
+              /* Bounded follow-ups cover late-mounted and replaced SPA player bars without polling. */
               setTimeout(recheckBadge,
               1500),
               setTimeout(recheckBadge,

@@ -12,7 +12,7 @@
 (function wardenOneSpotifyAdblock() {
   'use strict';
 
-  const VERSION = '1.0.2';
+  const VERSION = '1.0.3';
   if (!/^open\.spotify\.com$/i.test(String(location.hostname || ''))) return;
   if (window.__wardenOneSpotifyAdblockReady) return;
   window.__wardenOneSpotifyAdblockReady = VERSION;
@@ -107,11 +107,8 @@
   let woToken = null;
   let woKey = null;
   let woLastSeq = 0;
-  /* HMAC-SHA256 over UTF-8 text, in plain JS. crypto.subtle is absent on http: pages and
-     asynchronous everywhere, and this has to answer inside a synchronous DOM event. Every
-     reference it needs is captured here, before the page runs, so a page that rewrites
-     TextEncoder or Uint8Array later changes nothing about what it computes. Not a general
-     library: fixed 32-byte key (hex), text in, hex out. */
+  /* Synchronous DOM replies need HMAC without crypto.subtle, which is async and unavailable on HTTP. Capture built-ins
+     before page scripts; keys are fixed 32-byte hex values. */
   /* AUTH-BEGIN: shared by MAIN-world receivers and the isolated bridge. */
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
@@ -570,11 +567,8 @@
     }
     return known;
   }
-  /* Only Spotify's own label counts: a content object whose `_uri` is `spotify:ad:`. Its
-     direct URL (`_url`, a file_urls_mp3 ad or a storage-resolved file_ids_mp3 ad) and the
-     candidates of a manifest-delivered ad (`_playableContentSorted[].url`, plus the choice
-     already made in `_adURL`) all become the silent clip. Songs, episodes and podcasts carry
-     other URIs and are never looked at further. */
+  /* Replace URLs only on content labeled spotify:ad:, including manifest candidates and resolved files. Other URI types
+     bypass this path. */
   function silenceAdContent(content) {
     if (!enabled || disposed) return false;
     try {
@@ -734,19 +728,13 @@
     } catch (_) {}
     return worker;
   }
-  /* Build the real worker behind a shim blob. The shim installs the hooks, then loads the
-     original: importScripts for a classic worker, dynamic import() for a module worker (its
-     relative imports resolve against the original URL, not the blob). Any failure -- a blob
-     the shim cannot build, a URL it cannot resolve -- falls back to the native worker, so a
-     worker WardenOne cannot wrap is never a worker it breaks. */
+  /* Load hooks before the original worker via importScripts or module import(), preserving original import resolution. Fall
+     back to the native worker if shim construction fails. */
   function shimWorker(Ctor, url, opts) {
     try {
       if (typeof nativeCreateObjectURL !== 'function' || typeof NativeBlob !== 'function') return null;
-      /* Only a same-origin http(s) script worker is safe to run through the shim: our shim
-         loads the original with importScripts/import, and a cross-origin script without CORS
-         (or an already-opaque blob:/data: worker) would fail to load and take playback with
-         it. Anything else falls back to the native worker, untouched -- a worker WardenOne
-         cannot wrap is never a worker it breaks. */
+      /* Shim only same-origin HTTP(S) script workers. Cross-origin and opaque sources may fail under importScripts/import
+         and must stay native. */
       var u = new NativeURL(String(url), location.href);
       if (!/^https?:$/.test(u.protocol) || u.origin !== location.origin) return null;
       var abs = u.href;

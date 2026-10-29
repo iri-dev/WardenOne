@@ -273,6 +273,7 @@ function describeExtensionDelta(previous, current, now) {
   const versionChanged = !previous.legacy && !!previous.version && previous.version !== current.version;
   const stateChanged = !previous.legacy && typeof previous.enabled === 'boolean' && previous.enabled !== current.enabled;
   const installTypeChanged = !previous.legacy && !!previous.installType && previous.installType !== current.installType;
+  const nameChanged = !previous.legacy && !!previous.name && previous.name !== current.name;
   const disabledReasonChanged = !previous.legacy && previous.disabledReason !== current.disabledReason;
   const metadataChanged = !previous.legacy && ((previous.name && previous.name !== current.name)
     || installTypeChanged || disabledReasonChanged);
@@ -297,11 +298,16 @@ function describeExtensionDelta(previous, current, now) {
     if (gained.length && !gainedRisk.flags.length) reasons.push('Only lower-impact access was added: ' + gained.map(extensionPermissionLabel).join('; '));
     if (removed.length) reasons.push('Removed: ' + removed.map(extensionPermissionLabel).join('; '));
     let severity = (gained.length || joinedCapabilities.length) ? combinedDeltaLevel : 'low';
+    if (nameChanged || installTypeChanged) {
+      if (EXT_RISK_RANK[severity] < EXT_RISK_RANK.medium) severity = 'medium';
+      if (nameChanged) reasons.push('Extension display name changed');
+      if (installTypeChanged) reasons.push('Extension install source changed to ' + current.installType);
+    }
     if (permissionIncreaseDisable) {
       summary += '; Chrome disabled it until you approve the increased access';
       reasons.unshift('Chrome requires you to approve the extension\'s increased access before it can run again');
       if (EXT_RISK_RANK[severity] < EXT_RISK_RANK.medium) severity = 'medium';
-    } else if (!current.enabled && severity !== 'low') {
+    } else if (!current.enabled && severity !== 'low' && !nameChanged && !installTypeChanged) {
       severity = lowerExtensionSeverity(severity);
     }
     return makeExtensionEvent(kind, current, previous, {
@@ -312,16 +318,18 @@ function describeExtensionDelta(previous, current, now) {
       gainedPermissions: gained,
       removedPermissions: removed,
       accessChanged: !!accessChanged,
+      identityChanged: nameChanged,
+      installTypeChanged,
     });
   }
 
-  if (stateChanged) {
+  if (stateChanged && !installTypeChanged && !nameChanged) {
     const profile = extensionRiskFromTokens(new Set(current.permissions), current.installType);
     const enabled = current.enabled;
     const permissionIncreaseDisable = !enabled && current.disabledReason === 'permissions_increase';
     return makeExtensionEvent(enabled ? 'enabled' : 'disabled', current, previous, {
       when: now,
-      severity: enabled ? lowerExtensionSeverity(profile.level)
+      severity: enabled ? 'low'
         : (permissionIncreaseDisable ? (profile.level === 'low' ? 'medium' : lowerExtensionSeverity(profile.level)) : 'low'),
       summary: enabled ? 'Extension was enabled again' : (permissionIncreaseDisable
         ? 'Chrome disabled this extension after it requested more permissions'
@@ -338,9 +346,10 @@ function describeExtensionDelta(previous, current, now) {
     const sourceRisk = extensionRiskFromTokens(new Set(), current.installType);
     return makeExtensionEvent('metadata_changed', current, previous, {
       when: now,
-      severity: sourceRisk.level,
+      severity: sourceRisk.level === 'low' ? 'medium' : sourceRisk.level,
       summary: 'Extension install source changed',
       reasons: sourceRisk.flags.length ? sourceRisk.flags : ['Chrome now reports the install source as ' + current.installType],
+      installTypeChanged: true,
     });
   }
 
@@ -355,16 +364,16 @@ function describeExtensionDelta(previous, current, now) {
 
   return makeExtensionEvent('metadata_changed', current, previous, {
     when: now,
-    severity: 'low',
+    severity: nameChanged ? 'medium' : 'low',
     summary: previous.name && previous.name !== current.name ? 'Extension display name changed' : 'Extension install details changed',
     reasons: ['No new permissions were added'],
+    identityChanged: nameChanged,
   });
 }
 
 function extensionInstallEvent(current, now) {
   const profile = extensionRiskFromTokens(new Set(current.permissions), current.installType);
-  let severity = profile.level;
-  if (!current.enabled && severity !== 'low') severity = lowerExtensionSeverity(severity);
+  const severity = ['development', 'sideload', 'other'].includes(current.installType) ? 'medium' : 'low';
   return makeExtensionEvent('installed', current, null, {
     when: now,
     severity,
@@ -475,7 +484,18 @@ async function snapshotExtensionBaseline() {
 }
 
 function shouldNotifyExtensionEvent(event) {
-  return !!event && EXT_ATTENTION_LEVELS.has(event.severity) && !event.reviewedAt;
+  return !!event && !isRoutineExtensionEvent(event) && EXT_ATTENTION_LEVELS.has(event.severity) && !event.reviewedAt;
+}
+
+function isRoutineExtensionEvent(event) {
+  if (!event || event.accessChanged || event.identityChanged || event.installTypeChanged) return false;
+  if (event.kind === 'enabled') return !(event.gainedPermissions || []).length;
+  return event.kind === 'installed' && !['development', 'sideload', 'other'].includes(event.installType);
+}
+
+function normalizeExtensionWatchAlert(event) {
+  if (!isRoutineExtensionEvent(event) || event.severity === 'low') return event;
+  return Object.assign({}, event, { severity: 'low', reviewedAt: event.reviewedAt || event.when || Date.now() });
 }
 
 function extensionNotificationMessage(event) {
@@ -602,14 +622,15 @@ async function reconcileExtensionChangesNow(trigger, options) {
     var ownId = '';
     try { ownId = (chrome && chrome.runtime && chrome.runtime.id) || ''; } catch (_) { ownId = ''; }
     const storedAlerts = Array.isArray(stored && stored[EXT_ALERTS_KEY]) ? stored[EXT_ALERTS_KEY] : [];
-    const oldAlerts = ownId ? storedAlerts.filter((event) => !event || event.id !== ownId) : storedAlerts;
-    const sweptSelfAlert = oldAlerts.length !== storedAlerts.length;
+    const oldAlerts = storedAlerts.filter((event) => !ownId || !event || event.id !== ownId).map(normalizeExtensionWatchAlert);
+    const alertsChanged = oldAlerts.length !== storedAlerts.length
+      || oldAlerts.some((event, index) => event !== storedAlerts[index]);
     const alerts = events.concat(oldAlerts).slice(0, EXT_ALERTS_MAX);
     const storageUpdate = {
       [EXT_BASELINE_KEY]: nextBaseline,
       [EXT_WATCH_STATUS_KEY]: status,
     };
-    if (events.length || sweptSelfAlert) storageUpdate[EXT_ALERTS_KEY] = alerts;
+    if (events.length || alertsChanged) storageUpdate[EXT_ALERTS_KEY] = alerts;
     await localSet(storageUpdate);
     logExtensionEvents(events);
     await notifyExtensionEvents(events);

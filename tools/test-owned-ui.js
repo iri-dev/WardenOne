@@ -484,7 +484,7 @@ function loadCookieEscape() {
 // Reset the badge host too: page transforms/filters/containment can otherwise reanchor its fixed child
 // despite shadow DOM isolation.
 {
-  const hostStyle = (ENGINE.match(/host\.id="rg-badge-host",[\s\S]{0,900}?host\.setAttribute\("style",\s*"([^"]+)"/) || [])[1] || '';
+  const hostStyle = (ENGINE.match(/host\.id="rg-badge-host",[\s\S]{0,900}?host\.style\.cssText="([^"]+)"/) || [])[1] || '';
   check('the badge host is styled at all', !!hostStyle);
   check('page CSS cannot reach the badge host', /all:initial!important/.test(hostStyle),
     'without all:initial a page rule can move the badge by capturing its containing block');
@@ -531,6 +531,31 @@ function loadCookieEscape() {
   check('the packaged engine has no badge blur',
     !MIN.includes('backdrop-filter:blur(14px) saturate(1.4)'),
     'the fix has to reach content.min.js, not just the source');
+}
+
+{
+  const builder = sourceBetween(ENGINE, 'buildBadgeShadow=root=>{', '      /* Compensate')
+    .trim().replace(/,$/, '').replace(/^buildBadgeShadow=/, '');
+  const { document, makeNode } = makeDom();
+  class Sheet {
+    replaceSync(css) { this.css = css; }
+  }
+  const build = vm.runInNewContext('(' + builder + ')', {
+    document, CSSStyleSheet: Sheet, clearNode(root) { root.children.length = 0; },
+  });
+  const root = makeNode('#shadow-root');
+  build(root);
+  check('badge styles are adopted inside its own shadow root',
+    root.adoptedStyleSheets.length === 1 && root.adoptedStyleSheets[0] instanceof Sheet);
+  check('badge rendering does not depend on a CSP-blocked inline style element',
+    root.children.every((node) => node.tagName !== 'STYLE'));
+  check('the adopted stylesheet keeps the panel hidden and the badge fixed',
+    /\.panel\{[^}]*display:none/.test(root.adoptedStyleSheets[0].css)
+      && /\.b\{[^}]*position:fixed/.test(root.adoptedStyleSheets[0].css));
+  check('badge styles do not enter the page stylesheet list', document.adoptedStyleSheets === undefined);
+  build(root);
+  check('rebuilding a badge replaces its sheet and nodes',
+    root.adoptedStyleSheets.length === 1 && root.children.length === 2);
 }
 
 // Compensate scrollbar-less pages without shifting pages that already reserve a gutter

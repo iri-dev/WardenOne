@@ -140,6 +140,7 @@ async function wake(b, opts) {
     GRABBER_FEED_RULE_BASE: 740000, GRABBER_FEED_MAX: 1000, GRABBER_NAV_RULE_ID: 741000,
     GRABBER_MALWARE_NAV_RULE_ID: 741001,
     GRABBER_FEED_DOMAINS: new Set(b.state.grabberDomains), GRABBER_FEED_RULE_HOSTS: new Map(),
+    __grabberFeedReady: true, __minerFeedReady: true,
     MINER_FEED_RULE_BASE: 742000, MINER_FEED_MAX: 1000, MINER_POOL_RULE_OFFSET: 700,
     MINER_HOSTS: new Set(b.state.minerHosts), MINER_POOL_HOSTS: new Set(b.state.minerPools),
     MINER_RESOURCE_TYPES: ['script', 'xmlhttprequest'], MINER_POOL_RESOURCE_TYPES: ['websocket'],

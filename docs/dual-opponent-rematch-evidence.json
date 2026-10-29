@@ -1,0 +1,753 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-29T07:04:24.946Z",
+  "finalRuntime": {
+    "fingerprint": "e6013bc0bd6e821e4d85a09261ce22297730fbae0680a030c1925728a541297f",
+    "files": 147,
+    "version": "1.0.2",
+    "tree": "decce91210f6bb53240be4b04ec9472431d2b7e9",
+    "archiveSha256": "6e51d9e630ad15f6f6fb884718ac3cf39c61861c6347ceff0e403e65ac8de011",
+    "sourceArchiveSha256": "e5e70c814d086e66fc8d8dacab05dc75a357d28a899000ac391f0cdf4e7c6d59"
+  },
+  "artifacts": [
+    {
+      "path": "tmp/dual-rematch-2026-10-29/dual-network-accepted.json",
+      "sha256": "6ded082a7e41da7a61c27f8256d26dab5b5cbbf803ad79cc7663503ab823adbe"
+    },
+    {
+      "path": "tmp/dual-rematch-2026-10-29/cookie-compatibility-accepted.json",
+      "sha256": "723696bc398150725a6b896a2f1455be105771827a6fd35414e5af6df4d9e2be"
+    },
+    {
+      "path": "tmp/dual-rematch-2026-10-29/tracker-cookies-verified.json",
+      "sha256": "c97c4f3568d494fd2f4950d43991938a815fec85e1e5b961dcacd012a0ab6603"
+    },
+    {
+      "path": "tmp/dual-rematch-2026-10-29/ghostery-current-five-3.json",
+      "sha256": "63c47bbf5f26cfd3a57508ae82c382eb7f2d0ca9e01c20f1c9a48c40caa00d79"
+    },
+    {
+      "path": "tmp/dual-rematch-2026-10-29/privacy-current.json",
+      "sha256": "539a972c8c312970dcb31a1831342f9847b7008c976ec9439a4dbb4825a766b8"
+    },
+    {
+      "path": "tmp/dual-rematch-2026-10-29/privacy-summary-cookie-review.json",
+      "sha256": "d8761188ab1755158cc9a55ae9f89a1c8f718336b70c43f43de41db17edf3336"
+    },
+    {
+      "path": "tmp/dual-rematch-2026-10-29/gate-verified.log",
+      "sha256": "413852a193b641f212a9a238abaff549bbbba5a873a3503932b6e697c1896ac5"
+    },
+    {
+      "path": "tmp/dual-rematch-2026-10-29/gate-current-workspace.log",
+      "sha256": "413852a193b641f212a9a238abaff549bbbba5a873a3503932b6e697c1896ac5"
+    }
+  ],
+  "network": [
+    {
+      "build": "off",
+      "samples": 5,
+      "perRun": [
+        {
+          "repetition": 0,
+          "blocked": 0,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 1,
+          "blocked": 0,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 2,
+          "blocked": 0,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 3,
+          "blocked": 0,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 4,
+          "blocked": 0,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        }
+      ],
+      "recovery": []
+    },
+    {
+      "build": "candidate",
+      "samples": 5,
+      "perRun": [
+        {
+          "repetition": 0,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 1,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 2,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 3,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 4,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        }
+      ],
+      "recovery": [
+        {
+          "privateHeapReplaced": true,
+          "rulesSurvived": true,
+          "requestStatusPreserved": true
+        }
+      ]
+    },
+    {
+      "build": "privacybadger",
+      "samples": 5,
+      "perRun": [
+        {
+          "repetition": 0,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 1,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 2,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 3,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 4,
+          "blocked": 4,
+          "replaced": 0,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        }
+      ],
+      "recovery": [
+        {
+          "privateHeapReplaced": true,
+          "rulesSurvived": true,
+          "requestStatusPreserved": true
+        }
+      ]
+    },
+    {
+      "build": "ghostery",
+      "samples": 5,
+      "perRun": [
+        {
+          "repetition": 0,
+          "blocked": 3,
+          "replaced": 1,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 1,
+          "blocked": 3,
+          "replaced": 1,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 2,
+          "blocked": 3,
+          "replaced": 1,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 3,
+          "blocked": 3,
+          "replaced": 1,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        },
+        {
+          "repetition": 4,
+          "blocked": 3,
+          "replaced": 1,
+          "controlDeliveryFailures": 0,
+          "allCompatibilityFixturesPassed": true
+        }
+      ],
+      "recovery": [
+        {
+          "privateHeapReplaced": true,
+          "rulesSurvived": true,
+          "requestStatusPreserved": true
+        }
+      ]
+    }
+  ],
+  "cookies": [
+    {
+      "build": "off",
+      "samples": 3,
+      "cases": [
+        {
+          "name": "identity-fetch",
+          "requiresCookie": false,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        },
+        {
+          "name": "payment-script",
+          "requiresCookie": false,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        },
+        {
+          "name": "identity-frame",
+          "requiresCookie": true,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        },
+        {
+          "name": "payment-frame",
+          "requiresCookie": true,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        }
+      ],
+      "topLevelSessionsPassed": true
+    },
+    {
+      "build": "candidate",
+      "samples": 3,
+      "cases": [
+        {
+          "name": "identity-fetch",
+          "requiresCookie": false,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        },
+        {
+          "name": "payment-script",
+          "requiresCookie": false,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        },
+        {
+          "name": "identity-frame",
+          "requiresCookie": true,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        },
+        {
+          "name": "payment-frame",
+          "requiresCookie": true,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        }
+      ],
+      "topLevelSessionsPassed": true
+    },
+    {
+      "build": "privacybadger",
+      "samples": 3,
+      "cases": [
+        {
+          "name": "identity-fetch",
+          "requiresCookie": false,
+          "outgoingCookieRuns": 0,
+          "incomingCookieRuns": 0,
+          "usableRuns": 3
+        },
+        {
+          "name": "payment-script",
+          "requiresCookie": false,
+          "outgoingCookieRuns": 0,
+          "incomingCookieRuns": 0,
+          "usableRuns": 3
+        },
+        {
+          "name": "identity-frame",
+          "requiresCookie": true,
+          "outgoingCookieRuns": 0,
+          "incomingCookieRuns": 0,
+          "usableRuns": 0
+        },
+        {
+          "name": "payment-frame",
+          "requiresCookie": true,
+          "outgoingCookieRuns": 0,
+          "incomingCookieRuns": 0,
+          "usableRuns": 0
+        }
+      ],
+      "topLevelSessionsPassed": true
+    },
+    {
+      "build": "ghostery",
+      "samples": 3,
+      "cases": [
+        {
+          "name": "identity-fetch",
+          "requiresCookie": false,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        },
+        {
+          "name": "payment-script",
+          "requiresCookie": false,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        },
+        {
+          "name": "identity-frame",
+          "requiresCookie": true,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        },
+        {
+          "name": "payment-frame",
+          "requiresCookie": true,
+          "outgoingCookieRuns": 3,
+          "incomingCookieRuns": 3,
+          "usableRuns": 3
+        }
+      ],
+      "topLevelSessionsPassed": true
+    }
+  ],
+  "nativeCookieChecks": [
+    {
+      "build": "reference",
+      "run": 1,
+      "complete": true,
+      "scenarios": 10,
+      "selected": []
+    },
+    {
+      "build": "candidate",
+      "run": 1,
+      "complete": true,
+      "scenarios": 39,
+      "selected": [
+        {
+          "name": "auth-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "payment-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-tracker",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-alias",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-own-session",
+          "sent": true,
+          "stored": true
+        }
+      ]
+    },
+    {
+      "build": "candidate",
+      "run": 2,
+      "complete": true,
+      "scenarios": 39,
+      "selected": [
+        {
+          "name": "auth-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "payment-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-tracker",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-alias",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-own-session",
+          "sent": true,
+          "stored": true
+        }
+      ]
+    },
+    {
+      "build": "reference",
+      "run": 2,
+      "complete": true,
+      "scenarios": 10,
+      "selected": []
+    },
+    {
+      "build": "reference",
+      "run": 3,
+      "complete": true,
+      "scenarios": 10,
+      "selected": []
+    },
+    {
+      "build": "candidate",
+      "run": 3,
+      "complete": true,
+      "scenarios": 39,
+      "selected": [
+        {
+          "name": "auth-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "payment-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-tracker",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-alias",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-own-session",
+          "sent": true,
+          "stored": true
+        }
+      ]
+    },
+    {
+      "build": "candidate",
+      "run": 4,
+      "complete": true,
+      "scenarios": 39,
+      "selected": [
+        {
+          "name": "auth-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "payment-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-tracker",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-alias",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-own-session",
+          "sent": true,
+          "stored": true
+        }
+      ]
+    },
+    {
+      "build": "reference",
+      "run": 4,
+      "complete": true,
+      "scenarios": 10,
+      "selected": []
+    },
+    {
+      "build": "reference",
+      "run": 5,
+      "complete": true,
+      "scenarios": 10,
+      "selected": []
+    },
+    {
+      "build": "candidate",
+      "run": 5,
+      "complete": true,
+      "scenarios": 39,
+      "selected": [
+        {
+          "name": "auth-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "auth-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "payment-initiated-tracker",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-initiated-alias",
+          "sent": false,
+          "stored": false
+        },
+        {
+          "name": "payment-own-session",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-tracker",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-initiated-alias",
+          "sent": true,
+          "stored": true
+        },
+        {
+          "name": "media-own-session",
+          "sent": true,
+          "stored": true
+        }
+      ]
+    }
+  ],
+  "performance": {
+    "scope": "Earlier frozen runtime 53a7524aa9c4bcda922cd29e312c64c23320b62365bc0267757895e05871d5cb before the final cookie and Script Drift changes. No five-block post-change performance claim.",
+    "reportComplete": false,
+    "eligibleWardenGhosteryComparisons": 24,
+    "failed": [
+      {
+        "arm": "off",
+        "block": 1,
+        "page": "auth",
+        "cache": "warm",
+        "error": "AssertionError [ERR_ASSERTION]: nonnegative cumulative renderer counter\n    at measure (tools\\browser-ghostery-performance.js:37:5)\n    at async trial (tools\\browser-ghostery-performance.js:74:15)\n    at async main (tools\\browser-ghostery-performance.js:93:191)"
+      }
+    ],
+    "arms": [
+      {
+        "arm": "off",
+        "coldTaskSumMs": 562.1089999999999,
+        "warmTaskSumMs": 538.4625,
+        "articleRendererHeapMiB": 0.522613525390625,
+        "articleWorkerHeapMiB": null,
+        "peakPrivateMiB": 533.74
+      },
+      {
+        "arm": "warden-recommended",
+        "coldTaskSumMs": 1782.9180000000003,
+        "warmTaskSumMs": 1783.7570000000003,
+        "articleRendererHeapMiB": 3.143909454345703,
+        "articleWorkerHeapMiB": 22.48989486694336,
+        "peakPrivateMiB": 733.93
+      },
+      {
+        "arm": "ghostery-default",
+        "coldTaskSumMs": 1132.168,
+        "warmTaskSumMs": 1074.192,
+        "articleRendererHeapMiB": 1.3046989440917969,
+        "articleWorkerHeapMiB": 16.683902740478516,
+        "peakPrivateMiB": 831.03
+      },
+      {
+        "arm": "warden-maximum",
+        "coldTaskSumMs": 1895.064,
+        "warmTaskSumMs": 1906.7969999999998,
+        "articleRendererHeapMiB": 3.3311386108398438,
+        "articleWorkerHeapMiB": 21.370697021484375,
+        "peakPrivateMiB": 746.48
+      },
+      {
+        "arm": "ghostery-maximum",
+        "coldTaskSumMs": 1233.3559999999998,
+        "warmTaskSumMs": 1155.7450000000001,
+        "articleRendererHeapMiB": 1.3601455688476562,
+        "articleWorkerHeapMiB": 17.086990356445312,
+        "peakPrivateMiB": 823.58
+      }
+    ]
+  },
+  "validation": {
+    "fullGate": "pass for frozen candidate",
+    "currentWorkspaceGate": "pass after later popup edits",
+    "suites": 347,
+    "realIndex": "empty",
+    "runtimeMatchesCurrentWorkspace": false,
+    "workspaceDifferences": [
+      "popup-scroll-memory.js",
+      "popup-settings-search.js",
+      "popup.html",
+      "popup.js"
+    ],
+    "privacyPolicyMatchesCurrentWorkspace": true
+  },
+  "remaining": [
+    "Compatibility-destination cookie exceptions still expose cookies in the simple resource fixtures.",
+    "The earlier timed build uses more renderer task time than Ghostery; the Script Drift optimization has not been five-block benchmarked.",
+    "CNAME breadth, independent learning quality and established release maturity are not universal local wins."
+  ]
+}

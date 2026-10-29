@@ -202,6 +202,7 @@ function loadForgetStore(options = {}) {
     setTimeout, clearTimeout,
     // Declared just above the lifted region in background.js.
     FORGET_TAB_HOSTS: Object.create(null),
+    __privacyEraseInProgress: false,
     forgetHostFromUrl: (u) => { try { const x = new URL(u); return /^https?:$/.test(x.protocol) ? x.hostname.replace(/^www\./, '') : ''; } catch (_) { return ''; } },
     registrableDomainBg: (h) => String(h || '').split('.').slice(-2).join('.'),
     maybeForgetHost: (host, tabId) => { state.wiped.push({ host, tabId }); return Promise.resolve(); },

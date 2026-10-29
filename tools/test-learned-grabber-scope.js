@@ -100,10 +100,9 @@ check('the block path is what sets userBlocked',
    check measures the prose rather than the code. */
 const BG_CODE = BG.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const learnCalls = (BG_CODE.match(/learnDomain\(/g) || []).length;
-check('learnDomain still has exactly one caller, and it is the grabber one',
-  learnCalls === 2 && /learnDomain\(tabHost, 'known IP-grabber behavior'\)/.test(BG_CODE),
-  'found ' + learnCalls + ' (1 definition + callers); a caller writing a '
-    + 'non-grabber reason would need this filter widened');
+check('page grabber claims cannot call learnDomain',
+  learnCalls === 1,
+  'found ' + learnCalls + ' (1 definition + callers); persistent learning needs worker-owned evidence');
 check('the bridge still derives grabber domains from the learned map',
   /learnedGrabberDomains = sanitizeBridgeHostList\(\s*Object\.keys\(learned \|\| \{\}\)/.test(BRIDGE),
   'if this moves, the filter above has to move with it');

@@ -10,11 +10,8 @@
 (function () {
   'use strict';
 
-  const WO_GUARD_VERSION = '1.0.2';
-  /* Release the older version’s listeners, observers and timers before replacing it in an open document. */
-  /* Any copy at all, of any version: nothing injects a second copy into a live document any more
-     (the worker reloads the tab instead), and a published disposer for the old copy to be released
-     through was a page-callable kill switch (SEC-03). */
+  const WO_GUARD_VERSION = '1.0.3';
+  /* SEC-03: refuse a second copy of any version. Repair reloads the tab; no page-callable disposer is exposed. */
   if (window.__wardenOneAntiRedirectHardener) return;
   window.__wardenOneAntiRedirectHardener = WO_GUARD_VERSION;
 
@@ -61,11 +58,8 @@
      document_start, and never again (SEC-01). Config counts only when it is signed with it. */
   let woKey = null;
   let woLastSeq = 0;
-  /* HMAC-SHA256 over UTF-8 text, in plain JS. crypto.subtle is absent on http: pages and
-     asynchronous everywhere, and this has to answer inside a synchronous DOM event. Every
-     reference it needs is captured here, before the page runs, so a page that rewrites
-     TextEncoder or Uint8Array later changes nothing about what it computes. Not a general
-     library: fixed 32-byte key (hex), text in, hex out. */
+  /* Synchronous DOM replies need HMAC without crypto.subtle, which is async and unavailable on HTTP. Capture built-ins
+     before page scripts; keys are fixed 32-byte hex values. */
   /* AUTH-BEGIN: shared by MAIN-world receivers and the isolated bridge. */
   const __woAuth=(function(){
     const K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
@@ -341,13 +335,8 @@
     return cfg().__configReady === true;
   }
 
-  // Every other guard honours the user's allowlist; this one never did. It is a
-  // separate <all_urls> content script, statically declared, so it cannot be
-  // skipped per host at injection time -- and the bridge hands it the raw toggles
-  // rather than the allowlist-gated ones the main engine computes for itself. The
-  // result was that "allow this site" left forced-popup, gestureless-navigation
-  // and meta-refresh blocking running there anyway. The allowlist travels with
-  // the config, so the check belongs here.
+  // Apply allowlist checks locally: this statically injected script receives raw toggles rather than the engine's gated
+  // settings.
   function hostAllowedByUser(config) {
     try {
       const list = (config || cfg()).allowlist;
@@ -530,12 +519,7 @@
     }
   }
 
-  // Deliberately NOT top-frame only. These boxes are injected into a third-party
-  // frame, which is the whole trick: from the top frame elementFromPoint returns the
-  // <iframe> element, and an iframe has no innerText, so the shape test looked at an
-  // empty string and said "not bait" every single time. The guard has to run where
-  // the box actually is. This script already runs in every frame; only this check
-  // was refusing to.
+  // Inspect bait in each frame's own document; top-frame hit tests see only the iframe, not its text.
   function confirmBaitEnabled() {
     if (MEDIA_APP_HOST || DISCORD_APP_HOST) return false;
     const c = cfg();
@@ -694,12 +678,7 @@
       const h = window.innerHeight || 0;
       if (w < 150 || h < 120) return found;   // an ad frame is smaller than a page
       const now = Date.now();
-      /* Each point below is an elementFromPoint, and each forces layout. On a
-         page being actively dragged the layout is never clean, so all 25 flush
-         for real, twice a second, for a box that is almost never there. The
-         interval stretches while the grid keeps coming back empty and snaps
-         back the moment it finds something, so a real overlay is still caught
-         promptly and an ordinary page stops paying for the search. */
+      /* elementFromPoint can force layout. Back off after empty grids and restore the fast cadence when an overlay appears. */
       if (now - lastGridAt < gridInterval) return found;
       lastGridAt = now;
       const fractions = [0.15, 0.3, 0.5, 0.7, 0.85];
@@ -765,12 +744,7 @@
         let doc = null;
         try { doc = frame.contentDocument; } catch (_) { doc = null; }
         if (!doc) continue;
-        // Watched whatever size it is RIGHT NOW, before the size test below. A
-        // frame that starts 0x0 and is grown and filled later would otherwise never
-        // be watched at all: the size test skipped it, so nothing was listening to
-        // its document, and growing it changes no childList in the parent for the
-        // outer observer to see either. The timed sweeps cover the first few
-        // seconds; this covers the rest of the page's life.
+        // Watch frames before checking size: a 0x0 frame may later grow without a parent childList mutation.
         watchFrameDocument(doc);
         const r = frame.getBoundingClientRect();
         if (r.width < 160 || r.height < 80) continue;
@@ -934,12 +908,8 @@
       if (/(?:^|\/)cas\/(?:login|logout|oidc|oauth2(?:\.0)?|saml(?:validate)?|idp)(?:\/|$)/i.test(path)) return true;
       if ((has('service') || has('ticket') || has('gateway') || has('renew')) && /(?:^|\/)cas(?:\/|$)/i.test(path)) return true;
 
-      // Identity hosts (login/auth/accounts/sso/idp/adfs/cas/...) that ALSO carry a
-      // federation path or query. Host signal alone is deliberately never enough --
-      // the tail must read as auth -- mirroring the trusted isFederatedAuthTarget
-      // form-sensitivity check, so this is not a generic login.* host bypass. Custom
-      // Shibboleth/OpenAthens IdPs often live on a university/customer domain, not
-      // the vendor's.
+      // Require federation paths or parameters as well as an identity-host prefix; login.* alone cannot authorize a
+      // redirect.
       const identitySurface = /(^|[.-])(openathens|shibboleth|shib|sso|idp|identity|login|logon|signin|auth|accounts?|sts|adfs|cas|wayf|idpselect|fedauth)([.-]|$)/i.test(host)
         || /(?:^|\/)(?:openathens|shibboleth|adfs|cas|simplesaml|oidc)(?:\/|$)/i.test(path);
       return identitySurface && /auth|login|logon|signin|sso|saml|oauth|oidc|openid|federat|wayf|discovery|redirect|authorize|realms|connect|accountchooser|idp|ticket/.test(tail);
@@ -1090,12 +1060,8 @@
     }
   }
 
-  // Does an address carry the link that was just pressed? The pressed link may wrap it (an
-  // out-link redirector), or it may wrap the pressed link's destination. For a link to another
-  // site, naming that site's host is enough. For a link to this site's own page it is not: ad
-  // networks put the referring page in every auction address, so a popup that mentions this
-  // site proves nothing -- on pawchive, a press on a post let the Clickadu popup through on
-  // that alone. There only the pressed page's own address counts.
+  // Cross-site links may authorize their named host. Same-site links must name the pressed URL itself; ad auctions
+  // routinely include the referring host.
   function popupCarriesPressedLink(rawTarget) {
     if (!pressAnchorHref) return false;
     if (redirectWrapperPointsAt(pressAnchorHref, rawTarget)) return true;
@@ -1155,13 +1121,8 @@
     return false;
   }
 
-  // The "your browser is out of date -- install this one to keep watching" funnel.
-  // It is an affiliate page, not malware, but it is reached by force and it exists
-  // to get software installed, so it is a destination no click ever really asked
-  // for. Two shapes, both distinctive:
-  //   - a "preland"/"prelander" path. That is ad-industry jargon for the page shown
-  //     before the real offer; ordinary sites do not serve anything called that.
-  //   - a hostname that is itself a sales pitch for a browser.
+  // Recognize forced browser-install affiliate funnels by preland/prelander paths or browser-sales hostnames; this does not
+  // classify them as malware.
   function fakeInstallLander(host, raw) {
     let path = '';
     try { path = new URL(String(raw || ''), location.href).pathname.toLowerCase(); } catch (_) { path = ''; }
@@ -1267,13 +1228,8 @@
     return false;
   }
 
-  // A visible, labelled control of the site's own, pressed over the player: a "Switch
-  // server" button, a mirror list, a source menu. Clicking one may well send the player
-  // frame to another site from script (location.assign), which looks like the hijack
-  // the frame guard stops -- so it is told apart here. Not this: the video, the poster,
-  // an empty overlay, the player library's own media controls, a control whose label
-  // is a media action (play, seek, mute...) or a bare bait word (OK, Continue,
-  // Download...), and anything the reader could not actually see.
+  // Allow visible site-owned server/mirror controls to navigate player frames. Media controls, invisible overlays and
+  // generic bait labels confer no such authorization.
   const SITE_CONTROL = 'button,[role="button"],[role="menuitem"],[role="menuitemradio"],[role="option"],[role="tab"],input[type="button"],input[type="submit"],[onclick],[data-link],[data-src],[data-server],[data-embed]';
   const PLAYER_LIBRARY_CONTROL = /(?:^|\s)(?:vjs-(?:play|big-play|progress|volume|mute|fullscreen|seek|playback-rate|subs-caps|captions|picture-in-picture|chromecast|remaining|current-time|duration|live|poster|tech|text-track|loading|control-bar)|jw-(?:icon|slider|display|controlbar|knob|rail)|plyr__(?:control|progress|volume|time|poster)|dplayer-(?:play|bar|volume|full|setting)|art-(?:control|progress))/;
   const MEDIA_ACTION = /\b(?:play|pause|replay|resume|seek|skip|rewind|forward|mute|unmute|volume|full\s*screen|fullscreen|caption|subtitles?|cc|settings?|quality|speed|playback|picture|pip|cast|airplay|theat(?:er|re)|close|dismiss|progress)\b/i;
@@ -1587,11 +1543,8 @@
   }
 
   function blockNavigation(rawTarget, kind) {
-    // Reaching this function at all means the TOP frame drove the navigation, so
-    // every path that lets one through has to say so -- otherwise the worker sees
-    // a top-frame navigation it cannot attribute and treats ours as a hijack.
-    // An authorisation names the host it is for. The worker honours it for a navigation to
-    // that host only, so a decoy navigation cannot arm it for a different one (SEC-13).
+    // SEC-13: every allowed top-driven navigation must publish authorization bound to its destination host, so a decoy
+    // cannot authorize another host.
     if (!navigationEnabled()) {
       if (!sameSiteTarget(rawTarget)) signal('top-nav-authorized', { host: hostOf(rawTarget) });
       return false;
@@ -1621,12 +1574,7 @@
     return true;
   }
 
-  // A popunder script listens on the whole document and spends the first press wherever it
-  // lands -- on a heading, a paragraph, the empty margin. A site's own popup comes from a
-  // control: a link, a button, something focusable or drawn with a clickable cursor. So a
-  // cross-site popup from a press on plain page is the popunder, and the one-popup allowance
-  // a press on a control keeps is not for it. Anything that cannot be judged -- a node the
-  // press removed, a custom element whose insides are closed -- counts as a control.
+  // A cross-site popup needs a press on a control, not plain page content. Unreadable or closed custom controls fail open.
   const GESTURE_CONTROL = 'a[href],area[href],button,input,select,textarea,label,summary,option,'
     + 'iframe,video,audio,canvas,embed,object,[onclick],[contenteditable],[tabindex]:not([tabindex="-1"]),'
     + '[role="button"],[role="link"],[role="menuitem"],[role="menuitemcheckbox"],[role="menuitemradio"],'
@@ -1977,13 +1925,8 @@
     return true;
   }
 
-  // The same pages add empty boxes beside the layer. Playmogo's player had a
-  // 120x120 square at z-index 2147483647 over the big play button, which ate the
-  // press that should have started the video, a hidden full-frame box at 9999999,
-  // and a transparent full-frame box at 300000 that took the first press of every
-  // visit. No text, no children, no class and nothing painted: only a place for a
-  // press to land. On its own that shape proves little, so these are disarmed only
-  // in a document that has already tried to spend a press on its player.
+  // Empty transparent player overlays are ambiguous. Disarm them only after this document has attempted to hijack a player
+  // press.
   function emptyClickTrap(el) {
     try {
       if (!el || el.nodeType !== 1 || !/^(?:DIV|SPAN|INS|SECTION)$/.test(el.tagName)) return false;
@@ -2110,12 +2053,8 @@
     } catch (_) {}
   }
 
-  // The layers are appended straight to <body> (or <html>), so this watches only
-  // those two child lists -- never a subtree -- which keeps it out of the PERF-02
-  // cost of observing every node a frame builds. The config arrives after this
-  // script starts and a layer can be styled after it is inserted, so a candidate
-  // is looked at again shortly after it lands, and the whole body once the
-  // config is in.
+  // The layers are appended straight to <body> or <html>; observe only those child lists.
+  // Recheck after styling and configuration arrive, without a document-wide subtree observer.
   let clickLayerWatchInstalled = false;
   function watchForClickLayers() {
     if (clickLayerWatchInstalled || MEDIA_APP_HOST || DISCORD_APP_HOST) return;
@@ -2472,13 +2411,8 @@
   }
   try { woOn(window, 'click', guardClick, true); } catch (_) {}
 
-  // A link the page never put in the document -- made in script, given target=_blank and an
-  // advert's address, and clicked -- opens its popup natively, and its click never travels to
-  // the window, where guardClick listens. Pawchive's Clickadu loader does exactly that on the
-  // first press when it does not use window.open. It is a script opening a popup, so it is
-  // judged as window.open would be, before the browser acts on it: a press on a control keeps
-  // its one popup (sites open outbound links this way), a press on plain page, no press, or an
-  // advert's address does not. A link in the document is left to guardClick, which sees it.
+  // Detached scripted links bypass guardClick. Judge their popups like window.open before native activation; attached links
+  // remain with guardClick.
   function detachedLinkPopupRefused(el) {
     try {
       const a = el && el.nodeType === 1 && el.closest ? el.closest('a[href],area[href]') : null;
@@ -2928,12 +2862,8 @@
         if (queued) scheduleConfirmBaitSweep(60);
       });
       baitObserver.observe(document.documentElement || document, { childList: true, subtree: true });
-      // The observer alone was not enough, for two reasons that both bite once.
-      // The config arrives by message AFTER this script starts, and until it does
-      // masterEnabled() is false -- so a box inserted early was seen, refused, and
-      // never looked at again, because insertion only happens once. And a box that is
-      // hidden and re-shown adds no nodes at all. A short bounded schedule covers
-      // both without an interval running for the life of the page.
+      // Bounded follow-ups cover insertion before config and later visibility changes, which childList observation alone
+      // misses.
       for (const delay of [120, 350, 800, 2000, 4000, 8000, 15000]) {
         woTimeout(() => { baitPending.clear(); sweepConfirmBait(); }, delay);
       }
@@ -2948,21 +2878,13 @@
   }
 
   /* CREDENTIAL_FRAME_GUARD_START
-     The full protection engine stays in the top frame: parsing all of it into every
-     advertising, media and application frame would be a large permanent cost. This
-     narrow layer runs only in child frames and owns the credential-facing boundary
-     the top document cannot see. It remembers bounded card/password/token values in
-     this realm and blocks an exact value when it is sent to an unrelated destination.
-     No value is emitted, persisted or handed to the isolated bridge. */
+     The top-frame engine cannot inspect child credentials. Keep bounded values in this realm and block exact-value
+     exfiltration; never emit or persist them. */
   const CREDENTIAL_FRAME_VALUE_LIMIT = 80;
   const CREDENTIAL_FRAME_TRUSTED_BASES = new Set([
     'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com',
-    /* Google account state crosses this service family while YouTube is open.
-       Leaving these out meant the frame guard could reject an account refresh
-       to YouTube even though the top-frame SessionShield already treats every
-       one of these as an established Google/YouTube destination. The cookies
-       remained intact, so a fresh tab looked signed in again while the live tab
-       temporarily rendered itself as signed out. */
+    /* Keep Google account-refresh destinations aligned with the top-frame SessionShield family so YouTube sessions remain
+       usable. */
     'youtube.com', 'youtube-nocookie.com', 'youtu.be', 'googlevideo.com',
     'ytimg.com', 'ggpht.com',
     'microsoft.com', 'microsoftonline.com', 'msauth.net', 'msftauth.net', 'live.com',
@@ -3007,12 +2929,8 @@
     try { return regHost(new URL(credentialFrameBaseUrl()).hostname); } catch (_) { return ''; }
   }
 
-  /* No first-party-frame exemption here, deliberately. It looks like this guard
-     only runs in child frames and so treats a site's own iframe more harshly than
-     its top frame -- but content.min.js (all_frames:false) owns the top frame and
-     this block (all_frames:true, !TOP_FRAME) owns the children. The two are
-     complementary, not asymmetric, and exempting first-party frames would leave
-     them with no token guard at all. */
+  /* Do not exempt first-party frames: the engine guards the top document, while this layer owns every child frame's token
+     boundary. */
   function credentialFrameTarget(rawTarget) {
     try {
       const base = credentialFrameBaseUrl();
@@ -3259,13 +3177,8 @@
     return parts;
   }
 
-  /* The one exception to "handed out". Some players are sent their source list encrypted and
-     decrypt the playlist link themselves -- anichi.to's player gets {"enc":"..."}, with only
-     the subtitles in the clear -- so no response ever holds that link. The PLAYLIST alone
-     (.m3u8 / .mpd), fetched by a plain GET from a page that is actually showing a <video> or
-     <audio>, is let through on that account, unless it carries a credential this frame holds.
-     Everything a playlist leads to -- variants, segments, keys -- is listed in the playlist
-     itself, and subtitles in the source list, so those still have to have been handed out. */
+  /* Encrypted source lists may reveal no playlist URL. Permit plain GETs for .m3u8/.mpd on media pages unless they carry
+     held credentials; segments, keys and subtitles still require response evidence. */
   const CREDENTIAL_FRAME_PLAYLIST_PATH = /\.(?:m3u8|m3u|mpd)$/i;
   function credentialFramePlaylistFallback(target, data, method, rawTarget) {
     try {

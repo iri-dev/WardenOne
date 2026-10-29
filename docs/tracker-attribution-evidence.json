@@ -1,0 +1,330 @@
+{
+  "schemaVersion": 1,
+  "phase": "G-01",
+  "status": "complete",
+  "source": {
+    "name": "AdGuard Companies DB",
+    "revision": "8d845040224a0e3ea9cbba5df68ceb6a988235d2",
+    "updatedAt": "2026-10-26T10:13:21.445Z",
+    "license": "CC-BY-SA-4.0",
+    "inputSha256": [
+      "f923b02432be27276860d87e38181707e61eaf66c9407106ddd5e33302efdb7c",
+      "ea7e6de9b67e66ab3d4da833d63de68640ea275b81d644672928297e73202a3e"
+    ]
+  },
+  "coverage": {
+    "products": 41,
+    "organizations": 30,
+    "domains": 60,
+    "catalogBytes": 7148
+  },
+  "candidate": {
+    "label": "wardenone",
+    "product": "wardenone",
+    "baseCommit": "273c43a0051d6c3fe12c6871944ed7e8822d8af3",
+    "tree": "d4395883ef28b17754afcc8a13e5c1d8c187512d",
+    "revisionKind": "uncommitted-tree",
+    "archiveSha256": "2a2abe54cb741a6ddc040da01b428678eebfe5e989d98c8e68c5bfb2d6ee5d85",
+    "sourceArchiveSha256": "c388fb6ea218afba7df2248ac46dbc72bad6ba8ee2d5efd651d3dad04eaf7490",
+    "review": {
+      "errors": [],
+      "rulesets": [
+        {
+          "id": "grabbers",
+          "enabled": true,
+          "path": "rules-grabber-resources.json",
+          "count": 128,
+          "bytes": 41504,
+          "sha256": "fa4c46ccbba325e2bd642fd8bd995545976ca9f7273880d22b1119ee8a64f61c"
+        },
+        {
+          "id": "grabber_navigation",
+          "enabled": true,
+          "path": "rules-grabber-navigation.json",
+          "count": 2,
+          "bytes": 3641,
+          "sha256": "2a35528d4dee3411bde86fc04c1b6dcde865844f6e1d6a6a151eb892b7801ed2"
+        },
+        {
+          "id": "grabber_malware_navigation",
+          "enabled": true,
+          "path": "rules-grabber-malware-navigation.json",
+          "count": 2,
+          "bytes": 3475,
+          "sha256": "31bd7d5e456da3d3fc8d431cc4ac9af038c276127154abc309406a7a10bef2f2"
+        },
+        {
+          "id": "grabber_compat",
+          "enabled": true,
+          "path": "rules-grabber-compat.json",
+          "count": 5,
+          "bytes": 2882,
+          "sha256": "387a0761153fa60ffd95cb285dc5fdeef43ec79cd5e5da02a34a4e42aab0ff56"
+        },
+        {
+          "id": "adshield_easylist",
+          "enabled": true,
+          "path": "rules-adshield.json",
+          "count": 28026,
+          "bytes": 2945634,
+          "sha256": "7f1dc36bd827cb57457da4d758c185e2532e012dd5ebbf5394f83a515fb82a54"
+        },
+        {
+          "id": "spotify_media",
+          "enabled": true,
+          "path": "rules-spotify-media.json",
+          "count": 7,
+          "bytes": 1483,
+          "sha256": "1a70cf5360840ab0f8a3007c7f3ecb280327eadec4c2b234ebf09af9470daf9a"
+        },
+        {
+          "id": "trackers",
+          "enabled": true,
+          "path": "rules-trackers.json",
+          "count": 49,
+          "bytes": 21197,
+          "sha256": "50199c7e66d5314c52c2879b213c07c490b90371ae4f91ab2c8a772291f050c7"
+        },
+        {
+          "id": "easyprivacy",
+          "enabled": true,
+          "path": "rules-easyprivacy.json",
+          "count": 150,
+          "bytes": 387128,
+          "sha256": "6511869ab74a22ba16fcc4de1e1d492c1148d2f28653245aee3af37eb6515cab"
+        }
+      ],
+      "sourceFiles": 739,
+      "runtimeFiles": 139,
+      "runtimeBytes": 11304862,
+      "licensing": [
+        {
+          "name": "CREDITS.md",
+          "sha256": "fb7163e586e026447a318097e9b989ce35b4eb218b02892fa015af87fbf51980"
+        },
+        {
+          "name": "LICENSE",
+          "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+        },
+        {
+          "name": "NOTICE",
+          "sha256": "5aea2648121ce94da8fbb14dcf2dccd90328ae13fde69e76682b16684992e8be"
+        },
+        {
+          "name": "THIRD_PARTY_NOTICES.html",
+          "sha256": "0f20d85c67a8b71f08f9b1c340a6e559f61403b8581d6476bc41ca33ac4a8164"
+        },
+        {
+          "name": "licenses/AdGuard-CNAME-MIT.txt",
+          "sha256": "0134363b4c2447630bbeac7f85a2a5c11c7b293b98b0569327444fdd8a5f703c"
+        },
+        {
+          "name": "licenses/CC-BY-SA-4.0.txt",
+          "sha256": "187442db4df3afd21f2f0525739fd4beac28a62daaba3ee8d3533f60e7c33ec7"
+        },
+        {
+          "name": "licenses/DBAD-1.2.txt",
+          "sha256": "f0dac7aa58678bb5fa403e5a748187a644295dab352cd3a77fdd7e5d334bdf4a"
+        },
+        {
+          "name": "licenses/Dandelicence-1.4.txt",
+          "sha256": "b47f6c887f42766933cd7cb998800c1bb494f5cfac9f6fbf710fd885cfab9d64"
+        },
+        {
+          "name": "licenses/MIT-NOTICES.txt",
+          "sha256": "f9e3522c99f3ea7ad52b8eac749a2de917673e86e43105386cc55fb718936276"
+        },
+        {
+          "name": "licenses/MPL-2.0.txt",
+          "sha256": "432bba3d1a0dda324312c845607d414a6c8533583cbd983ca39ba56b09657f33"
+        },
+        {
+          "name": "licenses/Unicode-3.0.txt",
+          "sha256": "b542eff742e5359c9398ea0dbb18d69c558f92749c3bd46a0e18d7c5a7098ca6"
+        },
+        {
+          "name": "licenses/Unlicense.txt",
+          "sha256": "2d8d76bf8e966ff1ee315000a01279ae2e63c0fecef08eaf66fe736c23aa8982"
+        }
+      ],
+      "secretScan": "Hidden/local/credential paths, selected credential token formats and private-key headers. Public throwaway loopback TLS key permitted only in tools/browser-media-security.js. This is a bounded scan, not proof that arbitrary secrets cannot exist."
+    },
+    "fingerprint": "6cf3723b4d88e512dbf9d2c59c6ae0327cfbfaea5287043c913ad9c5e1e36659",
+    "fileCount": 139,
+    "version": "1.0.2",
+    "manifestVersion": 3,
+    "background": {
+      "service_worker": "background.js"
+    },
+    "rulesets": [
+      {
+        "id": "grabbers",
+        "enabled": true,
+        "path": "rules-grabber-resources.json",
+        "bytes": 41504,
+        "sha256": "fa4c46ccbba325e2bd642fd8bd995545976ca9f7273880d22b1119ee8a64f61c",
+        "count": 128
+      },
+      {
+        "id": "grabber_navigation",
+        "enabled": true,
+        "path": "rules-grabber-navigation.json",
+        "bytes": 3641,
+        "sha256": "2a35528d4dee3411bde86fc04c1b6dcde865844f6e1d6a6a151eb892b7801ed2",
+        "count": 2
+      },
+      {
+        "id": "grabber_malware_navigation",
+        "enabled": true,
+        "path": "rules-grabber-malware-navigation.json",
+        "bytes": 3475,
+        "sha256": "31bd7d5e456da3d3fc8d431cc4ac9af038c276127154abc309406a7a10bef2f2",
+        "count": 2
+      },
+      {
+        "id": "grabber_compat",
+        "enabled": true,
+        "path": "rules-grabber-compat.json",
+        "bytes": 2882,
+        "sha256": "387a0761153fa60ffd95cb285dc5fdeef43ec79cd5e5da02a34a4e42aab0ff56",
+        "count": 5
+      },
+      {
+        "id": "adshield_easylist",
+        "enabled": true,
+        "path": "rules-adshield.json",
+        "bytes": 2945634,
+        "sha256": "7f1dc36bd827cb57457da4d758c185e2532e012dd5ebbf5394f83a515fb82a54",
+        "count": 28026
+      },
+      {
+        "id": "spotify_media",
+        "enabled": true,
+        "path": "rules-spotify-media.json",
+        "bytes": 1483,
+        "sha256": "1a70cf5360840ab0f8a3007c7f3ecb280327eadec4c2b234ebf09af9470daf9a",
+        "count": 7
+      },
+      {
+        "id": "trackers",
+        "enabled": true,
+        "path": "rules-trackers.json",
+        "bytes": 21197,
+        "sha256": "50199c7e66d5314c52c2879b213c07c490b90371ae4f91ab2c8a772291f050c7",
+        "count": 49
+      },
+      {
+        "id": "easyprivacy",
+        "enabled": true,
+        "path": "rules-easyprivacy.json",
+        "bytes": 387128,
+        "sha256": "6511869ab74a22ba16fcc4de1e1d492c1148d2f28653245aee3af37eb6515cab",
+        "count": 150
+      }
+    ]
+  },
+  "native": [
+    {
+      "browser": "Edg/150.0.4078.48",
+      "complete": true,
+      "runtimeFingerprint": "6cf3723b4d88e512dbf9d2c59c6ae0327cfbfaea5287043c913ad9c5e1e36659",
+      "harnessSha256": "550d84d41e283fdcae3dc15f5335f9139382955954567042e0bb8b302611b494",
+      "checks": [
+        "Activity distinguishes products under one company, essential services, local suspicion and unattributed blocks",
+        "A real blocked tracker request retains its outcome and shows source, category, company and match evidence",
+        "A complete metadata replacement refreshes both open pages without restart; markup is rendered as text",
+        "Malformed, rolled-back and year-stale metadata retain the last validated identity snapshot",
+        "Installed rules, settings and granted permissions are unchanged by attribution and refresh failures"
+      ],
+      "networkEvidence": {
+        "host": "google-analytics.com",
+        "action": "blocked",
+        "rule": "2",
+        "source": "Tracker list"
+      }
+    },
+    {
+      "browser": "Chrome/121.0.6167.184",
+      "complete": true,
+      "runtimeFingerprint": "6cf3723b4d88e512dbf9d2c59c6ae0327cfbfaea5287043c913ad9c5e1e36659",
+      "harnessSha256": "550d84d41e283fdcae3dc15f5335f9139382955954567042e0bb8b302611b494",
+      "checks": [
+        "Activity distinguishes products under one company, essential services, local suspicion and unattributed blocks",
+        "A real blocked tracker request retains its outcome and shows source, category, company and match evidence",
+        "A complete metadata replacement refreshes both open pages without restart; markup is rendered as text",
+        "Malformed, rolled-back and year-stale metadata retain the last validated identity snapshot",
+        "Installed rules, settings and granted permissions are unchanged by attribution and refresh failures"
+      ],
+      "networkEvidence": {
+        "host": "google-analytics.com",
+        "action": "blocked",
+        "rule": "2",
+        "source": "Tracker list"
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/tracker-catalog-source.json.gz",
+      "sha256": "0fc5ce8d67369dae2466c5ee1660fa3a72e892e95f5701d15d29bb51519bd956"
+    },
+    {
+      "path": "tracker-catalog.json",
+      "sha256": "568530d4d3f664f20376ba304fc5dacab1bb5d3a85f97e806dd3806388f7747e"
+    },
+    {
+      "path": "tracker-attribution.js",
+      "sha256": "8260cf1992bdbd190d93ea89c46ab0cace660eae0614a9706c5722704213e915"
+    },
+    {
+      "path": "tmp/ghostery-phase01/verified-edge.json",
+      "sha256": "eea1e4926398b4c2493b092d161098df8879a218c10a385ba14e41a7c3110868"
+    },
+    {
+      "path": "tmp/ghostery-phase01/verified-edge.log",
+      "sha256": "4be8ccb5655be4206eae7c9596bf24bab23fe96b8dd0139c03f3859d1b14e44e"
+    },
+    {
+      "path": "tmp/ghostery-phase01/verified-chrome.json",
+      "sha256": "7259682000dbba7d94a3bc5b0c5a031aa39b412ceb3d0fd7cdab9a49e52c9e6b"
+    },
+    {
+      "path": "tmp/ghostery-phase01/verified-chrome.log",
+      "sha256": "bd4cebce60d3cb13ddc12926b67e1edf40112d34b56826c6f087c30b7194745d"
+    },
+    {
+      "path": "tmp/ghostery-phase01/gate-verified.log",
+      "sha256": "ab6b80621e746f8cc93bc9493da58710b3df2e9ad5de1e8dfaf409326fe6d1c7"
+    },
+    {
+      "path": "tmp/ghostery-phase01/footprint.json",
+      "sha256": "72f2c0643facad1c31ca721eb255fdb5b51e81e462b1e8a581da67fedee3342f"
+    }
+  ],
+  "invariants": {
+    "version": "1.0.2",
+    "protectionCount": 110,
+    "settingsAdded": false,
+    "permissionsAdded": false,
+    "runtimeFeedAdded": false,
+    "backgroundCatalogLoad": false,
+    "persistentCatalogStore": false,
+    "enforcementFromMetadata": false
+  },
+  "limitations": [
+    "Catalog coverage is a bounded subset, not the entire upstream database.",
+    "Hostname attribution is independent from tracking evidence or request outcomes.",
+    "No source path-pattern metadata is available; no path or query attribution claim.",
+    "Snapshots older than one year cannot newly load; an invalid refresh retains a prior validated snapshot with a visible status.",
+    "No new Ghostery performance or detection advantage is claimed."
+  ],
+  "validation": {
+    "testSuites": 335,
+    "gate": "pass",
+    "native": "Chrome 121.0.6167.184 and Edge 150.0.4078.48 pass",
+    "packageBudget": "pass",
+    "committed": false,
+    "pushed": false
+  },
+  "finalProvenance": "tmp/ghostery-phase01/final-review/snapshots.json"
+}

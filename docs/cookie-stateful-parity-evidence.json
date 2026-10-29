@@ -1,0 +1,390 @@
+{
+  "date": "2026-10-29",
+  "runtime": {
+    "version": "1.0.2",
+    "fingerprint": "f9df5fc67c4519fc9c2738cfb873dc6bcb26d1bfc362cd06a75511073b91f5a4",
+    "files": 148,
+    "archiveSha256": "b7b0a6057429e236e3a3be1db1a7ae770da665628f65df62e816f8591469824c",
+    "sourceArchiveSha256": "b09fc544dcbd16a5a004f5e4391bad66866d103130513b04bdaff8b6fef82b22"
+  },
+  "comparison": {
+    "edge": {
+      "browser": "Edg/156.0.4314.50",
+      "browserSha256": "f87d927bed3597f19c70af67bc786dd22e4eca3b5c7cc050336a016bb42f7fda",
+      "harnessSha256": "44155326e756d5a45c4632050aeb674213782721e38bd07409bdc7a675cd12a4",
+      "products": {
+        "off": {
+          "runs": 5,
+          "resourceCases": 70,
+          "statuses": {
+            "allowed": 70
+          },
+          "targetedCasesWithoutHeaderCookies": 0,
+          "frameProbes": {
+            "count": 25,
+            "initialCookieRead": 25,
+            "delayedCookieRead": 25,
+            "prototypeCookieRead": 25,
+            "cookieStoreRead": 25,
+            "cookieWriteStored": 25,
+            "cookieStoreWriteStored": 25
+          },
+          "directSessionChecks": 10,
+          "domRecoveryFrameChecks": 0
+        },
+        "candidate": {
+          "version": "1.0.2",
+          "fingerprint": "f9df5fc67c4519fc9c2738cfb873dc6bcb26d1bfc362cd06a75511073b91f5a4",
+          "runs": 5,
+          "resourceCases": 70,
+          "statuses": {
+            "stripped": 65,
+            "allowed": 5
+          },
+          "targetedCasesWithoutHeaderCookies": 65,
+          "frameProbes": {
+            "count": 25,
+            "initialCookieRead": 25,
+            "delayedCookieRead": 0,
+            "prototypeCookieRead": 0,
+            "cookieStoreRead": 0,
+            "cookieWriteStored": 0,
+            "cookieStoreWriteStored": 0
+          },
+          "directSessionChecks": 10,
+          "domRecoveryFrameChecks": 250
+        },
+        "privacybadger": {
+          "version": "2026.9.15.2",
+          "fingerprint": "ffab75b34ed8976740d1e0b983dd584404ba2af233191cb586ea2a2755521a06",
+          "runs": 5,
+          "resourceCases": 70,
+          "statuses": {
+            "stripped": 60,
+            "blocked": 5,
+            "allowed": 5
+          },
+          "targetedCasesWithoutHeaderCookies": 65,
+          "frameProbes": {
+            "count": 25,
+            "initialCookieRead": 25,
+            "delayedCookieRead": 0,
+            "prototypeCookieRead": 25,
+            "cookieStoreRead": 25,
+            "cookieWriteStored": 0,
+            "cookieStoreWriteStored": 25
+          },
+          "directSessionChecks": 10,
+          "domRecoveryFrameChecks": 0
+        },
+        "ghostery": {
+          "version": "10.6.7",
+          "fingerprint": "8b312cdc7e2c06b7ec021c5350c223bb3ef414d543d3336c5d841a1eb78bcd1d",
+          "runs": 5,
+          "resourceCases": 70,
+          "statuses": {
+            "allowed": 65,
+            "blocked": 5
+          },
+          "targetedCasesWithoutHeaderCookies": 5,
+          "frameProbes": {
+            "count": 25,
+            "initialCookieRead": 25,
+            "delayedCookieRead": 25,
+            "prototypeCookieRead": 25,
+            "cookieStoreRead": 25,
+            "cookieWriteStored": 25,
+            "cookieStoreWriteStored": 25
+          },
+          "directSessionChecks": 10,
+          "domRecoveryFrameChecks": 0
+        }
+      },
+      "nativeCookieRules": 28,
+      "nativeRegexRules": 20,
+      "topDomainMatching": true
+    },
+    "chrome121": {
+      "browser": "Chrome/121.0.6167.184",
+      "browserSha256": "be8d93bd8687bd55bbf418665e3eb6ff6b265e66778babe8677c9289fce2305e",
+      "harnessSha256": "44155326e756d5a45c4632050aeb674213782721e38bd07409bdc7a675cd12a4",
+      "products": {
+        "off": {
+          "runs": 5,
+          "resourceCases": 70,
+          "statuses": {
+            "allowed": 70
+          },
+          "targetedCasesWithoutHeaderCookies": 0,
+          "frameProbes": {
+            "count": 25,
+            "initialCookieRead": 25,
+            "delayedCookieRead": 25,
+            "prototypeCookieRead": 25,
+            "cookieStoreRead": 25,
+            "cookieWriteStored": 25,
+            "cookieStoreWriteStored": 25
+          },
+          "directSessionChecks": 10,
+          "domRecoveryFrameChecks": 0
+        },
+        "candidate": {
+          "version": "1.0.2",
+          "fingerprint": "f9df5fc67c4519fc9c2738cfb873dc6bcb26d1bfc362cd06a75511073b91f5a4",
+          "runs": 5,
+          "resourceCases": 70,
+          "statuses": {
+            "stripped": 65,
+            "allowed": 5
+          },
+          "targetedCasesWithoutHeaderCookies": 65,
+          "frameProbes": {
+            "count": 25,
+            "initialCookieRead": 25,
+            "delayedCookieRead": 0,
+            "prototypeCookieRead": 0,
+            "cookieStoreRead": 0,
+            "cookieWriteStored": 0,
+            "cookieStoreWriteStored": 0
+          },
+          "directSessionChecks": 10,
+          "domRecoveryFrameChecks": 250
+        },
+        "privacybadger": {
+          "version": "2026.9.15.2",
+          "fingerprint": "ffab75b34ed8976740d1e0b983dd584404ba2af233191cb586ea2a2755521a06",
+          "runs": 5,
+          "resourceCases": 70,
+          "statuses": {
+            "stripped": 60,
+            "blocked": 5,
+            "allowed": 5
+          },
+          "targetedCasesWithoutHeaderCookies": 65,
+          "frameProbes": {
+            "count": 25,
+            "initialCookieRead": 25,
+            "delayedCookieRead": 0,
+            "prototypeCookieRead": 25,
+            "cookieStoreRead": 25,
+            "cookieWriteStored": 0,
+            "cookieStoreWriteStored": 25
+          },
+          "directSessionChecks": 10,
+          "domRecoveryFrameChecks": 0
+        }
+      },
+      "nativeCookieRules": 28,
+      "nativeRegexRules": 20,
+      "topDomainMatching": false
+    }
+  },
+  "validation": {
+    "fedcm": {
+      "complete": true,
+      "runs": 9,
+      "products": [
+        "off",
+        "candidate",
+        "privacybadger"
+      ],
+      "scope": "Real browser FedCM protocol with loopback RP/IdP and a synthetic HttpOnly session. No external Google account or credential.",
+      "harnessSha256": "f8a15e718a2def8f42e88094fc3317364e44b31ea4eeb938e9dc1d9ca5f90d6e"
+    },
+    "liveStripe": {
+      "complete": true,
+      "products": [
+        "off",
+        "candidate"
+      ],
+      "scope": "Public Stripe demo publishable test key, live card element rendering only. No data entered or payment submitted."
+    },
+    "nativeRecovery": {
+      "complete": true,
+      "candidateChecks": 230,
+      "groups": {
+        "reference": {
+          "startupMedianMs": 1113,
+          "runs": 5
+        },
+        "candidate": {
+          "startupMedianMs": 1114,
+          "runs": 5
+        }
+      }
+    },
+    "performance": {
+      "runsPerBuild": 5,
+      "frameCount": 30,
+      "order": "Baseline group before candidate group; not randomized.",
+      "coldTaskDeltaMs": 5.78,
+      "warmTaskDeltaMs": 8.87,
+      "heapDeltaMB": 0.21,
+      "listenerDelta": 90,
+      "assertedMaximumColdDeltaMs": 75,
+      "passed": true,
+      "baselineFingerprint": "2886d939a80b155e5acfc25abd690a61de503db60172b25d289005725d9f4504"
+    },
+    "media-click.json": {
+      "complete": true,
+      "results": [
+        {
+          "label": "previous",
+          "site": "youtube",
+          "complete": true,
+          "start": 0.057292,
+          "end": 10.065953
+        },
+        {
+          "label": "candidate",
+          "site": "youtube",
+          "complete": true,
+          "start": 0.02013,
+          "end": 10.013618
+        },
+        {
+          "label": "previous",
+          "site": "twitch",
+          "complete": true,
+          "start": 2.309616,
+          "end": 12.321348
+        },
+        {
+          "label": "candidate",
+          "site": "twitch",
+          "complete": true,
+          "start": 3.206836,
+          "end": 13.228042
+        }
+      ]
+    },
+    "live-components-final.json": {
+      "complete": true,
+      "results": [
+        {
+          "label": "default",
+          "complete": true,
+          "pages": [
+            {
+              "url": "https://checkout.stripe.dev/elements",
+              "title": "Explore Stripe's payments integrations",
+              "textLength": 1206,
+              "errors": []
+            },
+            {
+              "url": "https://accounts.google.com/ServiceLogin",
+              "title": "Sign in - Google Accounts",
+              "textLength": 221,
+              "errors": []
+            }
+          ]
+        }
+      ]
+    },
+    "gate": {
+      "passed": true,
+      "suites": 348
+    }
+  },
+  "limits": [
+    "All measured cases are a bounded corpus, not all-domain or all-storage parity.",
+    "Both extensions exposed the initial inline cookie read before asynchronous policy activation.",
+    "Clean-frame/native-worker and all-storage bypasses are not established as closed.",
+    "Explicit ambiguous URL/method allowances conservatively preserve frame API access while native header rules retain their own matching.",
+    "Browser-mediated FedCM was tested with local synthetic identities; no real Google account was used.",
+    "Stripe card fields rendered; no payment or saved-card flow was submitted.",
+    "Ghostery did not initialize in Chromium 121 and was scored only in the completed Edge runs."
+  ],
+  "rawReports": [
+    {
+      "path": "tmp/cookie-parity-2026-10-29/accepted-edge.json",
+      "sha256": "7a5471532c513fdd058e124b79b14ca197a1fb1fc86d4858cc0d66bc5e6cea6e",
+      "bytes": 1224310
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/accepted-chrome-pb.json",
+      "sha256": "f632a7926271beb805161dc03f1a1546cad6980638368fa597442de7ca388ca5",
+      "bytes": 1090138
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/fedcm-accepted.json",
+      "sha256": "aaa2481bb0c4c2c1927926204a53c75da84cfbdb7b8fb99ae3ba3bff18272267",
+      "bytes": 57327
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/live-card-final.json",
+      "sha256": "f585a49297d854735ed450e020e76e015c6077cda549a951a74d4bbfc3efdb5d",
+      "bytes": 4769
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/native-recovery-chrome.json",
+      "sha256": "7ef413fd56b0d86accc1bbf2eaa396b94030df7a46762da42511f30a8eeb236a",
+      "bytes": 313716
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/frame-performance.json",
+      "sha256": "c8952c940e55280332cac1e7cd8692aa79ea915e6847d88e8798a2c1af8a7dc4",
+      "bytes": 25317
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/media-click.json",
+      "sha256": "bdc29f0b4164f7cd9cc03e0d39126c7bf229798d2b74a3570954fe908b810f87",
+      "bytes": 9880
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/live-components-final.json",
+      "sha256": "39f8c6854379567fc7520025b1ee2bc563d645289f5f89dac871bf945974c80f",
+      "bytes": 5634
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/gate-complete.log",
+      "sha256": "07df0e750e11c5177f16971b1ab9051ad77eea7b78f9910f1362a7d11360cc4a",
+      "bytes": 32826
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/dom-before.json",
+      "sha256": "1e37673cbda55635f3a212097c17f71b2d6a284b1baa122e15c2560873fbc50f",
+      "bytes": 366174
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/dom-preflight.json",
+      "sha256": "a7fb117126c0a3d924b076ede9f05d33bb884ce9f2cd61c7d016c39530baf142",
+      "bytes": 219871
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/dom-preflight-2.json",
+      "sha256": "698d87933cf2f14a7433a0365aef3f32d15ea412e5eea9e32b37636e24c4cb70",
+      "bytes": 219906
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/dom-recovery-preflight.json",
+      "sha256": "19ac8963c94e27a256dee5a7aebb59fbb1c58739bdc196ab85c8579fcec1416c",
+      "bytes": 231100
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/accepted-chrome.json",
+      "sha256": "a152cc0e2c437c3d4e53c46b5ff99a28f4e4895e7114f3b0965fb6518b810b8c",
+      "bytes": 258597
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/gate-1.log",
+      "sha256": "1061d5ea1e5f5ff45532011712c1b75474d50069066759386163c72d132da3d0",
+      "bytes": 35634
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/gate-3.log",
+      "sha256": "9f36c7f5f6500e22106aea309dbe853d4da692fb32ae38c849287098e3ada59e",
+      "bytes": 33432
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/live-components.json",
+      "sha256": "2186019dc41886eb064c9fbe1516f32201b5b1a6f410e6be1818bc710031813e",
+      "bytes": 16211
+    },
+    {
+      "path": "tmp/cookie-parity-2026-10-29/fedcm.json",
+      "sha256": "1ea725d23438ed6a1ed4b48b38875c79b824d708d9511695d02e338d92bd0fd8",
+      "bytes": 5549
+    }
+  ]
+}

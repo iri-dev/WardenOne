@@ -81,6 +81,9 @@ function loadNetworkParsers(realMedia = false) {
 function loadRedirectPolicy() {
   const sandbox = {
     isLoginCompatibilityUrl: (url) => String(url).includes('auth.example'),
+    URL,
+    SECURITY_DOMAINS: new Set(['malware.example', 'evil.tracker.example']),
+    registrableDomainBg: host => host.split('.').slice(-2).join('.'),
   };
   vm.createContext(sandbox);
   installSessionIo(sandbox);
@@ -161,17 +164,9 @@ function loadRemoteListCommitGuard(options = {}) {
 }
 
 function runStoredConfigUpdateMigration(config) {
-  const sandbox = { cfg: Object.assign({}, config || {}) };
-  vm.createContext(sandbox);
-  installSessionIo(sandbox);
-  installEngineAmbient(sandbox);
-  vm.runInContext(
-    'let changed = false;\n'
-      + sourceBetween("if (cfg.__locationPrivacyV344Enabled !== true)", '\n      return changed ? cfg : false;')
-      + '\nthis.__result = { cfg, changed };',
-    sandbox,
-  );
-  return sandbox.__result;
+  const cfg = Object.assign({}, config || {});
+  const result = require('../upgrade-config.js').migrateStoredConfig(cfg, {});
+  return { cfg, changed: result !== false };
 }
 
 function loadExactDomainRuleHelpers() {
@@ -482,6 +477,19 @@ test('redirect length alone is log-only and known auth chains are never interrup
     ),
     false,
   );
+});
+
+test('same-site tracker redirects preserve the page while security and cross-site hops still interrupt', () => {
+  const { redirectChainShouldInterrupt } = loadRedirectPolicy();
+  for (const [domains, target, extra, expected] of [
+    [['tracker.example'], 'https://www.tracker.example/', {}, false],
+    [['tracker.example'], 'https://evil.tracker.example/', {}, true],
+    [['malware.example'], 'https://malware.example/', {}, true],
+    [['tracker.example'], 'https://www.tracker.example/', { abuseTld: true }, true],
+    [['tracker.example'], 'https://www.tracker.example/', { fakeInstall: true }, true],
+    [['start.example', 'tracker.example'], 'https://www.tracker.example/', {}, true],
+    [['tracker.example'], 'not a URL', {}, true],
+  ]) assert.equal(redirectChainShouldInterrupt({ blocklisted: true, domains, hops: [{ to: target }], ...extra }, target), expected, JSON.stringify({ domains, target, extra }));
 });
 
 test('third-party cookie stripping cannot touch navigation or application traffic', () => {

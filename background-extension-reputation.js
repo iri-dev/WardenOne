@@ -11,7 +11,8 @@
 /* global chrome, localGet, localSet, localRemove, getAllExtensions, extPermSet,
    classifyExtensionRisk, reconcileExtensionChanges, EXT_ALERTS_KEY,
    EXT_WATCH_STATUS_KEY, makeExtensionEvent, notifyExtensionEvents,
-   logExtensionEvents, refreshExtensionAttentionBadge, watcherEnabled */
+   logExtensionEvents, refreshExtensionAttentionBadge, watcherEnabled, shouldNotifyExtensionEvent,
+   normalizeExtensionWatchAlert */
 'use strict';
 
 var EXT_REPUTATION_DATABASE_PATH = 'extension-reputation.json';
@@ -555,7 +556,7 @@ function extensionSignatureMatches(signature, tokens, installType) {
 }
 
 function mergeExtensionAccessRisk(extension, database) {
-  const base = classifyExtensionRisk(extension);
+  const base = classifyExtensionRisk(Object.assign({}, extension, { installType: 'normal' }));
   const tokens = new Set(base.permissions || Array.from(extPermSet(extension)));
   const matchMap = new Map();
   let level = base.level;
@@ -567,6 +568,7 @@ function mergeExtensionAccessRisk(extension, database) {
     }
   };
   for (const signature of (database && database.capabilitySignatures) || []) {
+    if (signature.installTypes.length) continue;
     if (!extensionSignatureMatches(signature, tokens, extension && extension.installType)) continue;
     addMatch(signature.id, signature.severity, signature.label);
     if ((EXT_ACCESS_RANK[signature.severity] || 0) > (EXT_ACCESS_RANK[level] || 0)) level = signature.severity;
@@ -662,6 +664,8 @@ function extensionChangeView(item) {
     removedPermissions: Array.isArray(item.removedPermissions) ? item.removedPermissions.slice() : [],
     accessChanged: !!item.accessChanged,
     installType: extensionReputationText(item.installType || 'unknown', 40),
+    identityChanged: !!item.identityChanged,
+    installTypeChanged: !!item.installTypeChanged,
   };
 }
 
@@ -673,8 +677,7 @@ function latestExtensionChange(id, alerts) {
 /* Keep an older permission gain visible behind newer quiet events. */
 function pendingActionableExtensionChange(id, alerts) {
   const items = (Array.isArray(alerts) ? alerts : []).filter((event) => event && event.id === id
-    && event.kind !== 'removed' && !event.reviewedAt
-    && (EXT_ACCESS_RANK[event.severity] || 0) >= EXT_ACCESS_RANK.medium);
+    && event.kind !== 'removed' && shouldNotifyExtensionEvent(event));
   items.sort((a, b) => (EXT_ACCESS_RANK[b.severity] || 0) - (EXT_ACCESS_RANK[a.severity] || 0)
     || (Number(b.when) || 0) - (Number(a.when) || 0));
   return extensionChangeView(items[0]);
@@ -741,7 +744,7 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
   const capabilities = splitExtensionCapabilities(reputation, access, database);
   const reputationRank = EXT_REPUTATION_STATUS_RANK[reputation.status] || 0;
   const accessRank = EXT_ACCESS_RANK[access.level] || 0;
-  let verdict = { code: 'no_known_warning', label: 'NO KNOWN WARNING', tone: 'calm', needsAttention: false };
+  let verdict = { code: 'no_known_warning', label: 'NO CURRENT CONCERNS IDENTIFIED', tone: 'calm', needsAttention: false };
   let recommendedAction = 'Keep monitoring for meaningful changes';
   if (reputation.status === 'known_harmful') {
     verdict = { code: 'known_harmful', label: 'KNOWN HARMFUL', tone: 'danger', needsAttention: true };
@@ -752,30 +755,44 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
   } else if (reputation.status === 'historical_incident') {
     verdict = { code: 'historical_incident', label: 'SECURITY INCIDENT', tone: 'danger', needsAttention: true };
     recommendedAction = 'Remove the legacy or compromised extension';
+  } else if (!extension.enabled && !unreadChange) {
+    verdict = { code: 'disabled', label: 'DISABLED', tone: 'info', needsAttention: false };
+    recommendedAction = capabilities.profile && capabilities.expected.length
+      ? 'Its documented purpose is to ' + capabilities.profile.needs + '. No immediate action is needed while it is disabled'
+      : 'No immediate action is needed while it is disabled; review its access before enabling it';
+  } else if (reviewed && !unreadChange) {
+    verdict = { code: 'reviewed_snapshot', label: 'REVIEWED SNAPSHOT', tone: 'calm', needsAttention: false };
+    recommendedAction = 'Current access was reviewed; WardenOne will reopen review for material changes or new adverse evidence';
+  } else if (reputation.nameMismatch) {
+    verdict = { code: 'identity_mismatch', label: 'NEEDS SECURITY REVIEW', tone: 'warning', needsAttention: true };
+    recommendedAction = reputation.reason + ' Verify its publisher and purpose before using it';
   } else if (reputation.status === 'recognized_identity' && reputation.origin === 'bundled'
       && !['normal', 'admin'].includes(String(extension.installType || 'unknown'))) {
-    verdict = { code: 'identity_source_mismatch', label: 'SOURCE DOES NOT MATCH', tone: 'danger', needsAttention: true };
+    verdict = { code: 'identity_source_mismatch', label: 'NEEDS SECURITY REVIEW', tone: 'warning', needsAttention: true };
     recommendedAction = 'This official identity is loaded outside Chrome\'s normal or administrator-managed install flow; reinstall it from the cited official listing';
   } else if (capabilities.unexpected.length) {
     const first = capabilities.unexpected[0];
     verdict = {
       code: 'unexpected_capability',
-      label: 'UNEXPECTED ACCESS',
-      tone: first.severity === 'critical' ? 'danger' : 'warning',
+      label: 'REVIEW PERMISSION',
+      tone: 'warning',
       needsAttention: true,
     };
-    recommendedAction = 'Check why ' + capabilities.profile.label + ' needs this: ' + String(first.label || '').toLowerCase();
-  } else if (unreadChange && reputation.status === 'recognized_identity' && capabilities.profile
-      && (pendingChange.kind === 'installed' || pendingChange.kind === 'enabled')) {
-    /* Record a normal install without alarming on contracted capabilities. */
-    verdict = { code: 'expected_install_change', label: 'EXPECTED INSTALL EVENT', tone: 'info', needsAttention: false };
-    recommendedAction = 'The install event is recorded; its current powerful access matches the verified purpose for ' + capabilities.profile.label;
+    recommendedAction = 'Verify this access against the publisher\'s documented requirements: ' + String(first.label || '').toLowerCase()
+      + '. It is not covered by the local capability evidence; this alone is not evidence of malicious behavior';
   } else if (unreadChange) {
-    verdict = { code: 'access_changed', label: 'ACCESS CHANGED', tone: pendingChange.severity === 'critical' ? 'danger' : 'warning', needsAttention: true };
-    recommendedAction = 'Review the new access before continuing to use it';
+    verdict = { code: 'access_changed', label: 'NEEDS SECURITY REVIEW', tone: 'warning', needsAttention: true };
+    recommendedAction = 'Review the recorded access, identity or install-source change before continuing to use it';
   } else if (reviewStale) {
     verdict = { code: 'review_stale', label: 'REVIEW UPDATE', tone: 'warning', needsAttention: true };
     recommendedAction = 'Review its current access, identity and install source';
+  } else if (['development', 'sideload', 'other'].includes(String(extension.installType))) {
+    verdict = { code: 'nonstandard_install', label: 'NEEDS SECURITY REVIEW', tone: 'warning', needsAttention: true };
+    recommendedAction = 'Verify that you intended this installation outside Chrome\'s normal or administrator-managed install flow';
+  } else if (reputation.status === 'recognized_identity' && reputation.origin === 'bundled'
+      && !capabilities.profile && accessRank >= EXT_ACCESS_RANK.high) {
+    verdict = { code: 'capability_evidence_unavailable', label: 'REVIEW PERMISSION', tone: 'warning', needsAttention: true };
+    recommendedAction = 'The bundled identity record has no usable capability contract; verify this powerful access against the publisher requirements';
   } else if (reputation.status === 'recognized_identity' && capabilities.profile) {
     /* Recognition with expected access belongs outside the attention list. */
     verdict = { code: 'recognized_expected', label: 'RECOGNIZED', tone: 'calm', needsAttention: false };
@@ -783,14 +800,13 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
       ? 'Normal for ' + capabilities.profile.label + ': it needs to ' + capabilities.profile.needs
       : 'Nothing here needs your attention';
   } else if (reputation.status === 'catalogued_listing' && !reviewed && accessRank >= EXT_ACCESS_RANK.high) {
-    verdict = { code: 'catalogued_powerful', label: 'VERIFY THIS LISTING', tone: 'warning', needsAttention: true };
-    recommendedAction = 'The exact ID matches a catalogued Chrome Web Store listing, but its publisher and powerful access are not yet verified';
+    verdict = { code: 'catalogued_powerful', label: 'POWERFUL PERMISSIONS', tone: 'info', needsAttention: false };
+    recommendedAction = 'This catalogued listing has powerful access. No malicious behavior is established by its permissions; publisher identity remains unverified';
   } else if (!reviewed && accessRank >= EXT_ACCESS_RANK.high) {
-    /* Unexplained powerful access warrants review. */
-    verdict = { code: 'powerful_access', label: 'REVIEW ACCESS', tone: 'warning', needsAttention: true };
+    verdict = { code: 'powerful_access', label: 'POWERFUL PERMISSIONS', tone: 'info', needsAttention: false };
     recommendedAction = reputation.status === 'recognized_identity'
       ? 'The identity record has no verified capability contract yet; check that this powerful access matches what it does'
-      : 'This is not in the local catalogue and has powerful access; check you meant to install it';
+      : 'This is not in the local catalogue and has powerful access. Neither fact establishes malicious behavior; check that the access suits its purpose';
   } else if (reputation.status === 'database_unavailable') {
     verdict = { code: 'database_unavailable', label: 'DATABASE UNAVAILABLE', tone: 'info', needsAttention: false };
     recommendedAction = 'Restore or reload WardenOne before relying on local reputation results';
@@ -800,12 +816,8 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
   } else if (reputation.status === 'catalogued_listing') {
     verdict = { code: 'catalogued_listing', label: 'CATALOGUED LISTING', tone: 'info', needsAttention: false };
     recommendedAction = 'The listing name is known locally; publisher identity and safety have not been verified';
-  } else if (reviewed) {
-    verdict = { code: 'reviewed_snapshot', label: 'REVIEWED SNAPSHOT', tone: 'calm', needsAttention: false };
-    recommendedAction = 'WardenOne will re-open review if this snapshot changes';
   } else if (accessRank >= EXT_ACCESS_RANK.medium) {
-    verdict = { code: 'review_recommended', label: 'REVIEW RECOMMENDED', tone: 'info', needsAttention: true };
-    recommendedAction = 'Check that the listed access matches what the extension does';
+    recommendedAction = 'No actionable findings in the current local evidence; check that the listed access suits its purpose';
   }
   /* Low-access extensions without adverse records or pending changes stay out of
      "Needs attention", even after a version bump or catalogue update. */
@@ -813,11 +825,16 @@ function buildExtensionAssessment(extension, database, reviews, alerts, permissi
       && reputationRank < EXT_REPUTATION_STATUS_RANK.historical_incident
       && accessRank <= EXT_ACCESS_RANK.low
       && !unreadChange
-      && !capabilities.unexpected.length) {
+      && !capabilities.unexpected.length
+      && !reputation.nameMismatch
+      && !['development', 'sideload', 'other'].includes(String(extension.installType))) {
     verdict = { code: 'nothing_of_note', label: 'NOTHING OF NOTE', tone: 'calm', needsAttention: false };
-    recommendedAction = 'It cannot reach anything sensitive and nothing is recorded against it';
+    recommendedAction = 'No high-impact permission combination or documented incident was identified in the local evidence';
   }
-  if (!extension.enabled && reputationRank < EXT_REPUTATION_STATUS_RANK.reported_harmful) {
+  verdict.category = reputation.status === 'known_harmful' ? 'confirmed_security_concern'
+    : verdict.needsAttention ? 'needs_security_review'
+      : accessRank >= EXT_ACCESS_RANK.high ? 'powerful_permissions' : 'no_current_concerns';
+  if (!extension.enabled && verdict.code !== 'disabled' && reputationRank < EXT_REPUTATION_STATUS_RANK.reported_harmful) {
     recommendedAction += '; it is currently disabled';
   }
   return {
@@ -999,7 +1016,7 @@ async function buildExtensionSecurityReportNow(options) {
   const stored = await localGet([EXT_REPUTATION_REVIEWS_KEY, EXT_ALERTS_KEY, EXT_WATCH_STATUS_KEY]);
   const reviews = stored && stored[EXT_REPUTATION_REVIEWS_KEY] && typeof stored[EXT_REPUTATION_REVIEWS_KEY] === 'object'
     ? stored[EXT_REPUTATION_REVIEWS_KEY] : {};
-  let alerts = Array.isArray(stored && stored[EXT_ALERTS_KEY]) ? stored[EXT_ALERTS_KEY] : [];
+  let alerts = (Array.isArray(stored && stored[EXT_ALERTS_KEY]) ? stored[EXT_ALERTS_KEY] : []).map(normalizeExtensionWatchAlert);
   const includeWarnings = !options || options.includePermissionWarnings !== false;
   const warnings = includeWarnings
     ? await Promise.all(installed.map((extension) => extensionPermissionWarnings(extension.id)))
@@ -1020,7 +1037,7 @@ async function buildExtensionSecurityReportNow(options) {
     attention: assessments.filter((item) => item.verdict.needsAttention).length,
     knownHarmful: assessments.filter((item) => item.reputation.status === 'known_harmful').length,
     reportedOrHistorical: assessments.filter((item) => item.reputation.status === 'reported_harmful' || item.reputation.status === 'historical_incident').length,
-    changed: assessments.filter((item) => item.latestChange && !item.latestChange.reviewed).length,
+    changed: assessments.filter((item) => item.pendingChange).length,
     unknown: assessments.filter((item) => item.reputation.status === 'no_record').length,
     catalogued: assessments.filter((item) => item.reputation.status === 'catalogued_listing').length,
     verifiedIdentities: assessments.filter((item) => item.reputation.status === 'recognized_identity').length,
@@ -1071,6 +1088,7 @@ async function findInstalledExtension(id) {
 }
 
 async function reviewExtensionSnapshotById(id) {
+  const reviewStartedAt = Date.now();
   const extension = await findInstalledExtension(id);
   const database = await loadCombinedExtensionReputation();
   const reputation = lookupExtensionReputation(extension, database);
@@ -1088,6 +1106,7 @@ async function reviewExtensionSnapshotById(id) {
     let changed = false;
     const updated = alerts.map((event) => {
       if (!event || event.id !== id || event.reviewedAt) return event;
+      if ((Number(event.when) || 0) > reviewStartedAt) return event;
       changed = true;
       return Object.assign({}, event, { reviewedAt });
     });

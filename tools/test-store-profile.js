@@ -288,9 +288,13 @@ section('the popup', () => {
   const full = popupRealm(false);
   const fq = (s) => full.doc.querySelectorAll(s);
   check('under the full profile nothing moves', fq('#eyeshield-panel').length === 1 && fq('.rewind-drop').length === 1 && fq('#tl-guard').length === 1 && fq('#mem-title')[0].textContent === 'Memory Shield' && full.omitted.length === 0);
-  check('the popup loads profile, health, state and search in order', POPUP_HTML.indexOf('<script src="build-profile.js"></script>') > 0 && POPUP_HTML.indexOf('<script src="build-profile.js"></script>') < POPUP_HTML.indexOf('<script src="popup-health.js"></script>')
-    && POPUP_HTML.indexOf('<script src="popup-health.js"></script>') < POPUP_HTML.indexOf('<script src="popup.js"></script>')
-    && POPUP_HTML.indexOf('<script src="popup.js"></script>') < POPUP_HTML.indexOf('<script src="popup-settings-search.js"></script>'));
+  const scriptPosition = name => POPUP_HTML.indexOf('<script src="' + name + '"></script>');
+  check('the popup loads profile, health and state in order', scriptPosition('build-profile.js') > 0
+    && scriptPosition('build-profile.js') < scriptPosition('popup-health.js')
+    && scriptPosition('popup-health.js') < scriptPosition('popup.js'));
+  check('search restoration loads after memory helpers and before popup state', scriptPosition('popup-scroll-memory.js') > 0
+    && scriptPosition('popup-scroll-memory.js') < scriptPosition('popup-settings-search.js')
+    && scriptPosition('popup-settings-search.js') < scriptPosition('popup.js'));
   check('the applier runs before anything paints', /const OMITTED_FEATURES = applyBuildProfile\(\);/.test(POPUP_JS) && POPUP_JS.indexOf('const OMITTED_FEATURES = applyBuildProfile();') < POPUP_JS.indexOf('(function initMemoryShield() {'));
   /* Every control for an omitted setting in the real popup sits under a marked element. */
   const { build } = tool.loadProfile();

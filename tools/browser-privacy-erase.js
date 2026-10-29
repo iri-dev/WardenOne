@@ -9,8 +9,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const profile = require('./perf-profile.js');
+const { cleanupProfile } = require('./lib/browser-profile-cleanup.js');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(process.env.WARDENONE_EXTENSION_DIR || path.join(__dirname, '..'));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function run() {
@@ -18,15 +19,23 @@ async function run() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-erase-'));
   let cdp = null;
   try {
-    const browser = await profile.launch(profile.edgePath(), 'on', ROOT, port, dir);
+    const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', ROOT, port, dir);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
     const extension = await profile.extensionReady(cdp, port, version);
+    const waitPopupReady = async (session) => {
+      for (let i = 0; i < 80; i++) {
+        const result = await cdp.send('Runtime.evaluate', { expression: 'document.readyState==="complete"&&!!(globalThis.chrome&&chrome.storage&&chrome.storage.local)', returnByValue: true }, session);
+        if (result.result && result.result.value) return;
+        await sleep(250);
+      }
+      throw new Error('Extension popup did not become ready');
+    };
     const { targetId } = await cdp.send('Target.createTarget', { url: 'chrome-extension://' + extension.id + '/popup.html' });
     const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
     await cdp.send('Runtime.enable', {}, sessionId);
-    await sleep(500);
+    await waitPopupReady(sessionId);
     const evaluate = async (expression, target = sessionId) => {
       const value = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, target);
       if (value.exceptionDetails) throw new Error((value.exceptionDetails.exception && value.exceptionDetails.exception.description) || value.exceptionDetails.text);
@@ -36,35 +45,39 @@ async function run() {
       wardenone_erase_sentinel_local:{site:'erase-sentinel.example'},
       wardenone_config:{enabled:true,downloadSafeBrowsingKey:'erase-test-secret',siteOverrides:{'erase-sentinel.example':{adShield:false}}}})`);
     await evaluate(`chrome.storage.session.set({wardenone_erase_sentinel_session:{site:'erase-sentinel.example'}})`);
+    await evaluate(`localStorage.setItem('erase-sentinel-dom','erase-sentinel.example')`);
+    await evaluate(`noteForgetTabHost(9999,'erase-sentinel.example');noteServiceWorkerRegistration('https://erase-sentinel.example/')`, extension.attachedSession);
     const before = await evaluate(`new Promise(r=>chrome.runtime.sendMessage({kind:'privacy-data-inspect'},r))`);
     if (!before || !before.ok || !before.records.some((x) => x.key === 'wardenone_history')) throw new Error('Seeded history was absent from preview');
     const erased = await evaluate(`new Promise(r=>chrome.runtime.sendMessage({kind:'privacy-data-erase',mode:'settings'},r))`);
     if (!erased || !erased.ok) throw new Error('Erasure failed: ' + JSON.stringify(erased));
     await sleep(1600);
+    const reloaded = await profile.extensionReady(cdp, port, version);
+    if (reloaded.id !== extension.id) throw new Error('Extension identity changed after erase');
     const next = await cdp.send('Target.createTarget', { url: 'chrome-extension://' + extension.id + '/popup.html' });
     const attached = await cdp.send('Target.attachToTarget', { targetId: next.targetId, flatten: true });
     await cdp.send('Runtime.enable', {}, attached.sessionId);
-    await sleep(500);
+    await waitPopupReady(attached.sessionId);
     const after = await evaluate(`Promise.all([chrome.storage.local.get(null),chrome.storage.session.get(null)]).then(([x,s])=>({
       sentinel:JSON.stringify(x).includes('erase-sentinel.example')||JSON.stringify(s).includes('erase-sentinel.example'),
       key:x.wardenone_config&&x.wardenone_config.downloadSafeBrowsingKey,
       enabled:x.wardenone_config&&x.wardenone_config.enabled,
-      keys:Object.keys(x).length}))`, attached.sessionId);
+      keys:Object.keys(x).length,dom:localStorage.getItem('erase-sentinel-dom')}))`, attached.sessionId);
     console.log(JSON.stringify({ beforeDatasets: before.records.length, after }));
-    if (!after || after.sentinel || after.key || after.enabled !== true) throw new Error('Erase left sentinel, key, or lost global switch');
-    console.log('[ok] real-browser erase removed browsing records, site exceptions and key while retaining global switch');
+    if (!after || after.sentinel || after.key || after.dom || after.enabled !== true) throw new Error('Erase left sentinel, key, UI cache, or lost global switch');
+    console.log('[ok] real-browser erase removed browsing records, site exceptions, UI DOM cache and key while retaining global switch');
     await profile.killBrowser(cdp, port);
     cdp.close();
     cdp = null;
     port = await profile.freePort();
-    const restarted = await profile.launch(profile.edgePath(), 'on', ROOT, port, dir);
+    const restarted = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', ROOT, port, dir);
     cdp = new profile.Cdp(restarted.webSocketDebuggerUrl);
     await cdp.connect();
     const afterRestart = await profile.extensionReady(cdp, port, version);
     const reopened = await cdp.send('Target.createTarget', { url: 'chrome-extension://' + afterRestart.id + '/popup.html' });
     const fresh = await cdp.send('Target.attachToTarget', { targetId: reopened.targetId, flatten: true });
     await cdp.send('Runtime.enable', {}, fresh.sessionId);
-    await sleep(500);
+    await waitPopupReady(fresh.sessionId);
     const durable = await evaluate(`chrome.storage.local.get(null).then(x=>({
       sentinel:JSON.stringify(x).includes('erase-sentinel.example'),
       key:x.wardenone_config&&x.wardenone_config.downloadSafeBrowsingKey,
@@ -75,9 +88,7 @@ async function run() {
     console.log('[ok] erase remains effective after a full browser restart');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
-    const tempRoot = path.resolve(os.tmpdir()) + path.sep;
-    if (!path.resolve(dir).startsWith(tempRoot)) throw new Error('Refusing to remove a profile outside temp');
-    fs.rmSync(dir, { recursive: true, force: true });
+    cleanupProfile(dir, 'wo-erase-');
   }
 }
 

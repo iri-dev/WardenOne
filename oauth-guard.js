@@ -12,8 +12,7 @@
 (function () {
   'use strict';
 
-  const WO_GUARD_VERSION = '1.0.2';
-  /* Release the older version’s listeners, observers and timers before replacing it in an open document. */
+  const WO_GUARD_VERSION = '1.0.3';
   if (window.__wardenOneOAuthGuardInstalled === WO_GUARD_VERSION) return;
   if (window.__wardenOneOAuthGuardInstalled) {
     try {
@@ -246,12 +245,7 @@
         }
         return placed;
       },
-      // Make this overlay behave as the modal it already looks like (M20).
-      //
-      // Called after the contents exist, because the accessible name has to point at a heading that
-      // is already there. The W3C pattern is explicit that aria-modal must not be set on something
-      // that does not actually behave modally, so the semantics and the keyboard containment are
-      // applied together here rather than separately.
+      // M20: apply modal semantics and keyboard containment together, after the referenced heading exists.
       dialog(opts) {
         const o = opts || {};
         if (!shadow || !host) return false;
@@ -856,11 +850,8 @@
          whatever the page happens to have under that id, which the page chooses. */
       if (oauthOverlay) { try { oauthOverlay.destroy(); } catch (_) {} oauthOverlay = null; }
       oauthOverlay = woOwnedOverlay('wo-oauth-guard');
-      /* Handed to the shared registry as something with a disconnect(), because that is the one
-         thing its teardown loop knows how to call. This is why the dispose above stays byte-for-byte
-         identical to the other eight copies: the overlay hooks into it instead of editing it.
-         destroy() releases its own DOM-watch subscription, so the ordering inside woKeep is not
-         load-bearing. */
+      /* Expose disconnect() to the shared teardown registry. destroy() releases its own DOM subscription, so registry
+         ordering is immaterial. */
       woHold({ disconnect() { try { if (oauthOverlay) oauthOverlay.destroy(); } catch (_) {} } });
       const shadow = oauthOverlay.root();
       if (!shadow) return;

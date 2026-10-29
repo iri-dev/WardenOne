@@ -1,0 +1,359 @@
+{
+  "schemaVersion": 1,
+  "source": "shipped root JavaScript literals and configured feed inventory",
+  "entries": [
+    {
+      "host": "api.abuseipdb.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "opt-in reputation",
+          "data": "raw public IP and user API key"
+        }
+      ]
+    },
+    {
+      "host": "api.github.com",
+      "source": "build-update.js",
+      "uses": [
+        {
+          "trigger": "automatic popup build check",
+          "data": "public release and commit identifiers"
+        }
+      ]
+    },
+    {
+      "host": "api.pwnedpasswords.com",
+      "source": "popup.js",
+      "uses": [
+        {
+          "trigger": "user-started password check",
+          "data": "five SHA-1 prefix characters"
+        }
+      ]
+    },
+    {
+      "host": "brave.com",
+      "source": "popup.js",
+      "uses": [
+        {
+          "trigger": "automatic popup browser update check",
+          "data": "public Brave release notes"
+        }
+      ]
+    },
+    {
+      "host": "checkurl.phishtank.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "opt-in reputation",
+          "data": "public URL without credentials, query or fragment; user API key"
+        }
+      ]
+    },
+    {
+      "host": "chromewebstore.google.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "user-started extension listing check",
+          "data": "public extension ID"
+        }
+      ]
+    },
+    {
+      "host": "domain-reputation.whoisxmlapi.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "opt-in reputation",
+          "data": "public domain and user API key"
+        }
+      ]
+    },
+    {
+      "host": "easylist-downloads.adblockplus.org",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "automatic filter update",
+          "data": "fixed public list request",
+          "sources": 4
+        }
+      ]
+    },
+    {
+      "host": "easylist.to",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "automatic filter update",
+          "data": "fixed public list request",
+          "sources": 2
+        }
+      ]
+    },
+    {
+      "host": "edgeupdates.microsoft.com",
+      "source": "popup.js",
+      "uses": [
+        {
+          "trigger": "automatic popup browser update check",
+          "data": "browser release channel"
+        }
+      ]
+    },
+    {
+      "host": "gql.twitch.tv",
+      "source": "content.min.js",
+      "uses": [
+        {
+          "trigger": "Twitch page feature",
+          "data": "Twitch page query and its own authorization header"
+        }
+      ]
+    },
+    {
+      "host": "haveibeenpwned.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "user-started site breach check",
+          "data": "registrable domain"
+        }
+      ]
+    },
+    {
+      "host": "malware-filter.gitlab.io",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "automatic filter update",
+          "data": "fixed public list request",
+          "sources": 4
+        }
+      ]
+    },
+    {
+      "host": "pgl.yoyo.org",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "automatic filter update",
+          "data": "fixed public list request",
+          "sources": 1
+        }
+      ]
+    },
+    {
+      "host": "phishing.army",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "automatic filter update",
+          "data": "fixed public list request",
+          "sources": 1
+        }
+      ]
+    },
+    {
+      "host": "raw.githubusercontent.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "automatic filter update",
+          "data": "fixed public list request",
+          "sources": 24
+        },
+        {
+          "trigger": "opt-in OpenPhish feed",
+          "data": "fixed public feed request"
+        }
+      ]
+    },
+    {
+      "host": "rdap.org",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "user-started or enabled age check",
+          "data": "registrable domain"
+        }
+      ]
+    },
+    {
+      "host": "safebrowsing.googleapis.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "opt-in reputation",
+          "data": "public URL without credentials, query or fragment; user API key"
+        }
+      ]
+    },
+    {
+      "host": "testsafebrowsing.appspot.com",
+      "source": "network.js",
+      "uses": [
+        {
+          "trigger": "user-started network self-test",
+          "data": "favicon probe"
+        }
+      ]
+    },
+    {
+      "host": "threat-intelligence.whoisxmlapi.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "opt-in reputation",
+          "data": "public URL or domain without credentials, query or fragment; user API key"
+        }
+      ]
+    },
+    {
+      "host": "ublockorigin.github.io",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "automatic filter update",
+          "data": "fixed public list request",
+          "sources": 5
+        }
+      ]
+    },
+    {
+      "host": "urlhaus-api.abuse.ch",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "opt-in reputation",
+          "data": "public URL without credentials, query or fragment; user Auth-Key"
+        }
+      ]
+    },
+    {
+      "host": "versionhistory.googleapis.com",
+      "source": "popup.js",
+      "uses": [
+        {
+          "trigger": "automatic popup browser update check",
+          "data": "browser platform and channel"
+        }
+      ]
+    },
+    {
+      "host": "versions.brave.com",
+      "source": "popup.js",
+      "uses": [
+        {
+          "trigger": "automatic popup browser update check",
+          "data": "browser platform and channel"
+        }
+      ]
+    },
+    {
+      "host": "www.cloudflare.com",
+      "source": "network.js",
+      "uses": [
+        {
+          "trigger": "user-started network self-test",
+          "data": "favicon probe"
+        }
+      ]
+    },
+    {
+      "host": "www.google.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "user-started network self-test",
+          "data": "favicon probe"
+        }
+      ]
+    },
+    {
+      "host": "www.pornhub.com",
+      "source": "network.js",
+      "uses": [
+        {
+          "trigger": "user-started network self-test",
+          "data": "favicon probe"
+        }
+      ]
+    },
+    {
+      "host": "www.virustotal.com",
+      "source": "background-downloads.js",
+      "uses": [
+        {
+          "trigger": "opt-in or user-started reputation",
+          "data": "public URL, file hash or selected manual URL; user API key"
+        }
+      ]
+    },
+    {
+      "host": "www.whoisxmlapi.com",
+      "source": "background.js",
+      "uses": [
+        {
+          "trigger": "opt-in age check",
+          "data": "public domain and user API key"
+        }
+      ]
+    },
+    {
+      "host": "xvideos.com",
+      "source": "network.js",
+      "uses": [
+        {
+          "trigger": "user-started network self-test",
+          "data": "favicon probe"
+        }
+      ]
+    }
+  ],
+  "dynamic": [
+    {
+      "id": "user-filter-list",
+      "source": "background.js",
+      "anchor": "async function fetchCustomListText(",
+      "destination": "user-selected HTTPS list host",
+      "trigger": "user subscription",
+      "data": "list URL; no visited page address"
+    },
+    {
+      "id": "script-drift",
+      "source": "background.js",
+      "anchor": "async function fetchScriptForDrift(",
+      "destination": "site script host",
+      "trigger": "script on a visited page; on by default",
+      "data": "script address re-fetched without cookies"
+    },
+    {
+      "id": "download-hash",
+      "source": "background-downloads.js",
+      "anchor": "async function fetchBytesForHash(",
+      "destination": "selected download host",
+      "trigger": "small risky download; on by default",
+      "data": "download address re-fetched without cookies"
+    },
+    {
+      "id": "page-resource",
+      "source": "eyeshield.js",
+      "anchor": "fetch(href,",
+      "destination": "resource host on the visited page",
+      "trigger": "page feature",
+      "data": "resource address"
+    },
+    {
+      "id": "cryptominer-resource",
+      "source": "cryptominer-detect.js",
+      "anchor": "fetch(href,",
+      "destination": "resource host on the visited page",
+      "trigger": "page feature",
+      "data": "resource address"
+    }
+  ]
+}

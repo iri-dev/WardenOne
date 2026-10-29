@@ -113,7 +113,7 @@ if (sourceRegion) {
   const box2 = { Number, Object, Set };
   vm.createContext(box2);
   /* The real constants, so the map is tested against the ids actually shipped. */
-  const bases = {};
+  const bases = { TRACKER_COOKIE_RULE_ID: 900007, TRACKER_COOKIE_ALIAS_RULES_BUDGET: 300 };
   for (const m of BG.matchAll(/const ([A-Z_]*RULE_BASE) = (\d+)/g)) bases[m[1]] = Number(m[2]);
   Object.assign(box2, bases);
   box2.LOG_STATIC_RULESETS = { adshield_easylist: 'AdShield / EasyList', easyprivacy: 'EasyPrivacy' };

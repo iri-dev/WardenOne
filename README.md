@@ -12,7 +12,7 @@ redirects. It keeps an eye on your other extensions too. And it all runs on your
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
 [![Download latest build](https://img.shields.io/badge/download-latest_build-e84393.svg)](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip)
-![Protections](https://img.shields.io/badge/protections-108-8e44ad.svg)
+![Protections](https://img.shields.io/badge/protections-110-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
 [![Open source](https://img.shields.io/badge/source-open-2ea44f.svg)](LICENSE)
 [![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WardenOne/issues/new/choose)
@@ -30,9 +30,9 @@ redirects. It keeps an eye on your other extensions too. And it all runs on your
 > [!WARNING]
 > **Official builds only.** WardenOne is a browser extension, never an `.exe`, installer or setup program. Download it only from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne). If you received another copy, read the [impersonation incident notice](https://iri-dev.github.io/WardenOne/stolen).
 
-> ## One master switch. 108 protections.
+> ## One master switch. 110 protections.
 >
-> **105 individually controllable · 3 watch-only**
+> **107 individually controllable · 3 watch-only**
 >
 > Three of them are watch-only: **Background Reports**, **Hardware & File Access** and **Browser
 > Capabilities**. They write down what happened. They don't block anything so there's nothing
@@ -126,7 +126,7 @@ or backup to read what it does, see its fresh-install default, and find its cont
 </p>
 
 <p align="center">
-  <a href="docs/screenshots/11-onboarding-protection-2026-10.webp"><img src="docs/screenshots/11-onboarding-protection-2026-10.webp" alt="The protection step explains the 108 available protections, seven optional providers and the compatibility choices in each preset" width="900"></a>
+  <a href="docs/screenshots/11-onboarding-protection-2026-10.webp"><img src="docs/screenshots/11-onboarding-protection-2026-10.webp" alt="The protection step explains available protections, seven optional providers and the compatibility choices in each preset" width="900"></a>
 </p>
 
 </details>
@@ -230,8 +230,9 @@ that look like a familiar name. It looks at the brand text, password forms, who 
 site etc all together. Just mentioning a company isn't enough to get a page flagged.
 
 There's also an optional login-page age check. It looks for a password form on a domain that was
-registered really recently. When it's on it sends only the domain to RDAP (not the path or the
-page or anything you typed) and remembers the answer locally.
+registered really recently. When it's on, a sign-in page offers a Check domain age button.
+Only pressing it sends the domain to RDAP or your enabled WhoisXML service, without the
+path, page contents or anything you typed. The answer is cached locally.
 
 The clearest look-alikes get a blocking screen with a choice to leave, visit the real site or
 continue. Behavioural detection can warn about an unknown site that acts like a tracker or scam
@@ -348,6 +349,10 @@ own.
 If a clearly labeled new-tab download link opens an unrelated ad tab instead, WardenOne closes
 the ad and opens the link you pressed when the intended tab did not open on its own. It follows
 the link shown by the page; it cannot verify a file host hidden behind later redirects.
+
+Auto-skip download ads follows a continuation only after you click a visible download link and
+the gate identifies that same destination. Loading a sponsor offer does not start a download.
+Gates with an uncertain continuation stay under your control.
 
 You can remove overlays on the page and there's an Undo chip if you change your mind. It tries to
 leave real payment forms, CAPTCHAs, logins and media controls alone. If WardenOne stops a jump
@@ -511,6 +516,29 @@ normal privacy cleaning because it's for emergencies, not tidying up.
 <sub><strong>AUTOMATIC PROTECTION · DOWNLOAD CONTEXT & REPUTATION</strong></sub>
 
 **What it does:** checks downloads in the background and interrupts when meaningful threat evidence needs your attention.
+
+### Forced Download Protection
+
+On by default, with its own toggle in Download checks. This is protection 110. It checks how a
+download started, independently of Download Shield's file-safety checks, using local information.
+
+Clear automatic or disguised file links are stopped before navigation, with a small **Download
+once** / **Cancel** panel. This includes an installer behind a Play button and some unrelated
+installer links on product download pages. Scripted downloads and server-named attachments get
+a browser-level backstop: when WardenOne can identify the source page, an unexpected file is held
+in Download Review, where you can continue or cancel it. An unexpected download is not a malware verdict.
+
+Visible download links, exports, keyboard saves and Save link as remain available. Global pauses,
+trusted-site pauses and this feature's site exceptions apply. When source context is missing or
+ambiguous, or a delayed action cannot be classified reliably, the intent check leaves it alone.
+Download Shield can still review it for independent safety evidence.
+
+The browser-level check starts after Chrome creates the download. A little data may arrive first,
+and Chrome or Brave can still show a native Save As dialog. Detached links and response-only
+downloads cannot always be stopped before that dialog. This feature cannot guarantee prevention
+of every forced download or identify every misleading product name.
+
+### File safety checks
 
 Download Shield and File Shield sound alike but they look at different things. Download Shield
 knows how a file got to you. File Shield knows what's actually inside it. You kind of need both,
@@ -856,8 +884,11 @@ WardenOne, so your extension list never gets uploaded anywhere.
 
 Once you've reviewed an extension a plain version update doesn't undo that. A change to its
 permissions, identity, install source or reputation does reopen it though, and version changes
-still show up in the history. Broad access gets explained, not automatically called malicious. An
-unknown ID never gets called safe. There's buttons to disable an extension or ask Chrome to remove
+still show up in the history. Permission exposure, trust evidence and suspicious changes are
+assessed separately. Powerful permissions or a missing catalogue entry alone are informational.
+Access outside a publisher's documented purpose asks for review once per unchanged snapshot;
+documented incident warnings remain visible regardless of review or disabled state. Ordinary
+re-enabling is informational. An unknown ID never gets called safe. There are buttons to disable an extension or ask Chrome to remove
 it (Chrome asks you to confirm). WardenOne never removes anything on its own.
 
 <p align="center">
@@ -937,12 +968,34 @@ feeds. WardenOne can send the Do Not Track and Global Privacy Control signals to
 exist to track get treated more strictly than normal cross-site services, since there's no login
 or checkout on them to protect.
 
+GPC is exposed to page scripts at document start and sent as `Sec-GPC: 1` on
+requests. Switching privacy signals off or pausing restores the browser's own
+JavaScript preference. Site exceptions apply to documents on the named host;
+embedded documents follow their own hostname policy. Navigation uses the destination
+document's setting, and subrequests use their initiating document's setting.
+
 It can also warn when a page posts to an unblocked third-party logging endpoint. A separate opt-in
 replaces Facebook, X, Instagram and TikTok embeds with click-to-load placeholders.
 
 Tracker and ad filtering here uses rules on your device. Optional reputation providers can receive
 page or download addresses when their separate switches are on; the [privacy policy](PRIVACY.md)
 explains each lookup.
+
+## CNAME Tracker Protection
+
+**Block CNAME-cloaked trackers** is on by default in Tracking. It blocks exact
+aliases from a curated local mapping only when they point to reviewed, dedicated
+tracking domains from four providers. Ordinary CNAMEs, unknown aliases, and shared
+or unrecognized targets do not qualify. An explicit off choice survives updates,
+presets, and ‘enable everything’.
+
+Turn it off for one site in the popup or Settings if a listed address serves
+something the site needs. Exceptions and site pauses apply to subsequent requests
+without reloading. Login, payment and media compatibility domains are exempt;
+page navigation and media requests are outside this policy. Network Log shows the
+mapped target separately from the request outcome. Unknown aliases retain existing protections. Mapping updates
+arrive with reviewed extension builds; visited hostnames are never sent for DNS
+lookups solely for this feature.
 
 ## First-party Tracker Protection
 
@@ -952,15 +1005,61 @@ up evidence on your device over time.
 
 The learner only ever **suggests**. When a third-party domain has acted like a tracker on three of
 your sites across two browser sessions it shows up in the popup under *Trackers noticed across your
-sites*. Nothing gets blocked until you press **Block**. Everything the learner sees comes from web
-pages, so a page could make it suggest a block but never actually make one.
+sites*. Nothing gets blocked by the learner until you press **Block**. Each proposal shows its
+source, confidence and age. Browser observations matched to packaged tracker lists or the local
+CNAME mapping are marked **corroborated**; page API/path observations remain **inferred**, and
+page claims remain **unverified**. A page can influence a suggestion, including a mistaken one,
+but cannot turn it into a blocking rule.
+
+With the same control enabled, Activity can also flag a **Suspected identifier ·
+detection only** when an unfamiliar random-looking URL value repeats twice on
+each of three independent sites. These short-lived local observations exclude
+sensitive flows and leave URLs intact. They expire after 30 minutes or a worker
+restart; clearing history or observations also clears the evidence. Coverage is
+conservative, and a finding indicates reuse rather than proof of tracking.
+
+Confirmed aliases count against their canonical tracking service only when the browser observes
+the actual alias hostname. Approving that service also covers its confirmed tracking aliases;
+the button identifies this scope. Existing approvals retain their original scope. Per-site
+Allow restores the service's learner-controlled requests, including those aliases.
 
 None of this turns into a crowdsourced record of your browsing. Or a local one. The learner keeps
-counts (sites, sessions, requests) and a keyed sketch that can only answer "have I counted this site
-already?". It never stores the names of the sites a tracker was seen on, and its observations expire
-after 30 days. Which trackers the current site used is only shown for this browser session.
+counts (sites, sessions, coalesced observations), source categories and a keyed membership sketch.
+Repeated signals on one site are coalesced within the day and browser session. The durable learner
+does not store visited site names, alias URLs or request tokens; observations expire after 30 days.
+Which trackers the current site used is only shown for this browser session. The bounded sketch
+can undercount; it is not encryption, and a copy of the profile and its key permits testing guessed
+site names. Clearing observations removes the evidence while preserving explicit decisions.
 
 ## Cookie and storage controls
+
+**Block third-party cookies** also isolates known tracker cookies. It removes
+outgoing `Cookie` and incoming `Set-Cookie` headers for curated tracker hosts and
+confirmed tracking aliases. Resources can still load unless another protection
+blocks them. Unknown hosts retain existing behavior; this does not isolate every
+cross-site cookie or stop a script from using other identifiers.
+
+Third-party resources on reviewed Google sign-in/static, Stripe, Spotify sign-in
+and Facebook SDK hosts also lose both cookie directions. Public client scripts
+do not receive a blanket login/payment exemption. These reviewed hosts no longer
+have sign-in/checkout path exemptions in third-party contexts. Embedded pages
+covered by the installed cookie policy also lose `document.cookie`, its prototype
+accessors and Cookie Store API access. Supported network frames apply this
+restriction before their first page script; other documents wait for verified
+configuration.
+Direct visits, first-party service use and established media workarounds retain
+cookies. Unknown service providers retain their existing compatibility policy. Turn
+it off for one site in the popup or Settings to restore cookie flow immediately
+for subsequent requests. Explicit firewall allowances win; firewall `noop`
+returns to automatic policy, and manual cookie stripping keeps its existing
+outgoing-only behavior. This uses the existing cookie switch and adds no new toggle.
+Network Log labels matched rules as **Cookie isolation policy**; a match
+identifies the policy, not proof that a cookie existed on that request.
+
+Early frame isolation needs an installed native rule and supported navigation
+timing. It does not cover every clean-frame/worker bypass or all website storage.
+Turning the setting off or adding an exception restores the
+wrapped native cookie APIs without a reload.
 
 On top of blocking third-party cookies WardenOne can wipe cookies when you close the browser, or
 stop them sticking around at all. It's careful around embedded frames and scripts in general
@@ -1036,7 +1135,8 @@ So I kept it narrow.
 
 Cookie banners come in a few different shapes and one action doesn't fit them all:
 
-- If there's a real **Reject** option WardenOne opens the choices if it has to, turns off the optional tracking and never clicks Accept.
+- WardenOne uses explicit OneTrust, Cookiebot and TrustArc controls where recognized, with a guarded generic fallback. It opens choices when needed and saves disabled optional categories while preserving required choices.
+- Activity distinguishes a failed action, a dispatched action with an **unverified** opt-out, and an opt-out verified in the consent manager's changed saved state. A disappearing banner alone does not establish rejection. Custom or unreadable states remain unverified.
 - If it's a consent-or-pay wall with no way to say no, and the article's already there underneath, an opt-in can lift the wall without clicking anything or saving a consent cookie. If the article never actually loaded WardenOne puts the wall back. Better than a blank page.
 - If you accepted tracking yourself, the consent and tracking cookies can get cleared after you leave and you stay signed in.
 
@@ -1101,15 +1201,17 @@ Being consistent matters more than being random. If a page got different GPU ans
 question that'd be rarer than your real machine. Which makes it an even better fingerprint. So
 WebGL and WebGPU get one GPU identity across the page and its frames. It's picked per site and
 stays the same across reloads, tabs and the site's frames. Two different sites get unrelated ones.
-WebGPU limits get lowered to the spec minimums everyone with the protection shares. Canvas and
-audio noise still change every load. Core count and memory are left alone because a worker can
-show their real values anyway.
+WebGPU limits are reduced toward the spec defaults without overstating a real adapter's
+capabilities; unavailable fields and native fallback/subgroup information stay truthful. Text,
+layout and derived analyser noise use a private per-document seed. Repeated identical inputs in
+that document agree; private text/layout noise can differ in another frame or after reload.
+Core count and memory are left alone because a worker can show their real values anyway.
 
 ```mermaid
 flowchart LR
     Ask["Page measures you<br/>canvas · audio · WebGL · fonts · screen · voices"] --> Shield["WardenOne answers"]
     Shield --> Stable["GPU identity stays stable<br/>for one site and its frames"]
-    Shield --> Noise["Text and audio noise<br/>changes per load"]
+    Shield --> Noise["Stable text/layout and analyser noise<br/>within one document"]
     Shield --> Native["Core count and memory<br/>stay native"]
     Stable --> Limit["Workers can still expose<br/>real graphics"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
@@ -1122,6 +1224,18 @@ break video. They do hide whether a supported codec is smooth or power-efficient
 gives away roughly how new your GPU is. WebCodecs support is watched, not changed. And a burst of
 capability probes gets logged separately from the shield, so noticing fingerprinting and changing
 the answers stay two different things.
+
+Playback buffers and sample rates remain native. Reading an `AudioBuffer` does not alter its
+samples, and later edits through either buffer API remain usable. Raw/offline audio fingerprints
+are therefore still visible. Canvas pixels and exports also remain native; the canvas protection
+here concerns text measurements. Device enumeration hides labels/group metadata while keeping
+native device types and usable opaque selection IDs.
+
+Noise is stable for identical measurements within a document and resamples text/layout values
+in new documents. Workers retain native values. Raw pixel/audio signals can still link visits,
+and cross-realm reflection can reveal the wrappers. This option does not promise anonymity or
+an indistinguishable hardware profile. The [fingerprint resistance audit](docs/fingerprint-resistance-audit.md)
+records the measured boundaries and compatibility coverage.
 
 Fingerprint probe detection has its own switch. It notices canvas, audio, WebGL, font, layout and
 device probing without changing the answers.
@@ -1140,7 +1254,8 @@ also use those scripts to approve sign-ins and orders, so this one can break tho
 has more than one. Every frame it embeds gets a fresh one. So the same noise runs in every frame as
 well as the page. Same-origin frames (`about:blank`, `srcdoc`, an `about:blank` window the page
 opens) pick up the page's settings and seed the moment they're created, before the page can borrow
-anything from them. That way a hidden frame's canvas gives the same answer as the page. Cross-origin
+anything from them. They use the same policy; private text/layout seeds remain local to each
+document, while the graphics identity is shared by site. Cross-origin
 frames follow the same switch, the same pause and the same per-site choices as the page around
 them. Captcha frames are left alone, same as the sign-in and captcha hosts the shield already
 skips.
@@ -1201,6 +1316,12 @@ flowchart TB
 ```
 
 ## Activity Centre
+
+Settings → Clean-up & backup lets you keep Activity and notification history with normal
+retention, keep it only until the browser closes, or save none. Changing this choice clears
+both histories. Clear history goes through the worker so pending writes cannot bring old
+events back. Clear observations also removes tracker observations, Script Drift baselines
+and site counts while preserving approved blocks, firewall rules and site preferences.
 
 <sub><strong>INTERFACE · LOCAL SECURITY EVIDENCE</strong></sub>
 
@@ -1383,20 +1504,24 @@ protection switches.
 
 ## Per-site control
 
-**105 of the 108 protections have their own toggle**. The other three are watch-only. They record
+**107 of the 110 protections have their own toggle**. The other three are watch-only. They record
 events but never block or change a page, so there's nothing for a switch to decide.
 
 When one protection gets one site wrong the **This site** panel lets you back off one step at a
 time:
 
-1. Pause WardenOne here for 15 minutes, an hour or eight hours.
-2. Turn off one protection on this site only. The list shows the protections that run in the page.
+1. Open **Site not working?** to see recent actions and try one suggested protection off on this host and its subdomains for 15 minutes. Reload to test; undo at any time. The trial ends automatically, including after a worker restart, and malware/phishing blocks are never suggested.
+2. Turn off one protection on this site only if you want a lasting choice. The list shows the protections that run in the page.
    If one says *page part only* it also has a network part (blocking rules, headers, download
    checks) that keeps working on that site. Protections with no page part just aren't listed.
-3. Allowlist the site for good, if that's really what you want.
+3. Pause WardenOne here for 15 minutes, an hour or eight hours if a narrow trial does not help.
+4. Allowlist the site for good, if that's really what you want.
 
 A site override can only turn a protection off. It can't sneakily turn something on everywhere. And
 pausing doesn't force a reload so you won't lose a half-filled form.
+The recovery panel can preview a diagnostic with only the host, recent action types and counts,
+and the active trial. It saves a local file only when you press **Save diagnostic file**; it never
+uploads a report or includes page text, URL paths, queries, or screenshots.
 
 The next four tools work together. The Network Logger shows you what happened. The Site Firewall
 lets you decide per site. My Rules is your own exact rules. Custom Lists are rules someone else
@@ -1414,6 +1539,12 @@ was. If a site breaks start here, not by switching protections off at random.
 Each row shows the request type, the page, whether it's first or third party, what happened to it
 and what matched it. You can turn a row into a rule that blocks the exact host, the whole domain or
 the path, or allows it back. All of those go into My Rules so your decisions are all in one place.
+
+Activity and the Network Logger also show product names, companies and categories where the
+bundled local catalog recognizes a hostname. Source links identify the catalog revision. A name
+match describes the service; the recorded outcome and evidence still explain what happened.
+Unknown blocks stay unattributed, and local tracker suspicions remain separate. **Refresh names**
+reloads the local catalog without restarting the browser. No hostname is sent to a lookup service.
 
 It only records while a logger page is open. Up to 1,000 requests are kept in memory and thrown
 away when the last logger closes. Sign-in details, query values, the fragment and any part of a path that is not plain route vocabulary are removed
@@ -1730,9 +1861,32 @@ site's browser history when Forget Me runs.
 
 ## Privacy Cleaner
 
-Pick exactly what to clear and over what time range. Cache, consent and tracking cookies, all
-sign-ins, history, download history, local storage, service workers, saved form data, or camera,
-mic and location permissions.
+Common categories appear first in a compact cleaning card. Expandable rows hold automatic cleaning,
+protected websites and history; advanced choices, preset management and reset controls open when needed.
+Clean browser data starts open and can be closed; opening another dropdown leaves existing sections alone.
+Info buttons explain individual choices, and the review screen shows consequences before confirmation.
+
+Choose Quick Clean, Balanced Clean, Deep Clean or up to eight saved presets, then review the
+categories, time range, scope and consequences before deletion. Only browser cache is selected
+by default. Cache Storage and website file system data have separate controls. Browser history,
+WardenOne activity and notifications, tracker observations and Script Drift baselines are independent.
+
+Protected websites exclude exact origins from supported cache and storage cleanup; cookie
+exclusions cover the registered domain. Add every scheme, subdomain and port you want preserved.
+Single-site cleanup supports the active website, with a warning that cookies can affect sibling
+subdomains. History, download records, saved forms, permission rules and WardenOne records cannot
+exclude protected websites. Download cleaning removes records, not files. Recognized-cookie
+cleaning uses names and vendor domains; it cannot guarantee sign-in preservation, covers all ages,
+and may bring consent banners back. Chrome provides no reliable cookie creation-age filter.
+
+Automatic Privacy Cleaning is opt-in, with a separate category selection, daily, weekly or monthly
+scheduling, startup cleanup and optional notifications. Missed schedules coalesce into one cleanup
+when Chrome resumes; exact execution time is not guaranteed. Results retain the last 20 cleanups
+within 30 days and identify incomplete categories. Interrupted work is reported without automatic
+replay. The cleaner runs only in normal windows. Emergency logout and Forget Me have their own scopes.
+
+Permission cleanup removes WardenOne-created rules only. Browser-granted permissions must be
+changed in browser site settings. Password deletion is not offered.
 
 Settings also lets you inspect and erase WardenOne's own saved records and site exceptions, with a
 preview of what the reset will remove.
@@ -1772,6 +1926,10 @@ regardless of the sleep profile.
 ## Resource Saver
 
 Controls for autoplaying media, background throttling, lazy-loading images, prefetch and preload.
+Block autoplay is off by default. When enabled, it permits delayed startup and retries for the
+media you select through its player or controls; unrelated media stays blocked. Turning it or Block hidden
+media abuse off releases its playback block in open tabs without a reload.
+
 An optional YouTube control hides Ambient Mode's decorative watch-page glow and stops the home
 header blurring thumbnail colours into its background. It may reduce rendering work on some
 systems. It leaves playback and YouTube's own preference alone.

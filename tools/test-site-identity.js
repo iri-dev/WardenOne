@@ -123,7 +123,7 @@ assert.strictEqual(never('github-cloud.s3.amazonaws.com'), true, 'GitHub upload 
 const scripts = MANIFEST.content_scripts || [];
 const antiEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('anti-redirect.js'));
 assert(antiEntry, 'anti-redirect content-script entry is missing');
-assert.deepStrictEqual(antiEntry.js.slice(-2), ['domain-utils.js', 'anti-redirect.js']);
+assert(antiEntry.js.indexOf('domain-utils.js') >= 0 && antiEntry.js.indexOf('domain-utils.js') < antiEntry.js.indexOf('anti-redirect.js'));
 const bridgeEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('bridge.js'));
 assert(bridgeEntry, 'bridge content-script entry is missing');
 assert.deepStrictEqual(bridgeEntry.js.slice(0, 4),

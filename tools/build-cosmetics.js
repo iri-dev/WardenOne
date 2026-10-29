@@ -58,14 +58,15 @@ function liftConst(name) {
   return 'const ' + name + ' = ' + m[1] + ';';
 }
 
-function liftFeedList() {
+function liftFeedList(BG) {
   const at = BG.indexOf('const ADSHIELD_COSMETIC_LISTS = [');
   if (at < 0) throw new Error('cannot find ADSHIELD_COSMETIC_LISTS');
   const end = BG.indexOf('];', at);
   return BG.slice(at, end + 2);
 }
 
-function makeParser() {
+function makeParser(source = BG) {
+  const BG = source;
   const sandbox = {
     Set, Map, Object, Array, String, Number, Boolean, RegExp, JSON, console,
     // Host classification is only used to scope where a rule may apply; a permissive
@@ -96,8 +97,10 @@ function makeParser() {
 
   vm.runInContext([
     BG.slice(from, to),
-    liftFeedList(),
-    'this.__api = { parseCosmeticFilters, ADSHIELD_COSMETIC_LISTS };',
+    liftFeedList(BG),
+    'this.__api = { parseCosmeticFilters, classifyCosmeticFilterLine, createCosmeticCompilation,',
+    ' compilePassiveCosmeticRule, compileProceduralCosmeticRule, compileScriptletRule,',
+    ' passiveCosmeticRules, packagedCosmeticRules, compilePackagedCosmetics, ADSHIELD_COSMETIC_LISTS };',
   ].join('\n'), sandbox, { filename: 'background.js:cosmetic-parser' });
   return sandbox.__api;
 }
@@ -105,7 +108,7 @@ function makeParser() {
 // ---------------------------------------------------------------------------
 // --check: the release invariant. Does not touch the network.
 // ---------------------------------------------------------------------------
-if (process.argv.includes('--check')) {
+function check() {
   if (!fs.existsSync(OUT)) {
     console.error('[fail] cosmetic-rules.json is missing. Run: node tools/build-cosmetics.js');
     process.exit(1);
@@ -129,20 +132,14 @@ if (process.argv.includes('--check')) {
   }
   const snapshot = sourceSnapshot();
   const inputRecords = snapshot.sources.map(({ text, textSha256, ...record }) => record);
-  const rebuilt = makeParser().parseCosmeticFilters(snapshot.sources.map((source) => source.text).join('\n'));
+  const rebuilt = makeParser().compilePackagedCosmetics(snapshot.sources.map((source) => source.text));
   if (snapshot.builtAt !== doc.builtAt || JSON.stringify(inputRecords) !== JSON.stringify(doc.sources)
     || JSON.stringify(rebuilt.scriptlets) !== JSON.stringify(doc.scriptlets)
     || JSON.stringify(rebuilt.procedural) !== JSON.stringify(doc.procedural)) {
     throw new Error('Packaged cosmetic rules disagree with their supplied corresponding source');
   }
-  // Staleness. These rules used to refresh themselves daily from the network; they do not any
-  // more, which is the point, but it means they now go stale silently and the only symptom is ad
-  // blocking quietly getting worse on sites whose defences moved on.
-  //
-  // The thresholds are deliberately different. The gate runs on every push, so failing it at 30
-  // days would block unrelated work for a reason that has nothing to do with the change in hand --
-  // people would learn to ignore it. So ordinary checks warn, and only genuinely abandoned rules
-  // fail. A release is the moment it actually matters, and --release is strict.
+  // Bundled rules no longer refresh at runtime. Ordinary checks warn on aging data; abandoned data fails, and --release
+  // uses a stricter age limit.
   const WARN_DAYS = 30;
   const STALE_DAYS = 90;
   const built = Date.parse(doc.builtAt + 'T00:00:00Z');
@@ -180,8 +177,8 @@ if (process.argv.includes('--check')) {
 // ---------------------------------------------------------------------------
 // Compile.
 // ---------------------------------------------------------------------------
-(async () => {
-  const { parseCosmeticFilters, ADSHIELD_COSMETIC_LISTS } = makeParser();
+async function build() {
+  const { compilePackagedCosmetics, ADSHIELD_COSMETIC_LISTS } = makeParser();
   const snapshot = process.argv.includes('--from-snapshot') ? sourceSnapshot() : null;
   const feeds = snapshot ? snapshot.sources.map((source) => source.url) : ADSHIELD_COSMETIC_LISTS;
   console.log('  parser lifted from background.js; ' + ADSHIELD_COSMETIC_LISTS.length + ' feeds');
@@ -227,7 +224,7 @@ if (process.argv.includes('--check')) {
     process.exit(1);
   }
 
-  const parsed = parseCosmeticFilters(texts.join('\n'));
+  const parsed = compilePackagedCosmetics(texts);
 
   // Only the command-bearing halves are packaged. Passive selectors keep coming from the daily
   // refresh, which is what the policy permits and what keeps ordinary hiding rules fresh.
@@ -260,7 +257,13 @@ if (process.argv.includes('--check')) {
   console.log('  procedural:  ' + proceduralRules + ' rules across ' + proceduralDomains + ' domains');
   console.log('  written:     cosmetic-rules.json  ('
     + Math.round(fs.statSync(OUT).size / 1024) + ' KB)');
-})().catch((e) => {
-  console.error('[fail] ' + (e && e.stack ? e.stack : e));
-  process.exit(1);
-});
+}
+
+module.exports = { makeParser, sourceSnapshot, cosmeticSource };
+if (require.main === module) {
+  if (process.argv.includes('--check')) check();
+  else build().catch((e) => {
+    console.error('[fail] ' + (e && e.stack ? e.stack : e));
+    process.exitCode = 1;
+  });
+}

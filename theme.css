@@ -333,10 +333,7 @@
 }
 .wo-theme-quick .wo-theme-option svg { width: 12px; height: 12px; }
 
-/* The notification centre carries the activity page's stylesheet, so it inherits
-   the same literal white fills -- and it had never declared a page name, so none
-   of the dark overrides below could reach it. Rows stayed pale while the text
-   went light, which left every setting label white on white. */
+/* Notifications inherit Activity's white fills, so include them in the page-scoped dark overrides. */
 :root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .row { background: var(--wo-surface); }
 :root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .row:nth-child(even) { background: var(--wo-surface-alt); }
 :root[data-wardenone-page="notifications"][data-wardenone-theme-resolved="dark"] .row:hover { background: var(--wo-surface-raised); }
@@ -485,3 +482,60 @@
 @media (prefers-reduced-motion: reduce) {
   .wo-theme-option { transition: none; }
 }
+.card-group.cleaner-panel { display:block; padding:4px 14px; border-bottom:0; }
+.cleaner-panel [hidden] { display:none !important; }
+.cleaner-section > summary::after { content:""; flex:none; width:5px; height:5px; border:solid var(--wo-text-faint); border-width:0 1.5px 1.5px 0; transform:rotate(45deg); }
+.cleaner-section[open] > summary::after { transform:rotate(225deg); }
+.cleaner-section > summary .memory-manage { margin-left:auto; white-space:nowrap; }
+.cleaner-section:last-of-type { border-bottom:0; }
+.cleaner-section-body { padding-top:10px; }
+.cleaner-panel .desc { max-width:none; }
+.cleaner-field-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.cleaner-field { display:block; min-width:0; margin:0 0 10px; color:var(--wo-text-soft); font-size:11px; line-height:1.4; }
+.cleaner-select { display:block; position:relative; margin-top:5px; }
+.cleaner-select::after { content:""; position:absolute; right:11px; top:12px; width:5px; height:5px; border:solid var(--wo-text-faint); border-width:0 1.5px 1.5px 0; transform:rotate(45deg); pointer-events:none; }
+.cleaner-panel .api-field { width:100%; min-width:0; max-width:100%; border:1px solid var(--wo-line); border-radius:8px; background:var(--wo-surface-wash); color:var(--wo-text); font:500 11.5px var(--body); padding:7px 9px; }
+.cleaner-panel select.api-field { appearance:none; padding-right:25px; text-overflow:ellipsis; }
+.cleaner-panel select option { color:var(--wo-text); background:var(--wo-surface); }
+.cleaner-field > input, .cleaner-field > textarea { display:block; margin-top:5px; }
+.cleaner-panel textarea { resize:vertical; min-height:88px; line-height:1.7; }
+.cleaner-choices { padding-top:7px; margin-top:3px; border-top:1px solid var(--wo-line); }
+.cleaner-option { display:grid; grid-template-columns:minmax(0,1fr) 24px; align-items:center; min-height:34px; column-gap:4px; }
+.cleaner-option .ck { min-width:0; padding:7px 0; font-size:12.5px; line-height:1.4; }
+.cleaner-panel .ck input { flex:none; width:16px; height:16px; accent-color:var(--wo-violet); }
+.cleaner-info { display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; border-radius:50%; background:transparent; color:var(--wo-text-faint); cursor:pointer; }
+.cleaner-info:hover, .cleaner-info[aria-expanded="true"] { color:var(--wo-brand-text); background:var(--wo-surface-muted); }
+.cleaner-help { grid-column:1/-1; margin:3px 0 7px; color:var(--wo-text-soft); font-size:11px; line-height:1.5; overflow-wrap:anywhere; white-space:pre-line; }
+.cleaner-disclosure { margin-top:6px; }
+.cleaner-disclosure > summary { display:flex; align-items:center; gap:7px; padding:8px 0; list-style:none; cursor:pointer; color:var(--wo-brand-text); font-size:11.5px; font-weight:600; }
+.cleaner-disclosure > summary::-webkit-details-marker { display:none; }
+.cleaner-disclosure > summary::after { content:""; flex:none; width:5px; height:5px; margin-left:auto; border:solid currentColor; border-width:0 1.5px 1.5px 0; transform:rotate(45deg); }
+.cleaner-disclosure[open] > summary::after { transform:rotate(225deg); }
+.cleaner-count { margin-left:auto; color:var(--wo-text-faint); font-size:10px; font-weight:500; }
+.cleaner-disclosure > summary:has(.cleaner-count)::after { margin-left:0; }
+.cleaner-details-body { padding:4px 0 8px; }
+.cleaner-subheading { padding:12px 0 3px; margin-top:8px; border-top:1px solid var(--wo-line); color:var(--wo-text-soft); font-size:11px; font-weight:700; }
+.cleaner-preserved { display:flex; align-items:center; gap:6px; margin:8px 0 10px; color:var(--wo-text-faint); font-size:10px; line-height:1.5; }
+.cleaner-preserved svg { flex:none; }
+.cleaner-panel .cleaner-primary { width:100%; min-height:36px; padding:9px 10px; font-size:11.5px; }
+.cleaner-actions { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:8px 0; }
+.cleaner-panel .cleaner-small { flex:0 1 auto; padding:7px 9px; min-height:30px; font-size:10.5px; line-height:1.35; }
+.cleaner-panel #cl-clear-history { margin-top:8px; }
+.cleaner-panel .cleaner-check { padding:8px 0; line-height:1.4; }
+.cleaner-panel .cleaner-selection { margin:8px 0 12px; overflow-wrap:anywhere; }
+.cleaner-panel .cleaner-reset-row { display:block; padding:4px 0; border:0; }
+.cleaner-reset-row .privacy-erase-btn { min-height:32px; padding:7px 9px; font-size:11px; }
+.cleaner-panel #privacy-data-mode { margin-top:0; }
+.cleaner-reset-row > .desc { margin-bottom:8px; }
+.cleaner-history-list { max-height:280px; overflow-y:auto; margin:10px 0; color:var(--wo-text-soft); font-size:11px; }
+.cleaner-history-item { padding:9px 0; border-bottom:1px solid var(--wo-line); }
+.cleaner-history-item:last-child { border-bottom:0; }
+.cleaner-history-item summary { cursor:pointer; list-style:none; font-size:11.5px; }
+.cleaner-history-item summary::-webkit-details-marker { display:none; }
+.cleaner-history-date { display:block; margin-top:3px; font-size:10px; color:var(--wo-text-faint); }
+.cleaner-history-success { color:var(--wo-success); }
+.cleaner-history-failure { color:var(--wo-danger); }
+.cleaner-preview { font-size:11.5px; line-height:1.5; overflow-wrap:anywhere; }
+.cleaner-review-line { margin-top:9px; color:var(--wo-text-soft); }
+.cleaner-warning { padding:9px; margin:10px 0; border:1px solid var(--wo-warning-line); border-radius:10px; background:var(--wo-warning-bg); color:var(--wo-warning); font-size:11px; line-height:1.5; }
+.cleaner-status { padding:10px 5px 2px; font-size:11px; line-height:1.5; overflow-wrap:anywhere; }

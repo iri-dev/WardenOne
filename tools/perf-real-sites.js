@@ -30,12 +30,15 @@ function argsOf(argv) {
     else if (argv[i] === '--warmup') args.warmup = Number(value());
     else if (argv[i] === '--skip-remote-wait') args.skipRemoteWait = true;
     else if (argv[i] === '--out') args.out = path.resolve(ROOT, value());
+    else if (argv[i] === '--extension') args.extension = path.resolve(value());
+    else if (argv[i] === '--noise') args.noise = true;
     else throw new Error('unknown option ' + argv[i]);
   }
   if (args.sites.some((site) => !SITES[site]) || args.variants.some((v) => !['head', 'current'].includes(v))
       || !Number.isFinite(args.seconds) || args.seconds < 10 || !Number.isFinite(args.warmup) || args.warmup < 0) {
     throw new Error('invalid sites, variants, seconds or warmup');
   }
+  if(args.extension&&args.variants.includes('head'))throw new Error('--extension requires only the current variant');
   return args;
 }
 
@@ -64,7 +67,7 @@ async function pageState(cdp, session) {
     const vod = Array.from(document.querySelectorAll('a[href]')).map((link) => link.href)
       .find((href) => /twitch\\.tv\\/(?:videos\\/\\d+|[^/]+\\/video\\/\\d+)/.test(href));
     const body = document.body;
-    return { host: location.hostname, path: location.pathname, title: document.title,
+    return { host: location.hostname, path: location.pathname, title: document.title, noiseEnabled: window.__wardenOneRealm?.noise ?? null,
       textLength: body ? body.innerText.length : 0, images: images.length,
       loadedImages: images.filter((image) => image.complete && image.naturalWidth > 0).length,
       videos: document.querySelectorAll('video').length,
@@ -93,6 +96,15 @@ function siteReady(site, state) {
   if (site === 'discord') return state.host === 'discord.com'
     && state.path === '/login' && state.loginFields >= 1 && state.textLength > 150;
   return state.host === 'commons.wikimedia.org' && state.images >= 300 && state.loadedImages >= 20;
+}
+
+function sampleSuccessful(result) {
+  if(result.error||result.readiness?.ready!==true)return false;
+  const first=result.samples?.[0]?.state,last=result.samples?.at(-1)?.state;
+  if(!siteReady(result.site,last))return false;
+  if(result.site!=='youtube'&&result.site!=='twitch')return true;
+  return Number.isFinite(first?.videoTime)&&Number.isFinite(last.videoTime)
+    &&last.videoTime>first.videoTime+.05&&(!last.videoPaused||last.videoEnded===true);
 }
 
 async function waitForSite(cdp, session, site, navigationStart, minimumSeconds) {
@@ -155,7 +167,7 @@ async function waitRemoteHosts(cdp, workerSession) {
   return 0;
 }
 
-async function runOne(site, variant, seconds, warmup, extensionDir, version, skipRemoteWait) {
+async function runOne(site, variant, seconds, warmup, extensionDir, version, skipRemoteWait, noise) {
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-real-sites-'));
   const port = await browser.freePort();
   let cdp;
@@ -166,6 +178,17 @@ async function runOne(site, variant, seconds, warmup, extensionDir, version, ski
     await cdp.connect();
     const extension = await browser.extensionReady(cdp, port, version);
     await browser.closeExtensionTabs(cdp, port, extension.id);
+    if (noise) {
+      const result=await cdp.send('Runtime.evaluate',{expression:'updateStoredConfig(c=>{c.antiFingerprintNoise=true;}).then(()=>true)',awaitPromise:true,returnByValue:true},extension.attachedSession);
+      if(result.exceptionDetails||result.result.value!==true)throw Error('Cannot enable fingerprint noise');
+      const end=Date.now()+30000;
+      while(true){
+        const ready=await cdp.send('Runtime.evaluate',{expression:'!!__refreshExtensionStateLastKey&&!__refreshExtensionStateInFlightKey&&!__refreshExtensionStateTimer&&!__refreshExtensionStateQueued',returnByValue:true},extension.attachedSession);
+        if(ready.result.value===true)break;
+        if(Date.now()>end)throw Error('Fingerprint noise configuration did not settle');
+        await sleep(50);
+      }
+    }
     const remoteHostsStart = skipRemoteWait ? await remoteHostCount(cdp, extension.attachedSession)
       : await waitRemoteHosts(cdp, extension.attachedSession);
     const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
@@ -214,10 +237,16 @@ async function runOne(site, variant, seconds, warmup, extensionDir, version, ski
     await cdp.send('Page.navigate', { url: SITES[site] }, sessionId);
     const readiness = await waitForSite(cdp, sessionId, site, navigationStart, warmup);
     if (site === 'youtube' || site === 'twitch') {
-      await cdp.send('Runtime.evaluate', { expression: `(() => {
+      await cdp.send('Page.bringToFront', {}, sessionId);
+      const playback = await cdp.send('Runtime.evaluate', { expression: `(async () => {
         const video = document.querySelector('video');
-        if (video) { video.muted = true; video.play().catch(() => {}); }
-      })()` }, sessionId).catch(() => {});
+        if (!video) throw Error('Video player unavailable');
+        video.muted = true;
+        await video.play();
+        return true;
+      })()`, awaitPromise: true, returnByValue: true, userGesture: true }, sessionId);
+      if (playback.exceptionDetails || playback.result.value !== true)
+        throw Error('Video playback did not start: ' + (playback.exceptionDetails?.exception?.description || playback.exceptionDetails?.text || 'unknown result'));
     }
     await cdp.send('HeapProfiler.collectGarbage', {}, sessionId).catch(() => {});
     const samples = [await sample(cdp, sessionId, networkSessions)];
@@ -265,10 +294,11 @@ async function runOne(site, variant, seconds, warmup, extensionDir, version, ski
 
 async function main() {
   const args = argsOf(process.argv.slice(2));
-  const version = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8')).version;
+  const currentRoot=args.extension||ROOT;
+  const version = JSON.parse(fs.readFileSync(path.join(currentRoot, 'manifest.json'), 'utf8')).version;
   const headDir = args.variants.includes('head') ? fs.mkdtempSync(path.join(os.tmpdir(), 'wo-real-head-')) : null;
   const report = { date: new Date().toISOString(), version, seconds: args.seconds,
-    warmupSeconds: args.warmup, sites: args.sites, variants: args.variants, results: [] };
+    warmupSeconds: args.warmup, sites: args.sites, variants: args.variants, extensionDirectory:currentRoot,noiseRequested:!!args.noise,results: [],complete:false };
   try {
     if (headDir) copyHead(headDir);
     for (const site of args.sites) {
@@ -277,12 +307,13 @@ async function main() {
         console.log('Starting ' + site + ' ' + variant);
         try {
           report.results.push(await runOne(site, variant, args.seconds, args.warmup,
-            variant === 'head' ? headDir : ROOT, version, args.skipRemoteWait));
+            variant === 'head' ? headDir : currentRoot, version, args.skipRemoteWait, args.noise));
         } catch (error) {
           report.results.push({ site, variant, error: String(error && error.message || error) });
           console.error(site + ' ' + variant + ': ' + error);
         }
         fs.mkdirSync(path.dirname(args.out), { recursive: true });
+        report.complete=report.results.length===args.sites.length*args.variants.length&&report.results.every(sampleSuccessful);
         fs.writeFileSync(args.out, JSON.stringify(report, null, 2));
       }
     }
@@ -295,9 +326,11 @@ async function main() {
       }
     }
   }
+  if(!report.complete){console.error('Live-site validation incomplete: a page was not ready or video did not advance.');process.exitCode=1;}
   console.log('written: ' + args.out);
 }
 
-browser.mustFinish(main, 'perf-real-sites').catch((error) => {
+module.exports={processState,pageState,siteReady,sampleSuccessful,SITES,waitForSite};
+if(require.main===module)browser.mustFinish(main, 'perf-real-sites').catch((error) => {
   console.error(error); process.exitCode = 1;
 });

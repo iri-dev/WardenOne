@@ -51,7 +51,7 @@ async function run() {
       }
       throw new Error(`Timed out waiting for ${label}`);
     }
-    const settings = await open('settings.html');
+    let settings = await open('settings.html');
     await until(settings, "document.readyState === 'complete' && !!document.querySelector('#nav [data-go=arrange]')", 'Settings sidebar');
     assert(await value(settings, "document.querySelector('#nav [data-go=arrange]').textContent.includes('Arrange sections')"));
     await value(settings, "document.querySelector('#nav [data-go=arrange]').click()");
@@ -63,7 +63,7 @@ async function run() {
     }
     assert(await value(settings, "document.querySelector('#nav [data-go=arrange]').getAttribute('aria-current') === 'page'"));
     const defaults = await value(settings, "[...document.querySelectorAll('#ord-list .ord-item')].map(el => el.dataset.id)");
-    const popup = await open('popup.html');
+    let popup = await open('popup.html');
     await until(popup, "document.readyState === 'complete' && !!document.getElementById('arrange-open')", 'popup');
     const popupDefaults = await value(popup, 'POPUP_SECTION_DEFAULT');
     assert.deepEqual(defaults, popupDefaults, 'Settings lists the popup sections in the same default order');
@@ -85,6 +85,23 @@ async function run() {
     assert.equal(await value(settings, "document.querySelector('#nav [aria-current=page]')?.dataset.go"), 'arrange', 'reload keeps the selected Settings page');
     await value(settings, "document.querySelector('#nav [data-go=arrange]').click()");
     await until(settings, `document.querySelector('#ord-list .ord-item')?.dataset.id === ${JSON.stringify(defaults[1])}`, 'restored Settings order');
+    await value(settings, "moveSection('browser-health', 0, 'grip')");
+    const fromSettings = ['browser-health', ...swapped.filter(id => id !== 'browser-health')];
+    await until(settings, "chrome.storage.local.get('wardenone_popup_section_order').then(data => data.wardenone_popup_section_order?.[0] === 'browser-health')", 'saved new section position');
+    await cdp.send('Page.reload', {}, popup.sessionId);
+    await until(popup, "document.readyState === 'complete' && typeof popupSectionRuns === 'function' && popupSectionRuns()[0]?.id === 'browser-health'", 'new section survives popup reload');
+    assert.deepEqual(await value(popup, 'popupSectionRuns().map(section => section.id)'), fromSettings);
+    await value(popup, "moveArrangeSection('cleaner', -popupSectionRuns().findIndex(section => section.id === 'cleaner'), 'grip')");
+    const fromPopup = ['cleaner', ...fromSettings.filter(id => id !== 'cleaner')];
+    await until(settings, "chrome.storage.local.get('wardenone_popup_section_order').then(data => data.wardenone_popup_section_order?.[0] === 'cleaner')", 'saved popup order');
+    await value(popup, 'setTimeout(() => chrome.runtime.reload(), 50); true');
+    await sleep(700);
+    await profile.extensionReady(cdp, port, version);
+    settings = await open('settings.html'); popup = await open('popup.html');
+    await until(settings, "document.readyState === 'complete' && document.querySelector('#ord-list .ord-item')?.dataset.id === 'cleaner'", 'Settings order after extension update/reload');
+    await until(popup, "document.readyState === 'complete' && typeof popupSectionRuns === 'function' && popupSectionRuns()[0]?.id === 'cleaner'", 'popup order after extension update/reload');
+    assert.deepEqual(await value(settings, "[...document.querySelectorAll('#ord-list .ord-item')].map(element => element.dataset.id)"), fromPopup);
+    assert.deepEqual(await value(popup, 'popupSectionRuns().map(section => section.id)'), fromPopup);
     await value(settings, "document.getElementById('ord-reset').click()");
     const points = await value(settings, `(() => {
       const rows = [...document.querySelectorAll('#ord-list .ord-item')];

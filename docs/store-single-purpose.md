@@ -124,5 +124,7 @@ row here, so a section cannot be added without saying how it answers the sentenc
 | What WardenOne watches | The watch-only guards that record device-access and capability probes without changing a page: protection evidence. |
 | Interface | How WardenOne shows itself -- badge, toasts, silent mode. Presentation of the protection, not a feature of its own. |
 | Settings backup | Export and import of WardenOne's own settings. Housekeeping for the extension itself. |
-| Privacy cleaner | Clears browsing data, consent and tracking cookies and site permissions: privacy. |
+| Privacy cleaner | Reader-selected browsing-data cleanup, protected origins, previews and opt-in scheduling; removes extension-owned permission rules: privacy. |
+| Security Centre | Reviews extension changes, startup findings and site permission chains: browser security. |
+| Browser health | Directs readers to browser update settings and reports supported version checks: browser security. |
 | This site | Per-site pause, allowlist and per-protection switches for the page in front of you. Control of the protection, not a feature of its own. |

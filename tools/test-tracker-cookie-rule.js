@@ -28,8 +28,15 @@ function check(name, cond, detail) {
 function harness(domains) {
   const state = { updates: [] };
   const sandbox = Object.assign({
-    console, Promise, Set, Map, Array, Object, String, Number, Boolean,
+    console, Promise, Set, Map, Array, Object, String, Number, Boolean, scheduleContentConfigRefresh() {},
     LOGIN_COMPAT_NEVER_BLOCK_DOMAINS: ['accounts.google.com', 'login.microsoftonline.com'],
+    TRACKER_COOKIE_ALIAS_RULE_BASE: Number(BG.match(/const TRACKER_COOKIE_ALIAS_RULE_BASE = (\d+)/)[1]),
+    TRACKER_COOKIE_ALIAS_RULES_BUDGET: Number(BG.match(/const TRACKER_COOKIE_ALIAS_RULES_BUDGET = (\d+)/)[1]),
+    FIREWALL_RULE_BASE:950000,FIREWALL_RULE_MAX:250,FIREWALL_SESSION_RULE_BASE:960000,FIREWALL_SESSION_RULE_MAX:50,
+    TRACKER_RULE_BASE:720000,TRACKER_RULE_MAX:1000,USER_RULE_BASE:750000,USER_RULE_MAX:500,
+    MEDIA_COMPAT_DOMAINS: new Set(), activeAllowlist: cfg => cfg.allowlist || [], normalizeAllowlistHost: value => value,
+    isProtectedTrackerDomain: () => false, isMediaCompatDomain: () => false,
+    loadKnownAliases: async () => new Map(), WOCname: { compile: () => [] },
     packagedHeaderTrackerDomains: async () => (domains === undefined
       ? ['doubleclick.net', 'connect.facebook.net', 'scorecardresearch.com']
       : domains),
@@ -78,7 +85,9 @@ pending.push((async function theWideRuleIsScopedToTrackers() {
 pending.push((async function theWideRuleIsActuallyWide() {
   const h = harness();
   await h.api.applyTrackerCookieRule(true);
-  const types = h.state.updates[0].addRules[0].condition.resourceTypes;
+  const rules = h.state.updates[0].addRules;
+  const types = [...new Set(rules.filter(rule=>rule.condition.domainType==='thirdParty'
+    &&rule.condition.requestDomains?.includes('doubleclick.net')).flatMap(rule=>rule.condition.resourceTypes))];
   /* The types the narrow rule cannot have, and where tracker cookies really are. */
   ['sub_frame', 'script', 'xmlhttprequest', 'media', 'other', 'websocket'].forEach((t) => {
     check('the wide rule covers ' + t, types.indexOf(t) >= 0, JSON.stringify(types));
@@ -93,11 +102,9 @@ pending.push((async function anEmptyListInstallsNothing() {
      condition with an empty array matches every domain, not none. If the packaged
      list ever fails to load, the correct answer is no rule at all. */
   const h = harness([]);
-  await h.api.applyTrackerCookieRule(true);
-  const update = h.state.updates[0];
-  check('no rule is installed without a tracker list', (update.addRules || []).length === 0);
-  check('and any previous one is removed',
-    (update.removeRuleIds || []).length === 1, JSON.stringify(update.removeRuleIds));
+  const result = await h.api.applyTrackerCookieRule(true);
+  check('unavailable classification is reported', result === false);
+  check('no rule is installed or removed without a tracker list', h.state.updates.length === 0);
 }()));
 
 pending.push((async function itCanBeTurnedOff() {
@@ -106,7 +113,7 @@ pending.push((async function itCanBeTurnedOff() {
   await h.api.applyTrackerCookieRule(false);
   const last = h.state.updates[h.state.updates.length - 1];
   check('turning it off removes the rule and adds none',
-    (last.addRules || []).length === 0 && (last.removeRuleIds || []).length === 1);
+    (last.addRules || []).length === 0 && last.removeRuleIds.includes(900007));
 }()));
 
 pending.push((async function repeatedCallsDoNotRewrite() {
@@ -134,15 +141,14 @@ pending.push((async function repeatedCallsDoNotRewrite() {
 
 (function bothRulesShip() {
   check('the wide rule is applied with the same setting as the narrow one',
-    /applyTrackerCookieRule\(on && cfg\.blockThirdPartyCookies !== false\)/.test(BG));
+    /applyTrackerCookieRule\(on && cfg\.blockThirdPartyCookies !== false, cfg(?:, submitRules)?\)/.test(BG));
   check('it is applied on both the settings and refresh paths',
-    (BG.match(/applyTrackerCookieRule\(on && cfg\.blockThirdPartyCookies !== false\)/g) || []).length >= 2);
+    (BG.match(/applyTrackerCookieRule\(on && cfg\.blockThirdPartyCookies !== false, cfg(?:, submitRules)?\)/g) || []).length >= 2);
   check('it is serialized with the other rule appliers',
     /'applyTrackerCookieRule'/.test(BG.slice(BG.indexOf('SERIALIZED_STATE_APPLIERS'))));
   check('it has its own rule id', /const TRACKER_COOKIE_RULE_ID = 900007/.test(BG));
 }());
 
-// ---------------------------------------------------------------------------
 
 Promise.all(pending).then(() => {
   if (failures.length) {

@@ -70,6 +70,7 @@
             <button class="btn" id="clear">Clear history</button>
           </div>
           <div class="panel-note">Blocks, warnings, and guarded decisions from the latest activity on this browser.</div>
+          <div class="panel-note" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span id="tracker-catalog-status"></span><button class="btn" id="refresh-tracker-names">Refresh names</button></div>
           <div class="list" id="rows"><div class="empty">Loading...</div></div>
         </section>
 
@@ -78,11 +79,7 @@
             <div><span class="panel-kicker">Never load</span><h2>Blocked sites</h2></div>
             <button class="btn" id="clear-learned">Forget all</button>
           </div>
-          <!-- Two kinds of entry live here and they are not the same thing: sites
-               WardenOne flagged by behaviour, and sites you blocked yourself from
-               the right-click menu. Each row says which it is, so your own
-               decision is not presented back to you as something WardenOne
-               worked out. -->
+          <!-- Distinguish detected threats from manual blocks so user decisions are not presented as detector findings. -->
           <div class="panel-note">Sites blocked on future visits: ones you blocked yourself from the right-click menu, and ones WardenOne flagged by behavior that were not on a blocklist. Each row says which. Remove one to let it load again.</div>
           <!-- Type-it-yourself blocking. Everything else in WardenOne decides for
                you; this is the one list where you decide, and nothing overrules it
@@ -126,11 +123,14 @@
 
 <footer class="guide-footer">
   <div class="guide-wrap guide-footer-inner">
-    <span><strong>Last 200 events, kept for 30 days.</strong> Stored only on this device; Clear history removes them at once.</span>
+    <span><strong>Last 200 events, up to 30 days under normal retention.</strong> Session-only or no saved history is available in Settings → Clean-up & backup. Clear history also clears pending writes and notification history.</span>
     <span>Nothing here is ever uploaded or shared.</span>
   </div>
 </footer>
 <script src="config-lock.js"></script>
+<script src="domain-utils.js"></script>
+<script src="psl-private.js"></script>
+<script src="tracker-attribution.js"></script>
 <script src="history.js"></script>
 </body>
 </html>

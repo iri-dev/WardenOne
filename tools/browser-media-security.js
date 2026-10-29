@@ -9,7 +9,8 @@ const https = require('https');
 const os = require('os');
 const path = require('path');
 const profile = require('./perf-profile.js');
-const root = path.resolve(__dirname, '..');
+const {cleanupProfile} = require('./lib/browser-profile-cleanup.js');
+const root = path.resolve(process.env.WARDENONE_EXTENSION_DIR || path.join(__dirname, '..'));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /* Public throwaway credentials for this loopback fixture, never a trusted CA. */
@@ -51,6 +52,13 @@ async function run() {
     if (request.url.startsWith('/media-ok.mp4')) {
       response.setHeader('Content-Type', 'video/mp4');
       response.end(media);
+    } else if (request.url.startsWith('/autoplay-fixture')) {
+      response.setHeader('Content-Type', 'text/html');
+      response.end('<!doctype html><title>Delayed playback</title><button id="unrelated-click">Elsewhere</button><video id="intentional-video" muted controls loop '
+        + 'style="width:640px;height:360px" src="https://' + cdn + ':' + server.address().port + '/media-ok.mp4"></video>'
+        + '<button id="stream-start" aria-controls="intentional-video" onclick="setTimeout(()=>document.querySelector(\'video\').play()'
+        + '.then(()=>window.delayedPlay=\'playing\',e=>window.delayedPlay=e.name+\': \'+e.message),1600)">Play stream</button>'
+        + '<video id="unrelated-video" muted loop src="https://' + cdn + ':' + server.address().port + '/media-ok.mp4"></video>');
     } else if (request.url.startsWith('/fixture')) {
       response.setHeader('Content-Type', 'text/html');
       response.end('<!doctype html><title>Media security fixture</title><video id="player" muted controls loop src="https://'
@@ -100,6 +108,71 @@ async function run() {
       target:{tabId:${tabId},frameIds:[${frameId}]},world:'MAIN',
       func:async (url)=>fetch(url).then(r=>'loaded '+r.status,()=> 'blocked'),args:[${JSON.stringify(url)}]
     }).then(rows=>rows[0].result)`);
+    const autoplayUrl = 'https://' + control + ':' + serverPort + '/autoplay-fixture';
+    const playResult = 'document.querySelector("video").play().then(()=>"playing",e=>e.name+": "+e.message)';
+    const autoplayDenied = 'NotAllowedError: Autoplay blocked by WardenOne';
+    const hiddenDenied = 'NotAllowedError: Hidden autoplay blocked by WardenOne';
+    const configured = async (patch) => {
+      await evaluate(worker, `updateStoredConfig(c=>Object.assign(c,${JSON.stringify(patch)})).then(()=>true)`);
+    };
+    const autoplayReady = async () => until(page, 'window.__wardenOneReadyVersion&&document.readyState==="complete"&&document.querySelector("video").readyState>=2');
+    await configured({ blockAutoplay: true });
+    await cdp.send('Page.navigate', { url: autoplayUrl }, page);
+    await autoplayReady();
+    assert.equal(await evaluate(page, playResult), autoplayDenied, 'unattended autoplay remains blocked');
+    await evaluate(page, 'window.dispatchEvent(new MouseEvent("click"));true');
+    assert.equal(await evaluate(page, playResult), autoplayDenied, 'synthetic clicks cannot grant playback');
+    const clickAutoplayControl = async (id) => {
+      const point = await evaluate(page, '(()=>{const r=document.getElementById(' + JSON.stringify(id) + ').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()');
+      for (const type of ['mousePressed', 'mouseReleased']) {
+        await cdp.send('Input.dispatchMouseEvent', { type, button: 'left', clickCount: 1, ...point }, page);
+      }
+    };
+    await clickAutoplayControl('unrelated-click');
+    assert.equal(await evaluate(page, playResult), autoplayDenied, 'unrelated trusted clicks cannot grant playback');
+    await clickAutoplayControl('stream-start');
+    await until(page, 'window.delayedPlay==="playing"');
+    const started = await evaluate(page, 'document.querySelector("video").currentTime');
+    await until(page, '(()=>{const v=document.querySelector("video");return !v.paused&&v.currentTime!==' + started + '})()');
+    await sleep(1600);
+    assert.equal(await evaluate(page, playResult), 'playing', 'later stream retries retain trusted user intent');
+    assert.equal(await evaluate(page, playResult.replace('document.querySelector("video")', 'document.getElementById("unrelated-video")')), autoplayDenied,
+      'starting a stream must not unlock a different video');
+    console.log('[ok] player-scoped trusted playback and retries play; unattended, synthetic and unrelated autoplay remain blocked');
+    await cdp.send('Page.reload', {}, page);
+    await autoplayReady();
+    assert.equal(await evaluate(page, playResult), autoplayDenied, 'a new document requires its own interaction');
+    await configured({ blockAutoplay: false });
+    await until(page, '(' + playResult + ').then(result=>result==="playing")');
+    await evaluate(page, 'document.querySelector("video").hidden=true;true');
+    assert.equal(await evaluate(page, playResult), hiddenDenied, 'hidden-video protection remains active');
+    await configured({ blockAutoplayMedia: false });
+    await until(page, '(' + playResult + ').then(result=>result==="playing")');
+    await configured({ blockAutoplayMedia: true, mediaShield: false });
+    await until(page, '(' + playResult + ').then(result=>result==="playing")');
+    await configured({ mediaShield: true });
+    await until(page, '(' + playResult + ').then(result=>result===' + JSON.stringify(hiddenDenied) + ')');
+    console.log('[ok] media toggles release installed guards without reload; re-enabling hidden-media protection restores blocking');
+    await configured({ blockAutoplay: true });
+    await cdp.send('Page.reload', {}, page);
+    await autoplayReady();
+    assert.equal(await evaluate(page, playResult), autoplayDenied);
+    const beforeMasterOff = await evaluate(page, 'performance.timeOrigin');
+    const { targetId: popupId } = await cdp.send('Target.createTarget', { url: 'chrome-extension://' + extension.id + '/popup.html' });
+    const { sessionId: popupSession } = await cdp.send('Target.attachToTarget', { targetId: popupId, flatten: true });
+    await cdp.send('Runtime.enable', {}, popupSession);
+    await until(popupSession, `document.readyState==='complete'&&document.querySelector('input[data-key="blockAutoplay"]')?.checked===true`);
+    await evaluate(popupSession, `(()=>{const input=document.getElementById('enabled');input.checked=false;input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+    await until(worker, `chrome.storage.local.get('wardenone_config').then(s=>s.wardenone_config?.enabled===false)`);
+    await until(page, 'performance.timeOrigin!==' + beforeMasterOff + '&&document.readyState==="complete"&&!!document.querySelector("video")');
+    await autoplayReady();
+    await evaluate(page, 'document.querySelector("video").hidden=true;true');
+    await until(page, '(' + playResult + ').then(result=>result==="playing")');
+    await until(worker, 'chrome.declarativeNetRequest.getEnabledRulesets().then(ids=>ids.length===0)');
+    await cdp.send('Target.closeTarget', { targetId: popupId });
+    await configured({ enabled: true, blockAutoplay: false });
+    await until(worker, 'chrome.declarativeNetRequest.getEnabledRulesets().then(ids=>ids.includes("trackers"))');
+    console.log('[ok] popup master-off reloads the media page, releases playback guards and disables static blocking');
     for (const site of sites) {
       const url = 'https://' + site + ':' + serverPort + '/fixture';
       await cdp.send('Page.navigate', { url }, page);
@@ -143,6 +216,13 @@ async function run() {
         await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=false;}).then(()=>true)');
         await until(page, probeAds);
         await until(page, '__ytFixtureConfigs.some(m=>m.overrides.enabled===false&&typeof m.mac==="string")');
+        assert.equal(await evaluate(page, `(()=>{
+          window.ytInitialPlayerResponse={adPlacements:[{}],playerAds:[{}],streamingData:{formats:[{url:'fixture'}]}};
+          window.ytInitialData={playerResponse:{adPlacements:[{}],playerAds:[{}]}};
+          return Object.hasOwn(window.ytInitialPlayerResponse,'adPlacements')
+            &&Object.hasOwn(window.ytInitialData.playerResponse,'adPlacements')
+            &&window.ytInitialPlayerResponse.streamingData.formats[0].url==='fixture';
+        })()`), true, 'master-off cold-load bootstrap data must remain intact');
         await evaluate(page, 'window.__ytOldDisable=__ytFixtureConfigs.find(m=>m.overrides.enabled===false&&typeof m.mac==="string");true');
         await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.enabled=true;}).then(()=>true)');
         await until(page, '!' + probeAds);
@@ -325,9 +405,9 @@ async function run() {
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     await new Promise((resolve) => server.close(resolve));
-    const resolved = path.resolve(dir);
-    if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('wo-media-security-')) throw new Error('Unexpected temporary profile');
-    fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    cleanupProfile(dir, 'wo-media-security-');
   }
 }
-profile.mustFinish(run, 'browser-media-security').catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
+module.exports = { tls };
+if (require.main === module) profile.mustFinish(run, 'browser-media-security')
+  .catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

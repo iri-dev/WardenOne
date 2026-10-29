@@ -67,7 +67,7 @@ function loadCosmeticPolicy() {
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
-    backgroundBetween('function parseCosmeticFilters', '// Fetch + parse the cosmetic lists')
+    backgroundBetween('function cosmeticGenericHideDomain', '// Fetch + parse the cosmetic lists')
       + '\n'
       + backgroundBetween('function computeCosmeticForHost', '// Dynamic rule IDs live')
       + '\n'

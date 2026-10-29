@@ -9,7 +9,7 @@
 (function () {
   "use strict";
 
-  var YT_MODULE_VERSION = "1.0.2";
+  var YT_MODULE_VERSION = "1.0.3";
   if (window.__wardenOneYouTubeReadyVersion === YT_MODULE_VERSION) return;
   window.__wardenOneYouTubeVersion = YT_MODULE_VERSION;
 
@@ -558,7 +558,7 @@
   }
 
   function pruneAdGuard(obj) {
-    if (!isObject(obj)) return obj;
+    if (!masterEnabled() || !isObject(obj)) return obj;
     var adCount = 0;
     var videoId = "";
     try {
@@ -696,9 +696,11 @@
       var promise = Reflect.apply(target, thisArg, args);
       if (!url || !shouldPruneUrl(url)) return promise;
       return promise.then(function (resp) {
+        if (!masterEnabled()) return resp;
         try {
           if (!resp || typeof resp.clone !== "function") return resp;
           return resp.clone().text().then(function (text) {
+            if (!masterEnabled()) return resp;
             try {
               var obj = realParse(text);
               pruneAdGuard(obj);

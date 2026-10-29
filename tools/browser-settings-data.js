@@ -4,13 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* The Settings page (settings.html) in Edge: real switches, the overview, Recently changed,
-   Favorites, search, the backup with your lists, clean-up, permissions, API keys, list status,
-   number and list settings, and a full reset.
-   Run: node tools/browser-settings-data.js
-   It drives the unpacked extension in Edge (tools/perf-profile.js), so it runs in CI's
-   real-settings-regression job rather than the local gate; tools/test-settings-page.js and
-   tools/build-settings-data.js --check are in the gate. */
+/* Run node tools/browser-settings-data.js for native Edge Settings coverage. CI runs this browser suite; the local gate
+   checks the settings unit suite and generated data. */
 'use strict';
 
 const assert = require('assert/strict');
@@ -131,9 +126,13 @@ async function run() {
 
     await value("document.querySelector('#nav [data-go=overview]').click(); true");
     await until("document.querySelector('#ov-recent .row[data-key=capReferrer]')", 'the overview’s recent list');
-    ok((await value("[...document.querySelectorAll('#ov-facts .ft')].map(e => e.textContent)"))[2].startsWith('1 protection may'), 'Strict referrer protection counts as a compatibility risk');
+    const riskFact = (await value("[...document.querySelectorAll('#ov-facts .ft')].map(e => e.textContent)"))[2];
     await value("document.querySelector('#ov-facts [data-go=compat]').click(); true");
     ok(await value("!!document.querySelector('#pane .row[data-key=capReferrer]')"), 'Review lists the protections that may affect compatibility');
+    /* Some risky protections are on by default (CNAME blocking), so count against the review list. */
+    const riskRows = await value("[...document.querySelectorAll('#pane .row[data-key]')].map(r => r.dataset.key)");
+    ok(riskFact.startsWith(riskRows.length + (riskRows.length === 1 ? ' protection may' : ' protections may')),
+      'Strict referrer protection counts as a compatibility risk: ' + riskFact + ' / ' + riskRows.join());
     ok(await value("document.querySelector('#nav [aria-current=page]').dataset.go === 'overview'"), 'the review lists sit under Overview in the sidebar');
 
     /* Favorites are saved, survive a reload, and list in the order starred. */
@@ -381,13 +380,13 @@ async function run() {
     await go('cleanup');
     await until("(document.querySelector('[data-custom=activity]') || {}).textContent.includes('3 events saved')", 'the activity count');
     await value("document.querySelector('[data-act=clear-activity]').click(); true");
-    await until("new Promise(r => chrome.storage.local.get('wardenone_history', d => r(Array.isArray(d.wardenone_history) && d.wardenone_history.length === 0)))", 'activity cleared');
-    ok((await text('[data-custom=activity]')).includes('Activity history cleared.'), 'clearing says it worked');
+    await until("new Promise(r => chrome.storage.local.get('wardenone_history', d => r((d.wardenone_history || []).length === 0)))", 'activity cleared');
+    await until("(document.querySelector('[data-custom=activity]') || {}).textContent.includes('Activity history cleared.')", 'clearing says it worked');
 
     /* Browsing data goes through the worker's cleaner. */
     await value("cleanPicks.clear(); cleanPicks.add('cache'); choices.range = 'Last hour'; true");
     await value("document.querySelector('[data-act=clean]').click(); true");
-    await until("(document.querySelector('[data-custom=result-clean] .msg') || {}).textContent.startsWith('Cleared: cache')", 'cache cleared');
+    await until("(document.querySelector('[data-custom=result-clean] .msg') || {}).textContent.startsWith('Cleared: Browser cache')", 'cache cleared');
 
     /* The diagnostics report is the popup's own. */
     await value("document.querySelector('[data-act=diag-prepare]').click(); true");

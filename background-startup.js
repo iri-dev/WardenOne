@@ -4,16 +4,7 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/*
- * WardenOne -- startup security check module (MV3 service worker)
- * Loaded synchronously from background.js with importScripts().
- *
- * Shared globals provided by background.js/domain-utils.js:
- *   DEFAULT_CONFIG, localGet, regDomainBg, BLOCKED_DOMAINS,
- *   reconcileExtensionChanges, refreshExtensionAttentionBadge
- * Shared globals exposed for background.js message handlers:
- *   STARTUP_REPORT_KEY, runStartupCheck(), loginRiskVerdict()
- */
+/* Loaded synchronously by background.js; shares worker/domain helpers and exposes startup reports plus loginRiskVerdict. */
 
 /* global chrome, DEFAULT_CONFIG, localGet, regDomainBg, BLOCKED_DOMAINS, reconcileExtensionChanges, refreshExtensionAttentionBadge */
 /* Startup security check: review restored tabs and extension changes, then publish a popup report.
@@ -83,7 +74,8 @@ var LOGIN_BRAND_PROFILES = [
 
 function loginHostMatchesOfficialBrand(host, profile) {
   const h = String(host || '').replace(/^www\./, '').toLowerCase();
-  return (profile.domains || []).some((d) => h === d || h.endsWith('.' + d));
+  return (profile.domains || []).some((d) => h === d || h.endsWith('.' + d))
+    || (typeof wardenOneBrandCountrySite === 'function' && wardenOneBrandCountrySite(h, profile.token));
 }
 
 function normalizeBrandish(value) {

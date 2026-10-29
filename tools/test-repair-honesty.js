@@ -197,6 +197,7 @@ new Promise((resolve) => {
 
   const lines = (report.repaired || []).join(' | ');
   const tabCheck = (report.checks || []).find((c) => /Open tabs verified/.test(c.name || ''));
+  check('Repair explicitly refreshes packaged protection feeds', (report.checks || []).some((check) => check.name === 'Packaged IP-logger and cryptominer data loaded'));
 
   check('the healthy tab is left exactly as it is', !RELOADED.includes(1) && /1 open tab\(s\) answered the engine check/.test(lines), lines);
   check('the orphaned tab, whose bridge cannot answer, is reloaded', RELOADED.includes(2), JSON.stringify(RELOADED));

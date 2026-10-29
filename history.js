@@ -20,6 +20,8 @@ const LABELS = {
   detected_cryptominer: 'Cryptominer found (site allowlisted, left running)',
   detected_grabber_domain: 'IP-logger page',
   detected_thirdparty_tracker: 'Third-party tracker observed',
+  warned_tracking_identifier: 'Suspected identifier · detection only',
+  consent_outcome: 'Consent action',
   proposed_tracker_domain: 'Tracker noticed, waiting for your decision',
   learned_tracker_domain: 'Tracker blocked everywhere, on your approval',
   blocked_grabber_fetch: 'IP-grabber request blocked',
@@ -154,6 +156,7 @@ const CLICKFIX_ACTIVITY_TYPES = new Set([
 
 // category for the row icon: block (shield), warn (triangle), gate (eye)
 function iconCategory(type, detail) {
+  if (type === 'consent_outcome') return detail?.status === 'rejected' ? 'gate' : 'warn';
   if (type === 'download_reputation' && detail && detail.action === 'allow') return 'gate';
   if (/^warned_/.test(type) || type === 'session_token_exposed' || type === 'login_thirdparty_scripts' || type === 'session_token_written' || type === 'skimmer_suspected' || type === 'download_reputation' || type === 'behavioral_risk' || type === 'extension_change') return 'warn';
   if (/^gated_/.test(type) || type === 'download_guard' || type === 'detected_download_gate' || type === 'memory_tab_slept' || type === 'memory_tab_slept_by_hand' || type === 'memory_free_ram' || type === 'memory_dupes_closed' || type === 'memory_group_slept' || type === 'tab_limit_slept' || type === 'tab_limit_closed' || type === 'forget_me_wiped' || type === 'reload_loop_broken') return 'gate';
@@ -206,6 +209,10 @@ function fmtMinutes(min) {
 
 function detailText(e) {
   const d = e.detail || {};
+  if (e.type === 'consent_outcome') return [d.cmp, d.status === 'rejected' ? 'Saved opt-out verified in CMP state'
+    : d.status === 'failed' ? 'Action failed' : d.status === 'dispatched' ? 'Settings action dispatched · opt-out unverified'
+    : 'Action dispatched · saved opt-out unverified', d.why].filter(Boolean).join(' · ');
+  if (e.type === 'warned_tracking_identifier') return [d.host, d.why].filter(Boolean).join(' · ');
   if (e.type === 'extension_change') {
     const version = d.fromVersion && d.toVersion && d.fromVersion !== d.toVersion
       ? 'Version ' + d.fromVersion + ' -> ' + d.toVersion : '';
@@ -495,6 +502,10 @@ function isImpossibleInitialXssFlow(e) {
     && String(d.sink || '').toLowerCase() === 'initial reflected markup';
 }
 
+const trackerCatalogLoader = typeof WOTrackerAttribution !== 'undefined'
+  ? WOTrackerAttribution.createLoader((...args) => fetch(...args), chrome.runtime.getURL('tracker-catalog.json')) : null;
+let trackerCatalogState = { catalog: null, status: 'unavailable' }, activityLoadGeneration = 0;
+
 function render(hist) {
   hist = hist.filter((e) => !isImpossibleInitialXssFlow(e));
   const rows = document.getElementById('rows');
@@ -537,6 +548,11 @@ function render(hist) {
     title.className = 'rtitle';
     title.textContent = label;
     main.appendChild(title);
+    if (trackerCatalogLoader) {
+      const host = WOTrackerAttribution.historyHost(e);
+      if (host) WOTrackerAttribution.renderIdentity(main, WOTrackerAttribution.describe(trackerCatalogState.catalog, host,
+        { blocked: /^blocked_/.test(e.type), suspected: e.type === 'proposed_tracker_domain' }), 'rmeta');
+    }
 
     if (detail || page) {
       const metaNode = document.createElement('div');
@@ -604,17 +620,30 @@ function paintActivitySiteFilter(site, shown) {
   bar.appendChild(all);
 }
 
-function load() {
-  chrome.storage.local.get('wardenone_history', (x) => {
+function load(refreshCatalog = false) {
+  const generation = ++activityLoadGeneration;
+  const names = trackerCatalogLoader && (!trackerCatalogState.catalog || refreshCatalog)
+    ? trackerCatalogLoader.refresh() : Promise.resolve(trackerCatalogState);
+  chrome.runtime.sendMessage({ kind: 'history-get' }, (x) => {
+    void chrome.runtime.lastError;
+    if (generation !== activityLoadGeneration) return;
     // A truthy non-array reached render() and threw on forEach, so one corrupt stored value took
     // the Activity Log down as well as the writer. Treated as empty rather than repaired here: this
     // page's job is to stay usable, and the writer rebuilds the array on its next flush.
-    const raw = x && x.wardenone_history;
+    const raw = x && x.history;
     const live = (Array.isArray(raw) ? raw : []).filter((e) => Date.now() - Number(e && e.at) <= HISTORY_RETENTION_MS);
     const site = activitySiteFilter();
     const shown = site ? live.filter((e) => activityEntryHost(e && e.url) === site) : live;
     paintActivitySiteFilter(site, shown.length);
     render(shown);
+    names.then(state => {
+      if (generation !== activityLoadGeneration) return;
+      trackerCatalogState = state;
+      const status = document.getElementById('tracker-catalog-status');
+      if (status) status.textContent = state.catalog ? 'Local tracker names · ' + state.catalog.updatedAt.slice(0, 10)
+        + (state.status === 'cached' ? ' · refresh unavailable; keeping previous names' : '') : 'Tracker names unavailable; recorded decisions are unchanged.';
+      render(shown);
+    });
   });
 }
 window.addEventListener('hashchange', load);
@@ -644,7 +673,11 @@ function checkedLocalSet(obj, done) {
 
 document.getElementById('clear').addEventListener('click', () => {
   if (confirm('Clear all WardenOne activity history? This cannot be undone.')) {
-    checkedLocalSet({ wardenone_history: [] }, (err) => { if (!err) load(); });
+    chrome.runtime.sendMessage({ kind: 'history-clear' }, (result) => {
+      const error = chrome.runtime.lastError;
+      if (error || !result || !result.ok) { alert('Could not clear history. Please retry.'); return; }
+      load();
+    });
   }
 });
 
@@ -983,13 +1016,14 @@ function renderTrackerLearner() {
   });
 }
 
+document.getElementById('refresh-tracker-names')?.addEventListener('click', () => load(true));
 load();
 renderTrackerLearner();
 loadLearned();
 loadAllowed();
 // live refresh if new events arrive while the page is open
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.wardenone_history) load();
+  if ((area === 'local' || area === 'session') && (changes.wardenone_history || changes.wardenone_config)) load();
   if (area === 'local' && changes.wardenone_learned) loadLearned();
   if (area === 'local' && (changes.wardenone_config || changes[DOWNLOAD_TRUSTED_KEY])) loadAllowed();
 });

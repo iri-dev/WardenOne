@@ -7,12 +7,8 @@
 (function () {
   'use strict';
 
-  // This page's URL carries one thing: a handle. The failed address lives in a
-  // storage.session record the worker wrote just before sending the tab here, so it never
-  // enters the tab's URL -- and from there browser history, session restore or a screenshot.
-  // The record is read directly, without the worker, so it works after a worker eviction; it
-  // is consumed when the reader retries, and a page whose record is gone offers only the way
-  // back (PRIV-04).
+  // PRIV-04: keep the failed URL in storage.session behind an opaque handle. Read without the worker, consume on retry, and
+  // offer only Back if missing.
   const handle = new URLSearchParams(location.search || '').get('w') || '';
   const RECORD_KEY = /^[0-9a-f]{32}$/.test(handle) ? 'wardenone_warning:' + handle : '';
 

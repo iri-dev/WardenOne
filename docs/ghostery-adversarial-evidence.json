@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "phase": "G-08",
+  "createdAt": "2026-10-28T20:26:06.121Z",
+  "assertions": {
+    "parserRejectsUnsupportedRegexAndMalformedScopes": true,
+    "ordinaryPathFilterPreserved": true,
+    "customRuleConsecutiveRegex": true,
+    "ruleIdsAndQuotaPreserved": true,
+    "nativeDnrInvalidAndCollisionAtomic": true,
+    "nativeIndependentOwnerRecovery": true,
+    "nativeMessageBoundary": true,
+    "nativeHostPermissionRevocation": true,
+    "nativeWorkerRecovery": true,
+    "nativeQuotaAtomic": true,
+    "fullGatePassed": true
+  },
+  "browsers": {
+    "dnr": "Edg/150.0.4078.48",
+    "messages": "Edg/150.0.4078.48",
+    "permissions": "Chrome/156.0.8078.48",
+    "worker": "Edg/150.0.4078.48"
+  },
+  "native": {
+    "securityRuleId": 740000,
+    "securityRulePriority": 2000,
+    "messageCases": 8,
+    "permissionVariants": 4,
+    "workerCheckpoints": 16
+  },
+  "sha256": {
+    "background.js": "f1702f89cee7d0292bfefc26af388fe972b634df7a5bb93252c178a01678b27c",
+    "tools/test-filter-compilation.js": "4aaf58341b128a9205be753194d93c0c5371568eff9926c6a2e2ec0524ff230d",
+    "tools/test-user-filters.js": "faf07f3f6370e8c18b4427f7ac95045d4c1583c30b1577737f10743e82cf23cd",
+    "tools/test-main-world-authority.js": "f3b165903fd4abe8374b795df4d8a69544635e561f63a6a611cc9563b3814d26",
+    "tools/test-reconcile-dnr-batch.js": "4215aad658f884cf53e4e95fcc93aee1784b19de1b07f1dbb87382e136aa6f39",
+    "tools/browser-adversarial-dnr.js": "86ab2289e5dd30fd5e61af289d74acbf2bdc1c6455066cc46908eed201d6c817",
+    "tools/browser-message-boundaries.js": "cbda6c6c7d049f02d2130e5b14e8642bb1c07ebdcb93bdee8182e519920b9994",
+    "tools/browser-tab-permissions.js": "e45c9da4402be7bf3c79fb6b9ea08a4e37acf7d4b06c764bc645e8d43c47eb0a",
+    "tools/browser-worker-interruption.js": "19db0d848b971b3cf54fdf42895a2450133254f02154546446ecf263d4d8cb21",
+    "tools/browser-dnr-reconcile.js": "890558409dd6471051c6a32924fc864ef5ecb8b3d7fc8e1b29eb8f679d1ff38e",
+    "tools/check-maintainability.js": "6c5198c3de60531f0906d94fb684526465a17eb24e7ff5b461d92f22dfb66685",
+    "docs/message-boundaries.json": "5e21bc5e2ee3bb2babfe4d4455fbd742d7f3e40c7f54abebb11e25cc2b403b1a",
+    "docs/storage-inventory.json": "ef19de88a4efb9a2a0071d1c7b7b9855cd1ef42efc5064a2aff5705cff5cdc1a",
+    "docs/protection-contracts.json": "f6917d9e5d5228981095e8997c549a64f6d097b5bb28c58dd73323ddb340e252",
+    "docs/ghostery-roadmap-status.json": "c60f262c3418bb648d61d4e0af50b3eba2de1d41d77f72a33aa00b3c08e64050",
+    "docs/ghostery-adversarial-audit.md": "0bd6f374a62855b6c85177ee951239efaf80b5b146c4a3ef8143ae9f9f08259c",
+    "CHANGELOG.md": "a80f46f3a55767f3db265d3bcdac5b4a7de943266b547dc3c25e1e26571d2930",
+    "tmp/ghostery-phase08/browser-adversarial-dnr.json": "4342559aed2f0036cb27c5df08599804be2e859dab80754a5a2ecdc495f15f3a",
+    "tmp/ghostery-phase08/browser-message-boundaries.json": "ae9260cae88c5b942fd782ec2906362c5d6de54ed1075459b762c0a556aa13e4",
+    "tmp/ghostery-phase08/permissions/results.json": "9142f5f5750f7efcaedaaeab4c96ee81f555f99311ff5dcde7ecd43935244d59",
+    "tmp/ghostery-phase08/browser-worker-interruption.json": "33b5e7b9d4a28974fb45d6b3db6f02ba298c22667d40c22dc11b0bdf9bcdbe08",
+    "tmp/ghostery-phase08/browser-dnr-reconcile.log": "a3ad9c306f148eadb6b5390adfafe08aff7542b0cc9fbf5eb57937ff91f4ccc6",
+    "tmp/ghostery-phase08/gate-verified.log": "9e437314eef3c7d5ea2038bc6007abd39227c89225a63b8e596ade2aeff991ed"
+  }
+}

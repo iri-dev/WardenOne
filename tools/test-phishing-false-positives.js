@@ -49,6 +49,7 @@ function checkContentBrand(brand, domains) {
 }
 
 checkContentBrand('paypal', ['paypalobjects.com']);
+checkContentBrand('stripe', ['stripe.com', 'stripe.dev']);
 checkContentBrand('google', ['g.co', 'goo.gle', 'withgoogle.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com']);
 checkContentBrand('amazon', ['amazon.co.jp', 'amazon.com.au', 'amazonpay.com', 'amzn.com']);
 checkContentBrand('microsoft', ['microsoft365.com', 'sharepoint.com', 'onmicrosoft.com', 'msftauth.net', 'msauth.net', 'aka.ms']);
@@ -119,17 +120,8 @@ assert.strictEqual(risky.risky, true, 'obvious PayPal typo should still be risky
 
 console.log('[ok] phishing false-positive checks passed');
 
-// ---------------------------------------------------------------------------
-// The worker's brand-in-name rule, which the search-result marker asks with nothing but a host.
-//
-// Reported: a Google search for "steamrip" showed every steamrip.com result with "Looks like
-// Steam, but is not Steam". SteamRIP is not pretending to be Steam; its name merely contains
-// the word. The worker's loginBrandRiskForHost flagged ANY registrable domain containing a brand
-// token -- steamrip, steamdb, protondb, applebees, blog.google -- while the engine's own rule
-// (content.js, M31) had long required a phishing word beside a brand-in-name hit. The two now
-// answer the same way: a name that merely contains a brand is not a look-alike; one dressed as a
-// login, verify or secure destination is; a brand as a subdomain of someone else's site is; an
-// official brand domain moved to another TLD is; a typo or digit swap of the brand is.
+// Keep worker host-only brand checks aligned with the engine: brand substrings alone are not phishing; suspicious words,
+// subdomains, TLD swaps and typos provide stronger evidence.
 {
   const brand = (host, url) => sandbox.__phishingTest.loginBrandRiskForHost(host, url || '');
   const lookalike = (host) => sandbox.__phishingTest.looksLikeLookalikeHost(host);
@@ -162,6 +154,21 @@ console.log('[ok] phishing false-positive checks passed');
   expect('apps.apple', false);
   expect('chase.co.uk', false, 'a common-word brand on another TLD is a real bank, not a swap');
   expect('steam.xyz', false, 'the exact common word alone proves nothing (the engine agrees)');
+  /* The reported search result: Google's own country sites were "Looks like Google, but is not Google". */
+  expect('google.ca', false, 'the reported false positive: a Google country site');
+  expect('www.google.ca', false);
+  expect('news.google.ca', false);
+  expect('google.co.jp', false);
+  expect('google.com.au', false);
+  expect('google.cat', false);
+  expect('amazon.com.mx', false, 'an Amazon marketplace');
+  expect('amazon.nl', false);
+  expect('google.tk', true, 'a suffix Google does not list is still a swap');
+  expect('google.xyz', true);
+  expect('google.ca.evil.example', true, 'a country site worn as a subdomain');
+  expect('google.de.com', true, 'a registrable private suffix is not the country site');
+  expect('amazon.co', true);
+  expect('g00gle.ca', true, 'a typo on a country suffix');
   for (const h of ['steamrip.com', 'steamdb.info', 'protondb.com', 'applebees.com', 'disboard.org']) {
     if (lookalike(h)) { failed++; console.error('  FAIL - ' + h + ' is still a startup look-alike'); } else console.log('  ok  - ' + h + ' is not a startup look-alike');
   }
@@ -275,6 +282,27 @@ console.log('[ok] phishing false-positive checks passed');
   expect('rnicrosoft.com', true, 'rn/m visual substitution');
   expect('microsofr.com', true, 'single-character typo');
   expect('paypa1.com', true, 'digit-for-letter on another brand');
+
+  // Country sites and official alternates were blocked as "uses the exact name of" the brand.
+  for (const host of ['google.ca', 'www.google.de', 'google.co.jp', 'maps.google.ca', 'google.com.au',
+    'amazon.com.mx', 'amazon.se', 'ebay.ca', 'ebay.de', 'pinterest.ca', 'airbnb.ca', 'bestbuy.ca',
+    'costco.ca', 'walmart.ca', 'instacart.ca', 'capitalone.ca', 'hsbc.com.hk', 'citibank.com.sg',
+    'nintendo.co.jp', 'dhl.de', 'yahoo.co.jp', 'telegram.me', 'revolut.me', 'monzo.me', 'tdbank.com',
+    'aliexpress.us', 'spotify.link', 'fdroid.gitlab.io']) {
+    expect(host, false, 'the brand\'s own site');
+  }
+  // Places and ordinary words that share a brand table name.
+  for (const host of ['halifax.ca', 'nationwide.com', 'lloyds.com', 'santander.com.br', 'kraken.io', 'blockchain.info']) {
+    expect(host, false, 'not the brand at all');
+  }
+  expect('google.tk', true, 'a suffix Google does not list');
+  expect('google.ca.evil.com', true, 'a country site worn as a subdomain');
+  expect('google.de.com', true, 'a registrable private suffix is not the country site');
+  expect('amazon.co', true);
+  expect('hsbc.xyz', true);
+  expect('bestbuy.shop', true);
+  expect('paypal.com.evil.net', true, 'an official domain in the subdomain labels');
+  expect('g00gle.ca', true, 'a typo on a country suffix');
 
   if (m31Failed) {
     console.error('\n' + m31Failed + ' phishing verdict check(s) failed');

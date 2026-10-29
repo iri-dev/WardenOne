@@ -1,0 +1,524 @@
+{
+  "schemaVersion": 1,
+  "dimensions": [
+    "success",
+    "falsePositive",
+    "breakageException",
+    "disabled",
+    "siteOverride",
+    "workerRestart",
+    "ruleCapacity",
+    "upgradeMigration",
+    "invalidInput",
+    "dataErasure"
+  ],
+  "scope": "Review index for phases 01–08. A reference identifies relevant executable coverage, not a claim that every suite exercises every browser. Native outcomes and exclusions belong in release-quality-audit.md.",
+  "features": [
+    {
+      "feature": "cname",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        }
+      }
+    },
+    {
+      "feature": "trackerCookieIsolation",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-tracker-cookie-isolation.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-tracker-cookie-isolation.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-tracker-cookie-isolation.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-tracker-cookie-isolation.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-tracker-cookie-rule.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        }
+      }
+    },
+    {
+      "feature": "trackerEvidence",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-tracker-evidence.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-tracker-evidence-corpus.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-tracker-evidence-corpus.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-tracker-learner-trust.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-tracker-evidence.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-tracker-learner-minimisation.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        }
+      }
+    },
+    {
+      "feature": "fingerprintConsistency",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-fingerprint-consistency.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-fingerprint-media.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-streaming-compatibility.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "workerRestart": {
+          "notApplicable": "Derived realm outputs create no DNR allocation or persisted fingerprint identity; reload/idempotence replaces worker-owned state."
+        },
+        "ruleCapacity": {
+          "notApplicable": "Derived realm outputs create no DNR allocation or persisted fingerprint identity; reload/idempotence replaces worker-owned state."
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-runtime-idempotence.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "dataErasure": {
+          "notApplicable": "Derived realm outputs create no DNR allocation or persisted fingerprint identity; reload/idempotence replaces worker-owned state."
+        }
+      }
+    },
+    {
+      "feature": "filterCompilation",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-filter-compilation.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-filter-compilation.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-streaming-compatibility.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-cold-start-state.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-cosmetic-provenance.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        }
+      }
+    },
+    {
+      "feature": "feedRecovery",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-feed-load-safety.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-feed-load-safety.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-blocklist-shutdown-retry.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-cold-start-state.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-cold-start-state.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        }
+      }
+    },
+    {
+      "feature": "messageBoundaries",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-message-boundaries.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-main-world-authority.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-reputation-bypass.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-main-world-authority.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        }
+      }
+    },
+    {
+      "feature": "historyModes",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-history-modes.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-history-retention.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-history-modes.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "siteOverride": {
+          "notApplicable": "History mode is a global retention choice; per-site erasure has separate coverage."
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-history-modes.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "ruleCapacity": {
+          "notApplicable": "History mode does not allocate DNR rules."
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-history-modes.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": "Feature or shared boundary regression."
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": "Feature suite plus shared lifecycle/configuration contract; native evidence is recorded separately."
+        }
+      }
+    }
+  ]
+}
+

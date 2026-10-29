@@ -54,6 +54,7 @@ function constLine(name) {
 }
 
 const BAND_CONSTS = [
+  'CNAME_RULE_BASE', 'CNAME_RULES_BUDGET',
   'TRACKER_RULES_BUDGET', 'USER_RULES_BUDGET', 'FIREWALL_RULES_BUDGET', 'USER_BLOCKLIST_RULES_BUDGET',
   'DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX',
   'LEARNED_RULE_BASE', 'LEARNED_MAX', 'TRACKER_RULE_BASE', 'TRACKER_RULE_MAX',
@@ -84,6 +85,7 @@ const REAL = [
   'userFilterBandStep', 'firewallBandStep', 'userBlocklistBandStep', 'refreshBlocklistRuleset',
 ];
 const LIFTED = [
+  fs.readFileSync(path.join(ROOT, 'background-cname.js'), 'utf8'),
   fs.readFileSync(path.join(ROOT, 'network-policy.js'), 'utf8'),
   BAND_CONSTS.map(constLine).join('\n'),
   'let __httpsUpgradeRuleEnabled = null; let __scriptShieldRuleUpdate = Promise.resolve();',
@@ -204,6 +206,7 @@ function worker(b) {
     pruneExpiredBlocks: (entries) => ({ live: entries, lapsed: [] }),
     userBlockRulesFrom: (entries) => entries.map((e, i) => ({ id: 970000 + i, priority: 99000, action: { type: 'block' }, condition: { requestDomains: [e.domain], resourceTypes: ['main_frame'] } })),
     GRABBER_FEED_DOMAINS: new Set(['grab1.example', 'grab2.example']), GRABBER_FEED_RULE_HOSTS: new Map(),
+    __grabberFeedReady: true, __minerFeedReady: true,
     MINER_HOSTS: new Set(['miner.example']), MINER_POOL_HOSTS: new Set(['pool.example']),
     MINER_RESOURCE_TYPES: ['script'], MINER_POOL_RESOURCE_TYPES: ['websocket'],
     LEARNED: clone(state.learned),
@@ -442,7 +445,8 @@ function startup(b) {
     check('every dynamic-rule write goes through writeDynamicRules, which drops the shared read',
       direct.length === 1 && /chrome\.declarativeNetRequest\.updateDynamicRules\(/.test(inHelper), 'direct writes at lines ' + direct.join(', '));
     check('the helper drops the read when the write is sent and again when it settles',
-      /__ownDynamicRulesRead = null;\s*WONetworkPolicy\.validate\(change, 'dynamic'\);\s*const write = /.test(inHelper) && /then\(forget, forget\)/.test(inHelper));
+      /__ownDynamicRulesRead = null;\s*WONetworkPolicy\.validate\(change, 'dynamic'\);/.test(inHelper)
+      && /const forget = \(\) => \{\s*__ownDynamicRulesRead = null;/.test(inHelper) && /then\(forget, forget\)/.test(inHelper));
     const others = fs.readdirSync(ROOT).filter((f) => f.endsWith('.js') && f !== 'background.js')
       .concat(fs.readdirSync(path.join(ROOT, 'src')).filter((f) => f.endsWith('.js')).map((f) => 'src/' + f))
       .filter((f) => /updateDynamicRules\(/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));

@@ -401,7 +401,6 @@ pending.push((async () => {
     check('a worker restart inside the session still restores the quarantine', h.api.REBIND_QUARANTINED.has('live.example'));
   }
 })());
-// ---------------------------------------------------------------------------
 
 (function () {
   /* The response listener watches the channels a rebind travels on, and NOT the
@@ -432,7 +431,6 @@ pending.push((async () => {
   check('main_frame is still watched so tab context still resolves',
     types.indexOf('main_frame') >= 0);
 }());
-// ---------------------------------------------------------------------------
 
 // --- PERF-04: the host memory is bounded and cheap --------------------------
 

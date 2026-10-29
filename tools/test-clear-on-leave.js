@@ -23,7 +23,7 @@ const HISTORY = fs.readFileSync(path.join(ROOT, 'history.js'), 'utf8');
 /* Sliced from the real classifier, not a copy of it: the whole safety claim is
    that this uses the same rules as the manual cleaner. */
 const START = 'const SESSION_COOKIE_HINT';
-const END = 'async function cleanConsentAndTrackingCookies() {';
+const END = 'async function cleanConsentAndTrackingCookies(options = {}) {';
 const from = BG.indexOf(START);
 const to = BG.indexOf(END, from + START.length);
 assert(from >= 0 && to > from, 'the clear-on-leave block moved in background.js');
@@ -163,7 +163,6 @@ async function main() {
     check('an unparseable page does not mark anything', w.removed.length === 0, w.removed);
   }
 
-  // -------------------------------------------------------------------------
   {
     check('only a real click counts as consent',
       /event\.isTrusted !== true\) return;/.test(CONSENT),

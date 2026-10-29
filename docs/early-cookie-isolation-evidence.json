@@ -1,0 +1,629 @@
+{
+  "createdAt": "2026-10-29T13:55:25.700Z",
+  "runtime": {
+    "version": "1.0.2",
+    "fingerprint": "ae58c60d38bb50e039b8e184132e6c7cb4804056803305706e370398ab77fd03",
+    "files": 148
+  },
+  "opponents": [
+    {
+      "product": "privacybadger",
+      "version": "2026.9.15.2",
+      "fingerprint": "ffab75b34ed8976740d1e0b983dd584404ba2af233191cb586ea2a2755521a06"
+    },
+    {
+      "product": "ghostery",
+      "version": "10.6.7",
+      "fingerprint": "8b312cdc7e2c06b7ec021c5350c223bb3ef414d543d3336c5d841a1eb78bcd1d"
+    }
+  ],
+  "comparison": {
+    "comparison-edge.json": {
+      "complete": true,
+      "groups": {
+        "off": {
+          "trials": 5,
+          "frames": 25,
+          "firstReadExposed": 25,
+          "prototypeExposed": 25,
+          "firstWriteStored": 25,
+          "firstStoreExposed": 25,
+          "firstStoreWriteStored": 25,
+          "delayedReadExposed": 25,
+          "delayedPrototypeExposed": 25,
+          "delayedStoreExposed": 25,
+          "headers": {
+            "allowed": 65
+          },
+          "unknownControls": 10,
+          "firstPartyControls": 20,
+          "recoveryFrames": 0,
+          "freshDocuments": 0,
+          "coldWorkers": 0
+        },
+        "candidate": {
+          "trials": 5,
+          "frames": 25,
+          "firstReadExposed": 0,
+          "prototypeExposed": 0,
+          "firstWriteStored": 0,
+          "firstStoreExposed": 0,
+          "firstStoreWriteStored": 0,
+          "delayedReadExposed": 0,
+          "delayedPrototypeExposed": 0,
+          "delayedStoreExposed": 0,
+          "headers": {
+            "stripped": 65
+          },
+          "unknownControls": 10,
+          "firstPartyControls": 20,
+          "recoveryFrames": 250,
+          "freshDocuments": 50,
+          "coldWorkers": 5
+        },
+        "privacybadger": {
+          "trials": 5,
+          "frames": 25,
+          "firstReadExposed": 25,
+          "prototypeExposed": 25,
+          "firstWriteStored": 25,
+          "firstStoreExposed": 25,
+          "firstStoreWriteStored": 25,
+          "delayedReadExposed": 0,
+          "delayedPrototypeExposed": 25,
+          "delayedStoreExposed": 25,
+          "headers": {
+            "stripped": 60,
+            "blocked": 5
+          },
+          "unknownControls": 10,
+          "firstPartyControls": 20,
+          "recoveryFrames": 0,
+          "freshDocuments": 0,
+          "coldWorkers": 0
+        },
+        "ghostery": {
+          "trials": 5,
+          "frames": 25,
+          "firstReadExposed": 25,
+          "prototypeExposed": 25,
+          "firstWriteStored": 25,
+          "firstStoreExposed": 25,
+          "firstStoreWriteStored": 25,
+          "delayedReadExposed": 25,
+          "delayedPrototypeExposed": 25,
+          "delayedStoreExposed": 25,
+          "headers": {
+            "allowed": 60,
+            "blocked": 5
+          },
+          "unknownControls": 10,
+          "firstPartyControls": 20,
+          "recoveryFrames": 0,
+          "freshDocuments": 0,
+          "coldWorkers": 0
+        }
+      }
+    },
+    "comparison-chrome.json": {
+      "complete": true,
+      "groups": {
+        "off": {
+          "trials": 5,
+          "frames": 25,
+          "firstReadExposed": 25,
+          "prototypeExposed": 25,
+          "firstWriteStored": 25,
+          "firstStoreExposed": 25,
+          "firstStoreWriteStored": 25,
+          "delayedReadExposed": 25,
+          "delayedPrototypeExposed": 25,
+          "delayedStoreExposed": 25,
+          "headers": {
+            "allowed": 65
+          },
+          "unknownControls": 10,
+          "firstPartyControls": 20,
+          "recoveryFrames": 0,
+          "freshDocuments": 0,
+          "coldWorkers": 0
+        },
+        "candidate": {
+          "trials": 5,
+          "frames": 25,
+          "firstReadExposed": 0,
+          "prototypeExposed": 0,
+          "firstWriteStored": 0,
+          "firstStoreExposed": 0,
+          "firstStoreWriteStored": 0,
+          "delayedReadExposed": 0,
+          "delayedPrototypeExposed": 0,
+          "delayedStoreExposed": 0,
+          "headers": {
+            "stripped": 65
+          },
+          "unknownControls": 10,
+          "firstPartyControls": 20,
+          "recoveryFrames": 250,
+          "freshDocuments": 50,
+          "coldWorkers": 5
+        },
+        "privacybadger": {
+          "trials": 5,
+          "frames": 25,
+          "firstReadExposed": 25,
+          "prototypeExposed": 25,
+          "firstWriteStored": 25,
+          "firstStoreExposed": 25,
+          "firstStoreWriteStored": 25,
+          "delayedReadExposed": 0,
+          "delayedPrototypeExposed": 25,
+          "delayedStoreExposed": 25,
+          "headers": {
+            "stripped": 60,
+            "blocked": 5
+          },
+          "unknownControls": 10,
+          "firstPartyControls": 20,
+          "recoveryFrames": 0,
+          "freshDocuments": 0,
+          "coldWorkers": 0
+        }
+      }
+    }
+  },
+  "nativePolicy": {
+    "rules": 56,
+    "regexRules": 40,
+    "reservedRules": 301
+  },
+  "validation": {
+    "gatePassed": true,
+    "suites": 348,
+    "runtimeMatchesFrozenPackage": true
+  },
+  "reports": [
+    {
+      "path": "tmp/early-cookie-2026-10-29/comparison-edge.json",
+      "sha256": "ef64e007d8dc940b67cd231cd7600dadefd3cd5238035b0337ba0d2567b01ef5",
+      "complete": true
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/comparison-chrome.json",
+      "sha256": "99e9ce5293f9037202bb33eb90b55ffa28dfcd52a009d01fb52594989106ebd6",
+      "complete": true
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/native-recovery.json",
+      "sha256": "10838f02f9d69f8dbb25cb38c54cb923a721d86cc950a6770d8a1a3acc3d4954",
+      "complete": true
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/fedcm.json",
+      "sha256": "603c020bdbecaffc6c861431772356808223d68466978d510643e76607a05d2a",
+      "complete": true
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/live-card.json",
+      "sha256": "2ada3af016d20954625540ff73b9b67d4310077276c6a980bca1f58a497bf099",
+      "complete": true
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/live-cache-final.json",
+      "sha256": "b88e09273ab508b06708d585776498109fe2a7ee5f8980bc91dfb8fafc0d3839",
+      "complete": null
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/media-click.json",
+      "sha256": "5606596f2e8ed3fe6466de92e0d2f49419538d1d3e8797d270ec630998c8a8db",
+      "complete": true
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/frame-performance.json",
+      "sha256": "5f2da829fcd6fccf6ce21caf00261c8986596b8414d9efed83e3ad8831216e37",
+      "complete": null
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/gate-final.log",
+      "sha256": "8e387a5cbccab35b78f0eb0e583dd471f35edf555eb473055d590252a63bbc23"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/gate.log",
+      "sha256": "8e387a5cbccab35b78f0eb0e583dd471f35edf555eb473055d590252a63bbc23"
+    }
+  ],
+  "remainingBoundaries": [
+    "Native policy must already be installed.",
+    "The synchronous signal is tested on network navigations with NavigationTiming; absent/unsupported signals use verified asynchronous policy.",
+    "Service-worker-generated responses, srcdoc, borrowed clean realms, workers, other storage and every integration are not established.",
+    "Synthetic cookie-required frames are not real-service compatibility evidence.",
+    "A server can imitate restrictive metadata for its own frame; it cannot grant access or change policy.",
+    "Protected frame navigations replace server performance timing metrics.",
+    "The historical Ghostery renderer-task-time finding is separate."
+  ],
+  "nativeRecovery": {
+    "complete": true,
+    "profiles": 5,
+    "candidateScenarios": 230,
+    "startupMs": {
+      "reference": 1213,
+      "candidate": 1177
+    }
+  },
+  "fedcm": {
+    "trials": 9,
+    "passed": 9
+  },
+  "stripe": {
+    "complete": true,
+    "results": [
+      {
+        "label": "off",
+        "ready": true,
+        "complete": true
+      },
+      {
+        "label": "candidate",
+        "ready": true,
+        "complete": true
+      }
+    ]
+  },
+  "cache": {
+    "complete": true,
+    "target": "https://js.stripe.com/v3/controller-with-preconnect-9a777715ca4969506d9d7a6674dae5b6.html",
+    "stages": [
+      {
+        "enabled": true,
+        "fromDiskCache": false,
+        "timing": [
+          {
+            "description": "restricted",
+            "duration": 0,
+            "name": "cookie-policy"
+          }
+        ]
+      },
+      {
+        "enabled": false,
+        "fromDiskCache": true,
+        "timing": []
+      },
+      {
+        "enabled": true,
+        "fromDiskCache": true,
+        "timing": [
+          {
+            "description": "restricted",
+            "duration": 0,
+            "name": "cookie-policy"
+          }
+        ]
+      }
+    ]
+  },
+  "media": {
+    "complete": true,
+    "results": [
+      {
+        "label": "previous",
+        "site": "youtube",
+        "complete": true,
+        "start": 0.020929,
+        "end": 10.031665
+      },
+      {
+        "label": "candidate",
+        "site": "youtube",
+        "complete": true,
+        "start": 0.018629,
+        "end": 10.016359
+      },
+      {
+        "label": "previous",
+        "site": "twitch",
+        "complete": true,
+        "start": 2.782877,
+        "end": 12.787767
+      },
+      {
+        "label": "candidate",
+        "site": "twitch",
+        "complete": true,
+        "start": 2.923089,
+        "end": 12.934215
+      }
+    ]
+  },
+  "performance": {
+    "coldOverheadLimitMs": 75,
+    "passed": true,
+    "meta": {
+      "commit": "273c43a",
+      "dirty": true,
+      "extensionVersion": "1.0.2",
+      "browser": "Edg/156.0.4314.50",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+      "cpu": "12th Gen Intel(R) Core(TM) i5-12400F",
+      "cores": 12,
+      "memoryGB": 34,
+      "platform": "win32 10.0.19045",
+      "throttle": 1,
+      "runs": 5,
+      "variants": [
+        "base",
+        "on"
+      ],
+      "pairedLogger": false,
+      "backgroundThrottlingDisabled": true,
+      "date": "2026-10-29T13:54:19.052Z",
+      "pages": [
+        "/frames-heavy.html"
+      ],
+      "readiness": {
+        "base": {
+          "extensionId": "lalofpmplppemlkioiaggmpmabdbnicg",
+          "workerVersion": "1.0.2",
+          "workerMetrics": false,
+          "remoteLists": {
+            "loaded": false,
+            "hosts": null,
+            "counts": null,
+            "reason": "offline fixture; remote coverage not measured"
+          },
+          "consentRegistered": true,
+          "workerHeapAfterGcBytes": 5292764,
+          "trackerCookiePolicy": {
+            "responseRule": true,
+            "bidirectional": true,
+            "aliasRules": 27
+          },
+          "trackerObserver": {
+            "supported": true,
+            "registered": true,
+            "patterns": 1724
+          },
+          "pageMarker": "1.0.2"
+        },
+        "on": {
+          "extensionId": "boffbpjkaiohpndagcejdjcfinoajchb",
+          "workerVersion": "1.0.2",
+          "workerMetrics": false,
+          "remoteLists": {
+            "loaded": false,
+            "hosts": null,
+            "counts": null,
+            "reason": "offline fixture; remote coverage not measured"
+          },
+          "consentRegistered": true,
+          "workerHeapAfterGcBytes": 5306540,
+          "trackerCookiePolicy": {
+            "responseRule": true,
+            "bidirectional": true,
+            "aliasRules": 55
+          },
+          "trackerObserver": {
+            "supported": true,
+            "registered": true,
+            "patterns": 1724
+          },
+          "pageMarker": "1.0.2"
+        }
+      }
+    },
+    "comparison": {
+      "/frames-heavy.html": {
+        "cold": {
+          "taskMs": {
+            "medianDelta": -16.97,
+            "p90Delta": -28.7,
+            "pct": -3.46
+          },
+          "scriptMs": {
+            "medianDelta": -0.34,
+            "p90Delta": -11.08,
+            "pct": -0.14
+          },
+          "layoutMs": {
+            "medianDelta": -1.17,
+            "p90Delta": -0.66,
+            "pct": -5.97
+          },
+          "styleMs": {
+            "medianDelta": -0.08,
+            "p90Delta": -0.81,
+            "pct": -0.86
+          },
+          "frameBatchMs": {
+            "medianDelta": null,
+            "p90Delta": null,
+            "pct": null
+          },
+          "longTasks": {
+            "medianDelta": 0,
+            "p90Delta": 0,
+            "pct": 0
+          },
+          "longTaskMs": {
+            "medianDelta": -3,
+            "p90Delta": -2,
+            "pct": -5.08
+          },
+          "dclMs": {
+            "medianDelta": -35.9,
+            "p90Delta": -26.96,
+            "pct": -20.81
+          },
+          "loadMs": {
+            "medianDelta": -18.1,
+            "p90Delta": -35.54,
+            "pct": -4.15
+          },
+          "wallMs": {
+            "medianDelta": -22,
+            "p90Delta": -13.6,
+            "pct": -1.71
+          },
+          "heapAfterGcMB": {
+            "medianDelta": 0.13,
+            "p90Delta": 0.13,
+            "pct": 0.67
+          },
+          "domNodes": {
+            "medianDelta": 0,
+            "p90Delta": 0,
+            "pct": 0
+          },
+          "listeners": {
+            "medianDelta": 0,
+            "p90Delta": 0,
+            "pct": 0
+          },
+          "workerTaskMs": {
+            "medianDelta": null,
+            "p90Delta": null,
+            "pct": null
+          }
+        },
+        "warm": {
+          "taskMs": {
+            "medianDelta": -5.32,
+            "p90Delta": -17.58,
+            "pct": -1.11
+          },
+          "scriptMs": {
+            "medianDelta": -5.18,
+            "p90Delta": -5.15,
+            "pct": -2.09
+          },
+          "layoutMs": {
+            "medianDelta": -0.31,
+            "p90Delta": -2.13,
+            "pct": -1.62
+          },
+          "styleMs": {
+            "medianDelta": -0.2,
+            "p90Delta": -0.98,
+            "pct": -1.8
+          },
+          "frameBatchMs": {
+            "medianDelta": null,
+            "p90Delta": null,
+            "pct": null
+          },
+          "longTasks": {
+            "medianDelta": 0,
+            "p90Delta": 0,
+            "pct": 0
+          },
+          "longTaskMs": {
+            "medianDelta": -1,
+            "p90Delta": -2.4,
+            "pct": -1.79
+          },
+          "dclMs": {
+            "medianDelta": 26.4,
+            "p90Delta": -5.96,
+            "pct": 19.27
+          },
+          "loadMs": {
+            "medianDelta": 3.6,
+            "p90Delta": -18.44,
+            "pct": 0.86
+          },
+          "wallMs": {
+            "medianDelta": 2,
+            "p90Delta": -24.8,
+            "pct": 0.16
+          },
+          "heapAfterGcMB": {
+            "medianDelta": 0.13,
+            "p90Delta": 0.13,
+            "pct": 0.67
+          },
+          "domNodes": {
+            "medianDelta": 0,
+            "p90Delta": 0,
+            "pct": 0
+          },
+          "listeners": {
+            "medianDelta": 0,
+            "p90Delta": 0,
+            "pct": 0
+          },
+          "workerTaskMs": {
+            "medianDelta": null,
+            "p90Delta": null,
+            "pct": null
+          }
+        }
+      }
+    },
+    "limitations": [
+      "30 same-origin frames, offline lists, five samples per build; baseline group preceded candidate group without randomized order.",
+      "No concurrent gate or other browser tests during timing collection."
+    ]
+  },
+  "unscoredPreflights": [
+    {
+      "path": "tmp/early-cookie-2026-10-29/boundary-preflight.json",
+      "sha256": "b271718934dd79f765f63d471a491bacc8422c5c218161116ed33b1cf72ffdd9"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/cold-settled-preflight.json",
+      "sha256": "35ab4e2c11f9b1e261a4ca90a22186067bc0f345eea41daaf57cfbb29dc04856"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/cold-worker-preflight.json",
+      "sha256": "748783a64689a4152f9489e23b4f16d9ec4ea0878a7a19624e8b34bcc8461cdc"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/completed-preflight.json",
+      "sha256": "b314afa5b352361ca53ecffe02a5e3dd5009e3ce931fc5b8bc333f0fdec268e4"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/completed-preflight.log",
+      "sha256": "eaed44d898b26f3a9edf1e0e86b9d6098c756a56804a10a20a93265072eaf894"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/final-preflight.json",
+      "sha256": "bea6ac1dc9acacceecac92a88fb9843f3bad089f2e43c400ba01b01fbb2638dd"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/navigation-diagnostic.json",
+      "sha256": "7b453ea25e20789435155f55086f5fec2a86b56dee7ea2d5b1691810daee7995"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/navigation-log-run.json",
+      "sha256": "475483ac0b94a1180dbff5a3a1811d9de7e835d4662d1187f4fe4036ccac2587"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/navigation-log-run.log",
+      "sha256": "047826392c0a11fba7516c6190d070f09f5ee0757c581440a98e3aedaddc0a12"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/preflight-edge.json",
+      "sha256": "2a61982936b3850dc35f9c329d66fcd8f88bc31b611e8ad6c2b017dc48285538"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/quarantine-diagnostic.json",
+      "sha256": "e46e88920f3cf331150ba0c649401780316c2d32cba244ae720ff5ce7f8b1a50"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/quarantine-diagnostic.log",
+      "sha256": "42671e121416716b87a81b35fc26dae1da71a219a77a90edd991ef92fa2374cd"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/timing-probe-2.json",
+      "sha256": "332f04d27c4c4ad963f317bf8730f50f5806403f7ae52e3875d02012dc2661de"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/timing-probe.json",
+      "sha256": "b1008d8bbf6efa77be6ce0a6602908692005bc281993d3b5edd258e7afdebda4"
+    },
+    {
+      "path": "tmp/early-cookie-2026-10-29/worker-version-preflight.json",
+      "sha256": "838741a6f4a3adc759590d9128b52d4018c757a1b1dd5f5dfb18d9fb8de08d2a"
+    }
+  ]
+}

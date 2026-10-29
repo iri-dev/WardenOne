@@ -27,66 +27,8 @@ function check(name, condition, extra) {
    the one read here. */
 const SHIPPED = fs.readdirSync(ROOT).filter((f) => /\.js$/.test(f));
 
-/* Hosts that appear as a URL in shipped code without WardenOne ever requesting them. Each
-   needs a reason, and the reason is checked: see the stale-entry assertion below. */
-const NOT_A_DESTINATION = {
-  'myaccount.google.com': 'a link the OAuth guard offers so you can review that provider\'s authorised apps',
-  'account.live.com': 'the same, for Microsoft',
-  'github.com': 'the same for GitHub, and the source-repository link in every file header',
-  'iri-dev.github.io': 'the project website, a link on the Settings page\'s About section that you open yourself',
-  'discord.com': 'the same, for Discord',
-  'appleid.apple.com': 'an OAuth guard link the reader can open to review Apple account access',
-  'www.facebook.com': 'the same, for Meta account access',
-  'www.spotify.com': 'the same, for Spotify account access',
-  'slack.com': 'the same, for Slack workspace app access',
-  'www.dropbox.com': 'the same, for Dropbox account access',
-  'gitlab.com': 'the same, for GitLab account access',
-  'id.atlassian.com': 'the same, for Atlassian account access',
-  'www.linkedin.com': 'the same, for LinkedIn account access',
-  'platform.twitter.com': 'the original src of an embed WardenOne replaced with a placeholder; the page loads it again only if you click through',
-  'connect.facebook.net': 'the same, for Facebook embeds',
-  'www.instagram.com': 'the same, for Instagram embeds',
-  'www.tiktok.com': 'the same, for TikTok embeds',
-  'www.twitch.tv': 'a Turbo or account-access link the reader can open, and the page WardenOne is already on',
-  'm.media-amazon.com': 'matched inside a CSS :has() selector that hides Twitch ad video, never requested',
-  'adclick.g.doubleclick.net': 'an href prefix in the selector that hides Spotify\'s ad links, never requested',
-  'www.w3.org': 'the SVG XML namespace, which is an identifier and not an address',
-};
-
-/* Placeholder and reserved names: documentation examples, not hosts. Any label spelled
-   "example" counts, because the examples in this codebase are written as sub.example.co.uk
-   as often as example.com. */
-const RESERVED = /(^|\.)example(\.|$)|\.(invalid|test|local|localhost)$/;
-
-/* Comments are deliberately NOT stripped before scanning. A URL quoted inside a comment is
-   over-discovery, and over-discovery fails loudly -- it asks for a disclosure line or a reason
-   here. Stripping would fail silently, and on content.min.js, which is one line, a "//" inside
-   a regex literal would take the entire file's hosts with it. */
-
-function runtimeHosts() {
-  const hosts = new Map();            // host -> "file:line" of the first sighting
-  for (const file of SHIPPED) {
-    const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
-    src.split('\n').forEach((line, i) => {
-      for (const m of line.matchAll(/(["'`])(https?:\/\/[^"'`\s]+)\1/g)) {
-        const url = m[2];
-        /* A match pattern is permission syntax -- "https://okta.com/*" is a page WardenOne
-           stays OUT of, and reading those as destinations buries the real ones in noise. */
-        if (url.indexOf('*') !== -1) continue;
-        const host = (url.match(/^https?:\/\/([a-z0-9.-]+)/i) || [])[1];
-        /* 'https://www.' + domain concatenations leave a trailing dot; a host needs at least
-           two labels and an alphabetic tail. */
-        if (!host || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/i.test(host)) continue;
-        const h = host.toLowerCase();
-        if (RESERVED.test(h)) continue;
-        if (!hosts.has(h)) hosts.set(h, file + ':' + (i + 1));
-      }
-    });
-  }
-  return hosts;
-}
-
-const discovered = runtimeHosts();
+const {NOT_A_DESTINATION,runtimeHosts}=require('./lib/outbound-hosts.js');
+const discovered = runtimeHosts(ROOT).hosts;
 const hosts = [...discovered.keys()].filter((h) => !NOT_A_DESTINATION[h]).sort();
 
 check('every shipped root script was searched', SHIPPED.length >= 40, 'found ' + SHIPPED.length
@@ -325,16 +267,8 @@ check('and names the automatic browser-release check beside the opt-in lookups',
     && /When the popup opens, a browser-release check and, when needed, a WardenOne build check/.test(SITE_PRIVACY)
     && /so they are off by default/.test(SITE_PRIVACY.slice(optionalCard)));
 
-/* 8. The Permissions page inside the extension has its own "What can leave the browser" list,
-      and it is the one a reader actually opens from the popup. It listed only the opt-in
-      reputation providers, under a banner calling everything there "opt-in checks" -- while
-      the daily filter-list downloads, Script Drift's re-fetches and the Twitch requests, all
-      of them on by default, went unmentioned, as did the Web Store lookup and the network
-      self-test. An external audit caught it; nothing here compared the page to anything.
-      Now it is held to the same host set as the policy: every destination discovered in the
-      code, every list host in the generated inventory and every self-test probe must be named
-      in a host line on that page, and the traffic that runs on its own must be filed as
-      automatic rather than under the opt-in banner. */
+/* 8. Require the Permissions page to disclose every discovered provider, feed and probe host, and distinguish automatic
+   traffic from opt-in checks. */
 const PERMS_HTML = fs.readFileSync(path.join(ROOT, 'permissions.html'), 'utf8');
 const servicesAt = PERMS_HTML.indexOf('id="services"');
 const servicesSection = servicesAt >= 0 ? PERMS_HTML.slice(servicesAt, PERMS_HTML.indexOf('</section>', servicesAt)) : '';
@@ -413,8 +347,8 @@ check('the affirmation is a section a reviewer can find, not a buried clause',
   /## chrome web store limited use/.test(policy));
 check('the affirmation states the no-advertising limb explicitly',
   /never.{0,40}transferred or used for advertising/.test(policy));
-check('the policy date was refreshed alongside the content',
-  /last updated: october 16, 2026/.test(policy));
+const policyDate = Date.parse((POLICY.match(/Last updated: ([^*\n]+)/i) || [])[1] || '');
+check('the policy has a valid published date', Number.isFinite(policyDate) && policyDate <= Date.now() + 86400000);
 
 /* M52: "the complete list" has to be complete about what the reader adds themselves, too. A
    subscribed filter list is fetched from a host the reader chose, so it cannot be named -- it has

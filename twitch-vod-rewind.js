@@ -113,8 +113,7 @@
   // ---- Browser runtime --------------------------------------------------
 
   if (typeof window === 'undefined' || window.top !== window) return;
-  const WO_GUARD_VERSION = '1.0.2';
-  /* Release the older version’s listeners, observers and timers before replacing it in an open document. */
+  const WO_GUARD_VERSION = '1.0.3';
   if (window.__wardenOneVodRewind === WO_GUARD_VERSION) return;
   if (window.__wardenOneVodRewind) {
     try {
@@ -197,12 +196,8 @@
   var popover = null;
   var styleEl = null;
 
-  // Plain-English diagnostics so it's never a mystery why the button is/ isn't
-  // there. Open DevTools console (F12) and filter for "WardenOne Rewind".
-  // console.debug, not console.info: every caller below runs unconditionally, once per channel
-  // visit, so at info level a normal Twitch session printed WardenOne's diagnostics into the page
-  // console of a site we do not own. debug is hidden at Chrome's default log level and still there
-  // under Verbose, which is where someone diagnosing this feature would be looking anyway.
+  // Use console.debug for per-visit diagnostics; filter Verbose output for WardenOne Rewind without adding noise at
+  // Chrome's default log level.
   function report(msg) { try { console.debug('[WardenOne Rewind] ' + msg); } catch (_) {} }
 
   function ensureStyle() {

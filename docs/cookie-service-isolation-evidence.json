@@ -1,0 +1,1115 @@
+{
+  "date": "2026-10-29",
+  "runtime": {
+    "label": "candidate",
+    "product": "wardenone",
+    "revisionKind": "uncommitted-tree",
+    "revision": "092967dd05675d1e2cbd8a4c63809eab80f530d6",
+    "baseCommit": "273c43a0051d6c3fe12c6871944ed7e8822d8af3",
+    "directory": "tmp\\cookie-gap-2026-10-29\\final-chrome\\candidate",
+    "archive": "tmp\\cookie-gap-2026-10-29\\final-chrome\\candidate-runtime.zip",
+    "sourceArchive": "tmp\\cookie-gap-2026-10-29\\final-chrome\\candidate-source.zip",
+    "archiveSha256": "78d38a84797ffdeeb8872d6123e1a422a217bd0b9f1e0070b5ea8eb47d866288",
+    "sourceArchiveSha256": "bef0b51ef7b71a2f276c551afe47e24747e76a6c9df7357856c8f2160a5ee6ad",
+    "version": "1.0.2",
+    "manifestVersion": 3,
+    "fingerprint": "2886d939a80b155e5acfc25abd690a61de503db60172b25d289005725d9f4504",
+    "review": {
+      "errors": [],
+      "rulesets": [
+        {
+          "id": "grabbers",
+          "enabled": true,
+          "path": "rules-grabber-resources.json",
+          "count": 128,
+          "bytes": 41504,
+          "sha256": "fa4c46ccbba325e2bd642fd8bd995545976ca9f7273880d22b1119ee8a64f61c"
+        },
+        {
+          "id": "grabber_navigation",
+          "enabled": true,
+          "path": "rules-grabber-navigation.json",
+          "count": 2,
+          "bytes": 3641,
+          "sha256": "2a35528d4dee3411bde86fc04c1b6dcde865844f6e1d6a6a151eb892b7801ed2"
+        },
+        {
+          "id": "grabber_malware_navigation",
+          "enabled": true,
+          "path": "rules-grabber-malware-navigation.json",
+          "count": 2,
+          "bytes": 3475,
+          "sha256": "31bd7d5e456da3d3fc8d431cc4ac9af038c276127154abc309406a7a10bef2f2"
+        },
+        {
+          "id": "grabber_compat",
+          "enabled": true,
+          "path": "rules-grabber-compat.json",
+          "count": 5,
+          "bytes": 2882,
+          "sha256": "387a0761153fa60ffd95cb285dc5fdeef43ec79cd5e5da02a34a4e42aab0ff56"
+        },
+        {
+          "id": "adshield_easylist",
+          "enabled": true,
+          "path": "rules-adshield.json",
+          "count": 28026,
+          "bytes": 2945634,
+          "sha256": "7f1dc36bd827cb57457da4d758c185e2532e012dd5ebbf5394f83a515fb82a54"
+        },
+        {
+          "id": "spotify_media",
+          "enabled": true,
+          "path": "rules-spotify-media.json",
+          "count": 7,
+          "bytes": 1483,
+          "sha256": "1a70cf5360840ab0f8a3007c7f3ecb280327eadec4c2b234ebf09af9470daf9a"
+        },
+        {
+          "id": "trackers",
+          "enabled": true,
+          "path": "rules-trackers.json",
+          "count": 49,
+          "bytes": 21197,
+          "sha256": "50199c7e66d5314c52c2879b213c07c490b90371ae4f91ab2c8a772291f050c7"
+        },
+        {
+          "id": "easyprivacy",
+          "enabled": true,
+          "path": "rules-easyprivacy.json",
+          "count": 150,
+          "bytes": 387128,
+          "sha256": "6511869ab74a22ba16fcc4de1e1d492c1148d2f28653245aee3af37eb6515cab"
+        }
+      ],
+      "sourceFiles": 808,
+      "runtimeFiles": 147,
+      "runtimeBytes": 11422343,
+      "licensing": [
+        {
+          "name": "CREDITS.md",
+          "sha256": "fb7163e586e026447a318097e9b989ce35b4eb218b02892fa015af87fbf51980"
+        },
+        {
+          "name": "LICENSE",
+          "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+        },
+        {
+          "name": "NOTICE",
+          "sha256": "5aea2648121ce94da8fbb14dcf2dccd90328ae13fde69e76682b16684992e8be"
+        },
+        {
+          "name": "THIRD_PARTY_NOTICES.html",
+          "sha256": "0f20d85c67a8b71f08f9b1c340a6e559f61403b8581d6476bc41ca33ac4a8164"
+        },
+        {
+          "name": "licenses/AdGuard-CNAME-MIT.txt",
+          "sha256": "0134363b4c2447630bbeac7f85a2a5c11c7b293b98b0569327444fdd8a5f703c"
+        },
+        {
+          "name": "licenses/CC-BY-SA-4.0.txt",
+          "sha256": "187442db4df3afd21f2f0525739fd4beac28a62daaba3ee8d3533f60e7c33ec7"
+        },
+        {
+          "name": "licenses/DBAD-1.2.txt",
+          "sha256": "f0dac7aa58678bb5fa403e5a748187a644295dab352cd3a77fdd7e5d334bdf4a"
+        },
+        {
+          "name": "licenses/Dandelicence-1.4.txt",
+          "sha256": "b47f6c887f42766933cd7cb998800c1bb494f5cfac9f6fbf710fd885cfab9d64"
+        },
+        {
+          "name": "licenses/MIT-NOTICES.txt",
+          "sha256": "f9e3522c99f3ea7ad52b8eac749a2de917673e86e43105386cc55fb718936276"
+        },
+        {
+          "name": "licenses/MPL-2.0.txt",
+          "sha256": "432bba3d1a0dda324312c845607d414a6c8533583cbd983ca39ba56b09657f33"
+        },
+        {
+          "name": "licenses/Unicode-3.0.txt",
+          "sha256": "b542eff742e5359c9398ea0dbb18d69c558f92749c3bd46a0e18d7c5a7098ca6"
+        },
+        {
+          "name": "licenses/Unlicense.txt",
+          "sha256": "2d8d76bf8e966ff1ee315000a01279ae2e63c0fecef08eaf66fe736c23aa8982"
+        }
+      ],
+      "generated": [
+        {
+          "command": "tools/build-content.js --check",
+          "result": "pass"
+        },
+        {
+          "command": "tools/build-settings-data.js --check",
+          "result": "pass"
+        }
+      ]
+    }
+  },
+  "comparison": {
+    "chrome": {
+      "browser": "Chrome/121.0.6167.184",
+      "harnessSha256": "60bbf0f50b5be3be7255aa74ef4f80f3d90f9e7107618144c2f48b57e9424ed3",
+      "products": {
+        "off": {
+          "runs": 5,
+          "originalCases": 20,
+          "requestStatuses": {
+            "allowed": 70
+          },
+          "reviewedResourceCasesWithoutHeaderCookies": 0,
+          "cookieIndependentCasesWithoutHeaderCookies": 0,
+          "statefulFramesUsable": 15,
+          "firstPartySessionChecks": 10
+        },
+        "candidate": {
+          "runs": 5,
+          "originalCases": 20,
+          "requestStatuses": {
+            "stripped": 50,
+            "allowed": 20
+          },
+          "reviewedResourceCasesWithoutHeaderCookies": 50,
+          "cookieIndependentCasesWithoutHeaderCookies": 40,
+          "statefulFramesUsable": 15,
+          "firstPartySessionChecks": 10
+        },
+        "privacybadger": {
+          "runs": 5,
+          "originalCases": 20,
+          "requestStatuses": {
+            "stripped": 60,
+            "blocked": 5,
+            "allowed": 5
+          },
+          "reviewedResourceCasesWithoutHeaderCookies": 50,
+          "cookieIndependentCasesWithoutHeaderCookies": 40,
+          "statefulFramesUsable": 0,
+          "firstPartySessionChecks": 10
+        }
+      }
+    },
+    "edge": {
+      "browser": "Edg/156.0.4314.50",
+      "harnessSha256": "f2a4706fccd6bb33a40920a405d1245cfcbaa6680948cdab245281e3eb268cb2",
+      "products": {
+        "off": {
+          "runs": 5,
+          "originalCases": 20,
+          "requestStatuses": {
+            "allowed": 70
+          },
+          "reviewedResourceCasesWithoutHeaderCookies": 0,
+          "cookieIndependentCasesWithoutHeaderCookies": 0,
+          "statefulFramesUsable": 15,
+          "firstPartySessionChecks": 10
+        },
+        "candidate": {
+          "runs": 5,
+          "originalCases": 20,
+          "requestStatuses": {
+            "stripped": 50,
+            "allowed": 20
+          },
+          "reviewedResourceCasesWithoutHeaderCookies": 50,
+          "cookieIndependentCasesWithoutHeaderCookies": 40,
+          "statefulFramesUsable": 15,
+          "firstPartySessionChecks": 10
+        },
+        "privacybadger": {
+          "runs": 5,
+          "originalCases": 20,
+          "requestStatuses": {
+            "stripped": 60,
+            "blocked": 5,
+            "allowed": 5
+          },
+          "reviewedResourceCasesWithoutHeaderCookies": 50,
+          "cookieIndependentCasesWithoutHeaderCookies": 40,
+          "statefulFramesUsable": 0,
+          "firstPartySessionChecks": 10
+        }
+      },
+      "topDomainMatching": true,
+      "nativeCookieRules": 105
+    },
+    "dualEdge": {
+      "browser": "Edg/156.0.4314.50",
+      "harnessSha256": "f2a4706fccd6bb33a40920a405d1245cfcbaa6680948cdab245281e3eb268cb2",
+      "products": {
+        "off": {
+          "runs": 5,
+          "preset": null,
+          "cases": [
+            {
+              "name": "identity-fetch",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-script",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "identity-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "payment-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "identity-public-client",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-public-client",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-telemetry",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "spotify-resource",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "facebook-sdk",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "google-static-resource",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "identity-state-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "payment-state-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "checkout-state-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "unknown-resource",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            }
+          ]
+        },
+        "candidate": {
+          "runs": 5,
+          "version": "1.0.2",
+          "fingerprint": "2886d939a80b155e5acfc25abd690a61de503db60172b25d289005725d9f4504",
+          "preset": null,
+          "cases": [
+            {
+              "name": "identity-fetch",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-script",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "identity-frame",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": false,
+              "requiresCookie": true
+            },
+            {
+              "name": "payment-frame",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": false,
+              "requiresCookie": true
+            },
+            {
+              "name": "identity-public-client",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-public-client",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-telemetry",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "spotify-resource",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "facebook-sdk",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "google-static-resource",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "identity-state-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "payment-state-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "checkout-state-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "unknown-resource",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            }
+          ]
+        },
+        "privacybadger": {
+          "runs": 5,
+          "version": "2026.9.15.2",
+          "fingerprint": "ffab75b34ed8976740d1e0b983dd584404ba2af233191cb586ea2a2755521a06",
+          "preset": null,
+          "cases": [
+            {
+              "name": "identity-fetch",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-script",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "identity-frame",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": false,
+              "requiresCookie": true
+            },
+            {
+              "name": "payment-frame",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": false,
+              "requiresCookie": true
+            },
+            {
+              "name": "identity-public-client",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-public-client",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-telemetry",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "spotify-resource",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "facebook-sdk",
+              "requestStatus": "blocked",
+              "sent": null,
+              "stored": false,
+              "usable": false,
+              "requiresCookie": false
+            },
+            {
+              "name": "google-static-resource",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "identity-state-frame",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": false,
+              "requiresCookie": true
+            },
+            {
+              "name": "payment-state-frame",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": false,
+              "requiresCookie": true
+            },
+            {
+              "name": "checkout-state-frame",
+              "requestStatus": "stripped",
+              "sent": false,
+              "stored": false,
+              "usable": false,
+              "requiresCookie": true
+            },
+            {
+              "name": "unknown-resource",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            }
+          ]
+        },
+        "ghostery": {
+          "runs": 5,
+          "version": "10.6.7",
+          "fingerprint": "8b312cdc7e2c06b7ec021c5350c223bb3ef414d543d3336c5d841a1eb78bcd1d",
+          "preset": "default",
+          "cases": [
+            {
+              "name": "identity-fetch",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-script",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "identity-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "payment-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "identity-public-client",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-public-client",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "payment-telemetry",
+              "requestStatus": "blocked",
+              "sent": null,
+              "stored": false,
+              "usable": false,
+              "requiresCookie": false
+            },
+            {
+              "name": "spotify-resource",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "facebook-sdk",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "google-static-resource",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": false
+            },
+            {
+              "name": "identity-state-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "payment-state-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "checkout-state-frame",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            },
+            {
+              "name": "unknown-resource",
+              "requestStatus": "allowed",
+              "sent": true,
+              "stored": true,
+              "usable": true,
+              "requiresCookie": true
+            }
+          ]
+        }
+      }
+    }
+  },
+  "native": {
+    "chrome": {
+      "browser": "Chrome/121.0.6167.184",
+      "harnessSha256": "4d99608be062b919267afc06662df7bb49ad46f7cbca7d8072afa2c21de4edfa",
+      "builds": [
+        {
+          "label": "reference",
+          "directory": "tmp\\dual-rematch-2026-10-29\\verified-review\\candidate",
+          "fingerprint": "e6013bc0bd6e821e4d85a09261ce22297730fbae0680a030c1925728a541297f"
+        },
+        {
+          "label": "candidate",
+          "directory": "tmp\\cookie-gap-2026-10-29\\final-chrome\\candidate",
+          "fingerprint": "2886d939a80b155e5acfc25abd690a61de503db60172b25d289005725d9f4504"
+        }
+      ],
+      "groups": {
+        "reference": {
+          "runs": 5,
+          "scenarios": 50,
+          "startupMs": [
+            1654,
+            1811,
+            1071,
+            1097,
+            1192
+          ],
+          "startupMedianMs": 1192,
+          "commonRequestLatencyMedianMs": {
+            "existing-cookie-policy": 6,
+            "same-site-confirmed-alias": 6,
+            "unknown-default-policy": 7,
+            "same-default-policy": 6,
+            "unknownAlias-default-policy": 6,
+            "unlistedParent-default-policy": 6,
+            "auth-default-policy": 6,
+            "payment-default-policy": 6,
+            "media-default-policy": 6,
+            "unknown-pixel-keeps-legacy-response-policy": 4
+          }
+        },
+        "candidate": {
+          "runs": 5,
+          "scenarios": 230,
+          "startupMs": [
+            1112,
+            1419,
+            1056,
+            1113,
+            1112
+          ],
+          "startupMedianMs": 1112,
+          "commonRequestLatencyMedianMs": {
+            "existing-cookie-policy": 6,
+            "same-site-confirmed-alias": 6,
+            "unknown-default-policy": 6,
+            "same-default-policy": 6,
+            "unknownAlias-default-policy": 7,
+            "unlistedParent-default-policy": 6,
+            "auth-default-policy": 6,
+            "payment-default-policy": 7,
+            "media-default-policy": 6,
+            "unknown-pixel-keeps-legacy-response-policy": 3
+          }
+        }
+      }
+    },
+    "edge": {
+      "browser": "Edg/156.0.4314.50",
+      "harnessSha256": "4d99608be062b919267afc06662df7bb49ad46f7cbca7d8072afa2c21de4edfa",
+      "builds": [
+        {
+          "label": "reference",
+          "directory": "tmp\\dual-rematch-2026-10-29\\verified-review\\candidate",
+          "fingerprint": "e6013bc0bd6e821e4d85a09261ce22297730fbae0680a030c1925728a541297f"
+        },
+        {
+          "label": "candidate",
+          "directory": "tmp\\cookie-gap-2026-10-29\\final-chrome\\candidate",
+          "fingerprint": "2886d939a80b155e5acfc25abd690a61de503db60172b25d289005725d9f4504"
+        }
+      ],
+      "groups": {
+        "reference": {
+          "runs": 5,
+          "scenarios": 50,
+          "startupMs": [
+            1202,
+            1116,
+            1181,
+            1184,
+            1184
+          ],
+          "startupMedianMs": 1184,
+          "commonRequestLatencyMedianMs": {
+            "existing-cookie-policy": 8,
+            "same-site-confirmed-alias": 10,
+            "unknown-default-policy": 9,
+            "same-default-policy": 9,
+            "unknownAlias-default-policy": 9,
+            "unlistedParent-default-policy": 9,
+            "auth-default-policy": 9,
+            "payment-default-policy": 10,
+            "media-default-policy": 9,
+            "unknown-pixel-keeps-legacy-response-policy": 5
+          }
+        },
+        "candidate": {
+          "runs": 5,
+          "scenarios": 230,
+          "startupMs": [
+            1126,
+            1176,
+            1181,
+            1169,
+            1187
+          ],
+          "startupMedianMs": 1176,
+          "commonRequestLatencyMedianMs": {
+            "existing-cookie-policy": 8,
+            "same-site-confirmed-alias": 10,
+            "unknown-default-policy": 9,
+            "same-default-policy": 9,
+            "unknownAlias-default-policy": 9,
+            "unlistedParent-default-policy": 9,
+            "auth-default-policy": 9,
+            "payment-default-policy": 9,
+            "media-default-policy": 9,
+            "unknown-pixel-keeps-legacy-response-policy": 4
+          }
+        }
+      }
+    }
+  },
+  "validation": {
+    "gate": {
+      "passed": true,
+      "suites": 347,
+      "log": "tmp/cookie-gap-2026-10-29/gate-final.log",
+      "sha256": "b30547508a4e84002a789700670f7b4666996cb9bada0e9ab4cf12166cc4c8bc"
+    },
+    "pathTests": {
+      "deterministicGeneratedCases": 2000,
+      "unitSuite": "tools/test-tracker-cookie-isolation.js"
+    },
+    "nativeRegexPreflight": {
+      "initialRejectedReport": "tmp/cookie-gap-2026-10-29/preflight-chrome.json",
+      "reason": "Large alternations exceeded Chromium 121 native RE2 memory limit; replaced with small mismatch expressions."
+    },
+    "liveServices": {
+      "complete": false,
+      "results": [
+        {
+          "label": "off",
+          "complete": false,
+          "checks": [
+            {
+              "name": "official-client-libraries",
+              "passed": true,
+              "state": {
+                "host": "shop.cookie-live.example.org",
+                "title": "Live client smoke",
+                "textLength": 12
+              }
+            },
+            {
+              "name": "google-sign-in-form",
+              "passed": true,
+              "state": {
+                "host": "accounts.google.com",
+                "title": "Sign in - Google Accounts",
+                "textLength": 221
+              }
+            },
+            {
+              "name": "stripe-public-demo",
+              "passed": false,
+              "state": {
+                "host": "checkout.stripe.dev",
+                "title": "Explore Stripe's payments integrations",
+                "textLength": 544
+              },
+              "error": "Timed out: stripe-public-demo"
+            }
+          ]
+        },
+        {
+          "label": "previous",
+          "complete": false,
+          "checks": [
+            {
+              "name": "official-client-libraries",
+              "passed": true,
+              "state": {
+                "host": "shop.cookie-live.example.org",
+                "title": "Live client smoke",
+                "textLength": 12
+              }
+            },
+            {
+              "name": "google-sign-in-form",
+              "passed": true,
+              "state": {
+                "host": "accounts.google.com",
+                "title": "Sign in - Google Accounts",
+                "textLength": 221
+              }
+            },
+            {
+              "name": "stripe-public-demo",
+              "passed": false,
+              "state": {
+                "host": "checkout.stripe.dev",
+                "title": "Explore Stripe's payments integrations",
+                "textLength": 0
+              },
+              "error": "Timed out: stripe-public-demo"
+            }
+          ]
+        },
+        {
+          "label": "candidate",
+          "complete": false,
+          "checks": [
+            {
+              "name": "official-client-libraries",
+              "passed": true,
+              "state": {
+                "host": "shop.cookie-live.example.org",
+                "title": "Live client smoke",
+                "textLength": 12
+              }
+            },
+            {
+              "name": "google-sign-in-form",
+              "passed": true,
+              "state": {
+                "host": "accounts.google.com",
+                "title": "Sign in - Google Accounts",
+                "textLength": 221
+              }
+            },
+            {
+              "name": "stripe-public-demo",
+              "passed": false,
+              "state": {
+                "host": "checkout.stripe.dev",
+                "title": "Explore Stripe's payments integrations",
+                "textLength": 0
+              },
+              "error": "Timed out: stripe-public-demo"
+            }
+          ]
+        }
+      ],
+      "limitations": [
+        "Only public library loading and unauthenticated forms are tested; no account login or payment is submitted."
+      ]
+    },
+    "liveMedia": {
+      "complete": false,
+      "results": [
+        {
+          "site": "youtube",
+          "ready": true,
+          "startTime": 0.013252,
+          "endTime": 0.013252
+        },
+        {
+          "site": "twitch",
+          "ready": true,
+          "startTime": 1.350522,
+          "endTime": 11.632932
+        }
+      ]
+    },
+    "trustedClickMedia": {
+      "complete": true,
+      "builds": {
+        "previous": "e6013bc0bd6e821e4d85a09261ce22297730fbae0680a030c1925728a541297f",
+        "candidate": "2886d939a80b155e5acfc25abd690a61de503db60172b25d289005725d9f4504"
+      },
+      "results": [
+        {
+          "label": "previous",
+          "site": "youtube",
+          "complete": true,
+          "click": {
+            "x": 443.921875,
+            "y": 308.703125,
+            "tag": "BUTTON",
+            "label": "Play"
+          },
+          "startTime": 0.016685,
+          "endTime": 10.010381
+        },
+        {
+          "label": "candidate",
+          "site": "youtube",
+          "complete": true,
+          "click": {
+            "x": 443.921875,
+            "y": 308.703125,
+            "tag": "BUTTON",
+            "label": "Play"
+          },
+          "startTime": 0.01715,
+          "endTime": 10.001146
+        },
+        {
+          "label": "previous",
+          "site": "twitch",
+          "complete": true,
+          "click": null,
+          "startTime": 3.444093,
+          "endTime": 13.459557
+        },
+        {
+          "label": "candidate",
+          "site": "twitch",
+          "complete": true,
+          "click": null,
+          "startTime": 3.125757,
+          "endTime": 13.131592
+        }
+      ]
+    }
+  },
+  "limitations": [
+    "Header measurements do not establish document.cookie or all-storage isolation.",
+    "Privacy Badger strips the deliberately cookie-dependent reviewed state-path fixtures too; no raw stripping-count win is claimed.",
+    "No all-domain parity is established; unreviewed providers retain compatibility exceptions.",
+    "No real account sign-in, saved-card flow, transaction or fraud decision was performed.",
+    "Startup samples are small and heap snapshots follow different scenario counts.",
+    "The earlier Ghostery renderer-task-time finding remains unresolved."
+  ],
+  "rawReports": [
+    {
+      "path": "tmp/cookie-gap-2026-10-29/accepted-chrome.json",
+      "sha256": "78f1d9809177d70060e8775a65aa3e6703ed45cc86f1e8f9b03048ea82e85cbe",
+      "bytes": 249437
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/native-chrome.json",
+      "sha256": "b63b7299ad776de53693b83574dd446d0059acb67b19a4e7adbe1893cc7643b3",
+      "bytes": 311274
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/accepted-edge.json",
+      "sha256": "b7d4a3edfb8de0fd21ce4eae5f9faba930d860e063ffcf5053eabd5c504bde12",
+      "bytes": 1491183
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/native-edge.json",
+      "sha256": "3f46765db87c31654310e0652dd313deac7b653a4857b12d18c8f83c20675b2b",
+      "bytes": 311281
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/dual-cookie-edge.json",
+      "sha256": "3f74f3478e86db207c0d6ecdc8bf67dafdf7e3542d6e28f32a112cb98e21c1e5",
+      "bytes": 1615707
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/live-services-accepted.json",
+      "sha256": "c073317a6cce0cfd4cabeb42ce019dfc9cdc12b6c76f94e7b3229e51dc092434",
+      "bytes": 9460
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/live-media.json",
+      "sha256": "b697f586919a7afe6bd3fcc7ca80d8dea3e6f403653c7548f32620db331ed6ca",
+      "bytes": 10672
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/media-click.json",
+      "sha256": "a7f27cd9eacdc0ea4878fa63e6aeac4528012f60925da6b3d83e0373d60e60ce",
+      "bytes": 9883
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/preflight-chrome.json",
+      "sha256": "3e629ec88faf76f2e6710eb014c09b40d3e9a9c23f7f0e2c2449219275f5889a",
+      "bytes": 31775
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/live-services.json",
+      "sha256": "34726ac8ed181e7bf7ec149708fcfd0bd709b160682401be2aadcaada5dd1eaa",
+      "bytes": 3251
+    },
+    {
+      "path": "tmp/cookie-gap-2026-10-29/gate.log",
+      "sha256": "bb78f79d6b480e96da18c773a8eb3e02c1b5947b168ebc5fcfa046530c5dc1a6",
+      "bytes": 32840
+    }
+  ]
+}

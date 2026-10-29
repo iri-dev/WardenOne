@@ -1,0 +1,6125 @@
+{
+  "schemaVersion": 1,
+  "protections": [
+    {
+      "key": "abuseIpDb",
+      "owner": "background.js",
+      "name": "AbuseIPDB",
+      "contract": "Raw-IP server reputation. Blocks high-confidence abusive IPs and warns on suspicious IP report scores.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 2597
+        },
+        {
+          "file": "background.js",
+          "line": 2621
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 50
+        },
+        {
+          "file": "src/content.js",
+          "line": 599
+        }
+      ]
+    },
+    {
+      "key": "adShield",
+      "owner": "background.js",
+      "name": "AdShield: General sites",
+      "contract": "Blocks ad-server requests and hides ad elements across the web (EasyList/uBlock-style filters: network + cosmetic + anti-adblock scriptlets).",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2544
+        },
+        {
+          "file": "bridge.js",
+          "line": 2248
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 272
+        },
+        {
+          "file": "site-recovery.js",
+          "line": 6
+        },
+        {
+          "file": "spotify-adblock.js",
+          "line": 836
+        },
+        {
+          "file": "src/content.js",
+          "line": 568
+        }
+      ]
+    },
+    {
+      "key": "adultHeuristics",
+      "owner": "src/content.js",
+      "name": "Catch unlisted adult sites",
+      "contract": "Catches adult sites that are not on any list yet, by how the page behaves rather than by name. Newly registered sites rotate faster than any list can follow. It judges on signals, so it will occasionally be wrong — the gate is a question, never a block.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2522
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 41
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 264
+        },
+        {
+          "file": "src/content.js",
+          "line": 553
+        }
+      ]
+    },
+    {
+      "key": "antiClickjacking",
+      "owner": "src/content.js",
+      "name": "Anti-clickjacking checks",
+      "contract": "Warns before a click that matters — sign in, password, checkout, pay, transfer, authorise, allow, install — lands on something hidden, covered by another element, or otherwise not where it looks. Ordinary buttons in plain sight never raise it.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2644
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 261
+        },
+        {
+          "file": "src/content.js",
+          "line": 617
+        }
+      ]
+    },
+    {
+      "key": "antiFingerprintNoise",
+      "owner": "src/content.js",
+      "name": "Anti-fingerprinting noise",
+      "contract": "Optional changes to page and frame graphics, audio, text and display measurements. Core count and memory stay native because workers can reveal them. Canvas pixels and image exports stay unchanged. Web workers are not covered and can still reveal real graphics. It may make rare setups more unique, so it stays opt-in.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2582
+        },
+        {
+          "file": "bridge.js",
+          "line": 1903
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "privacy-test.js",
+          "line": 66
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 77
+        },
+        {
+          "file": "src/content.js",
+          "line": 584
+        }
+      ]
+    },
+    {
+      "key": "autoRejectConsent",
+      "owner": "consent-reject.js",
+      "name": "Auto-reject cookie banners",
+      "contract": "When the banner offers a way to say no, WardenOne takes it — opening the choices if it has to, turning off optional tracking, never clicking Accept. On by default.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2570
+        },
+        {
+          "file": "consent-reject.js",
+          "line": 76
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 46
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 151
+        },
+        {
+          "file": "site-recovery.js",
+          "line": 9
+        },
+        {
+          "file": "src/content.js",
+          "line": 582
+        }
+      ]
+    },
+    {
+      "key": "autoSkipDownloadAds",
+      "owner": "src/content.js",
+      "name": "Auto-skip download ads",
+      "contract": "After you click a download link, skips a visible ad gate only when its continuation matches your request. Leaves unfamiliar gates for you to handle.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2542
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 278
+        },
+        {
+          "file": "src/content.js",
+          "line": 565
+        }
+      ]
+    },
+    {
+      "key": "autoUpdateLists",
+      "owner": "background.js",
+      "name": "Auto-update blocklist",
+      "contract": "Pulls fresh phishing, scam, IP-logger, adult-warning and page-rule lists once a day. The built-in rules still work without it, but new threats stop arriving — and a list that failed to fetch keeps the copy already downloaded rather than leaving a gap.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 1272
+        },
+        {
+          "file": "background.js",
+          "line": 2670
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 394
+        }
+      ]
+    },
+    {
+      "key": "backTrapGuard",
+      "owner": "src/content.js",
+      "name": "Stop back-button traps",
+      "contract": "Three ways a page stops Back from working, all refused: putting the address you are already on straight back each time you press it; quietly stacking entries while you read, so Back has to be pressed once for every one of them; and shoving you forward again the instant you press Back. What separates a trap from an app you are using is whether anything you did asked for it, so ordinary browsing is untouched. Nothing already in your history is changed or removed — declining to add an entry is not the same as taking one away.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2651
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 38
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 278
+        },
+        {
+          "file": "src/content.js",
+          "line": 626
+        }
+      ]
+    },
+    {
+      "key": "behavioralScan",
+      "owner": "src/content.js",
+      "name": "Behavioral risk detection",
+      "contract": "Catches brand-new / unknown sites that behave like trackers or scams — phoning home on arrival, random throwaway domains — even when they're on no blocklist. Warns; doesn't block.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2538
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 261
+        },
+        {
+          "file": "src/content.js",
+          "line": 558
+        }
+      ]
+    },
+    {
+      "key": "blockAllCookies",
+      "owner": "background.js",
+      "name": "No persistent cookies",
+      "contract": "Wipes every cookie when you fully close the browser, so nothing tracks you across sessions. Logins still work while you browse (you may just re-sign-in next launch). For trackers, use Block third-party cookies. Opt-in.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2589
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 155
+        },
+        {
+          "file": "src/content.js",
+          "line": 589
+        }
+      ]
+    },
+    {
+      "key": "blockAllStorageAccess",
+      "owner": "anti-redirect.js",
+      "name": "Refuse every cross-site cookie request",
+      "contract": "Turns the above from watching into refusing: no embedded thing gets its cookies back across sites, tracker or not. Off by default, and left out of “Turn everything on”, because this is the mechanism behind signing in through an embedded box — comment logins, embedded checkouts, some SSO frames. Turn it on if you would rather those break than let anything through.",
+      "default": false,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 3754
+        },
+        {
+          "file": "background.js",
+          "line": 2649
+        },
+        {
+          "file": "bridge.js",
+          "line": 2247
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 262
+        }
+      ]
+    },
+    {
+      "key": "blockAutoplayMedia",
+      "owner": "src/content.js",
+      "name": "Block hidden media abuse",
+      "contract": "Stops players that run with nothing on screen — the ones that exist to autoplay an ad, hold a wake-lock, or keep a tab alive. Visible players you can see and pause are left alone, as are YouTube, Twitch and X.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2655
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 40
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 293
+        },
+        {
+          "file": "site-recovery.js",
+          "line": 13
+        },
+        {
+          "file": "src/content.js",
+          "line": 630
+        }
+      ]
+    },
+    {
+      "key": "blockCameraMic",
+      "owner": "src/content.js",
+      "name": "Block camera & microphone",
+      "contract": "Blocks camera and microphone access a site starts on its own — no click or keypress from you in the last few seconds, and no standing permission in Chrome. When you are actually using the page, the request goes to Chrome’s own prompt and you decide there, with the browser’s recording indicator; a site you have already allowed in Chrome is not second-guessed. Speech recognition, which reaches the microphone by a different route and which Chrome sends away to be transcribed, follows the same rule. YouTube, Twitch, Spotify and X are exempt.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2652
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 40
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 292
+        },
+        {
+          "file": "src/content.js",
+          "line": 627
+        }
+      ]
+    },
+    {
+      "key": "blockCnameTrackers",
+      "owner": "background-cname.js",
+      "name": "Block CNAME-cloaked trackers",
+      "contract": "On by default. Block confirmed tracking aliases from a local list; turn off for any site that needs an exception.",
+      "default": true,
+      "siteOverride": [
+        "network"
+      ],
+      "references": [
+        {
+          "file": "background-cname.js",
+          "line": 29
+        },
+        {
+          "file": "background.js",
+          "line": 2591
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 140
+        }
+      ]
+    },
+    {
+      "key": "blockCryptominers",
+      "owner": "background.js",
+      "name": "Block cryptominers",
+      "contract": "Stop drive-by mining scripts that spend your CPU and battery, and block pages from reaching mining pools. Mining pools stay reachable if you visit them yourself.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2672
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 394
+        }
+      ]
+    },
+    {
+      "key": "blockFingerprintScripts",
+      "owner": "background.js",
+      "name": "Limit fingerprinting JavaScript",
+      "contract": "Block known fingerprinting libraries while normal JavaScript keeps working. Fraud and bot-check scripts are a separate switch below.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2584
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 156
+        },
+        {
+          "file": "src/content.js",
+          "line": 586
+        }
+      ]
+    },
+    {
+      "key": "blockFirstPartyTrackers",
+      "owner": "background.js",
+      "name": "Block first-party trackers",
+      "contract": "Catch known analytics paths served from the site's own domain. Opt-in.",
+      "default": false,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2590
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 139
+        },
+        {
+          "file": "src/content.js",
+          "line": 590
+        }
+      ]
+    },
+    {
+      "key": "blockForcedPopups",
+      "owner": "src/content.js",
+      "name": "Block forced popups",
+      "contract": "Stops popunders and new tabs a page opens without a real user action. Catches timer-based window.open tricks, hidden ad tabs, and background popups that appear after the page loads. On by default.",
+      "default": true,
+      "siteOverride": [
+        "coordinated"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 234
+        },
+        {
+          "file": "background.js",
+          "line": 1240
+        },
+        {
+          "file": "bridge.js",
+          "line": 2244
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 38
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 277
+        },
+        {
+          "file": "src/content.js",
+          "line": 545
+        }
+      ]
+    },
+    {
+      "key": "blockFraudVendorScripts",
+      "owner": "background.js",
+      "name": "Block fraud and bot-check scripts",
+      "contract": "Blocks the device-check scripts that banks and shops use to decide if you are a real person — ThreatMetrix, DataDome, PerimeterX, Forter and others. They do fingerprint you. But the site has handed them the decision about whether you get in, so with this on a sign-in can be refused or an order declined and the site will not tell you why. That is why it is off unless you turn it on.",
+      "default": false,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2586
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 160
+        }
+      ]
+    },
+    {
+      "key": "blockGeolocation",
+      "owner": "src/content.js",
+      "name": "Block location requests",
+      "contract": "Deny browser location prompts, kill location watches, mask page timezone/language hints, and ask Chrome to block location access globally. Pausing WardenOne on a site, or switching this off for one site, hands that site back to Chrome’s own location prompt — it never grants location by itself. A VPN is still needed to hide IP-based location.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2654
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 40
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 292
+        },
+        {
+          "file": "src/content.js",
+          "line": 629
+        },
+        {
+          "file": "upgrade-config.js",
+          "line": 7
+        }
+      ]
+    },
+    {
+      "key": "blockGesturelessNav",
+      "owner": "src/content.js",
+      "name": "Block gestureless redirects",
+      "contract": "Blocks the page from sending you to a different site when there was no recent click, form submit, or other real gesture. Catches delayed ad hops, adult redirects, and fake-download redirects.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 233
+        },
+        {
+          "file": "background.js",
+          "line": 2509
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 38
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 278
+        },
+        {
+          "file": "src/content.js",
+          "line": 544
+        }
+      ]
+    },
+    {
+      "key": "blockGrabberResources",
+      "owner": "background.js",
+      "name": "Block IP-grabber beacons",
+      "contract": "Stops recognized logger images and other embedded requests before they leave. Direct visits have separate page-warning and malicious-site controls.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2519
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 288
+        },
+        {
+          "file": "src/content.js",
+          "line": 550
+        }
+      ]
+    },
+    {
+      "key": "blockHighConfidencePhishing",
+      "owner": "src/content.js",
+      "name": "Block high-confidence look-alikes",
+      "contract": "For the clearest fakes (visual look-alikes like g00gle, keyboard typos, brand-on-wrong-TLD and homographs), show a blocking screen with options to leave, visit the real site or continue at your own risk. On by default.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2540
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 260
+        },
+        {
+          "file": "src/content.js",
+          "line": 560
+        }
+      ]
+    },
+    {
+      "key": "blockMalwareSites",
+      "owner": "background.js",
+      "name": "Block known malicious sites",
+      "contract": "Hard-blocks known malware, phishing and scam domains from vetted threat feeds — tens of thousands of them, millions across the feeds — before the page loads at all. This is the one to leave on if you leave nothing else.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2671
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 394
+        }
+      ]
+    },
+    {
+      "key": "blockMetaRefresh",
+      "owner": "src/content.js",
+      "name": "Block meta-refresh bounces",
+      "contract": "Stops pages from using <meta refresh> or refresh-style timers to move you off-site after a countdown. These are common on fake download and traffic-exchange pages.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2516
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 38
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 278
+        },
+        {
+          "file": "src/content.js",
+          "line": 547
+        }
+      ]
+    },
+    {
+      "key": "blockPopupTricks",
+      "owner": "anti-redirect.js",
+      "name": "Block popup and redirect tricks",
+      "contract": "Takes away the tricks a page uses to get a click it can spend: fake \"Please confirm to continue\" prompts, script-built frames holding a bare INSTALL badge, and embedded players that move your whole tab when you click them. Real confirmations, payment forms, captchas and ordinary players are left alone.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 236
+        },
+        {
+          "file": "background.js",
+          "line": 2075
+        },
+        {
+          "file": "bridge.js",
+          "line": 2244
+        },
+        {
+          "file": "popup.js",
+          "line": 38
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 277
+        }
+      ]
+    },
+    {
+      "key": "blockScreenCapture",
+      "owner": "src/content.js",
+      "name": "Block screen capture",
+      "contract": "Blocks screen-share requests a page makes on its own. On by default because a screen-share prompt you did not go looking for is almost always a scam walking you into one. After a click of yours, Chrome’s own picker appears and nothing is shared until you choose a screen or window; there is no “always” for screen capture — the picker comes up every time. YouTube, Twitch, Spotify and X are exempt.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2653
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 40
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 292
+        },
+        {
+          "file": "src/content.js",
+          "line": 628
+        }
+      ]
+    },
+    {
+      "key": "blockSupercookies",
+      "owner": "src/content.js",
+      "name": "Clear tracker supercookies",
+      "contract": "Wipe localStorage in known third-party tracker frames (Scorecard, Criteo, Taboola, etc.) so they can't re-identify you after a cookie clear.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 3697
+        },
+        {
+          "file": "background.js",
+          "line": 2580
+        },
+        {
+          "file": "bridge.js",
+          "line": 2246
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 47
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 150
+        },
+        {
+          "file": "src/content.js",
+          "line": 652
+        }
+      ]
+    },
+    {
+      "key": "blockThirdPartyCookies",
+      "owner": "background.js",
+      "name": "Block third-party cookies",
+      "contract": "Removes cookie headers for known trackers, confirmed tracking aliases and reviewed Google, Stripe, Spotify and Facebook resources. Supported protected frames also lose cookie API access before their scripts run. Direct visits, first-party service use and media workarounds retain cookies. Turn off for one site if needed. Unknown hosts keep existing policy.",
+      "default": true,
+      "siteOverride": [
+        "coordinated"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 3676
+        },
+        {
+          "file": "background.js",
+          "line": 2588
+        },
+        {
+          "file": "bridge.js",
+          "line": 2246
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "cookie-access.js",
+          "line": 180
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 149
+        },
+        {
+          "file": "site-recovery.js",
+          "line": 8
+        },
+        {
+          "file": "src/content.js",
+          "line": 588
+        }
+      ]
+    },
+    {
+      "key": "blockTokenExfil",
+      "owner": "src/content.js",
+      "name": "Protect session tokens",
+      "contract": "Checks page requests, including those in embedded frames, for known token values and stops matching calls it sees to unrelated domains. Hostile page code can bypass these JavaScript hooks; browser rules still block listed destinations. Noisy trusted services are treated more calmly in the activity log.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 237
+        },
+        {
+          "file": "background.js",
+          "line": 2593
+        },
+        {
+          "file": "bridge.js",
+          "line": 2245
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 283
+        },
+        {
+          "file": "src/content.js",
+          "line": 592
+        }
+      ]
+    },
+    {
+      "key": "blockTrackers",
+      "owner": "background.js",
+      "name": "Block trackers & ad analytics",
+      "contract": "Hard-block third-party tracking networks (Google Analytics, DoubleClick, Facebook Pixel, etc.)",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2543
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 138
+        },
+        {
+          "file": "site-recovery.js",
+          "line": 7
+        },
+        {
+          "file": "src/content.js",
+          "line": 566
+        }
+      ]
+    },
+    {
+      "key": "blockWebRTCLeak",
+      "owner": "src/content.js",
+      "name": "IP lookup blocking",
+      "contract": "Blocks requests to common third-party IP lookup services, so a page cannot ask an outside service what your address is. Native WebRTC is left alone by this switch; the one below hardens it. A VPN or proxy is still needed to hide your IP from sites you directly visit.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2520
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "privacy-test.js",
+          "line": 141
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 289
+        },
+        {
+          "file": "src/content.js",
+          "line": 551
+        }
+      ]
+    },
+    {
+      "key": "breachCheck",
+      "owner": "background.js",
+      "name": "Breach & site-history checks",
+      "contract": "Allow the \"has this site been breached?\" lookup below. Contacts the public Have I Been Pwned database. Opt-in.",
+      "default": false,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2597
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 283
+        },
+        {
+          "file": "src/content.js",
+          "line": 596
+        }
+      ]
+    },
+    {
+      "key": "capReferrer",
+      "owner": "background.js",
+      "name": "Strict cross-site referrer protection",
+      "contract": "Removes the Referer header on cross-site requests while keeping same-site referrers. Sign-in, CAPTCHA, and payment destinations are excluded for compatibility. Opt-in because some hotlink and hand-off flows rely on a referrer.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2568
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 46
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 148
+        },
+        {
+          "file": "src/content.js",
+          "line": 581
+        }
+      ]
+    },
+    {
+      "key": "capabilityGuard",
+      "owner": "src/content.js",
+      "name": "capabilityGuard",
+      "contract": "Apply the named protection using its validated configuration and browser-owned context; see the owner and regression matrix.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2651
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "onboarding.js",
+          "line": 49
+        },
+        {
+          "file": "popup.js",
+          "line": 89
+        },
+        {
+          "file": "settings-data.js",
+          "line": 15
+        },
+        {
+          "file": "src/content.js",
+          "line": 624
+        }
+      ]
+    },
+    {
+      "key": "certificateGuard",
+      "owner": "background.js",
+      "name": "Block bad certificates",
+      "contract": "Show a WardenOne trust block when Chrome reports expired, revoked, self-signed, hostname-mismatch, or broken TLS certificates.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2604
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 290
+        }
+      ]
+    },
+    {
+      "key": "cleanCopyLinks",
+      "owner": "src/content.js",
+      "name": "Clean links copied inside pages",
+      "contract": "Auto-strips tracking (utm_, fbclid, YouTube si, Amazon ref and similar) as you copy, so pastes come out clean. Covers Ctrl+C on a link and site Share/Copy buttons. Chrome’s own “Copy link address” and the address bar are browser-level, so no extension can catch them — for those use the right-click “Copy clean link”, or the keyboard shortcut for this page (listed under Keyboard shortcuts below). On by default.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2706
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 47
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 145
+        },
+        {
+          "file": "src/content.js",
+          "line": 649
+        }
+      ]
+    },
+    {
+      "key": "clearCookiesOnLeave",
+      "owner": "background.js",
+      "name": "Clear a site's cookies after accepting",
+      "contract": "When you accept one yourself. The site's consent and tracking cookies, and the IDs it stored, are cleared once you leave. Sign-ins are left alone. Off by default.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2515
+        },
+        {
+          "file": "consent-reject.js",
+          "line": 803
+        },
+        {
+          "file": "popup.js",
+          "line": 38
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 153
+        }
+      ]
+    },
+    {
+      "key": "clearServiceWorkersOnLeave",
+      "owner": "background.js",
+      "name": "Remove a site's service worker when you leave",
+      "contract": "A service worker is the one thing a site leaves running after you close the tab — it sits in front of every later request to that site and can wake up on its own. This removes it once you have closed every tab for a site that installed one while you were there. Off by default, because sites that legitimately use one for offline reading or notifications will lose that until you visit again.",
+      "default": false,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2514
+        },
+        {
+          "file": "popup.js",
+          "line": 38
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 154
+        }
+      ]
+    },
+    {
+      "key": "clientHintProtection",
+      "owner": "background.js",
+      "name": "Reduce third-party Client Hints",
+      "contract": "Removes detailed browser version, OS version, architecture, bitness, and device model from third-party requests. Known tracker hosts also lose basic browser hints. First-party sites keep their normal compatibility data; Anti-fingerprinting mode reduces the matching navigator.userAgentData values too.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2567
+        },
+        {
+          "file": "popup.js",
+          "line": 46
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 158
+        }
+      ]
+    },
+    {
+      "key": "clipboardGuard",
+      "owner": "src/content.js",
+      "name": "Clipboard hijack protection",
+      "contract": "Stop sites that secretly swap your clipboard — e.g. replacing a copied crypto wallet address with an attacker's. Keeps normal Copy buttons working. Opt-in.",
+      "default": false,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2631
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 285
+        },
+        {
+          "file": "src/content.js",
+          "line": 607
+        }
+      ]
+    },
+    {
+      "key": "clipboardSwapDetect",
+      "owner": "src/content.js",
+      "name": "Clipboard swap detection",
+      "contract": "Catches clipboard-swapping malware at paste time: if you paste a crypto address that differs from the one you just copied (same coin, within 2 minutes), it warns and shows both so you can check before sending. Works even against malware outside the browser. On by default.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2632
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 285
+        },
+        {
+          "file": "src/content.js",
+          "line": 608
+        }
+      ]
+    },
+    {
+      "key": "commandPasteGuard",
+      "owner": "src/content.js",
+      "name": "Command paste guard",
+      "contract": "Detects ClickFix and self-XSS instructions such as Win+R, F12, Ctrl+Shift+I, DevTools, Console, PowerShell, and “enable pasting,” including fake “verify you’re human” steps. Suspicious programmatic clipboard writes are blocked, risky copied selections trigger a warning, and instruction-plus-command matches receive a stronger warning. Instruction text is read on the top-level page; embedded frames get the clipboard check only, and text drawn as an image or inside a closed shadow tree is not read at all. WardenOne does not access Chrome’s own DevTools interface. On by default.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 3908
+        },
+        {
+          "file": "background.js",
+          "line": 2636
+        },
+        {
+          "file": "bridge.js",
+          "line": 2247
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 285
+        },
+        {
+          "file": "src/content.js",
+          "line": 612
+        }
+      ]
+    },
+    {
+      "key": "continuousTokenScan",
+      "owner": "src/content.js",
+      "name": "Continuous token watch",
+      "contract": "Checks observed storage writes for token-shaped values after login, not just at page load. Hostile page code can bypass page-level hooks.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2594
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 283
+        },
+        {
+          "file": "src/content.js",
+          "line": 593
+        }
+      ]
+    },
+    {
+      "key": "cryptominerCpuWatch",
+      "owner": "background.js",
+      "name": "Deep cryptominer detection",
+      "contract": "Catches miners a site hosts itself, which blocking can't see: reads the code of the background workers a page starts, and stops the ones running mining routines — including the replacements a miner starts when you kill it. Only the mining worker is stopped; the rest of the site keeps working. Off by default because it reads page code on every site you visit. Allowlist a site to leave it alone.",
+      "default": false,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2674
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 394
+        }
+      ]
+    },
+    {
+      "key": "deAmp",
+      "owner": "src/content.js",
+      "name": "De-AMP pages",
+      "contract": "Skip Google/AMP cache pages and go straight to the real article. Rewrites AMP links and redirects AMP pages to their original URL. Opt-in.",
+      "default": false,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2566
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 46
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 147
+        },
+        {
+          "file": "src/content.js",
+          "line": 580
+        }
+      ]
+    },
+    {
+      "key": "detectPhishing",
+      "owner": "src/content.js",
+      "name": "Detect fake / phishing sites",
+      "contract": "Warns when a domain is dressed up as one you know — a swapped letter, a lookalike character, the right brand on the wrong suffix. It reads the address rather than a list, so it catches ones registered this morning.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2537
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 260
+        },
+        {
+          "file": "src/content.js",
+          "line": 557
+        }
+      ]
+    },
+    {
+      "key": "detectRedirectChains",
+      "owner": "src/content.js",
+      "name": "Detect redirect chains",
+      "contract": "Watches server-side redirect hops and freezes long or rotating CPA chains before the final landing page. Helps when the URL changes too quickly for normal in-page checks.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2340
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 38
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 278
+        },
+        {
+          "file": "src/content.js",
+          "line": 548
+        }
+      ]
+    },
+    {
+      "key": "detectSkimmers",
+      "owner": "src/content.js",
+      "name": "Detect & block form skimmers",
+      "contract": "Watches password and card fields on payment pages and can stop matching off-site requests it observes, including forms and request APIs in embedded frames. These page-level checks can be bypassed by hostile site code.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 238
+        },
+        {
+          "file": "background.js",
+          "line": 2595
+        },
+        {
+          "file": "bridge.js",
+          "line": 2245
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 284
+        },
+        {
+          "file": "src/content.js",
+          "line": 594
+        }
+      ]
+    },
+    {
+      "key": "deviceAccessGuard",
+      "owner": "src/content.js",
+      "name": "deviceAccessGuard",
+      "contract": "Apply the named protection using its validated configuration and browser-owned context; see the owner and regression matrix.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2651
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "onboarding.js",
+          "line": 48
+        },
+        {
+          "file": "popup.js",
+          "line": 88
+        },
+        {
+          "file": "settings-data.js",
+          "line": 15
+        },
+        {
+          "file": "src/content.js",
+          "line": 622
+        }
+      ]
+    },
+    {
+      "key": "dnsRebindGuard",
+      "owner": "background.js",
+      "name": "DNS rebinding detection",
+      "contract": "Watches the address each site actually resolves to. When a normal-looking name comes back pointing at your own network — or answers publicly once and privately the next time, which is what a rebinding attack looks like — that name is blocked for the rest of the session. Being honest about the limit: the browser gives extensions no way to check an address before the request goes out, so the request that reveals the trick has already happened. This catches everything after it, not the first one. Pages you open yourself that live on your own network, like a local dev server, are left alone.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2646
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 262
+        }
+      ]
+    },
+    {
+      "key": "downloadDomainAge",
+      "owner": "background-downloads.js",
+      "name": "Check download domain age",
+      "contract": "Opt-in domain-age lookup for suspicious downloads. Uses RDAP by default, or WhoisXML enrichment when enabled. Sends only the source domain, never the file or full URL.",
+      "default": false,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 2903
+        },
+        {
+          "file": "background.js",
+          "line": 2613
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 280
+        }
+      ]
+    },
+    {
+      "key": "downloadReputation",
+      "owner": "background-downloads.js",
+      "name": "Download Shield",
+      "contract": "No-account scanner. Grades downloads A-F from the URL, source, filename, file type, Chrome signals, trust list, and local blocklists. Known-bad sources are blocked outright; risky ones show a review you can cancel.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 1271
+        },
+        {
+          "file": "background.js",
+          "line": 2291
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 280
+        },
+        {
+          "file": "src/content.js",
+          "line": 606
+        }
+      ]
+    },
+    {
+      "key": "downloadSafeBrowsing",
+      "owner": "background-downloads.js",
+      "name": "Google Safe Browsing URL checks",
+      "contract": "Optional URL reputation. Requires your own API key. Once on, every page you open, risky link, sensitive form destination and download is sent to Google as scheme, host and path.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 2571
+        },
+        {
+          "file": "background.js",
+          "line": 2614
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 50
+        },
+        {
+          "file": "src/content.js",
+          "line": 598
+        }
+      ]
+    },
+    {
+      "key": "downloadVirusTotal",
+      "owner": "background-downloads.js",
+      "name": "VirusTotal reputation",
+      "contract": "Optional URL report lookup. Requires your own API key. The same key is used for URL-content hash lookup below.",
+      "default": false,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 2574
+        },
+        {
+          "file": "background.js",
+          "line": 2616
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 50
+        }
+      ]
+    },
+    {
+      "key": "downloadVirusTotalHash",
+      "owner": "background-downloads.js",
+      "name": "VirusTotal URL-content hash lookup",
+      "contract": "Optional for small risky downloads. Chrome does not let extensions read saved files, so WardenOne re-fetches up to 50 MB from the download URL, hashes that response locally, and sends only the hash. Never uploads contents.",
+      "default": false,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 1509
+        },
+        {
+          "file": "background.js",
+          "line": 2617
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 50
+        }
+      ]
+    },
+    {
+      "key": "fakeUpdateDetector",
+      "owner": "src/content.js",
+      "name": "Fake update detector",
+      "contract": "Warns on \"your browser/Windows is out of date — update now\" pages that aren't a real vendor (Google, Microsoft, Mozilla...). Real updates never come from a web page, so a fake-update lure plus an installer download or off-site button is a common malware scam. On by default.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2639
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 285
+        },
+        {
+          "file": "src/content.js",
+          "line": 615
+        }
+      ]
+    },
+    {
+      "key": "fakeWindowGuard",
+      "owner": "src/content.js",
+      "name": "Fake sign-in windows",
+      "contract": "Warns when a page draws a box made to look like a separate browser sign-in window — title bar, close button, an address bar it painted itself — and asks for a password in it. Online IDEs and design tools are excluded.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2651
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 40
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 293
+        },
+        {
+          "file": "src/content.js",
+          "line": 621
+        }
+      ]
+    },
+    {
+      "key": "fingerprintProbeDetection",
+      "owner": "src/content.js",
+      "name": "Fingerprint probe detection",
+      "contract": "Detect canvas, audio, WebGL, font, layout, and device probing without changing values. Feeds the local risk detector and tracker learner.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2583
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 157
+        },
+        {
+          "file": "src/content.js",
+          "line": 585
+        }
+      ]
+    },
+    {
+      "key": "forceHttps",
+      "owner": "background.js",
+      "name": "Force HTTPS",
+      "contract": "Automatically upgrade insecure http:// pages to secure https:// before they load. Seamless on sites that support it.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2600
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 290
+        },
+        {
+          "file": "src/content.js",
+          "line": 597
+        }
+      ]
+    },
+    {
+      "key": "forcedDownloadProtection",
+      "owner": "background-downloads.js",
+      "name": "Forced Download Protection",
+      "contract": "Stops clear automatic or disguised download links and holds unexpected files for review. Intentional downloads, exports and Save link as stay available. Checks intent locally, separately from Download Shield. Some browser Save As dialogs can still appear.",
+      "default": true,
+      "siteOverride": [
+        "coordinated"
+      ],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 155
+        },
+        {
+          "file": "background.js",
+          "line": 2610
+        },
+        {
+          "file": "bridge.js",
+          "line": 2108
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 280
+        }
+      ]
+    },
+    {
+      "key": "formTrapDetector",
+      "owner": "src/content.js",
+      "name": "Form trap detector",
+      "contract": "Inspects login forms and warns if one looks fake or credential-stealing — e.g. it posts your password to a different site or raw IP, claims to be a brand the site isn't, or is an injected overlay. Known sign-in providers (Google, Microsoft, Okta...) are trusted, so real logins stay silent. On by default.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2638
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 284
+        },
+        {
+          "file": "src/content.js",
+          "line": 614
+        }
+      ]
+    },
+    {
+      "key": "fullscreenGuard",
+      "owner": "src/content.js",
+      "name": "Full-screen address bar",
+      "contract": "In full screen the browser's own address bar is hidden, so a page can paint a fake one showing a site it isn't. Warns when a page does that — video, games and slideshows are untouched.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2651
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 40
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 293
+        },
+        {
+          "file": "src/content.js",
+          "line": 620
+        }
+      ]
+    },
+    {
+      "key": "gateAdultSites",
+      "owner": "background.js",
+      "name": "Warn on adult-site redirects",
+      "contract": "Shows an \"are you sure?\" screen when you arrive on an 18+ site you did not go looking for, so a mistyped address or a sneaky redirect never drops you (or a kid on the family computer) straight onto explicit content. Going there deliberately still works.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2521
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 41
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 264
+        },
+        {
+          "file": "src/content.js",
+          "line": 552
+        }
+      ]
+    },
+    {
+      "key": "honeytokenMode",
+      "owner": "src/content.js",
+      "name": "Honeytoken mode",
+      "contract": "Plants fake decoy secrets (api-key, token...) in page memory that real site code never touches. If a script reads one, it's credential-recon behavior and you're warned. Experimental and safe (it yields if the page actually uses a name), but off by default.",
+      "default": false,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2634
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 283
+        },
+        {
+          "file": "src/content.js",
+          "line": 610
+        }
+      ]
+    },
+    {
+      "key": "insecureLoginGuard",
+      "owner": "src/content.js",
+      "name": "Warn before an insecure sign-in",
+      "contract": "Stops you the moment you click into a password box on an unencrypted page, before you've typed anything, and offers the secure version of the site. Also catches the sneakier case: a page showing a padlock whose form still posts over plain http. Router and other local-network logins are left alone.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2603
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 290
+        },
+        {
+          "file": "src/content.js",
+          "line": 8664
+        }
+      ]
+    },
+    {
+      "key": "intranetNetworkRules",
+      "owner": "background.js",
+      "name": "Enforce it at the network layer too",
+      "contract": "Browser rules block direct private-network requests from public pages, including requests made by workers or through page APIs WardenOne does not see. Pages opened from your own network keep access to local devices. Turn this off if it breaks a local tool; the page-level check alone is easier for hostile site code to bypass.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2647
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 262
+        }
+      ]
+    },
+    {
+      "key": "intranetProtection",
+      "owner": "background.js",
+      "name": "Intranet/router protection",
+      "contract": "Checks page requests aimed at local admin panels by IP or local name. Page API hooks can be bypassed by hostile site code; keep the browser network rule below on to block direct private-network requests across pages and workers. Public-looking names that resolve to your router are handled below.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2645
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 262
+        },
+        {
+          "file": "src/content.js",
+          "line": 618
+        }
+      ]
+    },
+    {
+      "key": "keystrokePressure",
+      "owner": "src/content.js",
+      "name": "Keystroke pressure detector",
+      "contract": "Warns when a page attaches an unusually large number of global keystroke listeners — the pattern a keylogger uses. It's a rough heuristic: rich editors and AI chat apps also attach many, so it can over-warn. Off by default; turn on if you want it.",
+      "default": false,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2633
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 284
+        },
+        {
+          "file": "src/content.js",
+          "line": 609
+        }
+      ]
+    },
+    {
+      "key": "logThirdPartyBeacons",
+      "owner": "background.js",
+      "name": "logThirdPartyBeacons",
+      "contract": "Apply the named protection using its validated configuration and browser-owned context; see the owner and regression matrix.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2513
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "onboarding.js",
+          "line": 47
+        },
+        {
+          "file": "popup.js",
+          "line": 85
+        },
+        {
+          "file": "settings-data.js",
+          "line": 15
+        },
+        {
+          "file": "src/content.js",
+          "line": 625
+        }
+      ]
+    },
+    {
+      "key": "loginAgeCheck",
+      "owner": "background.js",
+      "name": "Login page age check",
+      "contract": "Offers a Check domain age button when a site asks for a password. Only pressing it sends the domain to rdap.org, or your enabled WhoisXML service, to check its registration date. No page contents or typed values are sent. A recently registered domain can be a phishing signal. Off by default; answers are cached locally.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2607
+        },
+        {
+          "file": "bridge.js",
+          "line": 1803
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 260
+        }
+      ]
+    },
+    {
+      "key": "mailTrackingShield",
+      "owner": "mail-shield.js",
+      "name": "Stop email tracking pixels",
+      "contract": "In Gmail, Outlook, Proton, Yahoo, Fastmail and Zoho. A marketing email hides a 1×1 image with your address in its URL; loading it tells the sender you opened it, when, and roughly from where. WardenOne swaps those for a blank pixel of the same size, so nothing looks broken. A pixel the client had not loaded yet is stopped before any request is made; one already loading is cancelled mid-flight, and either way the part that identifies you never goes. Gmail proxies remote images, but keeps the original address in the link, so the real tracker can still be recognised. Where a provider leaves no trace of the source, only the shape of the image is left to go on — and whether the provider fetched it on its own servers is outside what any extension can see. On by default.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2576
+        },
+        {
+          "file": "mail-shield.js",
+          "line": 238
+        },
+        {
+          "file": "popup.js",
+          "line": 46
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 162
+        }
+      ]
+    },
+    {
+      "key": "mediaShield",
+      "owner": "src/content.js",
+      "name": "Media Shield",
+      "contract": "Watch camera, microphone, screen-share, hidden media, and autoplay abuse",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2651
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 40
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 293
+        },
+        {
+          "file": "src/content.js",
+          "line": 619
+        }
+      ]
+    },
+    {
+      "key": "monitorLoggerApi",
+      "owner": "src/content.js",
+      "name": "Monitor for tracker requests",
+      "contract": "Warns when a page quietly posts to a logging endpoint on someone else's domain. Hosts the network rules already block stay silent, so this only speaks about the ones that would otherwise have got through unseen.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2536
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 261
+        },
+        {
+          "file": "src/content.js",
+          "line": 556
+        }
+      ]
+    },
+    {
+      "key": "notificationAbuseGuard",
+      "owner": "src/content.js",
+      "name": "Notification bait",
+      "contract": "Flags pages that talk you into clicking Allow on the notification prompt, and alerts that arrive reading like “your PC is infected”. Nothing is suppressed — alerts pushed from a service worker are outside a page script's reach.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2651
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 40
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 293
+        },
+        {
+          "file": "src/content.js",
+          "line": 623
+        }
+      ]
+    },
+    {
+      "key": "oauthGuard",
+      "owner": "oauth-guard.js",
+      "name": "OAuth grant guard",
+      "contract": "Warns on risky consent grants from major account, work, developer, social, and media providers — such as email, files, repositories, admin, posting, messaging, or offline access. Ordinary sign-in and basic profile access stay quiet. On by default.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2641
+        },
+        {
+          "file": "oauth-guard.js",
+          "line": 349
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 283
+        }
+      ]
+    },
+    {
+      "key": "openPhish",
+      "owner": "background.js",
+      "name": "OpenPhish",
+      "contract": "Phishing intelligence feed. Uses the official keyless Community feed, downloaded to your device and matched locally; there is no key or token to paste.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 2594
+        },
+        {
+          "file": "background.js",
+          "line": 2624
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 281
+        },
+        {
+          "file": "src/content.js",
+          "line": 600
+        }
+      ]
+    },
+    {
+      "key": "pasteProtection",
+      "owner": "src/content.js",
+      "name": "Paste protection",
+      "contract": "Warns before you paste a password, API token, private key, or seed phrase into a risky page — an insecure http:// page, a look-alike/phishing domain, or a form that submits to a different site. Stays silent on normal secure login forms. On by default.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2637
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 285
+        },
+        {
+          "file": "src/content.js",
+          "line": 613
+        }
+      ]
+    },
+    {
+      "key": "paymentCardGuard",
+      "owner": "src/content.js",
+      "name": "Payment card guard",
+      "contract": "Uses page-level form checks to warn on suspicious checkouts and stop matching card submissions it sees on insecure, look-alike, raw-IP, or known-dangerous forms. Embedded frames receive a lightweight card-exfiltration check; full checkout and reputation analysis stays on the top page.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 239
+        },
+        {
+          "file": "background.js",
+          "line": 2596
+        },
+        {
+          "file": "bridge.js",
+          "line": 2245
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 284
+        },
+        {
+          "file": "src/content.js",
+          "line": 595
+        }
+      ]
+    },
+    {
+      "key": "permissionChainGuard",
+      "owner": "permission-chain.js",
+      "name": "Permission chain guard",
+      "contract": "Warns when one site asks for a risky chain of capabilities, like notifications plus camera, clipboard, location, screen share, or file access. On by default.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2640
+        },
+        {
+          "file": "bridge.js",
+          "line": 1795
+        },
+        {
+          "file": "permission-chain.js",
+          "line": 362
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 263
+        }
+      ]
+    },
+    {
+      "key": "phishTank",
+      "owner": "background.js",
+      "name": "PhishTank",
+      "contract": "Community phishing database checks. Sign-in-looking pages, risky links, forms, pastes and downloads are sent to PhishTank as scheme, host and path.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 2591
+        },
+        {
+          "file": "background.js",
+          "line": 2625
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 50
+        },
+        {
+          "file": "src/content.js",
+          "line": 601
+        }
+      ]
+    },
+    {
+      "key": "removeConsentWalls",
+      "owner": "consent-wall.js",
+      "name": "Lift full-screen cookie walls",
+      "contract": "When it offers none: the sheet that covers the page and freezes scrolling. Lifted without clicking anything, so nothing is consented to. Goes back if the page turns out to be empty behind it. Some sites keep the wall on a separate domain, where nothing can reach it. Opt-in.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2571
+        },
+        {
+          "file": "consent-wall.js",
+          "line": 78
+        },
+        {
+          "file": "popup.js",
+          "line": 46
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 152
+        }
+      ]
+    },
+    {
+      "key": "removeOverlays",
+      "owner": "src/content.js",
+      "name": "Block in-page popups & overlays",
+      "contract": "Removes fake notification bells, subscribe panels, adblock nags, cookie/continue walls, and download-gate popups that sit on top of videos or pages. Shows an Undo chip when it hides something. Turn off if a site hides real content.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2541
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 277
+        },
+        {
+          "file": "site-recovery.js",
+          "line": 10
+        },
+        {
+          "file": "src/content.js",
+          "line": 564
+        }
+      ]
+    },
+    {
+      "key": "riskySiteMode",
+      "owner": "src/content.js",
+      "name": "Risky-site mode",
+      "contract": "New-looking or suspicious domains get stricter third-party scripts, frames, media, and background calls.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2643
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 260
+        },
+        {
+          "file": "src/content.js",
+          "line": 616
+        }
+      ]
+    },
+    {
+      "key": "safeSearch",
+      "owner": "background.js",
+      "name": "Force SafeSearch",
+      "contract": "Locks the Google, Bing, DuckDuckGo, Brave Search and Yahoo search engines into SafeSearch, and YouTube into Restricted Mode. The adult-site guard only fires when you arrive somewhere — explicit images and video render inside the results page itself, where there's no arrival to catch. This closes that gap. Off by default: it changes what search will show you.",
+      "default": false,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2524
+        },
+        {
+          "file": "popup.js",
+          "line": 41
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 264
+        }
+      ]
+    },
+    {
+      "key": "scamLockGuard",
+      "owner": "src/content.js",
+      "name": "Tech-support scam guard",
+      "contract": "Detects fake \"your computer is infected / locked — call this number\" pages and browser-lockers (pop-up dialog spam). Neutralizes the lock, frees you to leave, and shows a calm warning that your PC is fine. On by default.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2635
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 285
+        },
+        {
+          "file": "src/content.js",
+          "line": 611
+        }
+      ]
+    },
+    {
+      "key": "scriptDriftGuard",
+      "owner": "background.js",
+      "name": "Script drift guard",
+      "contract": "Baselines third-party script hashes and warns when the same CDN/script URL later serves changed code with new behavior or outbound hosts. On by default.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2642
+        },
+        {
+          "file": "bridge.js",
+          "line": 1799
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 261
+        }
+      ]
+    },
+    {
+      "key": "scriptletEngine",
+      "owner": "background.js",
+      "name": "AdShield: YouTube",
+      "contract": "YouTube-specific AdShield engine (video ads) - blocks ad breaks and ad UI while keeping playback stable through YouTube updates.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2548
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 272
+        },
+        {
+          "file": "site-recovery.js",
+          "line": 11
+        },
+        {
+          "file": "src/content.js",
+          "line": 572
+        }
+      ]
+    },
+    {
+      "key": "sendPrivacySignals",
+      "owner": "background.js",
+      "name": "Do Not Track & privacy signals",
+      "contract": "Tell sites you opt out of tracking via Do-Not-Track and Global Privacy Control (GPC has legal weight under CCPA)",
+      "default": true,
+      "siteOverride": [
+        "coordinated"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2581
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 161
+        },
+        {
+          "file": "src/content.js",
+          "line": 583
+        }
+      ]
+    },
+    {
+      "key": "sessionShield",
+      "owner": "src/content.js",
+      "name": "SessionShield",
+      "contract": "Watch for login/session tokens exposed in risky places (localStorage, URLs, etc.) and check cookie safety. Never stores or shows full tokens.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2592
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 283
+        },
+        {
+          "file": "src/content.js",
+          "line": 591
+        }
+      ]
+    },
+    {
+      "key": "socialWidgetGuard",
+      "owner": "src/content.js",
+      "name": "Click to load social embeds",
+      "contract": "Replace Facebook, X, Instagram and TikTok embeds with a placeholder so they can't load or track you until you click. Opt-in.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2579
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 47
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 142
+        },
+        {
+          "file": "src/content.js",
+          "line": 651
+        }
+      ]
+    },
+    {
+      "key": "startupCheck",
+      "owner": "background-startup.js",
+      "name": "Startup security check",
+      "contract": "When Chrome starts, WardenOne scans your restored tabs and recently installed extensions for risky signs, then shows a report. Download Shield reviews risky downloads live as they happen instead of re-scanning old files on every launch. On by default.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background-startup.js",
+          "line": 39
+        },
+        {
+          "file": "background.js",
+          "line": 2508
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 263
+        }
+      ]
+    },
+    {
+      "key": "storageAccessGuard",
+      "owner": "anti-redirect.js",
+      "name": "Watch cross-site cookie requests",
+      "contract": "Something embedded in a page — a comment box, a video player, an ad frame — can ask for its own cookies back across sites, using the one route browsers still allow. You were never shown who asked. WardenOne records every request with the name of whoever made it, refuses the ones from known trackers outright, and flags anything that asks while invisible or without you clicking a thing. Ordinary embedded sign-ins are left to work.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 3750
+        },
+        {
+          "file": "background.js",
+          "line": 2648
+        },
+        {
+          "file": "bridge.js",
+          "line": 2246
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 262
+        }
+      ]
+    },
+    {
+      "key": "strictPopupShield",
+      "owner": "src/content.js",
+      "name": "Strict ad-popup shield",
+      "contract": "Blocks suspicious ad/affiliate tabs opened on click, including installer ads and \"download + ad tab\" tricks. Player controls, real downloads, and sign-ins stay native. On by default.",
+      "default": true,
+      "siteOverride": [
+        "coordinated"
+      ],
+      "references": [
+        {
+          "file": "anti-redirect.js",
+          "line": 235
+        },
+        {
+          "file": "background.js",
+          "line": 1240
+        },
+        {
+          "file": "bridge.js",
+          "line": 2244
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 38
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 277
+        },
+        {
+          "file": "src/content.js",
+          "line": 546
+        }
+      ]
+    },
+    {
+      "key": "stripTrackingParams",
+      "owner": "src/content.js",
+      "name": "Remove tracking parameters from page addresses",
+      "contract": "Cleans recognised tracking parameters when a site changes its own address with the History API. Also applies to explicit clean-link actions. It leaves ordinary links and forms untouched, so turning off the ping switch above does not turn this cleaner off.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2705
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 47
+        },
+        {
+          "file": "privacy-test.js",
+          "line": 178
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 144
+        },
+        {
+          "file": "site-recovery.js",
+          "line": 12
+        },
+        {
+          "file": "src/content.js",
+          "line": 648
+        }
+      ]
+    },
+    {
+      "key": "trackerCacheProtection",
+      "owner": "background.js",
+      "name": "Block tracker cache validators",
+      "contract": "Removes If-None-Match and ETag only on passive requests to WardenOne's known tracker hosts, preventing cache-tag respawning without disabling normal browser caching. Opt-in because repeated tracker responses can use more bandwidth.",
+      "default": false,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2569
+        },
+        {
+          "file": "popup.js",
+          "line": 46
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 143
+        }
+      ]
+    },
+    {
+      "key": "trackerLearner",
+      "owner": "background.js",
+      "name": "Local tracker learner",
+      "contract": "Suggests repeated tracker domains and flags suspected URL identifiers in Activity. Identifier detection leaves URLs intact. Domain blocks need your approval; observations stay local.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background-identifiers.js",
+          "line": 12
+        },
+        {
+          "file": "background.js",
+          "line": 2577
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 47
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 141
+        },
+        {
+          "file": "src/content.js",
+          "line": 567
+        }
+      ]
+    },
+    {
+      "key": "twitchAdBlock",
+      "owner": "twitch-adblock.js",
+      "name": "AdShield: Twitch",
+      "contract": "Twitch-specific AdShield engine (stream ads) - removes the pre-roll and mid-roll ads Twitch stitches into the video stream, while keeping playback stable.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2549
+        },
+        {
+          "file": "bridge.js",
+          "line": 2248
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 274
+        },
+        {
+          "file": "src/content.js",
+          "line": 573
+        },
+        {
+          "file": "twitch-adblock.js",
+          "line": 1085
+        }
+      ]
+    },
+    {
+      "key": "unshimLinks",
+      "owner": "src/content.js",
+      "name": "Remove link click pings",
+      "contract": "Removes ping attributes that notify another address when you click a link. It leaves the link destination untouched. This switch also lets the explicit clean-copy tools unwrap known tracking redirects.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2578
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 47
+        },
+        {
+          "file": "privacy-test.js",
+          "line": 178
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 146
+        },
+        {
+          "file": "src/content.js",
+          "line": 650
+        }
+      ]
+    },
+    {
+      "key": "urlHaus",
+      "owner": "background.js",
+      "name": "URLhaus",
+      "contract": "Malware URL intelligence from abuse.ch. Once on, every page you open, risky link, form, paste and download is sent to abuse.ch as scheme, host and path.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 2588
+        },
+        {
+          "file": "background.js",
+          "line": 2619
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 50
+        },
+        {
+          "file": "src/content.js",
+          "line": 602
+        }
+      ]
+    },
+    {
+      "key": "warnGrabberDomains",
+      "owner": "background.js",
+      "name": "Warn on IP-logger pages",
+      "contract": "Intercepts direct visits to known logger links with a warning before the destination loads. If this is off, malicious-site blocking may still stop the visit without a warning.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2518
+        },
+        {
+          "file": "bridge.js",
+          "line": 1922
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 288
+        },
+        {
+          "file": "src/content.js",
+          "line": 549
+        }
+      ]
+    },
+    {
+      "key": "warnRedirectParams",
+      "owner": "src/content.js",
+      "name": "Warn on redirecting links",
+      "contract": "Flags links that carry another address inside them — the ?url= and ?redirect= shape — so a link that looks like it stays on this site but hands you to another one says so first.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2534
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 260
+        },
+        {
+          "file": "src/content.js",
+          "line": 554
+        }
+      ]
+    },
+    {
+      "key": "warnSearchResults",
+      "owner": "search-junk.js",
+      "name": "Warn about dangerous search results",
+      "contract": "Marks results WardenOne already knows something bad about — on a malware or scam blocklist, a known IP-logger, a name spelled to look like a well-known site, or a bare IP address — so you see it before you click instead of being stopped afterwards. Nothing is hidden or reordered and the link still works. It never marks anything safe: a result with no warning is one nothing is known about, which is not the same as one that has been checked. Answers come from lists already on your device — no result is ever sent anywhere to paint a badge. For a deeper look at one link, right-click it and choose Check this link. Works on the Google, Bing, DuckDuckGo, Brave Search and Yahoo results pages.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2533
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "search-junk.js",
+          "line": 446
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 275
+        }
+      ]
+    },
+    {
+      "key": "warnShorteners",
+      "owner": "src/content.js",
+      "name": "Warn on shortened links",
+      "contract": "Flags bit.ly, tinyurl and the rest, which hide where a link actually goes until you are already there. You get told what it is before you follow it; the link still works if you want it.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2535
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 260
+        },
+        {
+          "file": "src/content.js",
+          "line": 555
+        }
+      ]
+    },
+    {
+      "key": "watchExtensionPermissions",
+      "owner": "background-extension-watch.js",
+      "name": "Watch installed-extension changes",
+      "contract": "Keeps a local inventory of versions, permissions and enabled state. Harmless updates stay in the timeline; new powerful access is highlighted and explained. On by default.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background-extension-watch.js",
+          "line": 400
+        },
+        {
+          "file": "background.js",
+          "line": 2503
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 263
+        }
+      ]
+    },
+    {
+      "key": "whoisXml",
+      "owner": "background.js",
+      "name": "WhoisXML API",
+      "contract": "Domain registration enrichment. Adds age, registrar, name server, privacy/redaction, and ownership-country clues to risky domains.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2627
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 50
+        },
+        {
+          "file": "src/content.js",
+          "line": 603
+        }
+      ]
+    },
+    {
+      "key": "whoisXmlReputation",
+      "owner": "background.js",
+      "name": "WhoisXML Domain Reputation",
+      "contract": "Uses the WhoisXML key above to score domain safety and surface malware/phishing blocklist warnings.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 2600
+        },
+        {
+          "file": "background.js",
+          "line": 2629
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 50
+        },
+        {
+          "file": "src/content.js",
+          "line": 604
+        }
+      ]
+    },
+    {
+      "key": "whoisXmlThreatIntel",
+      "owner": "background.js",
+      "name": "WhoisXML Threat Intelligence",
+      "contract": "Uses the WhoisXML key above for IoC matches against malicious domains, URLs, IPs, and threat types. Sign-in-looking pages and downloads are sent as scheme, host and path.",
+      "default": false,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 2603
+        },
+        {
+          "file": "background.js",
+          "line": 2630
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 50
+        },
+        {
+          "file": "src/content.js",
+          "line": 605
+        }
+      ]
+    },
+    {
+      "key": "xssBehaviorGuard",
+      "owner": "src/content.js",
+      "name": "XSS Behavior Guard",
+      "contract": "Warns when a value from the address bar, another site, or a page message reaches somewhere the browser would run it as code — the shape of a cross-site scripting attempt. Normal app routing, uploads and escaped examples are left alone, and the value itself is never recorded.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2539
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 42
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 261
+        },
+        {
+          "file": "src/content.js",
+          "line": 559
+        }
+      ]
+    }
+  ],
+  "configuration": [
+    {
+      "key": "abuseIpDb",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "adShield",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "adultHeuristics",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "antiClickjacking",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "antiFingerprint",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "antiFingerprintNoise",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "autoRejectConsent",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "autoSkipDownloadAds",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "autoUpdateLists",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "backTrapGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "behavioralScan",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockAllCookies",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "blockAllStorageAccess",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "blockAutoplay",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "blockAutoplayMedia",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockCameraMic",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockCnameTrackers",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockCryptominers",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockFingerprintScripts",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockFirstPartyTrackers",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "blockForcedPopups",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockFraudVendorScripts",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "blockGeolocation",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockGesturelessNav",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockGrabberResources",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockHighConfidencePhishing",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockMalwareSites",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockMetaRefresh",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockPopupTricks",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockScreenCapture",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockSearchAiAnswers",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "blockSponsoredSearchResults",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "blockSupercookies",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockSuspiciousWebRTC",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "blockThirdPartyCookies",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockTokenExfil",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockTrackers",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "blockWebRTCLeak",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "breachCheck",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "capabilityGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "capReferrer",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "certificateGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "cleanCopyLinks",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "clearCookiesOnLeave",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "clearServiceWorkersOnLeave",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "clientHintProtection",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "clipboardGuard",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "clipboardSwapDetect",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "commandPasteGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "continuousTokenScan",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "cryptominerCpuWatch",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "deAmp",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "detectPhishing",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "detectRedirectChains",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "detectSkimmers",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "deviceAccessGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "disableYouTubeAmbientMode",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "dnsRebindGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "downloadDomainAge",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "downloadHardBlockCritical",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "downloadHashCheck",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "downloadReputation",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "downloadSafeBrowsing",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "downloadVirusTotal",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "downloadVirusTotalHash",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "elementZapper",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "enabled",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "eyeShield",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "fakeUpdateDetector",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "fakeWindowGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "fingerprintProbeDetection",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "flagSearchJunk",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "forcedDownloadProtection",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "forceHttps",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "forgetMeHistory",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "formTrapDetector",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "fullscreenGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "gateAdultSites",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "googleSearchResultCleanup",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "googleWebResultsOnly",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "honeytokenMode",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "insecureLoginGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "intranetNetworkRules",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "intranetProtection",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "keystrokePressure",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "killPrefetch",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "lazyLoadMedia",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "loginAgeCheck",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "loginCompatibility",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "logThirdPartyBeacons",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "mailTrackingShield",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "mediaShield",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "memoryNeverAudio",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "memoryNeverForms",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "memoryNeverPayment",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "memoryNeverPinned",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "memoryShield",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "monitorLoggerApi",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "notificationAbuseGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "oauthGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "oneOpenPerGesture",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "openPhish",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "pasteProtection",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "pauseAnimatedImages",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "paymentCardGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "permissionChainGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "phishTank",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "removeConsentWalls",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "removeOverlays",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "riskySiteMode",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "safeSearch",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "scamLockGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "scriptDriftGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "scriptletEngine",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "sendPrivacySignals",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "sessionShield",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "showBadge",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "showDownloadBar",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "showToasts",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "silentMode",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "socialWidgetGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "startupCheck",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "stopAnimatedVideoPreviews",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "storageAccessGuard",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "strictPopupShield",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "stripTrackingParams",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "tabLimitClose",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "tabLimitGuard",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "tabLimitWarn",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "throttleBackgroundTabs",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "trackerCacheProtection",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "trackerLearner",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "twitchAdBlock",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "twitchRewind",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "twitchSteadyPlayback",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "twitchVodRewind",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "unshimLinks",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "urlHaus",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "warnGrabberDomains",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "warnRedirectParams",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "warnSearchResults",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "warnShorteners",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "watchExtensionPermissions",
+      "type": "boolean",
+      "default": true
+    },
+    {
+      "key": "whoisXml",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "whoisXmlReputation",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "whoisXmlThreatIntel",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "key": "xssBehaviorGuard",
+      "type": "boolean",
+      "default": true
+    }
+  ],
+  "ruleAllocations": {
+    "owner": "background.js",
+    "constants": [
+      {
+        "name": "DYNAMIC_RULE_BASE",
+        "value": 10000
+      },
+      {
+        "name": "MAX_DYNAMIC",
+        "value": 18000
+      },
+      {
+        "name": "OPTION_RULE_BASE",
+        "value": 600000
+      },
+      {
+        "name": "OPTION_RULES_MAX",
+        "value": 4000
+      },
+      {
+        "name": "LEARNED_RULES_BUDGET",
+        "value": 2000
+      },
+      {
+        "name": "TRACKER_RULES_BUDGET",
+        "value": 1000
+      },
+      {
+        "name": "CNAME_RULE_BASE",
+        "value": 730000
+      },
+      {
+        "name": "CNAME_RULES_BUDGET",
+        "value": 300
+      },
+      {
+        "name": "TRACKER_COOKIE_ALIAS_RULE_BASE",
+        "value": 901000
+      },
+      {
+        "name": "TRACKER_COOKIE_ALIAS_RULES_BUDGET",
+        "value": 300
+      },
+      {
+        "name": "ALLOWLIST_RULES_BUDGET",
+        "value": 1000
+      },
+      {
+        "name": "MEDIA_COMPAT_RULES_BUDGET",
+        "value": 100
+      },
+      {
+        "name": "LOGIN_COMPAT_RULES_BUDGET",
+        "value": 300
+      },
+      {
+        "name": "GRABBER_FEED_RULES_BUDGET",
+        "value": 1002
+      },
+      {
+        "name": "MINER_FEED_RULES_BUDGET",
+        "value": 1000
+      },
+      {
+        "name": "SAFE_SEARCH_RULES_BUDGET",
+        "value": 40
+      },
+      {
+        "name": "NEVER_BLOCK_ALLOW_RULES_BUDGET",
+        "value": 200
+      },
+      {
+        "name": "SCRIPT_SHIELD_RULES_BUDGET",
+        "value": 289
+      },
+      {
+        "name": "FINGERPRINT_SCRIPT_RULES_BUDGET",
+        "value": 80
+      },
+      {
+        "name": "GOOGLE_SEARCH_ALLOW_RULES_BUDGET",
+        "value": 20
+      },
+      {
+        "name": "SMALL_SESSION_RULES_BUDGET",
+        "value": 64
+      },
+      {
+        "name": "HTTPS_DYNAMIC_RULES_BUDGET",
+        "value": 1
+      },
+      {
+        "name": "REBIND_QUARANTINE_RULES_BUDGET",
+        "value": 128
+      },
+      {
+        "name": "INTRANET_NETWORK_RULES_BUDGET",
+        "value": 32
+      },
+      {
+        "name": "USER_RULES_BUDGET",
+        "value": 500
+      },
+      {
+        "name": "FIREWALL_RULES_BUDGET",
+        "value": 250
+      },
+      {
+        "name": "FIREWALL_SESSION_RULES_BUDGET",
+        "value": 50
+      },
+      {
+        "name": "USER_BLOCKLIST_RULES_BUDGET",
+        "value": 64
+      },
+      {
+        "name": "TOTAL_DYNAMIC_BUDGET",
+        "value": 28417
+      },
+      {
+        "name": "TOTAL_SESSION_BUDGET",
+        "value": 2303
+      },
+      {
+        "name": "TOTAL_UNSAFE_DYNAMIC_BUDGET",
+        "value": 251
+      },
+      {
+        "name": "PRIVACY_HEADER_RULE_ID",
+        "value": 900000
+      },
+      {
+        "name": "PRIVACY_HEADER_NAV_RULE_ID",
+        "value": 900008
+      },
+      {
+        "name": "THIRD_PARTY_COOKIE_RULE_ID",
+        "value": 900001
+      },
+      {
+        "name": "LOCATION_PRIVACY_HEADER_RULE_ID",
+        "value": 900002
+      },
+      {
+        "name": "CLIENT_HINT_HIGH_ENTROPY_RULE_ID",
+        "value": 900003
+      },
+      {
+        "name": "CLIENT_HINT_TRACKER_RULE_ID",
+        "value": 900004
+      },
+      {
+        "name": "STRICT_REFERRER_RULE_ID",
+        "value": 900005
+      },
+      {
+        "name": "TRACKER_CACHE_RULE_ID",
+        "value": 900006
+      },
+      {
+        "name": "IP_LOOKUP_BLOCK_RULE_BASE",
+        "value": 900020
+      },
+      {
+        "name": "ALLOWLIST_RULE_BASE",
+        "value": 800000
+      },
+      {
+        "name": "NEVER_BLOCK_ALLOW_RULE_BASE",
+        "value": 745000
+      },
+      {
+        "name": "MEDIA_COMPAT_RULE_BASE",
+        "value": 806000
+      },
+      {
+        "name": "LOGIN_COMPAT_RULE_BASE",
+        "value": 807000
+      },
+      {
+        "name": "SCRIPT_SHIELD_RULE_BASE",
+        "value": 930000
+      },
+      {
+        "name": "SCRIPT_SHIELD_RULE_MAX",
+        "value": 1000
+      },
+      {
+        "name": "FINGERPRINT_SCRIPT_RULE_BASE",
+        "value": 931500
+      },
+      {
+        "name": "FINGERPRINT_SCRIPT_RULE_MAX",
+        "value": 80
+      },
+      {
+        "name": "GOOGLE_SEARCH_ALLOW_RULE_BASE",
+        "value": 931700
+      },
+      {
+        "name": "GOOGLE_SEARCH_ALLOW_RULE_MAX",
+        "value": 20
+      },
+      {
+        "name": "LEARNED_RULE_BASE",
+        "value": 700000
+      },
+      {
+        "name": "TRACKER_RULE_BASE",
+        "value": 720000
+      },
+      {
+        "name": "TRACKER_RULE_MAX",
+        "value": 1000
+      },
+      {
+        "name": "GRABBER_FEED_RULE_BASE",
+        "value": 740000
+      },
+      {
+        "name": "GRABBER_NAV_RULE_ID",
+        "value": 741000
+      },
+      {
+        "name": "GRABBER_MALWARE_NAV_RULE_ID",
+        "value": 741001
+      },
+      {
+        "name": "GRABBER_STATIC_NAV_RULE_ID",
+        "value": 168
+      },
+      {
+        "name": "GRABBER_TRACKER_IMAGE_RULE_ID",
+        "value": 170
+      },
+      {
+        "name": "GRABBER_TRACKER_NAV_RULE_ID",
+        "value": 171
+      },
+      {
+        "name": "GRABBER_TRACKER_ROUTE_RULE_ID",
+        "value": 172
+      },
+      {
+        "name": "USER_RULE_BASE",
+        "value": 750000
+      },
+      {
+        "name": "USER_RULE_MAX",
+        "value": 500
+      },
+      {
+        "name": "USER_BLOCKLIST_RULE_BASE",
+        "value": 970000
+      },
+      {
+        "name": "FIREWALL_RULE_BASE",
+        "value": 950000
+      },
+      {
+        "name": "FIREWALL_RULE_MAX",
+        "value": 250
+      },
+      {
+        "name": "FIREWALL_SESSION_RULE_BASE",
+        "value": 960000
+      },
+      {
+        "name": "FIREWALL_SESSION_RULE_MAX",
+        "value": 50
+      },
+      {
+        "name": "MINER_FEED_RULE_BASE",
+        "value": 742000
+      },
+      {
+        "name": "TRACKER_COOKIE_RULE_ID",
+        "value": 900007
+      },
+      {
+        "name": "HTTPS_UPGRADE_RULE_ID",
+        "value": 910000
+      },
+      {
+        "name": "HTTPS_UPGRADE_DYNAMIC_RULE_ID",
+        "value": 910001
+      },
+      {
+        "name": "SAFE_SEARCH_RULE_BASE",
+        "value": 743000
+      },
+      {
+        "name": "SAFE_SEARCH_RULE_MAX",
+        "value": 40
+      },
+      {
+        "name": "INTRANET_NET_RULE_BASE",
+        "value": 932200
+      },
+      {
+        "name": "INTRANET_NET_RULES_BUDGET",
+        "value": 32
+      },
+      {
+        "name": "REBIND_QUARANTINE_RULE_BASE",
+        "value": 932000
+      }
+    ],
+    "precedence": "network-policy.js",
+    "regression": "tools/test-dnr-budget.js"
+  },
+  "manifest": {
+    "permissions": [
+      "declarativeNetRequest",
+      "declarativeNetRequestFeedback",
+      "storage",
+      "activeTab",
+      "scripting",
+      "webRequest",
+      "webNavigation",
+      "alarms",
+      "browsingData",
+      "cookies",
+      "management",
+      "contentSettings",
+      "contextMenus",
+      "downloads",
+      "notifications",
+      "offscreen",
+      "tabs"
+    ],
+    "optionalPermissions": [
+      "history"
+    ],
+    "hostPermissions": [
+      "<all_urls>"
+    ],
+    "background": {
+      "service_worker": "background.js"
+    },
+    "contentScripts": [
+      {
+        "matches": [
+          "https://open.spotify.com/*"
+        ],
+        "js": [
+          "spotify-adblock.js"
+        ],
+        "run_at": "document_start",
+        "all_frames": true,
+        "match_origin_as_fallback": true,
+        "world": "MAIN"
+      },
+      {
+        "matches": [
+          "*://*.twitch.tv/*"
+        ],
+        "js": [
+          "twitch-adblock.js"
+        ],
+        "run_at": "document_start",
+        "all_frames": true,
+        "match_origin_as_fallback": true,
+        "world": "MAIN"
+      },
+      {
+        "matches": [
+          "<all_urls>"
+        ],
+        "js": [
+          "domain-utils.js",
+          "anti-redirect.js",
+          "cookie-access.js"
+        ],
+        "run_at": "document_start",
+        "all_frames": true,
+        "match_origin_as_fallback": true,
+        "match_about_blank": true,
+        "world": "MAIN"
+      },
+      {
+        "matches": [
+          "<all_urls>"
+        ],
+        "exclude_matches": [
+          "*://*.youtube.googleapis.com/*",
+          "https://accounts.google.com/*",
+          "https://*.accounts.google.com/*",
+          "https://accounts.google.co.uk/*",
+          "https://*.accounts.google.co.uk/*",
+          "https://auth.openai.com/*",
+          "https://mail.google.com/*",
+          "https://drive.google.com/*",
+          "https://docs.google.com/*",
+          "https://calendar.google.com/*",
+          "https://classroom.google.com/*",
+          "https://meet.google.com/*",
+          "https://chat.google.com/*",
+          "https://myaccount.google.com/*",
+          "https://oauth2.googleapis.com/*",
+          "https://apis.google.com/*",
+          "https://*.ucas.com/*",
+          "https://*.ac.uk/*",
+          "https://*.edu/*",
+          "https://*.edu.au/*",
+          "https://*.ac.nz/*",
+          "https://*.ac.za/*",
+          "https://*.ac.in/*",
+          "https://*.edu.sg/*",
+          "https://*.edu.hk/*",
+          "https://login.microsoftonline.com/*",
+          "https://login.live.com/*",
+          "https://appleid.apple.com/*",
+          "https://okta.com/*",
+          "https://*.okta.com/*",
+          "https://oktacdn.com/*",
+          "https://*.oktacdn.com/*",
+          "https://auth0.com/*",
+          "https://*.auth0.com/*",
+          "https://cdn.auth0.com/*",
+          "https://onelogin.com/*",
+          "https://*.onelogin.com/*",
+          "https://duosecurity.com/*",
+          "https://*.duosecurity.com/*",
+          "https://openathens.net/*",
+          "https://*.openathens.net/*",
+          "https://shibboleth.net/*",
+          "https://*.shibboleth.net/*",
+          "https://pingidentity.com/*",
+          "https://*.pingidentity.com/*",
+          "https://*.pingone.com/*",
+          "https://*.b2clogin.com/*",
+          "https://*.ciamlogin.com/*",
+          "https://hcaptcha.com/*",
+          "https://*.hcaptcha.com/*",
+          "https://recaptcha.net/*",
+          "https://*.recaptcha.net/*",
+          "https://challenges.cloudflare.com/*",
+          "https://turnstile.cloudflare.com/*",
+          "https://amazoncognito.com/*",
+          "https://*.amazoncognito.com/*",
+          "https://shopify.com/*",
+          "https://*.shopify.com/*",
+          "https://github.com/login/oauth/*",
+          "https://discord.com/oauth2/*",
+          "https://discord.com/api/oauth2/*",
+          "https://discordapp.com/oauth2/*",
+          "https://discordapp.com/api/oauth2/*",
+          "https://www.facebook.com/dialog/oauth*",
+          "https://www.facebook.com/*/dialog/oauth*",
+          "https://m.facebook.com/dialog/oauth*",
+          "https://m.facebook.com/*/dialog/oauth*",
+          "https://accounts.spotify.com/authorize*",
+          "https://slack.com/oauth/authorize*",
+          "https://slack.com/oauth/v2/authorize*",
+          "https://slack-gov.com/oauth/authorize*",
+          "https://slack-gov.com/oauth/v2/authorize*",
+          "https://www.dropbox.com/oauth2/authorize*",
+          "https://gitlab.com/oauth/authorize*",
+          "https://auth.atlassian.com/authorize*",
+          "https://www.linkedin.com/oauth/v2/authorization*",
+          "https://id.twitch.tv/oauth2/authorize*",
+          "https://www.google.com/recaptcha/*",
+          "https://*.arkoselabs.com/*",
+          "https://*.funcaptcha.com/*"
+        ],
+        "js": [
+          "fingerprint-realm.js"
+        ],
+        "run_at": "document_start",
+        "all_frames": true,
+        "match_origin_as_fallback": true,
+        "match_about_blank": true,
+        "world": "MAIN"
+      },
+      {
+        "matches": [
+          "<all_urls>"
+        ],
+        "exclude_matches": [
+          "*://*.youtube.googleapis.com/*",
+          "https://accounts.google.com/*",
+          "https://*.accounts.google.com/*",
+          "https://accounts.google.co.uk/*",
+          "https://*.accounts.google.co.uk/*",
+          "https://auth.openai.com/*",
+          "https://mail.google.com/*",
+          "https://calendar.google.com/*",
+          "https://classroom.google.com/*",
+          "https://meet.google.com/*",
+          "https://chat.google.com/*",
+          "https://myaccount.google.com/*",
+          "https://oauth2.googleapis.com/*",
+          "https://apis.google.com/*",
+          "https://login.microsoftonline.com/*",
+          "https://login.live.com/*",
+          "https://appleid.apple.com/*",
+          "https://*.okta.com/",
+          "https://*.okta.com/?*",
+          "https://*.okta.com/login*",
+          "https://*.okta.com/signin*",
+          "https://*.okta.com/oauth2/*",
+          "https://*.okta.com/idp/idx/*",
+          "https://*.okta.com/sso/*",
+          "https://*.okta.com/activate/*",
+          "https://*.okta.com/reset_password/*",
+          "https://oktacdn.com/*",
+          "https://*.oktacdn.com/*",
+          "https://*.auth0.com/authorize*",
+          "https://*.auth0.com/u/*",
+          "https://*.auth0.com/login*",
+          "https://*.auth0.com/samlp/*",
+          "https://*.auth0.com/mfa/*",
+          "https://*.auth0.com/passwordless/*",
+          "https://*.auth0.com/continue*",
+          "https://*.auth0.com/logout*",
+          "https://*.auth0.com/v2/logout*",
+          "https://*.auth0.com/lo/*",
+          "https://*.onelogin.com/login*",
+          "https://*.onelogin.com/oidc/*",
+          "https://*.onelogin.com/saml/*",
+          "https://*.onelogin.com/trust/saml2/*",
+          "https://*.onelogin.com/access/*",
+          "https://*.duosecurity.com/oauth/*",
+          "https://*.duosecurity.com/frame/*",
+          "https://*.duosecurity.com/saml2/*",
+          "https://*.duosecurity.com/login*",
+          "https://openathens.net/*",
+          "https://*.openathens.net/*",
+          "https://shibboleth.net/*",
+          "https://*.shibboleth.net/*",
+          "https://pingidentity.com/*",
+          "https://*.pingidentity.com/*",
+          "https://*.pingone.com/sso/*",
+          "https://*.pingone.com/login*",
+          "https://hcaptcha.com/*",
+          "https://*.hcaptcha.com/*",
+          "https://recaptcha.net/*",
+          "https://*.recaptcha.net/*",
+          "https://challenges.cloudflare.com/*",
+          "https://turnstile.cloudflare.com/*",
+          "https://*.amazoncognito.com/authorize*",
+          "https://*.amazoncognito.com/oauth2/*",
+          "https://*.amazoncognito.com/login*",
+          "https://*.amazoncognito.com/signup*",
+          "https://*.amazoncognito.com/logout*",
+          "https://*.amazoncognito.com/forgotPassword*",
+          "https://*.amazoncognito.com/confirmUser*",
+          "https://*.amazoncognito.com/confirmForgotPassword*",
+          "https://*.amazoncognito.com/mfa*",
+          "https://*.amazoncognito.com/selectMfaType*",
+          "https://*.amazoncognito.com/setup*",
+          "https://*.amazoncognito.com/saml2/*",
+          "https://*.amazoncognito.com/error*",
+          "https://*.shopify.com/authentication/*",
+          "https://*.shopify.com/admin/auth/*",
+          "https://*.shopify.com/services/login_with_shop/*",
+          "https://github.com/login/oauth/*",
+          "https://discord.com/oauth2/*",
+          "https://discord.com/api/oauth2/*",
+          "https://discordapp.com/oauth2/*",
+          "https://discordapp.com/api/oauth2/*",
+          "https://www.facebook.com/dialog/oauth*",
+          "https://www.facebook.com/*/dialog/oauth*",
+          "https://m.facebook.com/dialog/oauth*",
+          "https://m.facebook.com/*/dialog/oauth*",
+          "https://accounts.spotify.com/authorize*",
+          "https://slack.com/oauth/authorize*",
+          "https://slack.com/oauth/v2/authorize*",
+          "https://slack-gov.com/oauth/authorize*",
+          "https://slack-gov.com/oauth/v2/authorize*",
+          "https://www.dropbox.com/oauth2/authorize*",
+          "https://gitlab.com/oauth/authorize*",
+          "https://auth.atlassian.com/authorize*",
+          "https://www.linkedin.com/oauth/v2/authorization*",
+          "https://id.twitch.tv/oauth2/authorize*",
+          "https://accounts.shopify.com/*"
+        ],
+        "js": [
+          "engine-compat.js",
+          "idn-utils.js",
+          "content.min.js",
+          "permission-chain.js"
+        ],
+        "run_at": "document_start",
+        "all_frames": false,
+        "world": "MAIN"
+      },
+      {
+        "matches": [
+          "*://*.youtube.com/*",
+          "*://*.youtube-nocookie.com/*",
+          "*://*.youtube.googleapis.com/*"
+        ],
+        "js": [
+          "permission-chain.js",
+          "yt-adblock.js"
+        ],
+        "run_at": "document_start",
+        "all_frames": true,
+        "match_origin_as_fallback": true,
+        "world": "MAIN"
+      },
+      {
+        "matches": [
+          "<all_urls>"
+        ],
+        "js": [
+          "domain-utils-isolated.js",
+          "engine-compat.js",
+          "bridge.js",
+          "frame-image-logger.js"
+        ],
+        "run_at": "document_start",
+        "all_frames": true,
+        "match_origin_as_fallback": true,
+        "match_about_blank": true,
+        "world": "ISOLATED"
+      },
+      {
+        "matches": [
+          "*://*.twitch.tv/*"
+        ],
+        "js": [
+          "twitch-rewind.js"
+        ],
+        "run_at": "document_idle",
+        "all_frames": false,
+        "world": "ISOLATED"
+      },
+      {
+        "matches": [
+          "*://*.twitch.tv/*"
+        ],
+        "js": [
+          "twitch-vod-rewind.js"
+        ],
+        "run_at": "document_idle",
+        "all_frames": false,
+        "world": "ISOLATED"
+      },
+      {
+        "matches": [
+          "https://accounts.google.com/*",
+          "https://accounts.google.co.uk/*",
+          "https://login.microsoftonline.com/*",
+          "https://login.live.com/*",
+          "https://github.com/login/oauth/*",
+          "https://discord.com/oauth2/*",
+          "https://discord.com/api/oauth2/*",
+          "https://discordapp.com/oauth2/*",
+          "https://discordapp.com/api/oauth2/*",
+          "https://appleid.apple.com/auth/authorize*",
+          "https://www.facebook.com/dialog/oauth*",
+          "https://www.facebook.com/*/dialog/oauth*",
+          "https://m.facebook.com/dialog/oauth*",
+          "https://m.facebook.com/*/dialog/oauth*",
+          "https://accounts.spotify.com/authorize*",
+          "https://slack.com/oauth/authorize*",
+          "https://slack.com/oauth/v2/authorize*",
+          "https://slack-gov.com/oauth/authorize*",
+          "https://slack-gov.com/oauth/v2/authorize*",
+          "https://www.dropbox.com/oauth2/authorize*",
+          "https://gitlab.com/oauth/authorize*",
+          "https://auth.atlassian.com/authorize*",
+          "https://www.linkedin.com/oauth/v2/authorization*",
+          "https://id.twitch.tv/oauth2/authorize*"
+        ],
+        "js": [
+          "oauth-guard.js"
+        ],
+        "run_at": "document_idle",
+        "all_frames": false,
+        "world": "ISOLATED"
+      }
+    ],
+    "webAccessibleResources": [
+      {
+        "resources": [
+          "spotify-silent-1s.mp4"
+        ],
+        "matches": [
+          "https://open.spotify.com/*"
+        ]
+      },
+      {
+        "resources": [
+          "ip-logger-warning.html",
+          "ip-logger-warning.css",
+          "ip-logger-warning.js"
+        ],
+        "matches": [
+          "<all_urls>"
+        ],
+        "use_dynamic_url": true
+      }
+    ]
+  },
+  "logTypeReferences": [
+    {
+      "type": "popup",
+      "file": "background-downloads.js",
+      "line": 1894
+    },
+    {
+      "type": "basic",
+      "file": "background-downloads.js",
+      "line": 1913
+    },
+    {
+      "type": "download_reputation",
+      "file": "background-downloads.js",
+      "line": 1981
+    },
+    {
+      "type": "download_guard",
+      "file": "background-downloads.js",
+      "line": 2006
+    },
+    {
+      "type": "download_guard",
+      "file": "background-downloads.js",
+      "line": 2971
+    },
+    {
+      "type": "basic",
+      "file": "background-extension-watch.js",
+      "line": 544
+    },
+    {
+      "type": "extension_change",
+      "file": "background-extension-watch.js",
+      "line": 559
+    },
+    {
+      "type": "warned_tracking_identifier",
+      "file": "background-identifiers.js",
+      "line": 40
+    },
+    {
+      "type": "memory_tab_slept",
+      "file": "background-memory.js",
+      "line": 336
+    },
+    {
+      "type": "memory_free_ram",
+      "file": "background-memory.js",
+      "line": 385
+    },
+    {
+      "type": "memory_dupes_closed",
+      "file": "background-memory.js",
+      "line": 448
+    },
+    {
+      "type": "basic",
+      "file": "background-memory.js",
+      "line": 534
+    },
+    {
+      "type": "tab_limit_closed",
+      "file": "background-memory.js",
+      "line": 636
+    },
+    {
+      "type": "tab_limit_slept",
+      "file": "background-memory.js",
+      "line": 641
+    },
+    {
+      "type": "memory_tab_slept_by_hand",
+      "file": "background-memory.js",
+      "line": 880
+    },
+    {
+      "type": "memory_group_slept",
+      "file": "background-memory.js",
+      "line": 950
+    },
+    {
+      "type": "startup_review",
+      "file": "background-startup.js",
+      "line": 313
+    },
+    {
+      "type": "basic",
+      "file": "background-startup.js",
+      "line": 321
+    },
+    {
+      "type": "tab_under_suspected",
+      "file": "background.js",
+      "line": 1105
+    },
+    {
+      "type": "blocked_popup",
+      "file": "background.js",
+      "line": 1254
+    },
+    {
+      "type": "blocked_ad_resource",
+      "file": "background.js",
+      "line": 1452
+    },
+    {
+      "type": "blocked_popup",
+      "file": "background.js",
+      "line": 1548
+    },
+    {
+      "type": "blocked_popup",
+      "file": "background.js",
+      "line": 1631
+    },
+    {
+      "type": "purged_bounce_storage",
+      "file": "background.js",
+      "line": 1925
+    },
+    {
+      "type": "warned_engine_disabled",
+      "file": "background.js",
+      "line": 2201
+    },
+    {
+      "type": "warned_engine_disabled",
+      "file": "background.js",
+      "line": 2224
+    },
+    {
+      "type": "blocked_frame_top_redirect",
+      "file": "background.js",
+      "line": 2301
+    },
+    {
+      "type": "redirect_chain",
+      "file": "background.js",
+      "line": 2361
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 4717
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 4996
+    },
+    {
+      "type": "redirect",
+      "file": "background.js",
+      "line": 5002
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 5008
+    },
+    {
+      "type": "blocked_grabber_navigation",
+      "file": "background.js",
+      "line": 5247
+    },
+    {
+      "type": "blocked_grabber_network",
+      "file": "background.js",
+      "line": 5282
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 6314
+    },
+    {
+      "type": "allow",
+      "file": "background.js",
+      "line": 6645
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 6705
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 6710
+    },
+    {
+      "type": "proposed_tracker_domain",
+      "file": "background.js",
+      "line": 7369
+    },
+    {
+      "type": "learned_tracker_domain",
+      "file": "background.js",
+      "line": 7425
+    },
+    {
+      "type": "redirect_interstitial_shown",
+      "file": "background.js",
+      "line": 10381
+    },
+    {
+      "type": "warned_reputation_bypassed",
+      "file": "background.js",
+      "line": 10527
+    },
+    {
+      "type": "blocked_safe_browsing_page",
+      "file": "background.js",
+      "line": 10588
+    },
+    {
+      "type": "allow",
+      "file": "background.js",
+      "line": 11093
+    },
+    {
+      "type": "allow",
+      "file": "background.js",
+      "line": 11125
+    },
+    {
+      "type": "allow",
+      "file": "background.js",
+      "line": 11173
+    },
+    {
+      "type": "search_junk_seed_unavailable",
+      "file": "background.js",
+      "line": 12235
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 12997
+    },
+    {
+      "type": "forget_me_wiped",
+      "file": "background.js",
+      "line": 13936
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 14096
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 14418
+    },
+    {
+      "type": "allow",
+      "file": "background.js",
+      "line": 14429
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 14446
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 15222
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 15235
+    },
+    {
+      "type": "allow",
+      "file": "background.js",
+      "line": 15365
+    },
+    {
+      "type": "redirect",
+      "file": "background.js",
+      "line": 15367
+    },
+    {
+      "type": "allow",
+      "file": "background.js",
+      "line": 15428
+    },
+    {
+      "type": "allow",
+      "file": "background.js",
+      "line": 15437
+    },
+    {
+      "type": "allow",
+      "file": "background.js",
+      "line": 15561
+    },
+    {
+      "type": "warned_list_integrity",
+      "file": "background.js",
+      "line": 16277
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 17630
+    },
+    {
+      "type": "block",
+      "file": "background.js",
+      "line": 17714
+    },
+    {
+      "type": "dns_rebind_quarantine",
+      "file": "background.js",
+      "line": 17765
+    },
+    {
+      "type": "warned_permission_chain",
+      "file": "background.js",
+      "line": 18862
+    },
+    {
+      "type": "warned_oauth_grant",
+      "file": "background.js",
+      "line": 18975
+    },
+    {
+      "type": "warned_script_drift",
+      "file": "background.js",
+      "line": 19217
+    },
+    {
+      "type": "separator",
+      "file": "background.js",
+      "line": 19807
+    },
+    {
+      "type": "basic",
+      "file": "background.js",
+      "line": 19864
+    },
+    {
+      "type": "cleaned_site_storage",
+      "file": "background.js",
+      "line": 21020
+    },
+    {
+      "type": "cleaned_site_service_worker",
+      "file": "background.js",
+      "line": 21124
+    },
+    {
+      "type": "cleaned_site_cookies",
+      "file": "background.js",
+      "line": 21212
+    },
+    {
+      "type": "warned_new_domain_login",
+      "file": "background.js",
+      "line": 23055
+    },
+    {
+      "type": "blocked_phishing",
+      "file": "background.js",
+      "line": 23059
+    },
+    {
+      "type": "gated_tokens_cleared",
+      "file": "background.js",
+      "line": 23825
+    },
+    {
+      "type": "gated_cookies_hardened",
+      "file": "background.js",
+      "line": 23872
+    },
+    {
+      "type": "block",
+      "file": "cname-utils.js",
+      "line": 94
+    },
+    {
+      "type": "consent_outcome",
+      "file": "consent-reject.js",
+      "line": 688
+    },
+    {
+      "type": "blocked_overlay",
+      "file": "consent-wall.js",
+      "line": 409
+    },
+    {
+      "type": "warning_panel",
+      "file": "content.min.js",
+      "line": 1
+    },
+    {
+      "type": "pong",
+      "file": "content.min.js",
+      "line": 1
+    },
+    {
+      "type": "blocked_config_spoof",
+      "file": "content.min.js",
+      "line": 1
+    },
+    {
+      "type": "warning_toast",
+      "file": "content.min.js",
+      "line": 1
+    },
+    {
+      "type": "detected_grabber_image_candidate",
+      "file": "frame-image-logger.js",
+      "line": 67
+    },
+    {
+      "type": "blocked_beacon",
+      "file": "mail-shield.js",
+      "line": 166
+    },
+    {
+      "type": "play-notification-sound",
+      "file": "notification-manager.js",
+      "line": 352
+    },
+    {
+      "type": "basic",
+      "file": "notification-manager.js",
+      "line": 402
+    },
+    {
+      "type": "file",
+      "file": "privacy-probe.js",
+      "line": 200
+    },
+    {
+      "type": "switch",
+      "file": "settings.js",
+      "line": 167
+    },
+    {
+      "type": "site",
+      "file": "settings.js",
+      "line": 169
+    },
+    {
+      "type": "action",
+      "file": "settings.js",
+      "line": 170
+    },
+    {
+      "type": "choice",
+      "file": "settings.js",
+      "line": 171
+    },
+    {
+      "type": "custom",
+      "file": "settings.js",
+      "line": 173
+    },
+    {
+      "type": "num",
+      "file": "settings.js",
+      "line": 177
+    },
+    {
+      "type": "slider",
+      "file": "settings.js",
+      "line": 178
+    },
+    {
+      "type": "pick",
+      "file": "settings.js",
+      "line": 179
+    },
+    {
+      "type": "flag",
+      "file": "settings.js",
+      "line": 180
+    },
+    {
+      "type": "note",
+      "file": "settings.js",
+      "line": 207
+    },
+    {
+      "type": "note",
+      "file": "settings.js",
+      "line": 225
+    },
+    {
+      "type": "note",
+      "file": "settings.js",
+      "line": 230
+    },
+    {
+      "type": "feed",
+      "file": "settings.js",
+      "line": 249
+    },
+    {
+      "type": "select",
+      "file": "settings.js",
+      "line": 359
+    },
+    {
+      "type": "chips",
+      "file": "settings.js",
+      "line": 360
+    },
+    {
+      "type": "switch",
+      "file": "settings.js",
+      "line": 763
+    },
+    {
+      "type": "switch",
+      "file": "settings.js",
+      "line": 986
+    },
+    {
+      "type": "setting",
+      "file": "settings.js",
+      "line": 1708
+    },
+    {
+      "type": "setting",
+      "file": "settings.js",
+      "line": 1713
+    },
+    {
+      "type": "preset",
+      "file": "settings.js",
+      "line": 1715
+    },
+    {
+      "type": "setting",
+      "file": "settings.js",
+      "line": 1811
+    },
+    {
+      "type": "preset",
+      "file": "settings.js",
+      "line": 1812
+    },
+    {
+      "type": "warning_panel",
+      "file": "src/content.js",
+      "line": 96
+    },
+    {
+      "type": "pong",
+      "file": "src/content.js",
+      "line": 1234
+    },
+    {
+      "type": "blocked_config_spoof",
+      "file": "src/content.js",
+      "line": 1276
+    },
+    {
+      "type": "warning_toast",
+      "file": "src/content.js",
+      "line": 21595
+    },
+    {
+      "type": "config",
+      "file": "twitch-adblock.js",
+      "line": 801
+    },
+    {
+      "type": "ad-imminent",
+      "file": "twitch-adblock.js",
+      "line": 1367
+    },
+    {
+      "type": "client-state",
+      "file": "twitch-adblock.js",
+      "line": 1433
+    },
+    {
+      "type": "master",
+      "file": "twitch-adblock.js",
+      "line": 1482
+    },
+    {
+      "type": "gql-response",
+      "file": "twitch-adblock.js",
+      "line": 1881
+    },
+    {
+      "type": "gql-response",
+      "file": "twitch-adblock.js",
+      "line": 1931
+    },
+    {
+      "type": "config",
+      "file": "twitch-adblock.js",
+      "line": 5233
+    },
+    {
+      "type": "client-state",
+      "file": "twitch-adblock.js",
+      "line": 5235
+    },
+    {
+      "type": "ad-imminent",
+      "file": "twitch-adblock.js",
+      "line": 5238
+    },
+    {
+      "type": "master",
+      "file": "twitch-adblock.js",
+      "line": 5243
+    },
+    {
+      "type": "youtube_ads_removed",
+      "file": "yt-adblock.js",
+      "line": 208
+    }
+  ],
+  "logSchema": "notification-schema.js",
+  "storageInventory": "docs/storage-inventory.json",
+  "messageInventory": "docs/message-boundaries.json",
+  "sourceHashes": {
+    "animated-image-saver.js": "c36de6e175d21ef215cc58621cb2d56734712cfcbe7c2affbe459c69f91d8135",
+    "anti-redirect.js": "9725e1739bbe0ff97c4e46b5cf2bfab095f9408920c49d5a03f822050420dda6",
+    "background-cname.js": "af985c259d5f1997276ec71d8da1bd955069baa9b0e71e6bb2ae7c3e936d1dff",
+    "background-downloads.js": "44bf84daa86b71cd5b056484f249585bef74ee59e2eb80680173673845d9a9bf",
+    "background-extension-reputation.js": "3b2a971799ea1479e5911e2ab98cddcd1b2409ece66ffbcbfaf177afc5537d04",
+    "background-extension-watch.js": "c40721af7bdb05d68762220f667fa4a3e8c19a19627ebbaa2a3904c0f64b5412",
+    "background-identifiers.js": "6a2a5a80e7ae09a0f2977a34ecbddd4227366b1d7a73595ebc6a9a4d3e1e76e3",
+    "background-memory.js": "d8c0ea303917b2d6c6747944d3ae228da4a1174df3da589cc4ecb3371568e3b1",
+    "background-privacy-cleaner.js": "e8a546d219fe522fb875a51551c09e126366e0176c8d92163ae37eab3bd97785",
+    "background-startup.js": "e0e1bbd12f9b3b14fbbc1aed9e6b1b58a84140e9c080ec6621d3e1e9d93bad4d",
+    "background.js": "95861a5794f6eb48a1be43e4fe451443e551ae8d151ab7fa34501b13885fe23b",
+    "bridge.js": "e85c88310fa1ba96917991e0b01f38ca8fa60cb286816b4ae2ad9441859d45e2",
+    "build-profile.js": "830644487d588ab6e1a2408aef8168f330beb715cfaca516625e9b89f9963957",
+    "build-update.js": "ece2d9874b6db7fe0eb0016d01cd25218f11092f21921dcefe2db1e5c429b9c8",
+    "cert-error.js": "ac0774b44c483f3164f31124781fa8e1dc891f4dd2e4104b507f48168c567907",
+    "cname-utils.js": "4059125dcdf942abd298bd58559b187dd4fc1369248211637c54afe1a87cb71e",
+    "command-palette.js": "593905c5e14645abcbca8c692560c4a03ae6b5960df5fec81b6c015b34a09ed4",
+    "config-lock.js": "21a562eaded745db5c4d2dabccab20b25971853b39a8422392f66d01e1e3d7b1",
+    "consent-reject.js": "1d5f5b99c839f9b32ede3e6a10480cced9fea1a3f7dbc403369eef21c89f8b78",
+    "consent-state.js": "549094084540aeb837a73bfbd4af003d92da1d69dec4604aed7cdf5ebb3381b4",
+    "consent-wall.js": "500212267ae122607f98cb86da57c73b7e5bc00c594334b5b6ab4114a7101ce7",
+    "content.min.js": "df36d28ba48b0f0f0299061de7061213bf5e9b3bef6a3b3bfb00881799309111",
+    "cookie-access.js": "dd31af85166efeb87f617d9faa047d4028e1bff1ea36cb06acaa861d2a8d64bc",
+    "cryptominer-detect.js": "dd4c5c677e72dfb11e2203a92762b7f33dddd7654708201101a978b790cd3057",
+    "domain-utils-isolated.js": "5c8a3928d19a94eff48eea4bf777736e0ef020d17f16aee10f7263b6914f749d",
+    "domain-utils.js": "5c8a3928d19a94eff48eea4bf777736e0ef020d17f16aee10f7263b6914f749d",
+    "download-review.js": "9ac03444df78e6554995cb26fa43a9de497fb96a621c3c8755dddee9caa3a953",
+    "element-picker.js": "548264caee999231cf08422fd13badf4db68805c02306185556cb82fbd1dca4e",
+    "engine-compat.js": "35ab8eda655fcbae11249f03cc2bac270a22e856c7c853e6193e27ae3bd4ba77",
+    "extensions.js": "9ebc8b7d2fc1e70af518d409a98a9e870f9a8495220c53ab85530392df678094",
+    "eyeshield-bootstrap.js": "9882076c1108b0c23208cc09681a2dde5e6ac814524ff8b3b188a0bbe9958438",
+    "eyeshield-preload-dark.js": "447432bb7849e35869c7c94e6ea23a0db43bce920480257b1dfc488b13bcf396",
+    "eyeshield-preload-light.js": "ac91ed2748b9b9760de8a4feadfdfa7dd29b179ca4326ecac4e6fea951783f0d",
+    "eyeshield-preload-ultra.js": "255e00fb6c3f6922c9eb605a3d5803412f900f61280f50338d387dff933d6423",
+    "eyeshield-profiles.js": "c11e17b3f722c777fc46d8efc309c0c8255625cc5945cdee522b7e60924a3a1c",
+    "eyeshield-sites.js": "ca37c5d7740c044a9aa92bd8bb64500c2d8ae4ae60edf4e62a8c665ca207b7bc",
+    "eyeshield.js": "191b0bf42b790ae72afdfbfd551fb6cd7d419049f8ef4e9294f832d0c3917d7e",
+    "file-shield.js": "913484c553b2e79895908a1e7487b3b2e178483e142b91d9435f30f12ce84953",
+    "fingerprint-realm.js": "0cb02073aff9fb3060e4c7a5dfc4597419c7d00a169955225d5b37e598dd4213",
+    "firewall.js": "b2f5b5d0aee8d90178b1bee330a9c7b7369e3548ecb65bf34b7d064a08e52a6c",
+    "frame-image-logger.js": "8bad2a72d5c565649648434c097cb70cf8c916c888371ec44399c1ac6a02de2d",
+    "hidden-elements.js": "bec90b795434c0bb9b04657c4eb9f26fdfc34152a22dc3eb48e479472b28994a",
+    "history-store.js": "033dcfe0c618759988b6b197246503cbf4918675d5e438fcb39b2ac77b29a7d3",
+    "history.js": "bcff7544df7bbd1a26aafb5e361845178808ca2fd2feb5a55086bfec9f76b3f8",
+    "identifier-detector.js": "2c9939d5198b1fd75755b6ce9eeb62f1fb87175f66017f0fde737572870f6e6c",
+    "idn-utils.js": "6700e12e88662efb967e0fc1999fa14dfe23b143b2863f61e300374e612ef515",
+    "ip-logger-warning.js": "0e919f0b941cf31ec186ec79274a34803a69a845aaab5cfc9c0e07e9f615343e",
+    "logger.js": "dc973172445d6fadc87c028b583faa7eaecfdf73758b31c1c880c598d285d25e",
+    "mail-shield.js": "9a72a65497ac0d3305f503953a400135ba7872faa6abdc38d279296811bceab1",
+    "network-policy.js": "3d0be3744e51bcf722b72b057da6c153475a9a86de2ebf2a3c855c0ee9ef444e",
+    "network.js": "06b21a8cd91fffea719f6a079dc42ce5113909b0bf01559262ed213ab5b59d4c",
+    "notification-manager.js": "b4135c8780b83aba663da7d5427edbd2532e0550ac464ba0d43875b1b7946091",
+    "notification-schema.js": "1b754d06631d982ae33f8d1ae6605b85a2d3591390252208cc89df74301a3b1e",
+    "notifications.js": "e16261be751f961d9b844dd4d429ce4508e6467aea03c6ed80591fe2edbb9fbf",
+    "oauth-guard.js": "4484ee7730f798f318ac0185be9f922acc5b24fded182b7e351bf5f8aed70a85",
+    "offscreen.js": "f37cbd7014f36e2fc780135a438eb891ac4ed9e445b5c54460ada045b9b0115a",
+    "onboarding.js": "4ab1c8fa879e9d3d4d1bdd688711c9823b6bae9531911719a64647e3aff3e0ce",
+    "permission-chain.js": "c47abd30b27674bb64c7dda08e9a9542a61dc12aef9a08cc36d1788b5b8b2f17",
+    "popup-diagnostics.js": "7b289b15a602bd88abcc7043caa016469275f73110cd8c1c5837060208853b9c",
+    "popup-health.js": "5fed69a40df89668cfe717acd3cef7c0a806c23d1691625e255d6189a1c2342d",
+    "popup-privacy-cleaner.js": "5cc1eee1a0d2c0ff8fe7cf9673b2e230aafb0f01e1baedb3cad74356c793d6d5",
+    "popup-scroll-memory.js": "1bb89cff7905920ddc5be80f9fbe92c847f733f3f11cf6930a749fe390d1efdd",
+    "popup-settings-search.js": "ddc26470b939f1993745905c6d4c5e97970fdf7b7b61cae8751921cd556967ff",
+    "popup.js": "af2615356cda98a84c0e2364799e97bed2002f16ff348f42f6e680e7491b58cd",
+    "privacy-probe.js": "5d4c266cc88913bb3a747341659fa81bceffa768bfc96677b62de8216a183f36",
+    "privacy-signals.js": "8b5072149e1a8bf9567a55d281d385869ca2b2ac70212bc1cf3a023d1a883a6f",
+    "privacy-test.js": "a4d837b3dc207180ea47db890fc99145afb22c806b5ed893288358d00eaf2c84",
+    "psl-private.js": "ebb05f55e9c730b142f960e2fb5efb827a7b601b71a37be6f283296f5f9eb3b8",
+    "redirect-warning.js": "dc44e515cdd3d304f3065ce9b5e764215a15bcce94e005d9e1ce66b86bd59892",
+    "resource-saver.js": "cc7a7a42b55cd47763ea796d72885fe15cfa6055c7a8cbf5741d0910969a4b43",
+    "safe-browsing-block.js": "4b49999912a6149ce4f95abcf3e1c562259fa5e14107e2ca45d8c2bfb3182ad1",
+    "search-junk.js": "003ce6e584f42b1bf86fd98452424a187dba050401b5552ebce12e70af397e98",
+    "search-loggers.js": "90965d81f373065f1895ca8349655917c81195de70e6f4c47ff577f190aeb1d8",
+    "settings-data.js": "d33dbfc8c505529a23ae9d2bbb4bb2a196c5a0dddaa042f13ccdb08bf5049480",
+    "settings.js": "84d9e81f51bdd054e2021214d8177da5cc580e8918d254d7439ceaebb1218928",
+    "site-dashboard-shared.js": "5295406a7ae28ec052becc89d65951c07d5abd6612d665f2143bb748272a1619",
+    "site-recovery.js": "b0090f627fd2b4f12e375ead4e00e35113785a06a1831c1fb3871fba5e5e4b80",
+    "spotify-adblock.js": "7624982cde396ef625a620e1992c6bd93e0d93d064a1e34a3bc8776977a14a53",
+    "src/content.js": "956f100e4e64bd62ebdbf01af7640589b2045ada856f0858849d44a672c1bfb8",
+    "theme.js": "7115e1f469a6bf59f0294b250509aa026c12306a74e8c94c6ea9190e60b27482",
+    "tracker-attribution.js": "8260cf1992bdbd190d93ea89c46ab0cace660eae0614a9706c5722704213e915",
+    "tracker-learner-utils.js": "ea549da148a04441e6c7cecfffa0458850e36d7d20fd6e04e8700e027f4c0dc9",
+    "tracker-network-data.js": "c8056c18030fd16537c46aaea9f92b59a5d8ab727d832f45842ea6080be42831",
+    "twitch-adblock.js": "7aaa95284f9d59535acce3191ca9bfcdbd2ce8d0cd8f5700bf8e7c7907411cc0",
+    "twitch-rewind.js": "544962a70a643cf53ca038484614b806f2bc11df6081ff2ee37277b6121a3c0b",
+    "twitch-vod-rewind.js": "373404ac80d01463ea60c7a6b659c295182b5b44de58cfd3f770cf8e4e1f420c",
+    "upgrade-config.js": "24227cc28587adb4932f26104d8fd230ac4010d9d8f920c0400d9ff62d274c06",
+    "yt-adblock.js": "450dbad8815ef6ca44d4d3b0e4b061fddd89a76886eddf096b188f701a2122e1"
+  },
+  "scope": "Owners are accountable enforcement modules, not exclusive consumers. Configuration is generated from canonical settings data. Log references are a lexical census, including non-incident type fields. Manifest permissions belong to the extension; this inventory does not assert each owner needs every permission."
+}

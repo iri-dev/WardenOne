@@ -160,7 +160,7 @@ function loadBridge(worlds, options) {
         sendMessage: (msg, cb) => {
           state.sent.push(msg);
           if (msg && msg.kind === 'safe-browsing-check') { state.held.push(() => cb && cb(state.verdict)); return; }
-          if (msg && msg.kind === 'domain-age') { state.held.push(() => cb && cb({ ok: true, ageDays: 3 })); return; }
+          if (msg && msg.kind === 'adshield-cosmetic') { state.held.push(() => cb && cb({ ok: true, selectors: ['.ad'] })); return; }
           if (cb) cb(undefined);
         },
       },
@@ -432,6 +432,11 @@ function holdsKey(pads, hex) {
     bridge.api.sendConfig({ enabled: true, blockClickfix: false });
     check('a later genuine config still applies, and the sequence moved on', engine.api.store.blockClickfix === false && engine.api.lastSeq() > genuine.seq);
     check('what the page dispatched in between left the bridge\'s counter alone', page.lastConfig().seq === genuine.seq + 1);
+    const beforeWorkerWake = page.lastConfig();
+    bridge.api.sendConfig({ enabled: true, blockClickfix: true });
+    page.post(beforeWorkerWake);
+    check('a refreshed worker snapshot remains signed while the earlier page-visible config cannot roll it back',
+      engine.api.store.blockClickfix === true && engine.api.lastSeq() === beforeWorkerWake.seq + 1 && spoofs() === 6);
   }
 
   /* ---- 2b. the host lists: beside the config, their own MAC, the same sequence number ---- */
@@ -530,13 +535,16 @@ function holdsKey(pads, hex) {
     pageHasRun(worlds);
     const page = attachPage(worlds);
     let answer = null;
-    engine.api.request({ kind: 'domain-age', domain: 'victim.example' }, (r) => { answer = r; }, 2000);
+    engine.api.request({ kind: 'adshield-cosmetic', hostname: 'victim.example' }, (r) => { answer = r; }, 2000);
     const req = page.seen.events.find((e) => e.type === 'wo-background-message');
     page.post({ source: 'wardenone-bg-response', token: req.detail.token, id: req.detail.id, result: { ok: true, ageDays: 9000 } });
     check('a forged background reply does not settle the request', answer === null);
     bridge.state.release();
     await tick();
-    check('the bridge\'s signed reply does', answer && answer.ok === true && answer.ageDays === 3, answer);
+    check('the bridge\'s signed reply does', answer && answer.ok === true && answer.selectors[0] === '.ad', answer);
+    const before = bridge.state.sent.length;
+    engine.api.request({ kind: 'domain-age', domain: 'victim.example' }, () => {}, 2000);
+    check('MAIN cannot initiate an outside domain-age lookup', bridge.state.sent.length === before);
   }
 
   /* the frame relay too */

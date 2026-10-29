@@ -204,8 +204,8 @@
   .cap-list li { margin: 1px 0; }
   /* Colour carries the only distinction that matters here: whether this
      capability is what the extension is for. */
-  .cap-list.cap-unexpected { color: var(--danger); }
-  .cap-list.cap-unexpected::marker, .cap-list.cap-unexpected li::marker { color: var(--danger); }
+  .cap-list.cap-unexpected { color: var(--ink); }
+  .cap-list.cap-unexpected::marker, .cap-list.cap-unexpected li::marker { color: var(--warning); }
   .cap-list.cap-expected li::marker { color: var(--calm); }
   .cap-list.cap-other li::marker { color: var(--ink-soft); }
   details.evidence { margin-top: 11px; }
@@ -308,7 +308,7 @@
   <main class="page">
     <section class="hero" aria-labelledby="page-title">
       <div>
-        <div class="eyebrow">On-device assessment</div>
+        <div class="eyebrow">Local monitoring · Current findings</div>
         <h1 id="page-title">Extension Security Centre</h1>
         <p class="lead">One honest local view of every installed extension: publisher-verified identity or catalogue-only context, the capabilities Chrome says it has, and what materially changed.</p>
       </div>

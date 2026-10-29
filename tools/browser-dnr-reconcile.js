@@ -12,7 +12,7 @@ const os = require('os');
 const path = require('path');
 const profile = require('./perf-profile.js');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = process.env.WARDENONE_EXTENSION_DIR ? path.resolve(process.env.WARDENONE_EXTENSION_DIR) : path.resolve(__dirname, '..');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function run() {

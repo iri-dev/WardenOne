@@ -316,12 +316,8 @@ function sweepBody(name) {
   return b > a ? SRC.slice(a, b) : '';
 }
 
-/* tameMedia's first line is `if(userGestured)return;`, so after the reader's
-   first click this traversal could not do anything. On a video page that is
-   immediately, and then the page keeps appending nodes for as long as it plays. */
-check('sweepMedia checks userGestured before it walks anything',
-  /if\(userGestured\)return;/.test(sweepBody('const sweepMedia')),
-  '3.3us per added node, forever, for no effect');
+check('disabled autoplay protection skips subtree media scans',
+  /if\(!WO\.blockAutoplay\)return;/.test(sweepBody('const sweepMedia')));
 
 /* guardSocialNode tests this flag before it looks at the element at all. */
 check('sweepSocialWidgets checks its flag before it walks anything',
@@ -336,9 +332,8 @@ check('sweepDomLinks still gates before walking, as it always did',
 /* Guard the guards: a hoist is only valid while the per-element function really
    does bail on that condition first. If those change, the hoist is a behaviour
    change rather than a saving, and this should fail. */
-check('tameMedia still bails on userGestured first',
-  /const tameMedia=m=>\{\s*try\{\s*if\(userGestured\)return;/.test(SRC),
-  'the hoist above is only behaviour-preserving while this holds');
+check('approved media is skipped before reading or changing author state',
+  /const tameMedia=m=>\{\s*try\{\s*if\(!WO\.blockAutoplay\|\|autoplayApprovedMedia\.has\(m\)\)return;/.test(SRC));
 check('guardSocialNode still bails on the flag first',
   /guardSocialNode=el=>\{\s*try\{\s*if\(!WO\.socialWidgetGuard\|\|/.test(SRC),
   'the hoist above is only behaviour-preserving while this holds');
@@ -375,9 +370,8 @@ check('guardSocialNode still bails on the flag first',
  * consumer, so the walk is skipped too. Each of these is behaviour-identical
  * only because the per-element function tests exactly the same thing first --
  * which the checks below pin. */
-check('the media consumer gates before walking added nodes',
-  /if\(userGestured\)return;\s*for\(let i=0;\s*i<added\.length;\s*i\+\+\)\{\s*const n=added\[i\];\s*\/\^\(VIDEO\|AUDIO\)\$\/\.test\(n\.tagName\)&&tameMedia\(n\)/.test(SRC),
-  'both branches of that loop bail on userGestured anyway');
+check('the disabled media consumer gates before walking added nodes',
+  /if\(!WO\.blockAutoplay\)return;\s*for\(let i=0;\s*i<added\.length;\s*i\+\+\)\{\s*const n=added\[i\];\s*\/\^\(VIDEO\|AUDIO\)\$\/\.test\(n\.tagName\)&&tameMedia\(n\)/.test(SRC));
 check('the social consumer gates before walking added nodes',
   /if\(!WO\.socialWidgetGuard\)return;\s*for\(let i=0;\s*i<added\.length;\s*i\+\+\)guardSocialNode\(added\[i\]\)/.test(SRC),
   'guardSocialNode and sweepSocialWidgets both test it first');
@@ -970,7 +964,8 @@ check('the grabber watch skips added nodes with no src before any URL is built',
 })();
 
 /* ---- the shipped bundle carries all of it ------------------------------- */
-check('the built engine has the hoists', /if\(userGestured\)return;/.test(MIN)
+check('the built engine has the hoists', /if\(!WO\.blockAutoplay\)return;/.test(MIN)
+  && /autoplayApprovedMedia\.has\(m\)/.test(MIN)
   && /if\(!WO\.socialWidgetGuard\)return;/.test(MIN),
   'src and content.min.js are kept in sync by build-content --check');
 

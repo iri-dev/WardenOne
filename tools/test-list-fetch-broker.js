@@ -72,6 +72,7 @@ const LIFTED = [
   BG.slice(BG.indexOf('const SUPPLEMENTAL_MANIFEST_SOURCES = ['), BG.indexOf('const SUPPLEMENTAL_SOURCE_URLS')),
   constLine('SUPPLEMENTAL_SOURCE_URLS'),
   constLine('LIST_FETCH_TIMEOUT_MS'), constLine('LIST_FETCH_CONCURRENCY'), constLine('LIST_SOURCE_MAX_BYTES'), constLine('LIST_COSMETIC_SOURCE_MAX_BYTES'),
+  BG.match(/const LIST_REVIEWED_SOURCE_MAX_BYTES = Object\.freeze\([\s\S]*?\);/)[0],
   grabFn('expectedRemoteListSources'), grabFn('listSourceByteLimit'), grabFn('utf8ByteLength'), grabFn('readResponseTextWithByteLimit'),
   grabFn('validateRemoteListSource'),
   /* The fix's pieces; on the pre-fix source the raw fetcher is the whole function and there is no broker. */

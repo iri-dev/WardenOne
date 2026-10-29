@@ -47,11 +47,12 @@ function wardenNotificationUnreadCount(items, settings) {
 }
 
 async function loadWardenNotificationState() {
-  var store = await localGet(['wardenone_config', 'wardenone_notifications']);
+  var store = await localGet('wardenone_config');
+  var saved = await WO_HISTORY.read('wardenone_notifications');
   var config = store && store.wardenone_config && typeof store.wardenone_config === 'object' ? store.wardenone_config : {};
   var settings = sanitizeWardenNotificationSettings(config.notificationSettings);
-  var items = Array.isArray(store && store.wardenone_notifications)
-    ? store.wardenone_notifications.filter(function (item) { return item && typeof item === 'object'; })
+  var items = Array.isArray(saved && saved.wardenone_notifications)
+    ? saved.wardenone_notifications.filter(function (item) { return item && typeof item === 'object'; })
     : [];
   return { config: config, settings: settings, items: items };
 }
@@ -112,6 +113,8 @@ var __wardenNotificationFlushTimer = null;
 async function recordWardenNotification(entry) {
   if (typeof INCOGNITO_CONTEXT !== 'undefined' && INCOGNITO_CONTEXT) return null;
   if (!entry || typeof entry !== 'object') return null;
+  var token = WO_HISTORY.epoch;
+  if (WO_HISTORY.changing) return null;
   var type = String(entry.type || '').trim();
   if (!type) return null;
   if (type === 'download_reputation' && entry.detail && entry.detail.action === 'allow') return null;
@@ -122,7 +125,8 @@ async function recordWardenNotification(entry) {
     if (early.mode === 'off') return null;
   } catch (_) {}
   return new Promise(function (resolve) {
-    __wardenNotificationBuffer.push({ entry: entry, type: type, resolve: resolve, result: null });
+    if (token !== WO_HISTORY.epoch || WO_HISTORY.changing) { resolve(null); return; }
+    __wardenNotificationBuffer.push({ entry: entry, type: type, resolve: resolve, result: null, epoch: token });
     if (!__wardenNotificationFlushTimer) {
       __wardenNotificationFlushTimer = setTimeout(flushWardenNotifications, WARDEN_NOTIFICATION_FLUSH_MS);
     }
@@ -142,6 +146,7 @@ function flushWardenNotifications() {
     var latest = null;
     for (var i = 0; i < batch.length; i++) {
       var job = batch[i];
+      if (job.epoch !== WO_HISTORY.epoch || WO_HISTORY.changing) continue;
       var resolved = wardenNotificationResolvedPreference(state.settings, job.type);
       if (resolved.mode === 'off') continue;
       var applied = applyWardenNotificationEntry(items, resolved, job.entry, job.type);
@@ -151,8 +156,9 @@ function flushWardenNotifications() {
     }
     if (latest == null) return;
     items = pruneWardenNotificationHistory(items, state.settings, latest);
-    await localSet({ wardenone_notifications: items });
-    applyWardenNotificationBadge(items, state.settings);
+    await WO_HISTORY.write({ wardenone_notifications: items }, null, batch[0].epoch);
+    if (batch[0].epoch === WO_HISTORY.epoch && !WO_HISTORY.changing)
+      applyWardenNotificationBadge(WO_HISTORY.mode(state.config) === 'off' ? [] : items, state.settings);
   }).catch(function () {}).then(function () {
     batch.forEach(function (job) { try { job.resolve(job.result || null); } catch (_) {} });
   });
@@ -211,6 +217,7 @@ function applyWardenNotificationEntry(items, resolved, entry, type) {
 /* Serialize Mark all read/Clear with recording against current records, not the page’s projection.
    Flush buffered events first so the mutation includes recent arrivals (M47). */
 function mutateWardenNotifications(action, ids) {
+  var token = WO_HISTORY.epoch;
   flushWardenNotifications();
   var pick = Array.isArray(ids) ? new Set(ids.map(String)) : null;
   var run = __wardenNotificationWrite.then(async function () {
@@ -225,8 +232,9 @@ function mutateWardenNotifications(action, ids) {
     } else {
       return state.items;
     }
-    await localSet({ wardenone_notifications: items });
-    applyWardenNotificationBadge(items, state.settings);
+    await WO_HISTORY.write({ wardenone_notifications: items }, null, token);
+    if (token === WO_HISTORY.epoch && !WO_HISTORY.changing)
+      applyWardenNotificationBadge(WO_HISTORY.mode(state.config) === 'off' ? [] : items, state.settings);
     return items;
   });
   __wardenNotificationWrite = run.catch(function () {});
@@ -353,12 +361,7 @@ async function playWardenNotificationSound(sound, volume) {
     try {
       await deliverWardenOffscreenSound(payload);
     } catch (error) {
-      /* createDocument resolves when the document EXISTS, not when its scripts
-         have run -- so a message sent immediately after can arrive before
-         offscreen.js has registered its listener and come back as "Receiving end
-         does not exist". Nothing plays and nothing says why, which is what "most
-         of them do not play" looks like from the outside. One retry, after the
-         document has had a moment, and only for that error. */
+      /* createDocument can resolve before offscreen listeners register. Retry once only for Receiving end does not exist. */
       var message = String((error && error.message) || '');
       if (!/Receiving end does not exist|Could not establish connection/i.test(message)) throw error;
       await new Promise(function (resolve) { setTimeout(resolve, 150); });
@@ -393,6 +396,7 @@ async function showWardenSystemNotification(id, options, type) {
     manual_check: ['WardenOne check', 'Your requested site check has finished.'],
     warning_integrity: ['WardenOne warning', 'A page obscured a security warning. Open WardenOne to review.'],
     startup_review: ['WardenOne startup check', 'Items need review in WardenOne.'],
+    privacy_cleaning: ['Privacy Cleaner', 'Automatic cleaning finished. Open WardenOne to review the result.'],
   }[String(type || '')] || ['WardenOne notice', 'Open WardenOne to review this notice.'];
   var payload = {
     type: 'basic',
@@ -424,7 +428,7 @@ async function showWardenSystemNotification(id, options, type) {
 try {
   if (chrome.storage && chrome.storage.onChanged) {
     chrome.storage.onChanged.addListener(function (changes, area) {
-      if (area !== 'local') return;
+      if (area !== 'local' && area !== 'session') return;
       if (changes.wardenone_notifications || changes.wardenone_config) restoreWardenNotificationBadge();
     });
   }

@@ -1,8 +1,90 @@
 # Changelog
 
-## Unreleased
+## 1.0.3 — 2026-10-29
+
+- Fixed brands' own country sites being flagged as imitations: search results no longer mark google.ca, google.co.jp and Google's other country domains as "Looks like Google, but is not Google", and pages such as amazon.com.mx, ebay.ca, bestbuy.ca, costco.ca, airbnb.ca, nintendo.co.jp, dhl.de and yahoo.co.jp are no longer blocked as phishing. Cities and unrelated companies that share a bank's name (halifax.ca, nationwide.com, lloyds.com) and official alternates such as telegram.me, revolut.me and GitLab Pages are no longer flagged either. Search-result warnings now also run on every Google country site, and Google's own requests on those sites are no longer treated as third-party noise. The brand name on an unlisted suffix, in a subdomain or with a typo still warns.
+
+- Protected network frames now isolate cookie APIs before their first inline script using a native response signal. Fresh site exceptions, disabled protection, first-party sessions and media compatibility retain their cookie behavior.
+
+- Removed blanket third-party sign-in/checkout path exemptions on reviewed Google, Stripe, Spotify and Facebook service hosts. Added authenticated embedded-frame isolation for document cookies, prototype accessors, Cookie Store operations and change events, with immediate restoration for exceptions and disabled protection. First-party sessions and media workarounds remain supported.
+
+- Recognized Stripe's official `stripe.dev` developer domain in the brand check, avoiding a false phishing warning on its public payment demos.
+
+- Performance CLI overhead limits now apply to explicit baseline comparisons and fail when comparison data is missing.
+
+- Login and payment pages no longer exempt unrelated curated tracker and confirmed CNAME cookies from isolation. Direct visits, first-party service use, media workarounds and explicit site exceptions retain their compatibility behavior.
+
+- Popup position is now recorded as you scroll and restored from a local cache without hiding the controls. Reopening retains the setting in view as panels load above it, including when the popup closes before storage writes finish.
+
+- Corrected the cookie protection summary to describe known tracker isolation and its compatibility exemptions rather than claiming all third-party cookies are refused.
+
+- Separated extension permission exposure from security findings. Powerful permissions and missing catalogue entries are informational; unchanged reviewed access stays acknowledged, while material changes and documented incidents remain visible. Ordinary re-enabling no longer raises an access alert. Added evidence-backed Buster recognition and retained review for Claude's undocumented account-identity capability.
+
+- Script Drift now reuses shared ancestor checks and checks repeated added roots once per mutation batch, reducing work on busy pages while retaining inserted-script detection.
+
+- Fixed cookie rejection missing nested open shadow dialogs and Italian reject labels. Visible button labels now govern consent actions, and saving preferences requires optional purposes to be off even when a category also claims to be necessary.
+
+- Fixed redirect warnings interrupting BBC's HTTPS regional routing and same-site redirects on tracker-listed websites. Cross-site tracker redirects, malware-listed destinations and install funnels retain their checks.
+
+- Fixed YouTube's initial player data and in-flight player responses still being modified after the master switch was turned off.
+
+- Fixed Block autoplay rejecting delayed playback after interaction with a player, with approval scoped to the selected media. Turning off Block autoplay, Block hidden media abuse or Media Shield now releases installed playback guards without reloading the tab.
+
+- Saved-profile upgrade checks now run in Edge for historical and published full builds and the Store profile before the rolling build. Legacy settings migrate on worker startup as well as update, so a missed update event no longer leaves renamed settings behind.
+
+- Remote option filters now skip unsupported regex literals and malformed site scopes instead of installing ambiguous rules. Adversarial rule-update checks cover rejected candidates, concurrent owners, browser permission changes and worker recovery.
+
+- Added a guided site recovery panel with recent-action suggestions, a 15-minute single-feature trial for the current host and its same-site subdomains, automatic expiry and undo, and a previewed local diagnostic export. Security blocks are excluded from suggested trials.
+
+- Fixed site-specific privacy erasure failing while its own erase lock was active. The erase-owned config write now completes while unrelated writes remain blocked; native checks cover restart durability.
+
+- Fixed the on-page badge appearing as unstyled text and exposing its closed panel on sites with strict style policies, including Nightmare Project. Badge styles now stay inside its shadow root without changing page policies.
+
+- Restored remote updates for the reviewed AdGuard tracking and URLhaus URL feeds after publisher growth, with exact-source 16 MiB limits. Other source budgets, streaming cancellation, redirects, format checks and update quarantine remain enforced.
+
+- Arrange sections now derives its list from the popup, including Security Centre and Browser health. Saved positions are retained across popup and extension reloads, delayed initial reads cannot overwrite a new arrangement, and storage failures are shown instead of silently ignored.
+
+- Fingerprint noise now preserves single text coercion, native WebGL receiver checks and enum conversion, zero SVG lengths, and untouched tails of oversized analyser arrays. More wrapped methods retain native names, arities and nonconstructibility. Added repeated-visit, cross-site, frame/worker and application compatibility checks; noise remains off by default.
+
+- Added spacing above Privacy Cleaner's Clear log button.
+
+- Privacy Cleaner dropdowns now expand independently without collapsing content above them. Clean browser data opens by default and can be closed manually. Removed the Cleaning limits dropdown.
+
+- Simplified Privacy Cleaner with compact category rows, expandable scheduling, protected-site and history controls, matching form styles and a separate review step before deletion. All cleaning, preset and reset controls remain available.
+
+- Upgraded Privacy Cleaner with protected website origins, active-site cleanup, saved presets, previewed consequences and independent browser/security record choices. Added opt-in daily, weekly, monthly and startup cleaning with separate categories, optional notifications and bounded results including interrupted or failed operations. Clarified cookie matching, permission-rule limits and download-record deletion; browser cache is the sole default selection.
+
+- Consent actions now distinguish failure, unverified dispatch and changed saved opt-out state, with explicit OneTrust, Cookiebot and TrustArc flows and better open-shadow discovery. Empty consent walls are restored conservatively, and history erasure cancels pending verification. GPC now runs at document start, restores browser preferences when disabled, and scopes JavaScript and request headers consistently to document-level site exceptions.
+
+- Tracker learner now flags suspected unfamiliar URL identifiers after repeated reuse across three independent sites. Evidence uses short-lived local HMAC sketches, excludes sensitive flows, and appears as detection only in Activity. URLs and blocking rules stay intact.
+
+- Activity and Network Logger now show locally matched tracker/service names, organizations and categories with pinned source links. The compact catalog refreshes without a browser restart and retains its last validated names on corrupt or stale updates. Unknown identities and local suspicions remain explicit; blocking rules and settings are unchanged.
+
+- Added protection-owner and regression inventories, source/release archive review, and a fixed-corpus browser comparison with baseline-derived performance budgets. Tracker-cookie rules now share the existing session-rule batch, and CNAME compilation reuses bounded site-boundary work while preserving rule scope and compatibility exceptions.
+
+- Fixed Auto-skip download ads starting a sponsor installer when a hidden offer loaded. Automatic continuation now requires a visible download link you actually clicked and an exact matching destination; sponsor links and hidden continuation controls are left alone.
+
+- Moved the site allowlist button closer to the card's right edge and added spacing from its description.
+
+- Added normal, browser-session and no-saved-history choices for Activity and notifications, plus worker-owned clearing that revokes pending history writes. Clear observations preserves approved blocks and firewall preferences. Incident redaction also covers URLs embedded in text and old history reads. The opt-in login age check now asks for a trusted button press before sending a domain to RDAP or WhoisXML.
+
+- Hardened worker message and offscreen sound boundaries. Forged page reports cannot create learned network blocks, site compatibility actions and warning grants verify the current document, and malformed or excessive JSON feed trees reject the complete update while retaining the last good rules.
+
+- Packaged IP-logger and cryptominer data now recover through worker shutdown using bounded session checkpoints and browser alarms. Failed reads and rejected rule updates retain installed protection, pending recovery appears in Protection Health, and Repair retries immediately. Settings reconciliation also has an alarm backstop for interrupted debounces.
+
+- Reduced per-call allocations in the opt-in fingerprint layout protection. Rectangle caches and item wrappers are created only when needed, preserving native collection behavior and independent mutable results.
+
+- Fingerprint noise no longer alters reusable AudioBuffer samples or invents a 48 kHz AudioContext rate. Derived analyser output is stable for identical inputs, canvas text methods retain native method shape, and layout collections agree with bounding boxes. WebGPU profiles respect native limits/fallback fields, and device enumeration preserves native device interfaces and selection IDs. The existing noise option stays off by default.
+
+- Tracker suggestions now distinguish browser-verified list/CNAME matches from inferred page behavior and page claims, showing source, confidence and age. Confirmed aliases aggregate by service; new explicit approvals and site decisions can cover those aliases while existing choices keep their scope. Repeated observations are coalesced, new site sketches use 128 bits, and raw page tracker reports no longer create browsing-history edges. No new switch or protection count change.
+
+- Block third-party cookies now removes outgoing Cookie and incoming Set-Cookie headers for curated tracker hosts and confirmed tracking aliases. It uses the existing switch, preserving the total of 109 protections, with immediate site exceptions, login/payment/media exemptions, and explicit firewall precedence. Unavailable classification or rejected native updates retain installed rules and report degraded state.
 
 ### Added
+
+- Added Forced Download Protection, on by default with its own Download checks toggle, bringing the total to 110 protections. It stops clear automatic and disguised file links, offers Download once, and holds unexpected browser-reported downloads for review using local page context. It respects pauses and site exceptions and runs independently of Download Shield. Native Save As dialogs can still appear for downloads intercepted after Chrome starts them.
+
+- Added Block CNAME-cloaked trackers, on by default, bringing the total to 109 protections. It blocks only curated exact aliases pointing to reviewed dedicated tracking domains, uses a licensed local mapping for four providers, and preserves explicit off choices. Login, payment and media exemptions remain; site exceptions and pauses apply without reloading. Network Log shows mapped targets separately from request outcomes.
 
 - Site Firewall has an optional noop choice for Script, XHR, Frame and Media. It skips that row's All decision for the selected column while retaining other protections. Backups preserve the choice, and the page now identifies Allow and Allow once as security-list overrides.
 
@@ -29,6 +111,8 @@
 - Download Guard now keeps malware feeds on your device while it is on: URLhaus's exact payload addresses and separate SHA-256 feeds for MalwareBazaar and URLhaus samples, refreshed with the daily list update. A listed address pauses the download as Dangerous, even on GitHub, Google Drive and other shared hosts that domain lists cannot block; a matching file hash blocks it. File Shield checks the files you pick against the same hashes, and the popup shows both counts.
 
 ### Changed
+
+- Updated the popup credit to iri-dev.
 
 - Cosmetic host responses now share identical selector arrays for matching domain-rule scopes, reducing worker cache memory while retaining per-host procedural rules, scriptlets and exceptions.
 
@@ -124,6 +208,10 @@
   and the blocking screen keeps its explicit option to continue.
 
 ### Fixed
+
+- Fixed false phishing warnings on short domain names such as `iri.dev`.
+
+- Unsupported HTML filters and extended filter exceptions can no longer be mistaken for CSS hiding rules when their contents include `##`.
 
 - Firewall temporary allowances now fail if Chrome cannot enumerate session rules. Allow Once and allowance clearing run in order, so simultaneous requests cannot overwrite another temporary choice or erase a newer one during undo.
 

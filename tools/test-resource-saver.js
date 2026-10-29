@@ -232,7 +232,7 @@ assert(/messageSenderIsTab\(sender\)/.test(resourceStateHandler) && !/sender\.ur
 assert(/'resource-saver-state': \{ max: 500, windowMs: 60000 \}/.test(background),
   'the per-tab limit leaves room for frame-heavy pages to read their initial state');
 {
-  const listener = background.slice(background.indexOf('chrome.storage.onChanged.addListener'));
+  const listener = background.slice(background.indexOf('chrome.storage.onChanged.addListener((changes, area) => {\n  // Keep the wardenone_config'));
   assert(listener.indexOf('broadcastResourceSaverState(afterResourceSaver)') >= 0
     && listener.indexOf('broadcastResourceSaverState(afterResourceSaver)') < listener.indexOf('scheduleContentConfigRefresh()'),
     'live Resource Saver state is sent before unrelated refresh work can fail on an older browser');

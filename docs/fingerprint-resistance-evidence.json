@@ -1,0 +1,520 @@
+{
+  "schemaVersion": 1,
+  "phase": "G-04",
+  "status": "complete",
+  "date": "2026-10-28T06:07:14.781Z",
+  "runtime": {
+    "version": "1.0.2",
+    "fingerprint": "1b6f89e70be2744f631c04ecd356225ebe867aaba7874540c250e0cfaf55cb64",
+    "fileCount": 145,
+    "snapshot": "tmp/ghostery-phase04/review-complete/wardenone",
+    "sourceTree": "7279e8ecd59a6e1ebb59b289b55aa33eb954e9df",
+    "sourceArchive": "tmp/ghostery-phase04/review-complete/wardenone-source.zip",
+    "uncommitted": true
+  },
+  "policy": {
+    "noiseDefault": false,
+    "newSetting": false,
+    "newPermission": false,
+    "protectionCount": 110,
+    "privateDocumentNoise": true,
+    "siteStableWindowsGraphics": true,
+    "rawPixelRewriting": false,
+    "rawAudioRewriting": false,
+    "cpuSpoofing": false,
+    "workerSpoofing": false,
+    "anonymityClaim": false
+  },
+  "regressions": {
+    "priorSource": "tmp/ghostery-phase03/final-review/wardenone-source/src/content.js",
+    "priorSourceFails": true,
+    "currentSourcePasses": true,
+    "surfaces": [
+      "single DOMString coercion and native error order",
+      "native font accessor",
+      "GL receiver validation without debug enabling",
+      "enum representations and ToNumber errors",
+      "native analyser and typed-array bounds",
+      "derived audio idempotence",
+      "SVG zero lengths",
+      "method names, arities, constructors and descriptors",
+      "private document and site seed policy",
+      "detection wrapper shape"
+    ]
+  },
+  "validation": {
+    "gate": "pass",
+    "gateLog": "tmp/ghostery-phase04/gate-verified.log",
+    "testSuites": 340,
+    "packageBudget": "pass",
+    "native": [
+      {
+        "browser": "Chrome/121.0.6167.184",
+        "resistance": "tmp/ghostery-phase04/release-chrome-resistance.json",
+        "consistency": "tmp/ghostery-phase04/release-chrome-consistency.json",
+        "complete": true,
+        "fixtureFlags": [
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-renderer-backgrounding",
+          "--disable-background-media-suspend"
+        ],
+        "labOverrides": {
+          "antiFingerprintNoise": true,
+          "blockFingerprintScripts": false,
+          "blockCameraMic": false
+        },
+        "probeDetection": "unchanged default: on",
+        "linkability": {
+          "sites": 3,
+          "visitsPerSite": 4,
+          "documentsPerVariant": 12,
+          "offTextValues": 1,
+          "onTextValues": 12,
+          "offPixelHashes": 1,
+          "onPixelHashes": 1,
+          "offAudioHashes": 1,
+          "onAudioHashes": 1,
+          "rawPixelsUnchanged": true,
+          "rawAudioUnchanged": true,
+          "claim": "Selected text values resample; unchanged raw signals remain linkable. No anonymity or uniqueness claim."
+        },
+        "timing": {
+          "text": {
+            "iterations": 5000,
+            "offMedianMs": 5.050000000279397,
+            "onMedianMs": 12.700000001117587,
+            "addedMedianUsPerCall": 1.5300000001676382
+          },
+          "extension": {
+            "iterations": 5000,
+            "offMedianMs": 5.100000000093132,
+            "onMedianMs": 6.650000000372529,
+            "addedMedianUsPerCall": 0.31000000005587935
+          },
+          "parameter": {
+            "iterations": 5000,
+            "offMedianMs": 666.1499999999069,
+            "onMedianMs": 667.0499999998137,
+            "addedMedianUsPerCall": 0.17999999998137356
+          },
+          "analyser": {
+            "iterations": 5000,
+            "offMedianMs": 3.1499999994412065,
+            "onMedianMs": 10.75,
+            "addedMedianUsPerCall": 1.5200000001117586
+          }
+        },
+        "blank": {
+          "initialNoise": true,
+          "settledNoise": true,
+          "earlyMethodWasAlreadyProtected": true,
+          "borrowedChildToStringRevealsWrapper": true
+        },
+        "workerForms": [
+          "classic",
+          "module",
+          "shared",
+          "shared-module",
+          "service",
+          "module-service"
+        ],
+        "workerTextIsNative": true,
+        "nativeGpu": {
+          "available": true,
+          "adapter": true,
+          "info": {
+            "vendor": "amd",
+            "architecture": "rdna-2"
+          },
+          "texture": 16384,
+          "features": [
+            "bgra8unorm-storage",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "texture-compression-bc",
+            "timestamp-query"
+          ]
+        },
+        "noiseGpu": {
+          "available": true,
+          "adapter": true,
+          "info": {
+            "vendor": "intel",
+            "architecture": "gen-9"
+          },
+          "texture": 8192,
+          "features": [
+            "bgra8unorm-storage",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "float32-filterable",
+            "indirect-first-instance",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "texture-compression-bc",
+            "timestamp-query"
+          ]
+        },
+        "gpuDeviceChecks": {
+          "supported": true,
+          "adapter": true,
+          "info": {
+            "vendor": "nvidia",
+            "architecture": "ampere"
+          },
+          "limit": 8192,
+          "infoType": "GPUAdapterInfo",
+          "label": "usable device",
+          "deviceLimit": 8192,
+          "usable": true
+        },
+        "compatibility": {
+          "shaderDraw": true,
+          "animationAndTrustedGameInput": true,
+          "audioSamplesAndBounds": true,
+          "documentEditing": true,
+          "mediaDeviceSelection": true,
+          "syntheticLogin": {
+            "synthetic": true,
+            "session": true,
+            "keyboard": true
+          },
+          "html5Video": {
+            "frames": 12,
+            "width": 176,
+            "paused": false,
+            "error": null
+          }
+        },
+        "browserErrorCount": 0
+      },
+      {
+        "browser": "Edg/150.0.4078.48",
+        "resistance": "tmp/ghostery-phase04/release-edge-resistance.json",
+        "consistency": "tmp/ghostery-phase04/release-edge-consistency.json",
+        "complete": true,
+        "fixtureFlags": [
+          "--disable-background-timer-throttling",
+          "--disable-backgrounding-occluded-windows",
+          "--disable-renderer-backgrounding",
+          "--disable-background-media-suspend"
+        ],
+        "labOverrides": {
+          "antiFingerprintNoise": true,
+          "blockFingerprintScripts": false,
+          "blockCameraMic": false
+        },
+        "probeDetection": "unchanged default: on",
+        "linkability": {
+          "sites": 3,
+          "visitsPerSite": 4,
+          "documentsPerVariant": 12,
+          "offTextValues": 1,
+          "onTextValues": 12,
+          "offPixelHashes": 1,
+          "onPixelHashes": 1,
+          "offAudioHashes": 1,
+          "onAudioHashes": 1,
+          "rawPixelsUnchanged": true,
+          "rawAudioUnchanged": true,
+          "claim": "Selected text values resample; unchanged raw signals remain linkable. No anonymity or uniqueness claim."
+        },
+        "timing": {
+          "text": {
+            "iterations": 5000,
+            "offMedianMs": 2.0499999998137355,
+            "onMedianMs": 6.199999999254942,
+            "addedMedianUsPerCall": 0.8299999998882412
+          },
+          "extension": {
+            "iterations": 5000,
+            "offMedianMs": 5.5,
+            "onMedianMs": 4.9500000001862645,
+            "addedMedianUsPerCall": -0.10999999996274709
+          },
+          "parameter": {
+            "iterations": 5000,
+            "offMedianMs": 326.89999999990687,
+            "onMedianMs": 311.59999999962747,
+            "addedMedianUsPerCall": -3.0600000000558794
+          },
+          "analyser": {
+            "iterations": 5000,
+            "offMedianMs": 3.849999999627471,
+            "onMedianMs": 6.750000000931323,
+            "addedMedianUsPerCall": 0.5800000002607704
+          }
+        },
+        "blank": {
+          "initialNoise": true,
+          "settledNoise": true,
+          "earlyMethodWasAlreadyProtected": true,
+          "borrowedChildToStringRevealsWrapper": true
+        },
+        "workerForms": [
+          "classic",
+          "module",
+          "shared",
+          "shared-module",
+          "service",
+          "module-service"
+        ],
+        "workerTextIsNative": true,
+        "nativeGpu": {
+          "available": true,
+          "adapter": true,
+          "info": {
+            "vendor": "amd",
+            "architecture": "rdna-2",
+            "isFallbackAdapter": false
+          },
+          "texture": 16384,
+          "features": [
+            "bgra8unorm-storage",
+            "chromium-experimental-multi-draw-indirect",
+            "chromium-experimental-timestamp-query-inside-passes",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "primitive-index",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-component-swizzle",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "noiseGpu": {
+          "available": true,
+          "adapter": true,
+          "info": {
+            "vendor": "intel",
+            "architecture": "gen-9",
+            "isFallbackAdapter": false
+          },
+          "texture": 8192,
+          "features": [
+            "bgra8unorm-storage",
+            "chromium-experimental-multi-draw-indirect",
+            "chromium-experimental-timestamp-query-inside-passes",
+            "clip-distances",
+            "core-features-and-limits",
+            "depth-clip-control",
+            "depth32float-stencil8",
+            "dual-source-blending",
+            "float32-blendable",
+            "float32-filterable",
+            "indirect-first-instance",
+            "primitive-index",
+            "rg11b10ufloat-renderable",
+            "shader-f16",
+            "subgroups",
+            "texture-component-swizzle",
+            "texture-compression-bc",
+            "texture-compression-bc-sliced-3d",
+            "texture-formats-tier1",
+            "texture-formats-tier2",
+            "timestamp-query"
+          ]
+        },
+        "gpuDeviceChecks": {
+          "supported": true,
+          "adapter": true,
+          "info": {
+            "vendor": "nvidia",
+            "architecture": "ampere",
+            "subgroupMinSize": 32,
+            "subgroupMaxSize": 128,
+            "isFallbackAdapter": false
+          },
+          "limit": 8192,
+          "infoType": "GPUAdapterInfo",
+          "label": "usable device",
+          "deviceLimit": 8192,
+          "usable": true
+        },
+        "compatibility": {
+          "shaderDraw": true,
+          "animationAndTrustedGameInput": true,
+          "audioSamplesAndBounds": true,
+          "documentEditing": true,
+          "mediaDeviceSelection": true,
+          "syntheticLogin": {
+            "synthetic": true,
+            "session": true,
+            "keyboard": true
+          },
+          "html5Video": {
+            "frames": 6,
+            "width": 176,
+            "paused": false,
+            "error": null
+          }
+        },
+        "browserErrorCount": 0
+      }
+    ],
+    "liveVideo": [
+      {
+        "site": "youtube",
+        "browser": "Edg/150.0.4078.48",
+        "noise": true,
+        "startSeconds": 1.837535,
+        "endSeconds": 12.310579,
+        "width": 640
+      },
+      {
+        "site": "twitch",
+        "browser": "Edg/150.0.4078.48",
+        "noise": true,
+        "startSeconds": 3.346162,
+        "endSeconds": 13.83812,
+        "width": 1280
+      }
+    ]
+  },
+  "limits": [
+    "Raw canvas and offline audio remain linkable across sites and reloads.",
+    "Workers expose native text and GPU information.",
+    "Cross-realm Function.prototype.toString reveals wrapper bodies; proxy brands, stacks and synthetic object shapes remain detectable.",
+    "Native GPU features can contradict the cosmetic selected identity; no hardware emulation or indistinguishability claim.",
+    "One Windows machine and two Chromium versions do not establish population uniqueness, universal site compatibility or a Ghostery performance win."
+  ],
+  "retainedTrials": {
+    "directory": "tmp/ghostery-phase04",
+    "excluded": [
+      "resistance02-* failed worker fetching on external-form fixture hosts; reserved .test roots used thereafter",
+      "resistance03-chrome failed fixed-delay video readiness",
+      "final-*-resistance failed browser background media suspension with noise off",
+      "gate-final failed a concurrently changing storage source inventory; refreshed inventory and final gate required",
+      "release-live-video-background-paused retained a paused YouTube trial; explicit foreground/user-gesture start added to the runner"
+    ],
+    "earlierSuccessfulMeasurements": "consistency-*, resistance03-edge, resistance04-chrome and accepted-* remain available; only release-* and gate-verified are acceptance evidence"
+  },
+  "artifacts": [
+    {
+      "path": "tmp/ghostery-phase04/review-complete/snapshots.json",
+      "bytes": 30603,
+      "sha256": "feefd5a339391b6dce59d2ba8b4a6a5776a94281476b7cc84d12f318f227d583"
+    },
+    {
+      "path": "tmp/ghostery-phase04/review-complete/wardenone-files.json",
+      "bytes": 22423,
+      "sha256": "6b3ab45bb459a2820299294994faeb22f76f0e126141d1be94c657e2bbfd9d40"
+    },
+    {
+      "path": "tmp/ghostery-phase04/review-complete/wardenone-runtime.zip",
+      "bytes": 2453775,
+      "sha256": "6b2a0abcc2d3c98601017035c1b0323a0f51356cb9bf296fd64b3570cd62a09b"
+    },
+    {
+      "path": "tmp/ghostery-phase04/review-complete/wardenone-source.zip",
+      "bytes": 18408405,
+      "sha256": "4cbf2c55dc391687696f3079e570e05b40b1250a7b97c3288c885678c2a48d04"
+    },
+    {
+      "path": "tmp/ghostery-phase04/gate-verified.log",
+      "bytes": 31310,
+      "sha256": "79d145679f62ca8070f4ccc3950b16d84d3e49e6391603ac62f7cc6c6e0f674e"
+    },
+    {
+      "path": "tmp/ghostery-phase04/adversarial-before.log",
+      "bytes": 2323,
+      "sha256": "9b31d7887c6b31236dc5c0377f1f8b61172797d6699340025cb850faa70ca44f"
+    },
+    {
+      "path": "tmp/ghostery-phase04/adversarial-final.log",
+      "bytes": 116,
+      "sha256": "73fe1b29843a5867eacd95aa7776a5880d0d254b2264df40c0c8072f6c380608"
+    },
+    {
+      "path": "tools/browser-fingerprint-resistance.js",
+      "bytes": 18510,
+      "sha256": "db8c6ea32324f0e26dfdd35346a8e916b13cad33c45fa117dde5d6d40e9da5a2"
+    },
+    {
+      "path": "tools/browser-fingerprint-consistency.js",
+      "bytes": 20979,
+      "sha256": "06742cc2e8686489bef45fe15850e01dae77d3a982c08c8130fbda646d71af3a"
+    },
+    {
+      "path": "tools/perf-real-sites.js",
+      "bytes": 18943,
+      "sha256": "3d7a93b79c93541c380548456fb3cefb2526fb33510cb88af9aaccbd91ebc4f0"
+    },
+    {
+      "path": "tools/test-fingerprint-adversarial.js",
+      "bytes": 6665,
+      "sha256": "922fda1803385da60f9937a2e6db41e8093c764b7ecf81f53ccdd491757bd837"
+    },
+    {
+      "path": "tools/lib/fingerprint-adversarial-harness.js",
+      "bytes": 6442,
+      "sha256": "9dddbbdb8240a69877774917eaa848761ba07f00c0ccff40d3935fc46996e799"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-chrome-resistance.json",
+      "bytes": 139072,
+      "sha256": "ae6121aa215c52a9a81bd440851196ac442a09ec451ac5031d139c2128f580a5"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-chrome-consistency.json",
+      "bytes": 159941,
+      "sha256": "ee98e25d2bfd4bd2810b6838e8272d789d161a324cd4067246ad3dbdc8038d4e"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-chrome-resistance.log",
+      "bytes": 166,
+      "sha256": "1a266f98503d7dd25108f2bfddf534cbf2d4d650bdbf45de4dc316ee21bfd203"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-chrome-consistency.log",
+      "bytes": 155,
+      "sha256": "6d8ec3dd878c0bba14e9193859c794e8ae0886c68e2d33dd10f32a507a1abf6d"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-edge-resistance.json",
+      "bytes": 153130,
+      "sha256": "61cf643f40aa4179665d240e46c8da63fd33fb1bc473dd5bddc3603424186362"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-edge-consistency.json",
+      "bytes": 168965,
+      "sha256": "83238f41639da5abb2202ff1bab789918f6d2d96bf1cef5a9729f1c67c7a6b98"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-edge-resistance.log",
+      "bytes": 166,
+      "sha256": "1a266f98503d7dd25108f2bfddf534cbf2d4d650bdbf45de4dc316ee21bfd203"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-edge-consistency.log",
+      "bytes": 155,
+      "sha256": "6d8ec3dd878c0bba14e9193859c794e8ae0886c68e2d33dd10f32a507a1abf6d"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-live-video.json",
+      "bytes": 10784,
+      "sha256": "b7961e401c3a40155ed0c01a2cf6713bc00935d5142728b5250f0626c697fd7d"
+    },
+    {
+      "path": "tmp/ghostery-phase04/release-live-video.log",
+      "bytes": 215,
+      "sha256": "100f58b0bc4c6f57e9534e8e2b3eba904fafa4351d2e7cd814523c75dfff763f"
+    }
+  ]
+}

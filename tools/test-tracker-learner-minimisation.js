@@ -46,7 +46,7 @@ function lift(name) {
 const PIECES = ['normalizeTrackerDomain', 'siteIdentityBg', 'trackerStoreShape', 'trackerDistinctSiteCount',
   'trackerDistinctSessionCount', 'trackerDay', 'trackerNewSalt', 'trackerSaltShape', 'trackerLearnerSalt',
   'trackerMarkPositions', 'trackerMarkHas', 'trackerMarkAdd', 'trackerSessionState', 'noteTrackerSessionSeen',
-  'noteTrackerSiteView', 'trackerSiteViewFor', 'resetTrackerSessionState', 'isProtectedTrackerDomain',
+  'noteTrackerSiteView', 'noteTrackerEvidenceSeen', 'trackerLearnerLock', 'commitTrackerLearnerDecision', 'trackerSiteViewFor', 'resetTrackerSessionState', 'isProtectedTrackerDomain',
   'looksLikeKnownTrackerHost', 'ownProviderDomains', 'loadTrackerLearner', 'noteTrackerObservation',
   'trackerControlledDomains', 'pruneTrackerLearnerStore', 'saveTrackerLearner', 'trackerLearnerProposals',
   'decideTrackerProposal', 'trackerLearnerStatus', 'setTrackerLearnerSiteMode', 'clearTrackerLearnerObservations'];
@@ -72,6 +72,9 @@ function rig(options) {
   const o = options || {};
   const state = { written: [], history: [], sessionStore: {}, local: o.raw === undefined ? {} : { wardenone_tracker_learner: o.raw }, now: o.now || 1758240000000 };
   const sandbox = {
+    WOLearner: require('../tracker-learner-utils.js'), WO_TRACKER_NETWORK_DATA: require('./build-tracker-network-data.js').build(),
+    WOCname: require('./build-cname-data.js').helpers().WOCname, isMediaCompatDomain: () => false,
+    activeAllowlist: cfg => cfg.allowlist || [], hostMatchesAllowlist: (host, values) => values.some(value => host === value || host.endsWith('.' + value)),
     console: { warn() {}, log() {} }, Math, Object, Array, Set, Map, Number, String, URL, JSON, isNaN, Promise, Uint8Array,
     /* A fixed key. The sketch is two bits per site in a 32-bit word, and a fresh random key puts
        the third fixture site on already-set bits about once in sixty runs -- the documented
@@ -140,7 +143,7 @@ function section(name, fn) { sections.push([name, fn]); }
     const e = r.entry(TRACKER);
     check('the store names no first-party site', namesIn(r.json()).length === 0 && namesIn(r.lastWritten()).length === 0, namesIn(r.lastWritten()));
     check('sites is a count', e && e.sites === 2, e && e.sites);
-    check('the sketch is one 32-bit number', e && typeof e.marks === 'number' && e.marks >= 0 && e.marks <= 0xffffffff, e && e.marks);
+    check('new candidates use a 128-bit sketch', e && typeof e.marks === 'string' && /^[0-9a-f]{32}$/.test(e.marks), e && e.marks);
     check('sessions is a count, and no session id is stored', e && e.sessions === 2 && !/__wo_tracker_session|sessionId|"sessions":\[/.test(r.lastWritten()), e && e.sessions);
     check('times are to the day', e && dayAligned(e.firstSeen) && dayAligned(e.lastSeen), e && [e.firstSeen, e.lastSeen]);
     check('the store carries its version and a 32-hex key', JSON.parse(r.lastWritten()).wardenone_tracker_learner.version === Number(BG.match(/^const TRACKER_LEARNER_STORE_VERSION = (\d+);/m)[1]) && /"salt":"[0-9a-f]{32}"/.test(r.lastWritten()));
@@ -166,7 +169,7 @@ function section(name, fn) { sections.push([name, fn]); }
     const r = rig();
     for (let s = 0; s < 3; s++) { await r.observe(SITES[0]); await r.observe(SITES[0]); r.browserRestart(); }
     const e = r.entry(TRACKER);
-    check('the same site again is still one site, across three browser restarts (the keyed sketch survives them)', e && e.sites === 1 && e.state === 'candidate' && e.hits === 6, e);
+    check('the same site again is still one site, across three browser restarts (the keyed sketch survives them)', e && e.sites === 1 && e.state === 'candidate' && e.hits === 3, e);
     check('...and the sessions counted are the real ones', e && e.sessions === 3);
   });
   section('the evidence still adds up (3)', async () => {
@@ -197,7 +200,7 @@ function section(name, fn) { sections.push([name, fn]); }
     await r.observe(SITES[1], 'other-pixel.net');
     const a = await r.api.status('https://' + SITES[0] + '/x');
     const b = await r.api.status('https://' + SITES[1] + '/x');
-    check('this site lists the tracker it saw, with this session\'s count', a.items.length === 1 && a.items[0].domain === TRACKER && a.items[0].siteHits === 2, a.items);
+    check('this site lists the tracker it saw, with this session\'s count', a.items.length === 1 && a.items[0].domain === TRACKER && a.items[0].siteHits === 1, a.items);
     check('another site does not see it', b.items.length === 1 && b.items[0].domain === 'other-pixel.net', b.items);
     check('the status carries size and age for the popup', a.watchingCount === 2 && a.ttlDays === 30 && a.oldestDays === 0, [a.watchingCount, a.ttlDays, a.oldestDays]);
     r.browserRestart();
@@ -326,9 +329,9 @@ function section(name, fn) { sections.push([name, fn]); }
     check('...zeroes what a kept entry remembered', r.entry('decided-later.net').sites === 0 && r.entry('decided-later.net').sessions === 0 && !('marks' in r.entry('decided-later.net')));
     const st = await r.api.status('https://' + SITES[0] + '/');
     check('...and empties this session\'s view', st.items.every((i) => i.siteHits === 0) && st.watchingCount === 0, st.items);
-    const handler = BG.slice(BG.indexOf("msg.kind === 'clean-browser'"), BG.indexOf("msg.kind === 'clean-browser'") + 3200);
-    check('Clean browsing data with History ticked runs it', /if \(t\.history\) \{[\s\S]{0,400}clearTrackerLearnerObservations\(\)/.test(handler));
-    check('...and drops the Script Drift baselines with it', /if \(t\.history\) \{[\s\S]{0,600}chrome\.storage\.local\.remove\(SCRIPT_DRIFT_BASELINE_KEY\)/.test(handler));
+    const cleaner = fs.readFileSync(path.join(ROOT, 'background-privacy-cleaner.js'), 'utf8');
+    check('Privacy Cleaner explicitly selects tracker observations', /key === 'trackerLearning'\) await clearTrackerLearnerObservations\(\)/.test(cleaner));
+    check('Script Drift baselines have an independent selection', /key === 'scriptDrift'\) await clearScriptDriftBaselines\(\)/.test(cleaner));
   });
 
   /* ---- 7. edges --------------------------------------------------------------------- */
@@ -348,8 +351,11 @@ function section(name, fn) { sections.push([name, fn]); }
 
   /* ---- 8. what the reader is told ---------------------------------------------------- */
   check('PRIVACY.md no longer describes named sites per tracker', !/up to\s+80 sites per tracker/.test(PRIVACY));
-  check('...and describes the count, the sketch, the expiry and the clear', /three\b[\s\S]{0,200}sites[\s\S]{0,400}30 days/i.test(PRIVACY.slice(PRIVACY.indexOf('tracker learner'), PRIVACY.indexOf('tracker learner') + 2200)) && /Clean\s+browsing data/.test(PRIVACY));
-  check('the cleaner\'s History box says WardenOne\'s own records go with it', /id="cl-history"[^\n]*WardenOne/.test(POPUP_HTML) || /cl-history[\s\S]{0,300}WardenOne['\u2019]s own/.test(POPUP_HTML));
+  const learnerDisclosure = PRIVACY.slice(PRIVACY.indexOf('tracker learner'), PRIVACY.indexOf('The Script Drift check'));
+  check('...and describes the count, the sketch, the expiry and the clear', /three\b[\s\S]*sites/i.test(learnerDisclosure)
+    && /128-bit sketch/.test(learnerDisclosure) && /30 days/.test(learnerDisclosure) && /Clean\s+browsing data/.test(PRIVACY));
+  check('the cleaner separates browser history from WardenOne records', /id="cl-history"[^\n]*Browser history only/.test(POPUP_HTML)
+    && /id="cl-learning"/.test(POPUP_HTML) && /id="cl-drift"/.test(POPUP_HTML));
   check('the popup says how much is held and for how long', /watchingCount/.test(POPUP_JS) && /ttlDays/.test(POPUP_JS));
   check('the popup calls this session\'s count what it is', /this session/.test(POPUP_JS.slice(POPUP_JS.indexOf('const siteHits = Number(item.siteHits'), POPUP_JS.indexOf('const siteHits = Number(item.siteHits') + 300)));
   check('this suite is wired into the gate', /test-tracker-learner-minimisation\.js/.test(GATE));

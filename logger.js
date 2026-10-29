@@ -4,13 +4,8 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* The network / filtering logger.
-
-   Capture lives in the worker and only runs while this page holds its port open,
-   so closing the tab is what stops it. Everything here is presentation plus the
-   four actions -- and every action writes a rule into My Rules rather than into
-   some private store, so anything this page does to your filtering is visible,
-   editable and removable in one place. */
+/* Capture runs only while this page holds its worker port. Filtering actions write to My Rules so they remain visible and
+   editable in one place. */
 'use strict';
 
 const $ = (id) => document.getElementById(id);
@@ -220,6 +215,27 @@ function scheduleRender() {
   renderTimer = setTimeout(() => { renderTimer = 0; render(); }, 90);
 }
 
+const trackerCatalogLoader = typeof WOTrackerAttribution !== 'undefined'
+  ? WOTrackerAttribution.createLoader((...args) => fetch(...args), chrome.runtime.getURL('tracker-catalog.json')) : null;
+let trackerCatalogState = { catalog: null, status: 'unavailable' };
+function trackerIdentity(entry) {
+  if (!trackerCatalogLoader) return null;
+  const requestedHost = WOTrackerAttribution.host(entry.url) || entry.host;
+  return WOTrackerAttribution.describe(trackerCatalogState.catalog, requestedHost, { blocked: entry.action === 'blocked' });
+}
+function refreshTrackerNames() {
+  if (!trackerCatalogLoader) return;
+  trackerCatalogLoader.refresh().then(state => {
+    trackerCatalogState = state;
+    const status = $('tracker-catalog-status');
+    if (status) status.textContent = state.catalog ? 'Local tracker names · ' + state.catalog.updatedAt.slice(0,10)
+      + (state.status === 'cached' ? ' · refresh unavailable; keeping previous names' : '') : 'Tracker names unavailable; request outcomes are unchanged.';
+    render();
+  });
+}
+document.getElementById('refresh-tracker-names')?.addEventListener('click', refreshTrackerNames);
+refreshTrackerNames();
+
 function matches(e) {
   if (actionFilter !== 'all' && e.action !== actionFilter) return false;
   if (typeFilter !== 'all') {
@@ -227,7 +243,7 @@ function matches(e) {
     else if (e.type !== typeFilter) return false;
   }
   if (query) {
-    const hay = (e.url + ' ' + e.host + ' ' + (e.page || '') + ' ' + (e.source || '') + ' ' + (e.rule || '')).toLowerCase();
+    const hay = (e.url + ' ' + e.host + ' ' + (e.page || '') + ' ' + (e.source || '') + ' ' + (e.rule || '') + ' ' + (trackerIdentity(e)?.label || '')).toLowerCase();
     if (!hay.includes(query)) return false;
   }
   return true;
@@ -262,6 +278,7 @@ function render() {
     const url = document.createElement('div'); url.className = 'log-url log-dim';
     url.textContent = e.url.length > 120 ? e.url.slice(0, 120) + '…' : e.url;
     c4.appendChild(host); c4.appendChild(url);
+    if (trackerCatalogLoader) WOTrackerAttribution.renderIdentity(c4, trackerIdentity(e), 'log-dim');
     const c5 = document.createElement('td'); c5.className = 'log-dim';
     c5.textContent = e.source || (e.action === 'blocked' ? 'a network rule' : '');
 
@@ -304,6 +321,20 @@ function detailRow(e) {
   add('Type', TYPE_LABEL[e.type] || e.type);
   add('Party', e.party === 'third' ? 'Third-party' : e.party === 'first' ? 'First-party' : 'Unknown');
   add('Page', e.page);
+  const identity = trackerIdentity(e);
+  if (identity?.id) {
+    add('Service', identity.name);
+    add('Organization', identity.organization);
+    add('Category', identity.category);
+    add('Identity evidence', 'Catalog hostname match: ' + identity.matchedDomain + '; request outcome shown separately');
+    add('Catalog version', identity.datasetRevision + ' · ' + identity.datasetUpdatedAt);
+    add('Catalog source', identity.sourceUrl);
+  }
+  if (e.cname) {
+    add('CNAME target', e.cname.canonicalTarget);
+    add('CNAME evidence', 'Curated local mapping; request outcome shown separately');
+    add('CNAME source', e.cname.source);
+  }
   /* Most rows carry the mark now: anything not plainly harmless is withheld, not only what
      was recognised as a secret, so the label says what happened rather than what was found. */
   add('URL', e.url + (e.redacted ? '   (parts withheld)' : ''));
@@ -432,6 +463,7 @@ $('export').addEventListener('click', () => {
   const rows = ENTRIES.filter(matches).map((e) => ({
     at: new Date(e.at).toISOString(), action: e.action, method: e.method, type: e.type,
     party: e.party, page: e.page, url: e.url, rule: e.rule || '', source: e.source || '',
+    ...(e.cname ? { cname: e.cname } : {}),
     /* An export that drops this reads every rule as an exact match on that request. */
     ruleMatch: e.rule ? (e.near ? 'tab-and-time' : 'exact') : 'none',
   }));

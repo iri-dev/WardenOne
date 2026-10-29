@@ -49,6 +49,7 @@ const { KEYS, DEFAULTS, SITE_OVERRIDE_SCOPE } = tables.T;
 const PAGE = new Set(SITE_OVERRIDE_SCOPE.page);
 const MIXED = new Set(SITE_OVERRIDE_SCOPE.mixed);
 const COORDINATED = new Set(SITE_OVERRIDE_SCOPE.coordinated);
+const NETWORK = new Set(SITE_OVERRIDE_SCOPE.network);
 
 /* ---- who reads what, from the sources ---------------------------------------------- */
 const pageReads = new Set();
@@ -67,7 +68,7 @@ for (const f of ['yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'ey
   'mail-shield.js', 'search-junk.js', 'twitch-rewind.js', 'twitch-vod-rewind.js', 'oauth-guard.js']) {
   try { collect(pageReads, read(f), /\b(?:cfg|config|overrides|o|c|settings)\.([A-Za-z0-9_]+)/g); } catch (_) {}
 }
-for (const f of ['background.js', 'background-downloads.js', 'background-startup.js', 'background-memory.js', 'background-extension-watch.js']) {
+for (const f of ['background.js', 'background-cname.js', 'background-downloads.js', 'background-startup.js', 'background-memory.js', 'background-extension-watch.js']) {
   try {
     let source = read(f);
     collect(workerReads, source, /\b(?:cfg|config|merged|repairCfg|c)\.([A-Za-z0-9_]+)/g);
@@ -80,14 +81,19 @@ for (const f of ['background.js', 'background-downloads.js', 'background-startup
 console.log('\nsite override scope\n');
 
 const toggles = KEYS.filter((k) => typeof DEFAULTS[k] === 'boolean');
-check('the table names only real toggles', [...PAGE, ...MIXED, ...COORDINATED].every((k) => toggles.includes(k)), [...PAGE, ...MIXED, ...COORDINATED].filter((k) => !toggles.includes(k)).join(', '));
-check('no key appears in multiple scopes', [...PAGE].every((k) => !MIXED.has(k) && !COORDINATED.has(k)) && [...MIXED].every((k) => !COORDINATED.has(k)));
+const scopedKeys = [...PAGE, ...MIXED, ...COORDINATED, ...NETWORK];
+check('the table names only real toggles', scopedKeys.every((k) => toggles.includes(k)), scopedKeys.filter((k) => !toggles.includes(k)).join(', '));
+check('no key appears in multiple scopes', new Set(scopedKeys).size === scopedKeys.length);
 const pageWrong = [...PAGE].filter((k) => !pageReads.has(k) || workerEnforcementReads.has(k));
 check('every page-resolved key has a page reader and no worker enforcement', pageWrong.length === 0, pageWrong.join(', '));
 const mixedWrong = [...MIXED].filter((k) => !pageReads.has(k) || !workerReads.has(k));
 check('every mixed key is read by a page-side script and by the worker', mixedWrong.length === 0, mixedWrong.join(', '));
 const coordinatedWrong = [...COORDINATED].filter((k) => !pageReads.has(k) || !workerReads.has(k));
 check('every coordinated key is read by a page-side script and by the worker', coordinatedWrong.length === 0, coordinatedWrong.join(', '));
+const networkWrong = [...NETWORK].filter((key) => pageReads.has(key) || !workerEnforcementReads.has(key));
+check('every network key has a worker owner and no page reader', networkWrong.length === 0, networkWrong.join(', '));
+check('CNAME protection has its own network exception', NETWORK.has('blockCnameTrackers'));
+check('first-party URL heuristics remain page-resolved', PAGE.has('blockFirstPartyTrackers'));
 const missing = toggles.filter((k) => pageReads.has(k) && !PAGE.has(k) && !MIXED.has(k) && !COORDINATED.has(k));
 check('every toggle a page-side script reads is offered somewhere', missing.length === 0, missing.join(', '));
 const offeredButUnread = toggles.filter((k) => (PAGE.has(k) || MIXED.has(k) || COORDINATED.has(k)) && !pageReads.has(k));
@@ -97,7 +103,7 @@ check('nothing is offered that no page-side script reads', offeredButUnread.leng
 check('a content-only protection is page-resolved (Media Shield)', PAGE.has('mediaShield'));
 check('a worker-only one is not offered (certificate guard)', !PAGE.has('certificateGuard') && !MIXED.has('certificateGuard') && workerReads.has('certificateGuard') && !pageReads.has('certificateGuard'));
 check('a DNR-only one is not offered (intranet network rules)', !PAGE.has('intranetNetworkRules') && !MIXED.has('intranetNetworkRules'));
-check('a mixed one is offered as page-part-only (third-party cookies)', MIXED.has('blockThirdPartyCookies') && workerReads.has('blockThirdPartyCookies'));
+check('third-party cookies coordinate page and worker exceptions', COORDINATED.has('blockThirdPartyCookies') && workerReads.has('blockThirdPartyCookies'));
 check('popup guards have a coordinated site override', COORDINATED.has('blockForcedPopups') && COORDINATED.has('strictPopupShield'));
 check('a global setting is not offered (list auto-update)', !PAGE.has('autoUpdateLists') && !MIXED.has('autoUpdateLists'));
 check('Download Shield and Memory Shield are not offered', ['downloadDomainAge', 'downloadVirusTotal', 'memoryShield', 'memoryNeverForms'].every((k) => !PAGE.has(k) && !MIXED.has(k)));
@@ -132,6 +138,8 @@ check('Download Shield and Memory Shield are not offered', ['downloadDomainAge',
   check('turning off a worker-only protection here is refused, and said', !('certificateGuard' in (ctx.config.siteOverrides['shop.example'] || {})) && /cannot be turned off for one site/.test(notes[notes.length - 1] || ''), notes);
   ctx.api.set('shop.example', 'blockThirdPartyCookies', false);
   check('a mixed one is stored', ctx.config.siteOverrides['shop.example'].blockThirdPartyCookies === false);
+  ctx.api.set('shop.example', 'blockCnameTrackers', false);
+  check('a supported network exception is stored', ctx.config.siteOverrides['shop.example'].blockCnameTrackers === false);
   ctx.api.set('shop.example', 'mediaShield', true);
   check('undo removes the entry rather than storing true', !('mediaShield' in ctx.config.siteOverrides['shop.example']));
 }

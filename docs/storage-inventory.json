@@ -1,0 +1,3160 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "key": "__wardenone_badge_counts",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 150
+        }
+      ]
+    },
+    {
+      "key": "__wardenone_ext_scan_done",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-extension-watch.js",
+          "line": 723
+        },
+        {
+          "file": "background.js",
+          "line": 21330
+        }
+      ]
+    },
+    {
+      "key": "__wardenone_hist_buffer",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 722
+        },
+        {
+          "file": "history-store.js",
+          "line": 47
+        }
+      ]
+    },
+    {
+      "key": "__wardenone_menu_built",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 19760
+        }
+      ]
+    },
+    {
+      "key": "__wardenone_sb_bypass",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21331
+        }
+      ]
+    },
+    {
+      "key": "__wardenone_sb_navigation_grants",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 10452
+        }
+      ]
+    },
+    {
+      "key": "__wardenone_tally_state",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 1065
+        }
+      ]
+    },
+    {
+      "key": "wardenone_abuseipdb_cache",
+      "owner": "Reputation lookups",
+      "sensitivity": "browsing-derived cache",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 1200,
+      "retention": "Expired cache entries are not reused. Pruned on cache maintenance/write or explicit erasure; no exact idle-profile deletion deadline.",
+      "siteErase": "reset",
+      "includes": "browsing-derived cache",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7870
+        }
+      ],
+      "reuse": "Clean 12 hours; warning/hit 4 hours"
+    },
+    {
+      "key": "wardenone_adshield_cosmetic",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 3567
+        }
+      ]
+    },
+    {
+      "key": "wardenone_adshield_cosmetic_at",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 3568
+        }
+      ]
+    },
+    {
+      "key": "wardenone_adshield_cosmetic_checked_at",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 3558
+        }
+      ]
+    },
+    {
+      "key": "wardenone_adshield_cosmetic_hash",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 3556
+        }
+      ]
+    },
+    {
+      "key": "wardenone_adshield_cosmetic_publishers",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 3540
+        },
+        {
+          "file": "popup-health.js",
+          "line": 275
+        },
+        {
+          "file": "popup.js",
+          "line": 2986
+        }
+      ]
+    },
+    {
+      "key": "wardenone_advanced_providers_open",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21341
+        },
+        {
+          "file": "popup-scroll-memory.js",
+          "line": 9
+        }
+      ]
+    },
+    {
+      "key": "wardenone_all_cookies_previous_setting",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 11265
+        }
+      ]
+    },
+    {
+      "key": "wardenone_aux_list_meta",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 3213
+        },
+        {
+          "file": "popup-health.js",
+          "line": 275
+        },
+        {
+          "file": "popup.js",
+          "line": 2986
+        },
+        {
+          "file": "settings.js",
+          "line": 2419
+        }
+      ]
+    },
+    {
+      "key": "wardenone_aux_lists",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 3212
+        }
+      ]
+    },
+    {
+      "key": "wardenone_block_offer",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 20305
+        }
+      ]
+    },
+    {
+      "key": "wardenone_blocked_domains",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7603
+        }
+      ]
+    },
+    {
+      "key": "wardenone_blocked_security_count",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7603
+        }
+      ]
+    },
+    {
+      "key": "wardenone_blocklist",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 6228
+        },
+        {
+          "file": "settings.js",
+          "line": 2524
+        }
+      ]
+    },
+    {
+      "key": "wardenone_blocklist_session",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 6233
+        }
+      ]
+    },
+    {
+      "key": "wardenone_breach_cache",
+      "owner": "Reputation lookups",
+      "sensitivity": "browsing-derived cache",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Expired cache entries are not reused. Pruned on cache maintenance/write or explicit erasure; no exact idle-profile deletion deadline.",
+      "siteErase": "reset",
+      "includes": "browsing-derived cache",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7874
+        }
+      ],
+      "reuse": "12 hours; no explicit global entry cap"
+    },
+    {
+      "key": "wardenone_build_update_v1",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21333
+        },
+        {
+          "file": "build-update.js",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "key": "wardenone_cleaner_settings",
+      "owner": "Privacy Cleaner preferences",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 100,
+      "retention": "Until changed or erased; up to 100 protected origins",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-privacy-cleaner.js",
+          "line": 5
+        },
+        {
+          "file": "background.js",
+          "line": 21281
+        }
+      ]
+    },
+    {
+      "key": "wardenone_cleaner_state",
+      "owner": "Privacy Cleaner results",
+      "sensitivity": "aggregate status",
+      "area": "local",
+      "maxAgeDays": 30,
+      "maxItems": 20,
+      "retention": "Shows last 20 cleanups within 30 days; expired results pruned on later state writes; schedule and interruption marker contain no site addresses",
+      "siteErase": "keep",
+      "includes": "aggregate status",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-privacy-cleaner.js",
+          "line": 6
+        },
+        {
+          "file": "background.js",
+          "line": 21284
+        }
+      ]
+    },
+    {
+      "key": "wardenone_config",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 219
+        },
+        {
+          "file": "background-extension-watch.js",
+          "line": 398
+        },
+        {
+          "file": "background-identifiers.js",
+          "line": 26
+        },
+        {
+          "file": "background-memory.js",
+          "line": 78
+        },
+        {
+          "file": "background-startup.js",
+          "line": 37
+        },
+        {
+          "file": "background.js",
+          "line": 38
+        },
+        {
+          "file": "config-lock.js",
+          "line": 13
+        },
+        {
+          "file": "history-store.js",
+          "line": 16
+        },
+        {
+          "file": "history.js",
+          "line": 833
+        },
+        {
+          "file": "notification-manager.js",
+          "line": 50
+        },
+        {
+          "file": "notifications.js",
+          "line": 511
+        },
+        {
+          "file": "onboarding.js",
+          "line": 439
+        },
+        {
+          "file": "popup-diagnostics.js",
+          "line": 100
+        },
+        {
+          "file": "popup.js",
+          "line": 395
+        },
+        {
+          "file": "settings.js",
+          "line": 42
+        },
+        {
+          "file": "theme.js",
+          "line": 107
+        }
+      ]
+    },
+    {
+      "key": "wardenone_config_reset",
+      "owner": "Settings reset guard",
+      "sensitivity": "random id",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 1,
+      "retention": "Until the next full reset or extension removal",
+      "siteErase": "keep",
+      "includes": "random id",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21357
+        },
+        {
+          "file": "config-lock.js",
+          "line": 52
+        }
+      ]
+    },
+    {
+      "key": "wardenone_config_writes",
+      "owner": "Settings save record",
+      "sensitivity": "random ids",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 64,
+      "retention": "Ids of the latest 64 settings saves; replaced on every save",
+      "siteErase": "keep",
+      "includes": "random ids",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21354
+        },
+        {
+          "file": "config-lock.js",
+          "line": 51
+        }
+      ]
+    },
+    {
+      "key": "wardenone_consent_accepted",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 20966
+        }
+      ]
+    },
+    {
+      "key": "wardenone_cryptominer_domains",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 6732
+        }
+      ]
+    },
+    {
+      "key": "wardenone_custom_lists",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 5303
+        },
+        {
+          "file": "settings.js",
+          "line": 2523
+        }
+      ]
+    },
+    {
+      "key": "wardenone_domain_age_cache",
+      "owner": "Reputation lookups",
+      "sensitivity": "browsing-derived cache",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 100,
+      "retention": "Expired cache entries are not reused. Pruned on cache maintenance/write or explicit erasure; no exact idle-profile deletion deadline.",
+      "siteErase": "reset",
+      "includes": "browsing-derived cache",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7633
+        }
+      ],
+      "reuse": "7 days"
+    },
+    {
+      "key": "wardenone_download_handled",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 34
+        },
+        {
+          "file": "background.js",
+          "line": 7880
+        }
+      ]
+    },
+    {
+      "key": "wardenone_download_threat_feeds",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 1022
+        },
+        {
+          "file": "background.js",
+          "line": 21326
+        }
+      ]
+    },
+    {
+      "key": "wardenone_download_threat_meta",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 1023
+        },
+        {
+          "file": "background.js",
+          "line": 21326
+        },
+        {
+          "file": "popup-health.js",
+          "line": 275
+        },
+        {
+          "file": "popup.js",
+          "line": 2986
+        }
+      ]
+    },
+    {
+      "key": "wardenone_download_trusted_sites",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 35
+        },
+        {
+          "file": "background.js",
+          "line": 7881
+        },
+        {
+          "file": "history.js",
+          "line": 9
+        },
+        {
+          "file": "settings.js",
+          "line": 2524
+        }
+      ]
+    },
+    {
+      "key": "wardenone_erase_rebuild",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 12032
+        }
+      ]
+    },
+    {
+      "key": "wardenone_ext_alerts",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-extension-watch.js",
+          "line": 14
+        },
+        {
+          "file": "background.js",
+          "line": 21307
+        },
+        {
+          "file": "extensions.js",
+          "line": 586
+        },
+        {
+          "file": "popup.js",
+          "line": 2987
+        },
+        {
+          "file": "settings.js",
+          "line": 2519
+        }
+      ]
+    },
+    {
+      "key": "wardenone_ext_baseline",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-extension-watch.js",
+          "line": 13
+        },
+        {
+          "file": "background.js",
+          "line": 21307
+        }
+      ]
+    },
+    {
+      "key": "wardenone_ext_reputation_custom",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-extension-reputation.js",
+          "line": 19
+        },
+        {
+          "file": "background.js",
+          "line": 21278
+        },
+        {
+          "file": "extensions.js",
+          "line": 587
+        },
+        {
+          "file": "popup.js",
+          "line": 2989
+        }
+      ]
+    },
+    {
+      "key": "wardenone_ext_reputation_state",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-extension-reputation.js",
+          "line": 21
+        },
+        {
+          "file": "background.js",
+          "line": 21308
+        }
+      ]
+    },
+    {
+      "key": "wardenone_ext_reviews",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-extension-reputation.js",
+          "line": 20
+        },
+        {
+          "file": "background.js",
+          "line": 21307
+        },
+        {
+          "file": "extensions.js",
+          "line": 586
+        },
+        {
+          "file": "popup.js",
+          "line": 2988
+        }
+      ]
+    },
+    {
+      "key": "wardenone_ext_watch_status",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-extension-watch.js",
+          "line": 15
+        },
+        {
+          "file": "background.js",
+          "line": 21308
+        },
+        {
+          "file": "settings.js",
+          "line": 2519
+        }
+      ]
+    },
+    {
+      "key": "wardenone_feed_load_grabber",
+      "owner": "Packaged feed recovery",
+      "sensitivity": "aggregate status",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": 2,
+      "retention": "Until successful recovery, feature off, full erasure or browser close",
+      "siteErase": "keep",
+      "includes": "aggregate status",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 4822
+        }
+      ]
+    },
+    {
+      "key": "wardenone_feed_load_miner",
+      "owner": "Packaged feed recovery",
+      "sensitivity": "aggregate status",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": 2,
+      "retention": "Until successful recovery, feature off, full erasure or browser close",
+      "siteErase": "keep",
+      "includes": "aggregate status",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 4822
+        }
+      ]
+    },
+    {
+      "key": "wardenone_firewall",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 6413
+        },
+        {
+          "file": "settings.js",
+          "line": 660
+        }
+      ]
+    },
+    {
+      "key": "wardenone_forget_tab_hosts",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 13958
+        }
+      ]
+    },
+    {
+      "key": "wardenone_grabber_domains",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 5034
+        }
+      ]
+    },
+    {
+      "key": "wardenone_hidden_elements",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7876
+        },
+        {
+          "file": "hidden-elements.js",
+          "line": 10
+        },
+        {
+          "file": "settings.js",
+          "line": 660
+        }
+      ]
+    },
+    {
+      "key": "wardenone_history",
+      "owner": "Activity history",
+      "sensitivity": "browsing records",
+      "area": "local or session",
+      "maxAgeDays": 30,
+      "maxItems": 200,
+      "retention": "Normal: 30 days; latest 200 events. Session: until browser closes. Off: none.",
+      "siteErase": "prune",
+      "includes": "browsing records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 875
+        },
+        {
+          "file": "history-store.js",
+          "line": 7
+        },
+        {
+          "file": "history.js",
+          "line": 1026
+        },
+        {
+          "file": "popup.js",
+          "line": 2987
+        },
+        {
+          "file": "settings.js",
+          "line": 2520
+        }
+      ]
+    },
+    {
+      "key": "wardenone_js_allowlist",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7878
+        }
+      ]
+    },
+    {
+      "key": "wardenone_js_global_block",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21277
+        }
+      ]
+    },
+    {
+      "key": "wardenone_last_verification",
+      "owner": "Protection verification",
+      "sensitivity": "aggregate status",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 1,
+      "retention": "Last check until replaced or all data is erased",
+      "siteErase": "keep",
+      "includes": "aggregate status",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21314
+        },
+        {
+          "file": "popup-diagnostics.js",
+          "line": 100
+        },
+        {
+          "file": "settings.js",
+          "line": 2968
+        }
+      ]
+    },
+    {
+      "key": "wardenone_learned",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2831
+        },
+        {
+          "file": "history.js",
+          "line": 1027
+        }
+      ]
+    },
+    {
+      "key": "wardenone_list_integrity",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 16029
+        }
+      ]
+    },
+    {
+      "key": "wardenone_list_meta",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 15989
+        },
+        {
+          "file": "popup-health.js",
+          "line": 275
+        },
+        {
+          "file": "popup.js",
+          "line": 2986
+        },
+        {
+          "file": "settings.js",
+          "line": 2419
+        }
+      ]
+    },
+    {
+      "key": "wardenone_list_retry_n",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 13725
+        }
+      ]
+    },
+    {
+      "key": "wardenone_location_previous_setting",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 11269
+        }
+      ]
+    },
+    {
+      "key": "wardenone_location_site_rules",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 11275
+        }
+      ]
+    },
+    {
+      "key": "wardenone_malware_hashes",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 1003
+        },
+        {
+          "file": "background.js",
+          "line": 13648
+        }
+      ]
+    },
+    {
+      "key": "wardenone_manual_check_jobs",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 20037
+        }
+      ]
+    },
+    {
+      "key": "wardenone_notifications",
+      "owner": "Notification Centre",
+      "sensitivity": "security records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": 300,
+      "retention": "Normal: reader choice of unlimited, 1, 7 or 30 days; latest 300 notices. Session: until browser closes. Off: none.",
+      "siteErase": "prune",
+      "includes": "security records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 1043
+        },
+        {
+          "file": "history-store.js",
+          "line": 7
+        },
+        {
+          "file": "notification-manager.js",
+          "line": 51
+        },
+        {
+          "file": "notifications.js",
+          "line": 750
+        },
+        {
+          "file": "popup.js",
+          "line": 2992
+        }
+      ]
+    },
+    {
+      "key": "wardenone_onboarding_done_at",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21343
+        },
+        {
+          "file": "onboarding.js",
+          "line": 465
+        }
+      ]
+    },
+    {
+      "key": "wardenone_onboarding_maxprivacy_at",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21343
+        },
+        {
+          "file": "onboarding.js",
+          "line": 349
+        }
+      ]
+    },
+    {
+      "key": "wardenone_onboarding_recommended_at",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21344
+        },
+        {
+          "file": "onboarding.js",
+          "line": 322
+        }
+      ]
+    },
+    {
+      "key": "wardenone_openphish_feed_cache",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 8568
+        }
+      ]
+    },
+    {
+      "key": "wardenone_palette_grant",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 19512
+        }
+      ]
+    },
+    {
+      "key": "wardenone_pending_downloads",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 33
+        },
+        {
+          "file": "background.js",
+          "line": 7879
+        }
+      ]
+    },
+    {
+      "key": "wardenone_permission_chain_state",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 18642
+        }
+      ]
+    },
+    {
+      "key": "wardenone_phishtank_cache",
+      "owner": "Reputation lookups",
+      "sensitivity": "browsing-derived cache",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 1200,
+      "retention": "Expired cache entries are not reused. Pruned on cache maintenance/write or explicit erasure; no exact idle-profile deletion deadline.",
+      "siteErase": "reset",
+      "includes": "browsing-derived cache",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7869
+        }
+      ],
+      "reuse": "Clean 20 minutes; hit 6 hours"
+    },
+    {
+      "key": "wardenone_popup_scroll_memory",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21344
+        },
+        {
+          "file": "popup-scroll-memory.js",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "key": "wardenone_popup_search_memory",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21345
+        },
+        {
+          "file": "popup-scroll-memory.js",
+          "line": 10
+        }
+      ]
+    },
+    {
+      "key": "wardenone_popup_section_order",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21345
+        },
+        {
+          "file": "popup.js",
+          "line": 6419
+        },
+        {
+          "file": "settings.js",
+          "line": 3292
+        }
+      ]
+    },
+    {
+      "key": "wardenone_rebind_session",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 17831
+        }
+      ]
+    },
+    {
+      "key": "wardenone_recent_redirect_chains",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 1722
+        }
+      ]
+    },
+    {
+      "key": "wardenone_reconcile_degraded",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 11635
+        },
+        {
+          "file": "settings.js",
+          "line": 2519
+        }
+      ]
+    },
+    {
+      "key": "wardenone_reconcile_pending",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 11636
+        }
+      ]
+    },
+    {
+      "key": "wardenone_safe_browsing_cache",
+      "owner": "Reputation lookups",
+      "sensitivity": "browsing-derived cache",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 800,
+      "retention": "Expired cache entries are not reused. Pruned on cache maintenance/write or explicit erasure; no exact idle-profile deletion deadline.",
+      "siteErase": "reset",
+      "includes": "browsing-derived cache",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7868
+        }
+      ],
+      "reuse": "Clean 15 minutes; hit 5 minutes"
+    },
+    {
+      "key": "wardenone_script_drift_baselines",
+      "owner": "Script Drift",
+      "sensitivity": "derived script evidence",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 700,
+      "retention": "Baselines unseen for 30 days are pruned; active baselines can persist",
+      "siteErase": "reset",
+      "includes": "derived script evidence",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 1064
+        }
+      ]
+    },
+    {
+      "key": "wardenone_script_shield_mode",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 4333
+        },
+        {
+          "file": "settings.js",
+          "line": 43
+        }
+      ]
+    },
+    {
+      "key": "wardenone_script_trusted_hosts",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 4334
+        },
+        {
+          "file": "settings.js",
+          "line": 2524
+        }
+      ]
+    },
+    {
+      "key": "wardenone_search_junk_domains",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2831
+        }
+      ]
+    },
+    {
+      "key": "wardenone_session_started_at",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-downloads.js",
+          "line": 43
+        },
+        {
+          "file": "background.js",
+          "line": 7882
+        }
+      ]
+    },
+    {
+      "key": "wardenone_settings_density",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21346
+        },
+        {
+          "file": "settings.js",
+          "line": 2536
+        }
+      ]
+    },
+    {
+      "key": "wardenone_settings_favorites",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21346
+        },
+        {
+          "file": "settings.js",
+          "line": 45
+        }
+      ]
+    },
+    {
+      "key": "wardenone_settings_last_page",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21346
+        },
+        {
+          "file": "settings.js",
+          "line": 1645
+        }
+      ]
+    },
+    {
+      "key": "wardenone_settings_recent",
+      "owner": "Settings change list",
+      "sensitivity": "settings",
+      "area": "local",
+      "maxAgeDays": 30,
+      "maxItems": 40,
+      "retention": "30 days; latest 40 switch changes",
+      "siteErase": "keep",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 13500
+        },
+        {
+          "file": "settings.js",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "key": "wardenone_site_card_folded",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21345
+        },
+        {
+          "file": "popup.js",
+          "line": 5770
+        }
+      ]
+    },
+    {
+      "key": "wardenone_site_card_layout",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21345
+        },
+        {
+          "file": "onboarding.js",
+          "line": 294
+        },
+        {
+          "file": "popup.js",
+          "line": 5769
+        },
+        {
+          "file": "settings.js",
+          "line": 2522
+        }
+      ]
+    },
+    {
+      "key": "wardenone_site_tally",
+      "owner": "Site Dashboard counts",
+      "sensitivity": "browsing records",
+      "area": "local",
+      "maxAgeDays": 7,
+      "maxItems": 300,
+      "retention": "7 days by the hour; up to 300 sites; never from a private window",
+      "siteErase": "prune",
+      "includes": "browsing records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 1064
+        }
+      ]
+    },
+    {
+      "key": "wardenone_startup_report",
+      "owner": "Security and extension reviews",
+      "sensitivity": "site or extension records",
+      "area": "local or session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Feature-managed; erase or review in its feature",
+      "siteErase": "prune",
+      "includes": "site or extension records",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-extension-watch.js",
+          "line": 522
+        },
+        {
+          "file": "background-startup.js",
+          "line": 12
+        },
+        {
+          "file": "background.js",
+          "line": 7885
+        },
+        {
+          "file": "popup.js",
+          "line": 2987
+        },
+        {
+          "file": "settings.js",
+          "line": 2519
+        }
+      ]
+    },
+    {
+      "key": "wardenone_storage_meta",
+      "owner": "Downloaded protection lists",
+      "sensitivity": "public list data",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until refreshed or all data is erased",
+      "siteErase": "keep",
+      "includes": "public list data",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7963
+        }
+      ]
+    },
+    {
+      "key": "wardenone_sw_registered",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21071
+        }
+      ]
+    },
+    {
+      "key": "wardenone_theme",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21346
+        },
+        {
+          "file": "popup.js",
+          "line": 4782
+        },
+        {
+          "file": "settings.js",
+          "line": 2269
+        },
+        {
+          "file": "theme.js",
+          "line": 6
+        }
+      ]
+    },
+    {
+      "key": "wardenone_tracker_learner",
+      "owner": "Tracker learning",
+      "sensitivity": "derived browsing evidence",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Candidates expire after 30 days without a new sighting; user decisions stay until erased",
+      "siteErase": "reset",
+      "includes": "derived browsing evidence",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 4560
+        },
+        {
+          "file": "popup.js",
+          "line": 2991
+        }
+      ]
+    },
+    {
+      "key": "wardenone_tracker_session",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 6933
+        }
+      ]
+    },
+    {
+      "key": "wardenone_urlhaus_cache",
+      "owner": "Reputation lookups",
+      "sensitivity": "browsing-derived cache",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 1200,
+      "retention": "Expired cache entries are not reused. Pruned on cache maintenance/write or explicit erasure; no exact idle-profile deletion deadline.",
+      "siteErase": "reset",
+      "includes": "browsing-derived cache",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7871
+        }
+      ],
+      "reuse": "Clean 1 hour; hit 12 hours"
+    },
+    {
+      "key": "wardenone_user_rules",
+      "owner": "Settings and user rules",
+      "sensitivity": "site preferences",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "site preferences",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 5302
+        },
+        {
+          "file": "settings.js",
+          "line": 2523
+        }
+      ]
+    },
+    {
+      "key": "wardenone_warning",
+      "owner": "Warning hand-off",
+      "sensitivity": "exact navigation URL",
+      "area": "session",
+      "maxAgeDays": 0.25,
+      "maxItems": 40,
+      "retention": "Consumed on Continue, tab close, six-hour expiry or browser close; random handle prefix",
+      "siteErase": "prune",
+      "includes": "exact navigation URL",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 10232
+        },
+        {
+          "file": "cert-error.js",
+          "line": 13
+        },
+        {
+          "file": "redirect-warning.js",
+          "line": 13
+        },
+        {
+          "file": "safe-browsing-block.js",
+          "line": 13
+        }
+      ]
+    },
+    {
+      "key": "wardenone_whoisxml_cache",
+      "owner": "Reputation lookups",
+      "sensitivity": "browsing-derived cache",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 250,
+      "retention": "Expired cache entries are not reused. Pruned on cache maintenance/write or explicit erasure; no exact idle-profile deletion deadline.",
+      "siteErase": "reset",
+      "includes": "browsing-derived cache",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7638
+        }
+      ],
+      "reuse": "7 days"
+    },
+    {
+      "key": "wardenone_whoisxml_reputation_cache",
+      "owner": "Reputation lookups",
+      "sensitivity": "browsing-derived cache",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 800,
+      "retention": "Expired cache entries are not reused. Pruned on cache maintenance/write or explicit erasure; no exact idle-profile deletion deadline.",
+      "siteErase": "reset",
+      "includes": "browsing-derived cache",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7872
+        }
+      ],
+      "reuse": "Clean 12 hours; warning/hit 6 hours"
+    },
+    {
+      "key": "wardenone_whoisxml_threat_cache",
+      "owner": "Reputation lookups",
+      "sensitivity": "browsing-derived cache",
+      "area": "local",
+      "maxAgeDays": null,
+      "maxItems": 800,
+      "retention": "Expired cache entries are not reused. Pruned on cache maintenance/write or explicit erasure; no exact idle-profile deletion deadline.",
+      "siteErase": "reset",
+      "includes": "browsing-derived cache",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Persistent writes suppressed in split private worker; Activity and notifications are also suppressed in session storage.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 7873
+        }
+      ],
+      "reuse": "Clean 12 hours; hit 6 hours"
+    }
+  ],
+  "unregistered": [],
+  "browserStorageSites": [
+    {
+      "file": "anti-redirect.js",
+      "line": 3700,
+      "operation": "localStorage.clear",
+      "expression": "localStorage.clear(); } catch (_) {}"
+    },
+    {
+      "file": "anti-redirect.js",
+      "line": 3701,
+      "operation": "sessionStorage.clear",
+      "expression": "sessionStorage.clear(); } catch (_) {}"
+    },
+    {
+      "file": "anti-redirect.js",
+      "line": 3716,
+      "operation": "indexedDB.deleteDatabase",
+      "expression": "indexedDB.deleteDatabase(db.name); } catch (_) {}"
+    },
+    {
+      "file": "background.js",
+      "line": 12369,
+      "operation": "localStorage.removeItem",
+      "expression": "localStorage.removeItem('__woEyeShieldMode'); } catch (_) {} } },"
+    },
+    {
+      "file": "background.js",
+      "line": 23810,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(k) !== null) { localStorage.removeItem(k); n++; } } catch (_) {} }"
+    },
+    {
+      "file": "background.js",
+      "line": 23810,
+      "operation": "localStorage.removeItem",
+      "expression": "localStorage.removeItem(k); n++; } } catch (_) {} }"
+    },
+    {
+      "file": "background.js",
+      "line": 23811,
+      "operation": "sessionStorage.getItem",
+      "expression": "sessionStorage.getItem(k) !== null) { sessionStorage.removeItem(k); n++; } } catch (_) {} }"
+    },
+    {
+      "file": "background.js",
+      "line": 23811,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(k); n++; } } catch (_) {} }"
+    },
+    {
+      "file": "background.js",
+      "line": 23945,
+      "operation": "sessionStorage.clear",
+      "expression": "sessionStorage.clear(); localStorage.clear(); } catch (_) {} },"
+    },
+    {
+      "file": "background.js",
+      "line": 23945,
+      "operation": "localStorage.clear",
+      "expression": "localStorage.clear(); } catch (_) {} },"
+    },
+    {
+      "file": "bridge.js",
+      "line": 2969,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(cookieStopKey()); } catch (_) {}"
+    },
+    {
+      "file": "consent-reject.js",
+      "line": 808,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(key); } catch (_) { continue; }"
+    },
+    {
+      "file": "consent-reject.js",
+      "line": 812,
+      "operation": "localStorage.removeItem",
+      "expression": "localStorage.removeItem(key); removed++; } catch (_) {}"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(\"__wo_rl_\"+host),sessionStorage.removeItem(\"__wo_rlstop_\"+host)}catch(_){}return}const KEY=\"__wo_rl_\"+host,STOP_KEY=\"__wo_rlstop_\"+hos"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(\"__wo_rlstop_\"+host)}catch(_){}return}const KEY=\"__wo_rl_\"+host,STOP_KEY=\"__wo_rlstop_\"+host,now=Date.now(),WINDOW_MS=6e3,THRESHOLD=4;"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(KEY),sessionStorage.removeItem(STOP_KEY)}catch(_){}return}let stopped=!1;try{stopped=now-Number(sessionStorage.getItem(STOP_KEY)||0)<W"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(STOP_KEY)}catch(_){}return}let stopped=!1;try{stopped=now-Number(sessionStorage.getItem(STOP_KEY)||0)<WINDOW_MS}catch(_){}let hits=[];"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.getItem",
+      "expression": "sessionStorage.getItem(STOP_KEY)||0)<WINDOW_MS}catch(_){}let hits=[];try{hits=JSON.parse(sessionStorage.getItem(KEY)||\"[]\")}catch(_){hits=[]}hits=hits.filter(t="
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.getItem",
+      "expression": "sessionStorage.getItem(KEY)||\"[]\")}catch(_){hits=[]}hits=hits.filter(t=>now-t<WINDOW_MS),hits.push(now);try{sessionStorage.setItem(KEY,JSON.stringify(hits))}cat"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.setItem",
+      "expression": "sessionStorage.setItem(KEY,JSON.stringify(hits))}catch(_){}if(!(hits.length>=THRESHOLD||stopped))return;try{sessionStorage.setItem(STOP_KEY,String(now))}catch(_"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.setItem",
+      "expression": "sessionStorage.setItem(STOP_KEY,String(now))}catch(_){}try{sessionStorage.removeItem(KEY)}catch(_){}log(\"reload_loop_broken\",{host:host});try{window.stop&&windo"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(KEY)}catch(_){}log(\"reload_loop_broken\",{host:host});try{window.stop&&window.stop()}catch(_){}/* The isolated bridge owns the notice i"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(localStorage.key(i)));for(let i=0;i<sessionStorage.length;i++)noteToken(sessionStorage.getItem(sessionStorage.key(i)));(document.cookie||\"\""
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.getItem",
+      "expression": "sessionStorage.getItem(sessionStorage.key(i)));(document.cookie||\"\").split(\";\").forEach(c=>{const eq=c.indexOf(\"=\");eq>0&&noteToken(c.slice(eq+1).trim())})}catc"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.getItem",
+      "expression": "sessionStorage.getItem(\"wo_tw_hardrl\"))||0}catch(_){return 0}})(),__woTwRoot=function(){try{var rn=document.querySelector(\"#root\");if(rn&&rn._reactRootContainer"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(\"video-quality\");m=localStorage.getItem(\"video-muted\");vol=localStorage.getItem(\"volume\")}catch(_){}try{ps.state.setSrc({isNewMediaPlayerIn"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(\"video-muted\");vol=localStorage.getItem(\"volume\")}catch(_){}try{ps.state.setSrc({isNewMediaPlayerInstance:!0,refreshAccessToken:!0})}catch("
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(\"volume\")}catch(_){}try{ps.state.setSrc({isNewMediaPlayerInstance:!0,refreshAccessToken:!0})}catch(_){return}try{ps.player&&ps.player.play&"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(\"video-quality\",q);m&&localStorage.setItem(\"video-muted\",m);vol&&localStorage.setItem(\"volume\",vol)}catch(_){}},3e3);try{log(\"scriptlet_twi"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(\"video-muted\",m);vol&&localStorage.setItem(\"volume\",vol)}catch(_){}},3e3);try{log(\"scriptlet_twitch_reload\",{})}catch(_){}};var __woTwAdAct"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(\"volume\",vol)}catch(_){}},3e3);try{log(\"scriptlet_twitch_reload\",{})}catch(_){}};var __woTwAdActive=!1,__woTwVLast=-1,__woTwVStall=0,__woTw"
+    },
+    {
+      "file": "content.min.js",
+      "line": 1,
+      "operation": "sessionStorage.setItem",
+      "expression": "sessionStorage.setItem(\"wo_tw_hardrl\",String(now))}catch(_){}try{log(\"scriptlet_twitch_hard_reload\",{})}catch(_){}try{location.reload()}catch(_){}}return}__woTw"
+    },
+    {
+      "file": "eyeshield.js",
+      "line": 264,
+      "operation": "localStorage.removeItem",
+      "expression": "localStorage.removeItem(LEGACY_MODE_CACHE_KEY); } catch (e) {}"
+    },
+    {
+      "file": "popup-scroll-memory.js",
+      "line": 52,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(key);"
+    },
+    {
+      "file": "popup-scroll-memory.js",
+      "line": 62,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(key, JSON.stringify(entry)); } catch (_) {}"
+    },
+    {
+      "file": "popup.js",
+      "line": 3519,
+      "operation": "localStorage.removeItem",
+      "expression": "localStorage.removeItem(key);"
+    },
+    {
+      "file": "popup.js",
+      "line": 3520,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(key);"
+    },
+    {
+      "file": "popup.js",
+      "line": 3610,
+      "operation": "localStorage.removeItem",
+      "expression": "localStorage.removeItem(f.key); n++; }"
+    },
+    {
+      "file": "popup.js",
+      "line": 3611,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(f.key); n++; }"
+    },
+    {
+      "file": "popup.js",
+      "line": 4782,
+      "operation": "localStorage.removeItem",
+      "expression": "localStorage.removeItem('wardenone_theme'); } catch (_) {}"
+    },
+    {
+      "file": "privacy-probe.js",
+      "line": 315,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem('__wo_probe', '1'); localStorage.removeItem('__wo_probe'); result.localStorage = true; } catch (_) { result.localStorage = false; }"
+    },
+    {
+      "file": "privacy-probe.js",
+      "line": 315,
+      "operation": "localStorage.removeItem",
+      "expression": "localStorage.removeItem('__wo_probe'); result.localStorage = true; } catch (_) { result.localStorage = false; }"
+    },
+    {
+      "file": "settings.js",
+      "line": 1648,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(SETTINGS_PAGE_KEY, id); } catch (_) {}"
+    },
+    {
+      "file": "settings.js",
+      "line": 1803,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(SETTINGS_PAGE_KEY) || ''; } catch (_) {}"
+    },
+    {
+      "file": "settings.js",
+      "line": 1807,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(SETTINGS_PAGE_KEY, current); } catch (_) {}"
+    },
+    {
+      "file": "settings.js",
+      "line": 2269,
+      "operation": "localStorage.removeItem",
+      "expression": "localStorage.removeItem(key)); } catch (_) {}"
+    },
+    {
+      "file": "settings.js",
+      "line": 2549,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem('wardenone_theme', value); } catch (_) {}"
+    },
+    {
+      "file": "settings.js",
+      "line": 2567,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(DENSITY_KEY, choices.density.toLowerCase()); } catch (_) {}"
+    },
+    {
+      "file": "settings.js",
+      "line": 3514,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem('wardenone_theme'); if (THEME_LABEL[mirror]) setTheme(THEME_LABEL[mirror]); } catch (_) {}"
+    },
+    {
+      "file": "settings.js",
+      "line": 3515,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(DENSITY_KEY) === 'comfortable' ? 'Comfortable' : 'Compact'); } catch (_) {}"
+    },
+    {
+      "file": "theme.js",
+      "line": 66,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(STORAGE_KEY) : null; } catch (_) { return null; }"
+    },
+    {
+      "file": "theme.js",
+      "line": 69,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(STORAGE_KEY, value); } catch (_) {}"
+    },
+    {
+      "file": "theme.js",
+      "line": 108,
+      "operation": "localStorage.clear",
+      "expression": "localStorage.clear(); } catch (_) {}"
+    },
+    {
+      "file": "theme.js",
+      "line": 109,
+      "operation": "sessionStorage.clear",
+      "expression": "sessionStorage.clear(); } catch (_) {}"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 774,
+      "operation": "sessionStorage.getItem",
+      "expression": "sessionStorage.getItem(PLAYBACK_FAIL_OPEN_STORAGE_KEY) || 0);"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 780,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(PLAYBACK_FAIL_OPEN_STORAGE_KEY);"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 788,
+      "operation": "sessionStorage.setItem",
+      "expression": "sessionStorage.setItem(PLAYBACK_FAIL_OPEN_STORAGE_KEY, String(playbackFailOpenUntil));"
+    },
+    {
+      "file": "twitch-adblock.js",
+      "line": 790,
+      "operation": "sessionStorage.removeItem",
+      "expression": "sessionStorage.removeItem(PLAYBACK_FAIL_OPEN_STORAGE_KEY);"
+    }
+  ],
+  "declaredLimits": {
+    "HOSTILE_TTL_MS": {
+      "value": 3000,
+      "file": "anti-redirect.js"
+    },
+    "DOWNLOAD_REVIEW_TTL_MS": {
+      "value": 7200000,
+      "file": "background-downloads.js"
+    },
+    "DOWNLOAD_HANDLED_TTL_MS": {
+      "value": 86400000,
+      "file": "background-downloads.js"
+    },
+    "STARTUP_REPORT_TTL_MS": {
+      "value": 86400000,
+      "file": "background-startup.js"
+    },
+    "HISTORY_RETENTION_MS": {
+      "value": 2592000000,
+      "file": "history.js"
+    },
+    "REDIRECT_CHAIN_RECENT_TTL_MS": {
+      "value": 600000,
+      "file": "background.js"
+    },
+    "COSMETIC_HOST_CACHE_MAX": {
+      "value": 256,
+      "file": "background.js"
+    },
+    "SMART_SCRIPT_PLAYER_CONTEXT_TTL_MS": {
+      "value": 90000,
+      "file": "background.js"
+    },
+    "SMART_SCRIPT_PLAYER_INTENT_TTL_MS": {
+      "value": 15000,
+      "file": "background.js"
+    },
+    "SMART_SCRIPT_PENDING_TTL_MS": {
+      "value": 45000,
+      "file": "background.js"
+    },
+    "SMART_SCRIPT_RETRY_TTL_MS": {
+      "value": 600000,
+      "file": "background.js"
+    },
+    "SMART_SCRIPT_TOP_RELOAD_TTL_MS": {
+      "value": 8000,
+      "file": "background.js"
+    },
+    "TRACKER_LEARN_TTL_MS": {
+      "value": 2592000000,
+      "file": "background.js"
+    },
+    "TRACKER_SITE_VIEW_MAX_SITES": {
+      "value": 40,
+      "file": "background.js"
+    },
+    "TRACKER_SITE_VIEW_MAX_DOMAINS": {
+      "value": 12,
+      "file": "background.js"
+    },
+    "DNR_FEEDBACK_CACHE_MS": {
+      "value": 1500,
+      "file": "background.js"
+    },
+    "DOMAIN_AGE_CACHE_MS": {
+      "value": 604800000,
+      "file": "background.js"
+    },
+    "WHOISXML_CACHE_MS": {
+      "value": 604800000,
+      "file": "background.js"
+    },
+    "WHOISXML_CACHE_MAX": {
+      "value": 250,
+      "file": "background.js"
+    },
+    "SAFE_BROWSING_CACHE_MAX": {
+      "value": 800,
+      "file": "background.js"
+    },
+    "SAFE_BROWSING_CLEAN_TTL_MS": {
+      "value": 900000,
+      "file": "background.js"
+    },
+    "SAFE_BROWSING_HIT_TTL_MS": {
+      "value": 300000,
+      "file": "background.js"
+    },
+    "PHISHTANK_CACHE_MAX": {
+      "value": 1200,
+      "file": "background.js"
+    },
+    "PHISHTANK_CLEAN_TTL_MS": {
+      "value": 1200000,
+      "file": "background.js"
+    },
+    "PHISHTANK_HIT_TTL_MS": {
+      "value": 21600000,
+      "file": "background.js"
+    },
+    "OPENPHISH_FEED_TTL_MS": {
+      "value": 43200000,
+      "file": "background.js"
+    },
+    "OPENPHISH_STALE_TTL_MS": {
+      "value": 604800000,
+      "file": "background.js"
+    },
+    "ABUSEIPDB_CACHE_MAX": {
+      "value": 1200,
+      "file": "background.js"
+    },
+    "ABUSEIPDB_CLEAN_TTL_MS": {
+      "value": 43200000,
+      "file": "background.js"
+    },
+    "ABUSEIPDB_WARN_TTL_MS": {
+      "value": 14400000,
+      "file": "background.js"
+    },
+    "ABUSEIPDB_HIT_TTL_MS": {
+      "value": 14400000,
+      "file": "background.js"
+    },
+    "URLHAUS_CACHE_MAX": {
+      "value": 1200,
+      "file": "background.js"
+    },
+    "URLHAUS_CLEAN_TTL_MS": {
+      "value": 3600000,
+      "file": "background.js"
+    },
+    "URLHAUS_HIT_TTL_MS": {
+      "value": 43200000,
+      "file": "background.js"
+    },
+    "WHOISXML_REPUTATION_CACHE_MAX": {
+      "value": 800,
+      "file": "background.js"
+    },
+    "WHOISXML_REPUTATION_CLEAN_TTL_MS": {
+      "value": 43200000,
+      "file": "background.js"
+    },
+    "WHOISXML_REPUTATION_WARN_TTL_MS": {
+      "value": 21600000,
+      "file": "background.js"
+    },
+    "WHOISXML_REPUTATION_HIT_TTL_MS": {
+      "value": 21600000,
+      "file": "background.js"
+    },
+    "WHOISXML_THREAT_CACHE_MAX": {
+      "value": 800,
+      "file": "background.js"
+    },
+    "WHOISXML_THREAT_CLEAN_TTL_MS": {
+      "value": 43200000,
+      "file": "background.js"
+    },
+    "WHOISXML_THREAT_HIT_TTL_MS": {
+      "value": 21600000,
+      "file": "background.js"
+    },
+    "WARNING_RECORD_TTL_MS": {
+      "value": 21600000,
+      "file": "background.js"
+    },
+    "WARNING_RECORD_MAX": {
+      "value": 40,
+      "file": "background.js"
+    },
+    "SAFE_BROWSING_BYPASS_TTL_MS": {
+      "value": 60000,
+      "file": "background.js"
+    },
+    "FORGET_TAB_HOSTS_TTL_MS": {
+      "value": 86400000,
+      "file": "background.js"
+    },
+    "SITE_DASH_MATCH_TTL_MS": {
+      "value": 15000,
+      "file": "background.js"
+    },
+    "SITE_TALLY_MAX_SITES": {
+      "value": 300,
+      "file": "background.js"
+    },
+    "SEARCH_AGES_TTL_MS": {
+      "value": 60000,
+      "file": "background.js"
+    },
+    "MANUAL_CHECK_TTL_MS": {
+      "value": 600000,
+      "file": "background.js"
+    },
+    "ON_LEAVE_RECORD_TTL_MS": {
+      "value": 86400000,
+      "file": "background.js"
+    },
+    "ON_LEAVE_RECORD_MAX": {
+      "value": 200,
+      "file": "background.js"
+    },
+    "TTL_MS": {
+      "value": 43200000,
+      "file": "background.js"
+    },
+    "NORMALIZED_HOST_CACHE_MAX": {
+      "value": 12000,
+      "file": "bridge.js"
+    },
+    "SAFE_BROWSING_INTENT_TTL_MS": {
+      "value": 8000,
+      "file": "bridge.js"
+    },
+    "WARDEN_NOTIFICATION_HISTORY_CAP": {
+      "value": 300,
+      "file": "notification-manager.js"
+    },
+    "UPDATE_GUARDIAN_CACHE_MS": {
+      "value": 21600000,
+      "file": "popup.js"
+    },
+    "BACKUP_WARM_TTL_MS": {
+      "value": 6000,
+      "file": "twitch-adblock.js"
+    }
+  },
+  "sourceHashes": {
+    "animated-image-saver.js": "c36de6e175d21ef215cc58621cb2d56734712cfcbe7c2affbe459c69f91d8135",
+    "anti-redirect.js": "9725e1739bbe0ff97c4e46b5cf2bfab095f9408920c49d5a03f822050420dda6",
+    "background-cname.js": "af985c259d5f1997276ec71d8da1bd955069baa9b0e71e6bb2ae7c3e936d1dff",
+    "background-downloads.js": "44bf84daa86b71cd5b056484f249585bef74ee59e2eb80680173673845d9a9bf",
+    "background-extension-reputation.js": "3b2a971799ea1479e5911e2ab98cddcd1b2409ece66ffbcbfaf177afc5537d04",
+    "background-extension-watch.js": "c40721af7bdb05d68762220f667fa4a3e8c19a19627ebbaa2a3904c0f64b5412",
+    "background-identifiers.js": "6a2a5a80e7ae09a0f2977a34ecbddd4227366b1d7a73595ebc6a9a4d3e1e76e3",
+    "background-memory.js": "d8c0ea303917b2d6c6747944d3ae228da4a1174df3da589cc4ecb3371568e3b1",
+    "background-privacy-cleaner.js": "e8a546d219fe522fb875a51551c09e126366e0176c8d92163ae37eab3bd97785",
+    "background-startup.js": "e0e1bbd12f9b3b14fbbc1aed9e6b1b58a84140e9c080ec6621d3e1e9d93bad4d",
+    "background.js": "95861a5794f6eb48a1be43e4fe451443e551ae8d151ab7fa34501b13885fe23b",
+    "bridge.js": "e85c88310fa1ba96917991e0b01f38ca8fa60cb286816b4ae2ad9441859d45e2",
+    "build-profile.js": "830644487d588ab6e1a2408aef8168f330beb715cfaca516625e9b89f9963957",
+    "build-update.js": "ece2d9874b6db7fe0eb0016d01cd25218f11092f21921dcefe2db1e5c429b9c8",
+    "cert-error.js": "ac0774b44c483f3164f31124781fa8e1dc891f4dd2e4104b507f48168c567907",
+    "cname-utils.js": "4059125dcdf942abd298bd58559b187dd4fc1369248211637c54afe1a87cb71e",
+    "command-palette.js": "593905c5e14645abcbca8c692560c4a03ae6b5960df5fec81b6c015b34a09ed4",
+    "config-lock.js": "21a562eaded745db5c4d2dabccab20b25971853b39a8422392f66d01e1e3d7b1",
+    "consent-reject.js": "1d5f5b99c839f9b32ede3e6a10480cced9fea1a3f7dbc403369eef21c89f8b78",
+    "consent-state.js": "549094084540aeb837a73bfbd4af003d92da1d69dec4604aed7cdf5ebb3381b4",
+    "consent-wall.js": "500212267ae122607f98cb86da57c73b7e5bc00c594334b5b6ab4114a7101ce7",
+    "content.min.js": "df36d28ba48b0f0f0299061de7061213bf5e9b3bef6a3b3bfb00881799309111",
+    "cookie-access.js": "dd31af85166efeb87f617d9faa047d4028e1bff1ea36cb06acaa861d2a8d64bc",
+    "cryptominer-detect.js": "dd4c5c677e72dfb11e2203a92762b7f33dddd7654708201101a978b790cd3057",
+    "domain-utils-isolated.js": "5c8a3928d19a94eff48eea4bf777736e0ef020d17f16aee10f7263b6914f749d",
+    "domain-utils.js": "5c8a3928d19a94eff48eea4bf777736e0ef020d17f16aee10f7263b6914f749d",
+    "download-review.js": "9ac03444df78e6554995cb26fa43a9de497fb96a621c3c8755dddee9caa3a953",
+    "element-picker.js": "548264caee999231cf08422fd13badf4db68805c02306185556cb82fbd1dca4e",
+    "engine-compat.js": "35ab8eda655fcbae11249f03cc2bac270a22e856c7c853e6193e27ae3bd4ba77",
+    "extensions.js": "9ebc8b7d2fc1e70af518d409a98a9e870f9a8495220c53ab85530392df678094",
+    "eyeshield-bootstrap.js": "9882076c1108b0c23208cc09681a2dde5e6ac814524ff8b3b188a0bbe9958438",
+    "eyeshield-preload-dark.js": "447432bb7849e35869c7c94e6ea23a0db43bce920480257b1dfc488b13bcf396",
+    "eyeshield-preload-light.js": "ac91ed2748b9b9760de8a4feadfdfa7dd29b179ca4326ecac4e6fea951783f0d",
+    "eyeshield-preload-ultra.js": "255e00fb6c3f6922c9eb605a3d5803412f900f61280f50338d387dff933d6423",
+    "eyeshield-profiles.js": "c11e17b3f722c777fc46d8efc309c0c8255625cc5945cdee522b7e60924a3a1c",
+    "eyeshield-sites.js": "ca37c5d7740c044a9aa92bd8bb64500c2d8ae4ae60edf4e62a8c665ca207b7bc",
+    "eyeshield.js": "191b0bf42b790ae72afdfbfd551fb6cd7d419049f8ef4e9294f832d0c3917d7e",
+    "file-shield.js": "913484c553b2e79895908a1e7487b3b2e178483e142b91d9435f30f12ce84953",
+    "fingerprint-realm.js": "0cb02073aff9fb3060e4c7a5dfc4597419c7d00a169955225d5b37e598dd4213",
+    "firewall.js": "b2f5b5d0aee8d90178b1bee330a9c7b7369e3548ecb65bf34b7d064a08e52a6c",
+    "frame-image-logger.js": "8bad2a72d5c565649648434c097cb70cf8c916c888371ec44399c1ac6a02de2d",
+    "hidden-elements.js": "bec90b795434c0bb9b04657c4eb9f26fdfc34152a22dc3eb48e479472b28994a",
+    "history-store.js": "033dcfe0c618759988b6b197246503cbf4918675d5e438fcb39b2ac77b29a7d3",
+    "history.js": "bcff7544df7bbd1a26aafb5e361845178808ca2fd2feb5a55086bfec9f76b3f8",
+    "identifier-detector.js": "2c9939d5198b1fd75755b6ce9eeb62f1fb87175f66017f0fde737572870f6e6c",
+    "idn-utils.js": "6700e12e88662efb967e0fc1999fa14dfe23b143b2863f61e300374e612ef515",
+    "ip-logger-warning.js": "0e919f0b941cf31ec186ec79274a34803a69a845aaab5cfc9c0e07e9f615343e",
+    "logger.js": "dc973172445d6fadc87c028b583faa7eaecfdf73758b31c1c880c598d285d25e",
+    "mail-shield.js": "9a72a65497ac0d3305f503953a400135ba7872faa6abdc38d279296811bceab1",
+    "network-policy.js": "3d0be3744e51bcf722b72b057da6c153475a9a86de2ebf2a3c855c0ee9ef444e",
+    "network.js": "06b21a8cd91fffea719f6a079dc42ce5113909b0bf01559262ed213ab5b59d4c",
+    "notification-manager.js": "b4135c8780b83aba663da7d5427edbd2532e0550ac464ba0d43875b1b7946091",
+    "notification-schema.js": "1b754d06631d982ae33f8d1ae6605b85a2d3591390252208cc89df74301a3b1e",
+    "notifications.js": "e16261be751f961d9b844dd4d429ce4508e6467aea03c6ed80591fe2edbb9fbf",
+    "oauth-guard.js": "4484ee7730f798f318ac0185be9f922acc5b24fded182b7e351bf5f8aed70a85",
+    "offscreen.js": "f37cbd7014f36e2fc780135a438eb891ac4ed9e445b5c54460ada045b9b0115a",
+    "onboarding.js": "4ab1c8fa879e9d3d4d1bdd688711c9823b6bae9531911719a64647e3aff3e0ce",
+    "permission-chain.js": "c47abd30b27674bb64c7dda08e9a9542a61dc12aef9a08cc36d1788b5b8b2f17",
+    "popup-diagnostics.js": "7b289b15a602bd88abcc7043caa016469275f73110cd8c1c5837060208853b9c",
+    "popup-health.js": "5fed69a40df89668cfe717acd3cef7c0a806c23d1691625e255d6189a1c2342d",
+    "popup-privacy-cleaner.js": "5cc1eee1a0d2c0ff8fe7cf9673b2e230aafb0f01e1baedb3cad74356c793d6d5",
+    "popup-scroll-memory.js": "1bb89cff7905920ddc5be80f9fbe92c847f733f3f11cf6930a749fe390d1efdd",
+    "popup-settings-search.js": "ddc26470b939f1993745905c6d4c5e97970fdf7b7b61cae8751921cd556967ff",
+    "popup.js": "af2615356cda98a84c0e2364799e97bed2002f16ff348f42f6e680e7491b58cd",
+    "privacy-probe.js": "5d4c266cc88913bb3a747341659fa81bceffa768bfc96677b62de8216a183f36",
+    "privacy-signals.js": "8b5072149e1a8bf9567a55d281d385869ca2b2ac70212bc1cf3a023d1a883a6f",
+    "privacy-test.js": "a4d837b3dc207180ea47db890fc99145afb22c806b5ed893288358d00eaf2c84",
+    "psl-private.js": "ebb05f55e9c730b142f960e2fb5efb827a7b601b71a37be6f283296f5f9eb3b8",
+    "redirect-warning.js": "dc44e515cdd3d304f3065ce9b5e764215a15bcce94e005d9e1ce66b86bd59892",
+    "resource-saver.js": "cc7a7a42b55cd47763ea796d72885fe15cfa6055c7a8cbf5741d0910969a4b43",
+    "safe-browsing-block.js": "4b49999912a6149ce4f95abcf3e1c562259fa5e14107e2ca45d8c2bfb3182ad1",
+    "search-junk.js": "003ce6e584f42b1bf86fd98452424a187dba050401b5552ebce12e70af397e98",
+    "search-loggers.js": "90965d81f373065f1895ca8349655917c81195de70e6f4c47ff577f190aeb1d8",
+    "settings-data.js": "d33dbfc8c505529a23ae9d2bbb4bb2a196c5a0dddaa042f13ccdb08bf5049480",
+    "settings.js": "84d9e81f51bdd054e2021214d8177da5cc580e8918d254d7439ceaebb1218928",
+    "site-dashboard-shared.js": "5295406a7ae28ec052becc89d65951c07d5abd6612d665f2143bb748272a1619",
+    "site-recovery.js": "b0090f627fd2b4f12e375ead4e00e35113785a06a1831c1fb3871fba5e5e4b80",
+    "spotify-adblock.js": "7624982cde396ef625a620e1992c6bd93e0d93d064a1e34a3bc8776977a14a53",
+    "theme.js": "7115e1f469a6bf59f0294b250509aa026c12306a74e8c94c6ea9190e60b27482",
+    "tracker-attribution.js": "8260cf1992bdbd190d93ea89c46ab0cace660eae0614a9706c5722704213e915",
+    "tracker-learner-utils.js": "ea549da148a04441e6c7cecfffa0458850e36d7d20fd6e04e8700e027f4c0dc9",
+    "tracker-network-data.js": "c8056c18030fd16537c46aaea9f92b59a5d8ab727d832f45842ea6080be42831",
+    "twitch-adblock.js": "7aaa95284f9d59535acce3191ca9bfcdbd2ce8d0cd8f5700bf8e7c7907411cc0",
+    "twitch-rewind.js": "544962a70a643cf53ca038484614b806f2bc11df6081ff2ee37277b6121a3c0b",
+    "twitch-vod-rewind.js": "373404ac80d01463ea60c7a6b659c295182b5b44de58cfd3f770cf8e4e1f420c",
+    "upgrade-config.js": "24227cc28587adb4932f26104d8fd230ac4010d9d8f920c0400d9ff62d274c06",
+    "yt-adblock.js": "450dbad8815ef6ca44d4d3b0e4b061fddd89a76886eddf096b188f701a2122e1"
+  },
+  "dynamicKeys": [
+    {
+      "prefix": "wardenone_warning:",
+      "policy": "wardenone_warning",
+      "contains": "Exact destination URL needed for current warning navigation; random handle in page URL."
+    }
+  ],
+  "scope": "Extension datasets plus a census of DOM storage/IndexedDB/cache operations. Page-storage hooks that inspect or clear website-owned data are not extension datasets. See docs/data-minimisation-audit.md."
+}

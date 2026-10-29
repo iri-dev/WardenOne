@@ -29,7 +29,7 @@ vm.runInContext(source.slice(start, end), ctx);
 
 (async () => {
   const secret = 'private-account.example/reset/token-file.pdf';
-  const names = ['tab_limit_closed', 'download_review', 'extension_change', 'manual_check', 'startup_review', 'unknown'];
+  const names = ['tab_limit_closed', 'download_review', 'extension_change', 'manual_check', 'startup_review', 'privacy_cleaning', 'unknown'];
   for (const type of names) {
     await ctx.showWardenSystemNotification('wo-test-' + type, {
       type: 'basic', title: secret, message: secret, contextMessage: secret,

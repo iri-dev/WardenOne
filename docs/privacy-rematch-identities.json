@@ -1,0 +1,504 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-27T12:15:23.748Z",
+  "scope": "Sanitized local evidence index. Browser profiles, vendor CRX and raw artifacts remain gitignored. No release or candidate commit exists.",
+  "reference": {
+    "label": "committed",
+    "product": "wardenone",
+    "revisionKind": "commit",
+    "revision": "273c43a0051d6c3fe12c6871944ed7e8822d8af3",
+    "baseCommit": "273c43a0051d6c3fe12c6871944ed7e8822d8af3",
+    "archiveSha256": "d34d4722777b08fad4bfad61a6d562172e762f64d68699ce5424065bfd227843",
+    "sourceArchiveSha256": "77eb7ee27c314b8455b755fdb5d4ddf2f043531bd08789f3ec264ce684067a2b",
+    "version": "1.0.2",
+    "manifestVersion": 3,
+    "fingerprint": "531507cda66c30cb4d86594a6012c7454f3e3a75f1ad4dcc4637247dc749ece8",
+    "review": {
+      "errors": [],
+      "rulesets": [
+        {
+          "id": "grabbers",
+          "enabled": true,
+          "path": "rules-grabber-resources.json",
+          "count": 128,
+          "bytes": 41504,
+          "sha256": "fa4c46ccbba325e2bd642fd8bd995545976ca9f7273880d22b1119ee8a64f61c"
+        },
+        {
+          "id": "grabber_navigation",
+          "enabled": true,
+          "path": "rules-grabber-navigation.json",
+          "count": 2,
+          "bytes": 3641,
+          "sha256": "2a35528d4dee3411bde86fc04c1b6dcde865844f6e1d6a6a151eb892b7801ed2"
+        },
+        {
+          "id": "grabber_malware_navigation",
+          "enabled": true,
+          "path": "rules-grabber-malware-navigation.json",
+          "count": 2,
+          "bytes": 3475,
+          "sha256": "31bd7d5e456da3d3fc8d431cc4ac9af038c276127154abc309406a7a10bef2f2"
+        },
+        {
+          "id": "grabber_compat",
+          "enabled": true,
+          "path": "rules-grabber-compat.json",
+          "count": 5,
+          "bytes": 2882,
+          "sha256": "387a0761153fa60ffd95cb285dc5fdeef43ec79cd5e5da02a34a4e42aab0ff56"
+        },
+        {
+          "id": "adshield_easylist",
+          "enabled": true,
+          "path": "rules-adshield.json",
+          "count": 28026,
+          "bytes": 2945634,
+          "sha256": "7f1dc36bd827cb57457da4d758c185e2532e012dd5ebbf5394f83a515fb82a54"
+        },
+        {
+          "id": "spotify_media",
+          "enabled": true,
+          "path": "rules-spotify-media.json",
+          "count": 7,
+          "bytes": 1483,
+          "sha256": "1a70cf5360840ab0f8a3007c7f3ecb280327eadec4c2b234ebf09af9470daf9a"
+        },
+        {
+          "id": "trackers",
+          "enabled": true,
+          "path": "rules-trackers.json",
+          "count": 49,
+          "bytes": 21197,
+          "sha256": "50199c7e66d5314c52c2879b213c07c490b90371ae4f91ab2c8a772291f050c7"
+        },
+        {
+          "id": "easyprivacy",
+          "enabled": true,
+          "path": "rules-easyprivacy.json",
+          "count": 150,
+          "bytes": 387128,
+          "sha256": "6511869ab74a22ba16fcc4de1e1d492c1148d2f28653245aee3af37eb6515cab"
+        }
+      ],
+      "sourceFiles": 643,
+      "runtimeFiles": 129,
+      "runtimeBytes": 11129091,
+      "licensing": [
+        {
+          "name": "CREDITS.md",
+          "sha256": "7ea3e26aa684697cef2ae873b95a8e89da34542560982e56da8720801583f126"
+        },
+        {
+          "name": "LICENSE",
+          "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+        },
+        {
+          "name": "NOTICE",
+          "sha256": "5aea2648121ce94da8fbb14dcf2dccd90328ae13fde69e76682b16684992e8be"
+        },
+        {
+          "name": "THIRD_PARTY_NOTICES.html",
+          "sha256": "475a562202e8ae9d634ae496fc627e33f3df85ac447cb650027f04786665ef8e"
+        },
+        {
+          "name": "licenses/DBAD-1.2.txt",
+          "sha256": "f0dac7aa58678bb5fa403e5a748187a644295dab352cd3a77fdd7e5d334bdf4a"
+        },
+        {
+          "name": "licenses/Dandelicence-1.4.txt",
+          "sha256": "b47f6c887f42766933cd7cb998800c1bb494f5cfac9f6fbf710fd885cfab9d64"
+        },
+        {
+          "name": "licenses/MIT-NOTICES.txt",
+          "sha256": "f9e3522c99f3ea7ad52b8eac749a2de917673e86e43105386cc55fb718936276"
+        },
+        {
+          "name": "licenses/MPL-2.0.txt",
+          "sha256": "432bba3d1a0dda324312c845607d414a6c8533583cbd983ca39ba56b09657f33"
+        },
+        {
+          "name": "licenses/Unicode-3.0.txt",
+          "sha256": "b542eff742e5359c9398ea0dbb18d69c558f92749c3bd46a0e18d7c5a7098ca6"
+        },
+        {
+          "name": "licenses/Unlicense.txt",
+          "sha256": "2d8d76bf8e966ff1ee315000a01279ae2e63c0fecef08eaf66fe736c23aa8982"
+        }
+      ],
+      "secretScan": "Hidden/local/credential paths, selected credential token formats and private-key headers. Public throwaway loopback TLS key permitted only in tools/browser-media-security.js. This is a bounded scan, not proof that arbitrary secrets cannot exist.",
+      "generated": [
+        {
+          "command": "tools/build-content.js --check",
+          "result": "pass"
+        },
+        {
+          "command": "tools/build-settings-data.js --check",
+          "result": "pass"
+        }
+      ]
+    }
+  },
+  "candidate": {
+    "label": "candidate",
+    "product": "wardenone",
+    "revisionKind": "uncommitted-tree",
+    "revision": "c712dafeba8b021bc035a1068bd67a021559a5bd",
+    "baseCommit": "273c43a0051d6c3fe12c6871944ed7e8822d8af3",
+    "archiveSha256": "dcfae2bd8f358311486fd73c77ca837288d6d613bd6ab942ef1eebca544e5e37",
+    "sourceArchiveSha256": "9c145884dcbae9ed70e7a118d442ad44b63969dfdc478cd795fd697623db20a1",
+    "version": "1.0.2",
+    "manifestVersion": 3,
+    "fingerprint": "58da749fd6b6c6f80c402b3e8f5d59fbea0d0531900025170ff58e9060bd3d19",
+    "review": {
+      "errors": [],
+      "rulesets": [
+        {
+          "id": "grabbers",
+          "enabled": true,
+          "path": "rules-grabber-resources.json",
+          "count": 128,
+          "bytes": 41504,
+          "sha256": "fa4c46ccbba325e2bd642fd8bd995545976ca9f7273880d22b1119ee8a64f61c"
+        },
+        {
+          "id": "grabber_navigation",
+          "enabled": true,
+          "path": "rules-grabber-navigation.json",
+          "count": 2,
+          "bytes": 3641,
+          "sha256": "2a35528d4dee3411bde86fc04c1b6dcde865844f6e1d6a6a151eb892b7801ed2"
+        },
+        {
+          "id": "grabber_malware_navigation",
+          "enabled": true,
+          "path": "rules-grabber-malware-navigation.json",
+          "count": 2,
+          "bytes": 3475,
+          "sha256": "31bd7d5e456da3d3fc8d431cc4ac9af038c276127154abc309406a7a10bef2f2"
+        },
+        {
+          "id": "grabber_compat",
+          "enabled": true,
+          "path": "rules-grabber-compat.json",
+          "count": 5,
+          "bytes": 2882,
+          "sha256": "387a0761153fa60ffd95cb285dc5fdeef43ec79cd5e5da02a34a4e42aab0ff56"
+        },
+        {
+          "id": "adshield_easylist",
+          "enabled": true,
+          "path": "rules-adshield.json",
+          "count": 28026,
+          "bytes": 2945634,
+          "sha256": "7f1dc36bd827cb57457da4d758c185e2532e012dd5ebbf5394f83a515fb82a54"
+        },
+        {
+          "id": "spotify_media",
+          "enabled": true,
+          "path": "rules-spotify-media.json",
+          "count": 7,
+          "bytes": 1483,
+          "sha256": "1a70cf5360840ab0f8a3007c7f3ecb280327eadec4c2b234ebf09af9470daf9a"
+        },
+        {
+          "id": "trackers",
+          "enabled": true,
+          "path": "rules-trackers.json",
+          "count": 49,
+          "bytes": 21197,
+          "sha256": "50199c7e66d5314c52c2879b213c07c490b90371ae4f91ab2c8a772291f050c7"
+        },
+        {
+          "id": "easyprivacy",
+          "enabled": true,
+          "path": "rules-easyprivacy.json",
+          "count": 150,
+          "bytes": 387128,
+          "sha256": "6511869ab74a22ba16fcc4de1e1d492c1148d2f28653245aee3af37eb6515cab"
+        }
+      ],
+      "sourceFiles": 721,
+      "runtimeFiles": 136,
+      "runtimeBytes": 11243371,
+      "licensing": [
+        {
+          "name": "CREDITS.md",
+          "sha256": "df22dfdc2abb8856f1fbd39012c2bcba19c5543c158c75f408fbd5cee7178895"
+        },
+        {
+          "name": "LICENSE",
+          "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+        },
+        {
+          "name": "NOTICE",
+          "sha256": "5aea2648121ce94da8fbb14dcf2dccd90328ae13fde69e76682b16684992e8be"
+        },
+        {
+          "name": "THIRD_PARTY_NOTICES.html",
+          "sha256": "6c5dae2448f442d40a5d20eb65c73e9a75d0842a388d72a40c75bc0cc4d9bab5"
+        },
+        {
+          "name": "licenses/AdGuard-CNAME-MIT.txt",
+          "sha256": "0134363b4c2447630bbeac7f85a2a5c11c7b293b98b0569327444fdd8a5f703c"
+        },
+        {
+          "name": "licenses/DBAD-1.2.txt",
+          "sha256": "f0dac7aa58678bb5fa403e5a748187a644295dab352cd3a77fdd7e5d334bdf4a"
+        },
+        {
+          "name": "licenses/Dandelicence-1.4.txt",
+          "sha256": "b47f6c887f42766933cd7cb998800c1bb494f5cfac9f6fbf710fd885cfab9d64"
+        },
+        {
+          "name": "licenses/MIT-NOTICES.txt",
+          "sha256": "f9e3522c99f3ea7ad52b8eac749a2de917673e86e43105386cc55fb718936276"
+        },
+        {
+          "name": "licenses/MPL-2.0.txt",
+          "sha256": "432bba3d1a0dda324312c845607d414a6c8533583cbd983ca39ba56b09657f33"
+        },
+        {
+          "name": "licenses/Unicode-3.0.txt",
+          "sha256": "b542eff742e5359c9398ea0dbb18d69c558f92749c3bd46a0e18d7c5a7098ca6"
+        },
+        {
+          "name": "licenses/Unlicense.txt",
+          "sha256": "2d8d76bf8e966ff1ee315000a01279ae2e63c0fecef08eaf66fe736c23aa8982"
+        }
+      ],
+      "secretScan": "Hidden/local/credential paths, selected credential token formats and private-key headers. Public throwaway loopback TLS key permitted only in tools/browser-media-security.js. This is a bounded scan, not proof that arbitrary secrets cannot exist.",
+      "generated": [
+        {
+          "command": "tools/build-content.js --check",
+          "result": "pass"
+        },
+        {
+          "command": "tools/build-settings-data.js --check",
+          "result": "pass"
+        }
+      ]
+    }
+  },
+  "privacyBadger": {
+    "label": "privacybadger",
+    "product": "privacybadger",
+    "version": "2026.9.15.2",
+    "manifestVersion": 3,
+    "fingerprint": "ffab75b34ed8976740d1e0b983dd584404ba2af233191cb586ea2a2755521a06",
+    "archiveSha256": "8b9903bc23c13b7861590116390142a0cd09b2a32fcf7364ab4c9500241669a7",
+    "fileCount": 174
+  },
+  "browser": {
+    "version": "Chrome/121.0.6167.184",
+    "sha256": "be8d93bd8687bd55bbf418665e3eb6ff6b265e66778babe8677c9289fce2305e"
+  },
+  "artifacts": [
+    {
+      "path": "tmp/release-phase09/rematch-01.json",
+      "sha256": "cb7bae5d4204a1375bd478474c61a6a3792a3201c1dcfc586ab10869173a9688"
+    },
+    {
+      "path": "tmp/release-phase09/rematch-02.json",
+      "sha256": "7bbbef90087c4023530b4def73ba4d6ae8a31df42c94c9a759ec0323bc1a45ae"
+    },
+    {
+      "path": "tmp/release-phase09/rematch-03.json",
+      "sha256": "b3a059cd317e8d0165c0c8cb953b28ee71fe068e6f032488b797f141ad5b4435"
+    },
+    {
+      "path": "tmp/release-phase09/summary-03.json",
+      "sha256": "ebafc027faae5bd9a4bb7d398e56cbc713c7735eae4830570867b9e372c9460d"
+    },
+    {
+      "path": "tmp/release-phase09/privacy-badger-download.json",
+      "sha256": "c74161ac0229c661dad3b8507db68549471f58d48d66462080e605e8858cfa41"
+    },
+    {
+      "path": "tmp/release-phase09/privacy-badger-probe.json",
+      "sha256": "d2180730abff038fd27146d5cbaf7ea5c48357f07df18bfd2c28a707b04c7a99"
+    },
+    {
+      "path": "tmp/release-phase09/live-media.json",
+      "sha256": "f637b9d7281243e4584c7d997a908e2ddd608e53252c9fa3c176b15b6660d739"
+    },
+    {
+      "path": "tmp/release-phase09/tracker-cookies-chrome.json",
+      "sha256": "1ddcb3e3a54270fca52906bf6c79df62d3d01f4ec008435ecaf35ecf51518617"
+    },
+    {
+      "path": "tmp/release-phase09/tracker-cookies-edge.json",
+      "sha256": "ddd45fe9b76d51e7a7b67fa3f824eef23652b0fb1440d4d99198555e45f82c41"
+    },
+    {
+      "path": "tmp/release-phase09/message-boundaries-chrome.json",
+      "sha256": "8918245e4db3c5303665d81508df6a518e03939c8efc5ec08d2bb2c06b5d4e84"
+    },
+    {
+      "path": "tmp/release-phase09/fingerprint-smoke-chrome.json",
+      "sha256": "266ee9201e997114f058fda8f9c032d6fc696bde1a0c640188d5f3cfe951e545"
+    },
+    {
+      "path": "tmp/release-phase09/gate-final.log",
+      "sha256": "721076f739d331cd2933ec05b95915e1b1a9a553ba6a5911569c58cd8741ef14"
+    },
+    {
+      "path": "tmp/release-phase09/browser-media-security-chrome.log",
+      "sha256": "9ff4d7532a82f8966c10ac8c23ddfc9970f88eb53fe2bae8da64f580e6cc5c35"
+    },
+    {
+      "path": "tmp/release-phase09/browser-media-security-edge.log",
+      "sha256": "f6a13344052ec9cce48eb044f3284f333e872270486d4d394915e2834c76320c"
+    },
+    {
+      "path": "tmp/release-phase09/browser-forced-downloads-chrome-04.log",
+      "sha256": "3b1a3fc064b7cb4d67ce0db5ce9a0d23deb3b0a996155c38e096f30bc8f2dd7b"
+    },
+    {
+      "path": "tmp/release-phase09/browser-forced-downloads-edge.log",
+      "sha256": "83a8eef65d5721c96fb8276f43f60936f643de249acc67481cb360cd04b07063"
+    },
+    {
+      "path": "tmp/release-phase09/browser-reputation-bypass-chrome.log",
+      "sha256": "1f7a8d7f7db7d0f2a95adeaf5b8bae9ffc69335f2e933c5d551cac0e41cbcc83"
+    },
+    {
+      "path": "tmp/release-phase09/browser-reputation-bypass-edge.log",
+      "sha256": "3a1dc04d39d5dd1cfc18ed71cdfa46a63b0ad30d813ac1a488bcad16d1040f5c"
+    },
+    {
+      "path": "tmp/release-phase09/browser-popup-regression-chrome-02.log",
+      "sha256": "723a251e09f34959303c91de2bb16f21bed200fde045a582e34f1e8fc2d23332"
+    },
+    {
+      "path": "tmp/release-phase09/browser-popup-regression-edge.log",
+      "sha256": "723a251e09f34959303c91de2bb16f21bed200fde045a582e34f1e8fc2d23332"
+    }
+  ],
+  "rounds": {
+    "requests": "draw",
+    "cookies": "unscored: tracker requests were blocked; this corpus has no delivered tracker-cookie comparison",
+    "detection": "unscored: tracker attribution was collected from Privacy Badger; equivalent WardenOne evidence was not collected",
+    "compatibility": "draw",
+    "recovery": "draw",
+    "performance": "reported per metric; no cross-product winner because feature scope differs",
+    "privilegedMessages": "unscored: no matched page-reachable exploit demonstrated",
+    "sourceQuality": "unscored: exact Privacy Badger package/source correspondence not established"
+  },
+  "budget": {
+    "policy": {
+      "minimumSamples": 5,
+      "relativeVariance": 0.25,
+      "observedSpreadMultiplier": 2,
+      "metrics": [
+        "startupWallMs",
+        "browserCpuAtReadyMs",
+        "rendererHeapBytes",
+        "workerHeapBytes"
+      ]
+    },
+    "pass": true,
+    "rows": [
+      {
+        "metric": "startupWallMs",
+        "reference": [
+          1109,
+          1104,
+          1085,
+          1110,
+          1002
+        ],
+        "candidate": [
+          1283,
+          1367,
+          1328,
+          1384,
+          1234
+        ],
+        "baselineMedian": 1104,
+        "baselineP90": 1109.6,
+        "relativeAllowance": 0.25,
+        "ceiling": 1380,
+        "candidateMedian": 1328,
+        "pass": true
+      },
+      {
+        "metric": "browserCpuAtReadyMs",
+        "reference": [
+          671.875,
+          750,
+          796.875,
+          718.75,
+          937.5
+        ],
+        "candidate": [
+          1031.25,
+          921.875,
+          875,
+          1031.25,
+          906.25
+        ],
+        "baselineMedian": 750,
+        "baselineP90": 881.25,
+        "relativeAllowance": 0.35,
+        "ceiling": 1012.5000000000001,
+        "candidateMedian": 921.875,
+        "pass": true
+      },
+      {
+        "metric": "rendererHeapBytes",
+        "reference": [
+          3186892,
+          3183948,
+          3177352,
+          3177204,
+          3180024
+        ],
+        "candidate": [
+          3181844,
+          3195752,
+          3181764,
+          3180308,
+          3180084
+        ],
+        "baselineMedian": 3180024,
+        "baselineP90": 3185714.4,
+        "relativeAllowance": 0.25,
+        "ceiling": 3975030,
+        "candidateMedian": 3181764,
+        "pass": true
+      },
+      {
+        "metric": "workerHeapBytes",
+        "reference": [
+          7571012,
+          7569696,
+          7497956,
+          7655084,
+          7367188
+        ],
+        "candidate": [
+          8319196,
+          8309760,
+          8421412,
+          8230312,
+          8418444
+        ],
+        "baselineMedian": 7569696,
+        "baselineP90": 7621455.2,
+        "relativeAllowance": 0.25,
+        "ceiling": 9462120,
+        "candidateMedian": 8319196,
+        "pass": true
+      }
+    ]
+  },
+  "validation": {
+    "suiteCount": 333,
+    "maintainability": "pass",
+    "nativeReleaseAcceptance": "pass",
+    "liveMedia": "youtube/twitch playback advanced",
+    "realIndex": "unchanged",
+    "published": false
+  }
+}

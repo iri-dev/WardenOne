@@ -137,14 +137,16 @@ function documentRealm() {
     console, Number, Math, String, Object, Promise, Array,
     setTimeout: time.setTimeout, clearTimeout: time.clearTimeout,
     AudioContext: FakeAudioContext,
-    chrome: { runtime: { onMessage: { addListener: (fn) => { listener = fn; } } } },
+    chrome: { runtime: { id: 'audio-test', getURL: p => 'chrome-extension://audio-test/' + p,
+      onMessage: { addListener: (fn) => { listener = fn; } } } },
   };
   vm.createContext(ctx);
   vm.runInContext(SCHEMA + '\n' + OFFSCREEN, ctx, { filename: 'offscreen.js' });
   return {
     time, contexts, ctx,
     play: (sound) => new Promise((resolve) => {
-      const ret = listener({ target: 'wardenone-offscreen', type: 'play-notification-sound', sound, volume: 0.5 }, {}, resolve);
+      const ret = listener({ target: 'wardenone-offscreen', type: 'play-notification-sound', sound, volume: 0.5 },
+        { id: 'audio-test', url: 'chrome-extension://audio-test/background.js' }, resolve);
       if (ret !== true) resolve(null);
     }),
     live: () => contexts.filter((c) => c.state !== 'closed').length,

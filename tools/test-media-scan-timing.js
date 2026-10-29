@@ -21,6 +21,7 @@ let logs = 0;
 function Media() {}
 Media.prototype.play = function () { playCalls++; return Promise.resolve('playing'); };
 const sandbox = {
+  WO: { mediaShield: true, blockAutoplayMedia: true },
   window: { HTMLMediaElement: Media },
   document: { readyState: 'complete' },
   getComputedStyle: (el) => el.style,
@@ -74,5 +75,15 @@ function make(tag, opts = {}) {
   video.playerShell = {};
   assert.strictEqual(await video.play(), 'playing', 'recognized player shell should work');
   assert.strictEqual(playCalls, 4);
+  video.playerShell = null;
+  for (const key of ['blockAutoplayMedia', 'mediaShield']) {
+    const before = logs;
+    sandbox.WO[key] = false;
+    assert.strictEqual(await video.play(), 'playing', key + ' disables an installed hidden-media guard');
+    assert.strictEqual(logs, before, 'disabled protection must not report a block');
+    sandbox.WO[key] = true;
+    await assert.rejects(video.play(), { name: 'NotAllowedError' });
+    assert.strictEqual(logs, before + 1, 're-enabled protection still blocks unattended hidden video');
+  }
   console.log('media play compatibility tests passed');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
