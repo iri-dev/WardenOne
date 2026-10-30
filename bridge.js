@@ -2122,6 +2122,19 @@
     }
     return null;
   }
+  function sameDownloadAddress(a, b) {
+    try { return !!a && !!b && new URL(a).href.split('#')[0] === new URL(b).href.split('#')[0]; } catch (_) { return false; }
+  }
+  /* A request whose control named a file covers that file. One that named none covers the first
+     file the page then starts, and retries of it, so a second unrelated file cannot ride on it. */
+  function downloadRequestNamesFile(gesture) {
+    return gesture.label === 'Download once' || /^(?:blob|data):/i.test(gesture.href || '') || DOWNLOAD_FILE_PATTERN.test(gesture.href || '');
+  }
+  function downloadIntentCovers(gesture, href) {
+    if (downloadRequestNamesFile(gesture)) return sameDownloadAddress(gesture.href, href);
+    if (!gesture.startedHref) gesture.startedHref = href;
+    return sameDownloadAddress(gesture.startedHref, href);
+  }
   function downloadControlVisible(control) {
     if (!control || !control.isConnected) return false;
     const style = getComputedStyle(control);
@@ -2206,7 +2219,8 @@
       { requested: !!(visible && details.requested) || (event.type === 'contextmenu' && !!details.href) });
     if (!forcedDownloadGuardOn() || !control || !details.href || !/^https?:|^blob:|^data:/i.test(details.href)) return;
     if (!fileLink || event.type === 'contextmenu') return;
-    const recentRequest = previous && previous.requested && Date.now() - previous.at <= DOWNLOAD_INTENT_MS;
+    const recentRequest = !trusted && previous && previous.requested && Date.now() - previous.at <= DOWNLOAD_INTENT_MS
+      && downloadIntentCovers(previous, details.href);
     let filename = '';
     try { filename = decodeURIComponent(new URL(details.href).pathname.split('/').pop()); } catch (_) {}
     let why = '';
@@ -2235,8 +2249,14 @@
   woOnMessage((msg, sender, respond) => {
     if (!msg || msg.kind !== 'download-intent-query' || sender.id !== chrome.runtime.id || sender.tab) return;
     const gesture = downloadGesture && Date.now() - downloadGesture.at <= DOWNLOAD_INTENT_MS ? downloadGesture : null;
+    /* The first download a request covers claims it; any other download finds it spent. */
+    const id = String(msg.downloadId || '').slice(0, 40);
+    const urls = Array.isArray(msg.urls) ? msg.urls.slice(0, 2).map((u) => String(u || '').slice(0, 8192)) : [];
+    if (downloadGesture && downloadGesture.requested && id && !downloadGesture.claimedBy
+      && (!downloadRequestNamesFile(downloadGesture) || urls.some((u) => sameDownloadAddress(u, downloadGesture.href)))) downloadGesture.claimedBy = id;
+    const spent = !!(downloadGesture && downloadGesture.claimedBy && id && downloadGesture.claimedBy !== id);
     respond({ ok: true, configured: bridgeConfigReady, enabled: forcedDownloadGuardOn(), url: location.href, startedAt: downloadDocumentStartedAt, hadGesture: !!downloadGesture,
-      gesture, productMismatch: !!(gesture && downloadProductMismatch(gesture, String(msg.filename || '').slice(0, 200))) });
+      spent, gesture, productMismatch: !!(gesture && downloadProductMismatch(gesture, String(msg.filename || '').slice(0, 200))) });
   });
 
   const FRAME_CONFIG_FIELDS = [

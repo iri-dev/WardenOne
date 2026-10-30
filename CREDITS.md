@@ -333,7 +333,8 @@ Bundled and derived material:
 | `rules-grabber-navigation.json` | WardenOne rules.json domain subset | GPL-3.0-or-later |
 | `rules-grabber-resources.json` | WardenOne rules.json domain subset | GPL-3.0-or-later |
 | `rules-spotify-media.json` | uAssets Spotify media rules with WardenOne request-type compatibility changes | GPL-3.0 |
-| `cname-trackers.json` | AdguardTeam/cname-trackers, selected Eulerian, Etracker, Webtrekk and AT Internet mappings | MIT |
+| `cname-trackers.json` | AdguardTeam/cname-trackers, Eulerian, Etracker, Webtrekk and AT Internet mappings | MIT |
+| `rules-cname.json` | AdguardTeam/cname-trackers, every tracker-provider mapping | MIT |
 | `tracker-network-data.js` | Observation scopes derived from the licensed CNAME mapping, packaged tracker conditions and WardenOne fingerprint-library inventory. | See contributing input licences; generator GPL-3.0-or-later |
 | `tracker-catalog.json` | AdGuard Companies DB at 8d845040224a0e3ea9cbba5df68ceb6a988235d2; Companies DB contributors and WhoTracks.Me team. | CC-BY-SA-4.0 |
 

@@ -33,6 +33,7 @@ async function run() {
     if (kind === 'automatic') body += '<script>window.startFixture=()=>location.assign("/opaque")</script>';
     if (kind === 'play') body += '<button id="main" onclick="location.assign(\'/opaque\')">Play video</button>';
     if (kind === 'direct') body += '<a id="main" href="/file.exe">Download installer</a>';
+    if (kind === 'second') body += '<a id="main" href="/file.exe" onclick="setTimeout(()=>location.assign(\'/opaque\'),1500)">Download installer</a>';
     if (kind === 'cdn') body += '<a id="main" href="/start">Download installer</a>';
     if (kind === 'export') body += '<button id="main" onclick="const a=document.createElement(\'a\');a.href=window.URL.createObjectURL(new Blob([\'a,b\\n1,2\'],{type:\'text/csv\'}));a.download=\'report.csv\';a.click()">Export report</button>';
     if (kind === 'mismatch') body = '<h1>GTA VI Grand Theft Auto 6</h1><a id="main" href="' + cdn + '/avast_secure_browser_setup.exe">Download for Windows</a>';
@@ -162,6 +163,19 @@ async function run() {
       assert.equal(current.state, 'in_progress');
       await evaluate(`handleDownloadDecision('${item.id}','cancel',{})`);
       console.log('[ok] ' + kind + ' attachment held and cancelled through review');
+    }
+    {
+      /* Adversarial: the page starts an unrelated installer inside the window the real click opened. */
+      const before = await lastId();
+      await open('second', true);
+      const first = await latestAfter(before);
+      let second;
+      await until(async () => { second = (await items()).find(entry => entry.id > first.id); return !!second; }, 'the second file');
+      await until(() => evaluate(`getPendingDownload(${second.id}).then(r=>!!(r&&r.reviewEvidence.unexpectedDownload))`), 'second file held');
+      await until(async () => (await items()).some(entry => entry.id === first.id && entry.state === 'complete'), 'requested file completes');
+      assert.equal(await evaluate(`getPendingDownload(${first.id}).then(Boolean)`), false, 'the requested file is left alone');
+      await evaluate(`handleDownloadDecision('${second.id}','cancel',{})`);
+      console.log('[ok] a second, unrelated installer cannot reuse the first download click');
     }
     for (const kind of ['direct', 'cdn', 'export']) {
       const before = await lastId();

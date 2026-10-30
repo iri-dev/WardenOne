@@ -41,7 +41,7 @@
         },
         {
           "file": "background.js",
-          "line": 21333
+          "line": 21557
         }
       ]
     },
@@ -85,7 +85,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 19763
+          "line": 19987
         }
       ]
     },
@@ -105,7 +105,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21334
+          "line": 21558
         }
       ]
     },
@@ -125,7 +125,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 10452
+          "line": 10641
         }
       ]
     },
@@ -165,7 +165,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7870
+          "line": 8059
         }
       ],
       "reuse": "Clean 12 hours; warning/hit 4 hours"
@@ -186,7 +186,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 3567
+          "line": 3568
         }
       ]
     },
@@ -206,7 +206,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 3568
+          "line": 3569
         }
       ]
     },
@@ -226,7 +226,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 3558
+          "line": 3559
         }
       ]
     },
@@ -246,7 +246,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 3556
+          "line": 3557
         }
       ]
     },
@@ -266,7 +266,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 3540
+          "line": 3541
         },
         {
           "file": "popup-health.js",
@@ -274,7 +274,7 @@
         },
         {
           "file": "popup.js",
-          "line": 2986
+          "line": 3018
         }
       ]
     },
@@ -294,7 +294,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21344
+          "line": 21568
         },
         {
           "file": "popup-scroll-memory.js",
@@ -318,7 +318,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 11265
+          "line": 11456
         }
       ]
     },
@@ -338,7 +338,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 3213
+          "line": 3214
         },
         {
           "file": "popup-health.js",
@@ -346,11 +346,11 @@
         },
         {
           "file": "popup.js",
-          "line": 2986
+          "line": 3018
         },
         {
           "file": "settings.js",
-          "line": 2419
+          "line": 2579
         }
       ]
     },
@@ -370,7 +370,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 3212
+          "line": 3213
         }
       ]
     },
@@ -390,7 +390,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 20308
+          "line": 20532
         }
       ]
     },
@@ -410,7 +410,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7603
+          "line": 7792
         }
       ]
     },
@@ -430,7 +430,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7603
+          "line": 7792
         }
       ]
     },
@@ -450,11 +450,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 6228
+          "line": 6233
         },
         {
           "file": "settings.js",
-          "line": 2524
+          "line": 2687
         }
       ]
     },
@@ -474,7 +474,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 6233
+          "line": 6238
         }
       ]
     },
@@ -494,7 +494,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7874
+          "line": 8063
         }
       ],
       "reuse": "12 hours; no explicit global entry cap"
@@ -515,7 +515,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21336
+          "line": 21560
         },
         {
           "file": "build-update.js",
@@ -543,7 +543,7 @@
         },
         {
           "file": "background.js",
-          "line": 21284
+          "line": 21508
         }
       ]
     },
@@ -567,7 +567,31 @@
         },
         {
           "file": "background.js",
-          "line": 21287
+          "line": 21511
+        }
+      ]
+    },
+    {
+      "key": "wardenone_cname_exception_cache",
+      "owner": "Temporary operation state",
+      "sensitivity": "session state",
+      "area": "session",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Browser or extension session",
+      "siteErase": "prune",
+      "includes": "session state",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background-cname.js",
+          "line": 6
+        },
+        {
+          "file": "background.js",
+          "line": 21559
         }
       ]
     },
@@ -587,7 +611,7 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 219
+          "line": 231
         },
         {
           "file": "background-extension-watch.js",
@@ -619,7 +643,7 @@
         },
         {
           "file": "history.js",
-          "line": 833
+          "line": 837
         },
         {
           "file": "notification-manager.js",
@@ -631,7 +655,7 @@
         },
         {
           "file": "onboarding.js",
-          "line": 439
+          "line": 440
         },
         {
           "file": "popup-diagnostics.js",
@@ -639,7 +663,7 @@
         },
         {
           "file": "popup.js",
-          "line": 395
+          "line": 403
         },
         {
           "file": "settings.js",
@@ -667,7 +691,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21360
+          "line": 21584
         },
         {
           "file": "config-lock.js",
@@ -691,7 +715,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21357
+          "line": 21581
         },
         {
           "file": "config-lock.js",
@@ -715,7 +739,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 20969
+          "line": 21193
         }
       ]
     },
@@ -735,7 +759,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 6732
+          "line": 6737
         }
       ]
     },
@@ -755,11 +779,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 5303
+          "line": 5307
         },
         {
           "file": "settings.js",
-          "line": 2523
+          "line": 2686
         }
       ]
     },
@@ -779,7 +803,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7633
+          "line": 7822
         }
       ],
       "reuse": "7 days"
@@ -804,7 +828,7 @@
         },
         {
           "file": "background.js",
-          "line": 7880
+          "line": 8069
         }
       ]
     },
@@ -824,11 +848,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 1022
+          "line": 1034
         },
         {
           "file": "background.js",
-          "line": 21329
+          "line": 21553
         }
       ]
     },
@@ -848,11 +872,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 1023
+          "line": 1035
         },
         {
           "file": "background.js",
-          "line": 21329
+          "line": 21553
         },
         {
           "file": "popup-health.js",
@@ -860,7 +884,7 @@
         },
         {
           "file": "popup.js",
-          "line": 2986
+          "line": 3018
         }
       ]
     },
@@ -884,7 +908,7 @@
         },
         {
           "file": "background.js",
-          "line": 7881
+          "line": 8070
         },
         {
           "file": "history.js",
@@ -892,7 +916,7 @@
         },
         {
           "file": "settings.js",
-          "line": 2524
+          "line": 2687
         }
       ]
     },
@@ -912,7 +936,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 12035
+          "line": 12229
         }
       ]
     },
@@ -936,7 +960,7 @@
         },
         {
           "file": "background.js",
-          "line": 21310
+          "line": 21534
         },
         {
           "file": "extensions.js",
@@ -944,11 +968,11 @@
         },
         {
           "file": "popup.js",
-          "line": 2987
+          "line": 3019
         },
         {
           "file": "settings.js",
-          "line": 2519
+          "line": 2682
         }
       ]
     },
@@ -972,7 +996,7 @@
         },
         {
           "file": "background.js",
-          "line": 21310
+          "line": 21534
         }
       ]
     },
@@ -996,7 +1020,7 @@
         },
         {
           "file": "background.js",
-          "line": 21281
+          "line": 21505
         },
         {
           "file": "extensions.js",
@@ -1004,7 +1028,7 @@
         },
         {
           "file": "popup.js",
-          "line": 2989
+          "line": 3021
         }
       ]
     },
@@ -1028,7 +1052,7 @@
         },
         {
           "file": "background.js",
-          "line": 21311
+          "line": 21535
         }
       ]
     },
@@ -1052,7 +1076,7 @@
         },
         {
           "file": "background.js",
-          "line": 21310
+          "line": 21534
         },
         {
           "file": "extensions.js",
@@ -1060,7 +1084,7 @@
         },
         {
           "file": "popup.js",
-          "line": 2988
+          "line": 3020
         }
       ]
     },
@@ -1084,11 +1108,11 @@
         },
         {
           "file": "background.js",
-          "line": 21311
+          "line": 21535
         },
         {
           "file": "settings.js",
-          "line": 2519
+          "line": 2682
         }
       ]
     },
@@ -1108,7 +1132,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 4822
+          "line": 4826
         }
       ]
     },
@@ -1128,7 +1152,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 4822
+          "line": 4826
         }
       ]
     },
@@ -1148,11 +1172,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 6413
+          "line": 6418
         },
         {
           "file": "settings.js",
-          "line": 660
+          "line": 674
         }
       ]
     },
@@ -1172,7 +1196,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 13961
+          "line": 14155
         }
       ]
     },
@@ -1192,7 +1216,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 5034
+          "line": 5038
         }
       ]
     },
@@ -1212,7 +1236,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7876
+          "line": 8065
         },
         {
           "file": "hidden-elements.js",
@@ -1220,7 +1244,7 @@
         },
         {
           "file": "settings.js",
-          "line": 660
+          "line": 674
         }
       ]
     },
@@ -1248,15 +1272,15 @@
         },
         {
           "file": "history.js",
-          "line": 1026
+          "line": 1030
         },
         {
           "file": "popup.js",
-          "line": 2987
+          "line": 3019
         },
         {
           "file": "settings.js",
-          "line": 2520
+          "line": 2683
         }
       ]
     },
@@ -1276,7 +1300,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7878
+          "line": 8067
         }
       ]
     },
@@ -1296,7 +1320,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21280
+          "line": 21504
         }
       ]
     },
@@ -1316,7 +1340,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21317
+          "line": 21541
         },
         {
           "file": "popup-diagnostics.js",
@@ -1324,7 +1348,7 @@
         },
         {
           "file": "settings.js",
-          "line": 2968
+          "line": 3131
         }
       ]
     },
@@ -1344,11 +1368,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2831
+          "line": 2832
         },
         {
           "file": "history.js",
-          "line": 1027
+          "line": 1031
         }
       ]
     },
@@ -1368,7 +1392,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 16032
+          "line": 16254
         }
       ]
     },
@@ -1388,7 +1412,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 15992
+          "line": 16214
         },
         {
           "file": "popup-health.js",
@@ -1396,11 +1420,11 @@
         },
         {
           "file": "popup.js",
-          "line": 2986
+          "line": 3018
         },
         {
           "file": "settings.js",
-          "line": 2419
+          "line": 2579
         }
       ]
     },
@@ -1420,7 +1444,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 13728
+          "line": 13922
         }
       ]
     },
@@ -1440,7 +1464,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 11269
+          "line": 11460
         }
       ]
     },
@@ -1460,7 +1484,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 11275
+          "line": 11466
         }
       ]
     },
@@ -1480,11 +1504,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 1003
+          "line": 1015
         },
         {
           "file": "background.js",
-          "line": 13651
+          "line": 13845
         }
       ]
     },
@@ -1504,7 +1528,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 20040
+          "line": 20264
         }
       ]
     },
@@ -1540,7 +1564,7 @@
         },
         {
           "file": "popup.js",
-          "line": 2992
+          "line": 3024
         }
       ]
     },
@@ -1560,11 +1584,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21346
+          "line": 21570
         },
         {
           "file": "onboarding.js",
-          "line": 465
+          "line": 466
         }
       ]
     },
@@ -1584,11 +1608,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21346
+          "line": 21570
         },
         {
           "file": "onboarding.js",
-          "line": 349
+          "line": 350
         }
       ]
     },
@@ -1608,11 +1632,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21347
+          "line": 21571
         },
         {
           "file": "onboarding.js",
-          "line": 322
+          "line": 323
         }
       ]
     },
@@ -1632,7 +1656,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 8568
+          "line": 8757
         }
       ]
     },
@@ -1652,7 +1676,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 19515
+          "line": 19739
         }
       ]
     },
@@ -1676,7 +1700,7 @@
         },
         {
           "file": "background.js",
-          "line": 7879
+          "line": 8068
         }
       ]
     },
@@ -1696,7 +1720,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 18645
+          "line": 18869
         }
       ]
     },
@@ -1716,7 +1740,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7869
+          "line": 8058
         }
       ],
       "reuse": "Clean 20 minutes; hit 6 hours"
@@ -1737,7 +1761,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21347
+          "line": 21571
         },
         {
           "file": "popup-scroll-memory.js",
@@ -1761,7 +1785,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21348
+          "line": 21572
         },
         {
           "file": "popup-scroll-memory.js",
@@ -1785,15 +1809,15 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21348
+          "line": 21572
         },
         {
           "file": "popup.js",
-          "line": 6419
+          "line": 6451
         },
         {
           "file": "settings.js",
-          "line": 3292
+          "line": 3455
         }
       ]
     },
@@ -1813,7 +1837,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 17834
+          "line": 18056
         }
       ]
     },
@@ -1853,11 +1877,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 11635
+          "line": 11826
         },
         {
           "file": "settings.js",
-          "line": 2519
+          "line": 2682
         }
       ]
     },
@@ -1877,7 +1901,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 11636
+          "line": 11827
         }
       ]
     },
@@ -1897,7 +1921,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7868
+          "line": 8057
         }
       ],
       "reuse": "Clean 15 minutes; hit 5 minutes"
@@ -1938,7 +1962,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 4333
+          "line": 4337
         },
         {
           "file": "settings.js",
@@ -1962,11 +1986,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 4334
+          "line": 4338
         },
         {
           "file": "settings.js",
-          "line": 2524
+          "line": 2687
         }
       ]
     },
@@ -1986,7 +2010,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2831
+          "line": 2832
         }
       ]
     },
@@ -2010,7 +2034,7 @@
         },
         {
           "file": "background.js",
-          "line": 7882
+          "line": 8071
         }
       ]
     },
@@ -2030,11 +2054,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21349
+          "line": 21573
         },
         {
           "file": "settings.js",
-          "line": 2536
+          "line": 2699
         }
       ]
     },
@@ -2054,7 +2078,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21349
+          "line": 21573
         },
         {
           "file": "settings.js",
@@ -2078,11 +2102,59 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21349
+          "line": 21573
         },
         {
           "file": "settings.js",
-          "line": 1645
+          "line": 1724
+        }
+      ]
+    },
+    {
+      "key": "wardenone_settings_nav",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21573
+        },
+        {
+          "file": "settings.js",
+          "line": 923
+        }
+      ]
+    },
+    {
+      "key": "wardenone_settings_rail",
+      "owner": "Interface preferences",
+      "sensitivity": "settings",
+      "area": "local or extension page",
+      "maxAgeDays": null,
+      "maxItems": null,
+      "retention": "Until changed or erased",
+      "siteErase": "prune",
+      "includes": "settings",
+      "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
+      "incognito": "Shared settings/public intelligence where applicable; session-only operation state belongs to its worker context.",
+      "fullErase": "Cleared by Reset WardenOne; selected primitive settings may be preserved by explicit reset mode.",
+      "references": [
+        {
+          "file": "background.js",
+          "line": 21573
+        },
+        {
+          "file": "settings.js",
+          "line": 930
         }
       ]
     },
@@ -2102,7 +2174,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 13503
+          "line": 13697
         },
         {
           "file": "settings.js",
@@ -2126,11 +2198,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21348
+          "line": 21572
         },
         {
           "file": "popup.js",
-          "line": 5770
+          "line": 5802
         }
       ]
     },
@@ -2150,19 +2222,19 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21348
+          "line": 21572
         },
         {
           "file": "onboarding.js",
-          "line": 294
+          "line": 295
         },
         {
           "file": "popup.js",
-          "line": 5769
+          "line": 5801
         },
         {
           "file": "settings.js",
-          "line": 2522
+          "line": 2685
         }
       ]
     },
@@ -2210,15 +2282,15 @@
         },
         {
           "file": "background.js",
-          "line": 7885
+          "line": 8074
         },
         {
           "file": "popup.js",
-          "line": 2987
+          "line": 3019
         },
         {
           "file": "settings.js",
-          "line": 2519
+          "line": 2682
         }
       ]
     },
@@ -2238,7 +2310,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7963
+          "line": 8152
         }
       ]
     },
@@ -2258,7 +2330,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21074
+          "line": 21298
         }
       ]
     },
@@ -2278,15 +2350,15 @@
       "references": [
         {
           "file": "background.js",
-          "line": 21349
+          "line": 21573
         },
         {
           "file": "popup.js",
-          "line": 4782
+          "line": 4814
         },
         {
           "file": "settings.js",
-          "line": 2269
+          "line": 2429
         },
         {
           "file": "theme.js",
@@ -2300,8 +2372,8 @@
       "sensitivity": "derived browsing evidence",
       "area": "local",
       "maxAgeDays": null,
-      "maxItems": null,
-      "retention": "Candidates expire after 30 days without a new sighting; user decisions stay until erased",
+      "maxItems": 10600,
+      "retention": "Up to 600 observations expire after 30 days; up to 10000 learned block/unblock decisions stay until reset, with new decisions paused at capacity",
       "siteErase": "reset",
       "includes": "derived browsing evidence",
       "byteLimit": "No universal per-key byte cap; inspect reports current UTF-8 JSON bytes. Feature count and body limits apply.",
@@ -2310,11 +2382,15 @@
       "references": [
         {
           "file": "background.js",
-          "line": 4560
+          "line": 4564
         },
         {
           "file": "popup.js",
-          "line": 2991
+          "line": 3023
+        },
+        {
+          "file": "settings.js",
+          "line": 2661
         }
       ]
     },
@@ -2334,7 +2410,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 6933
+          "line": 6947
         }
       ]
     },
@@ -2354,7 +2430,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7871
+          "line": 8060
         }
       ],
       "reuse": "Clean 1 hour; hit 12 hours"
@@ -2375,11 +2451,11 @@
       "references": [
         {
           "file": "background.js",
-          "line": 5302
+          "line": 5306
         },
         {
           "file": "settings.js",
-          "line": 2523
+          "line": 2686
         }
       ]
     },
@@ -2399,7 +2475,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 10232
+          "line": 10421
         },
         {
           "file": "cert-error.js",
@@ -2431,7 +2507,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7638
+          "line": 7827
         }
       ],
       "reuse": "7 days"
@@ -2452,7 +2528,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7872
+          "line": 8061
         }
       ],
       "reuse": "Clean 12 hours; warning/hit 6 hours"
@@ -2473,7 +2549,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 7873
+          "line": 8062
         }
       ],
       "reuse": "Clean 12 hours; hit 6 hours"
@@ -2501,49 +2577,49 @@
     },
     {
       "file": "background.js",
-      "line": 12372,
+      "line": 12566,
       "operation": "localStorage.removeItem",
       "expression": "localStorage.removeItem('__woEyeShieldMode'); } catch (_) {} } },"
     },
     {
       "file": "background.js",
-      "line": 23813,
+      "line": 24037,
       "operation": "localStorage.getItem",
       "expression": "localStorage.getItem(k) !== null) { localStorage.removeItem(k); n++; } } catch (_) {} }"
     },
     {
       "file": "background.js",
-      "line": 23813,
+      "line": 24037,
       "operation": "localStorage.removeItem",
       "expression": "localStorage.removeItem(k); n++; } } catch (_) {} }"
     },
     {
       "file": "background.js",
-      "line": 23814,
+      "line": 24038,
       "operation": "sessionStorage.getItem",
       "expression": "sessionStorage.getItem(k) !== null) { sessionStorage.removeItem(k); n++; } } catch (_) {} }"
     },
     {
       "file": "background.js",
-      "line": 23814,
+      "line": 24038,
       "operation": "sessionStorage.removeItem",
       "expression": "sessionStorage.removeItem(k); n++; } } catch (_) {} }"
     },
     {
       "file": "background.js",
-      "line": 23948,
+      "line": 24172,
       "operation": "sessionStorage.clear",
       "expression": "sessionStorage.clear(); localStorage.clear(); } catch (_) {} },"
     },
     {
       "file": "background.js",
-      "line": 23948,
+      "line": 24172,
       "operation": "localStorage.clear",
       "expression": "localStorage.clear(); } catch (_) {} },"
     },
     {
       "file": "bridge.js",
-      "line": 2969,
+      "line": 2989,
       "operation": "sessionStorage.removeItem",
       "expression": "sessionStorage.removeItem(cookieStopKey()); } catch (_) {}"
     },
@@ -2693,31 +2769,31 @@
     },
     {
       "file": "popup.js",
-      "line": 3519,
+      "line": 3551,
       "operation": "localStorage.removeItem",
       "expression": "localStorage.removeItem(key);"
     },
     {
       "file": "popup.js",
-      "line": 3520,
+      "line": 3552,
       "operation": "sessionStorage.removeItem",
       "expression": "sessionStorage.removeItem(key);"
     },
     {
       "file": "popup.js",
-      "line": 3610,
+      "line": 3642,
       "operation": "localStorage.removeItem",
       "expression": "localStorage.removeItem(f.key); n++; }"
     },
     {
       "file": "popup.js",
-      "line": 3611,
+      "line": 3643,
       "operation": "sessionStorage.removeItem",
       "expression": "sessionStorage.removeItem(f.key); n++; }"
     },
     {
       "file": "popup.js",
-      "line": 4782,
+      "line": 4814,
       "operation": "localStorage.removeItem",
       "expression": "localStorage.removeItem('wardenone_theme'); } catch (_) {}"
     },
@@ -2735,49 +2811,73 @@
     },
     {
       "file": "settings.js",
-      "line": 1648,
+      "line": 926,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(NAV_COLLAPSE_KEY) || 'null');"
+    },
+    {
+      "file": "settings.js",
+      "line": 933,
+      "operation": "localStorage.getItem",
+      "expression": "localStorage.getItem(RAIL_FOLD_KEY) || 'null');"
+    },
+    {
+      "file": "settings.js",
+      "line": 940,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(RAIL_FOLD_KEY, JSON.stringify(railFolded)); } catch (_) {}"
+    },
+    {
+      "file": "settings.js",
+      "line": 1727,
       "operation": "localStorage.setItem",
       "expression": "localStorage.setItem(SETTINGS_PAGE_KEY, id); } catch (_) {}"
     },
     {
       "file": "settings.js",
-      "line": 1803,
+      "line": 1754,
+      "operation": "localStorage.setItem",
+      "expression": "localStorage.setItem(NAV_COLLAPSE_KEY, JSON.stringify(navCollapsed)); } catch (_) {}"
+    },
+    {
+      "file": "settings.js",
+      "line": 1896,
       "operation": "localStorage.getItem",
       "expression": "localStorage.getItem(SETTINGS_PAGE_KEY) || ''; } catch (_) {}"
     },
     {
       "file": "settings.js",
-      "line": 1807,
+      "line": 1900,
       "operation": "localStorage.setItem",
       "expression": "localStorage.setItem(SETTINGS_PAGE_KEY, current); } catch (_) {}"
     },
     {
       "file": "settings.js",
-      "line": 2269,
+      "line": 2429,
       "operation": "localStorage.removeItem",
       "expression": "localStorage.removeItem(key)); } catch (_) {}"
     },
     {
       "file": "settings.js",
-      "line": 2549,
+      "line": 2712,
       "operation": "localStorage.setItem",
       "expression": "localStorage.setItem('wardenone_theme', value); } catch (_) {}"
     },
     {
       "file": "settings.js",
-      "line": 2567,
+      "line": 2730,
       "operation": "localStorage.setItem",
       "expression": "localStorage.setItem(DENSITY_KEY, choices.density.toLowerCase()); } catch (_) {}"
     },
     {
       "file": "settings.js",
-      "line": 3514,
+      "line": 3677,
       "operation": "localStorage.getItem",
       "expression": "localStorage.getItem('wardenone_theme'); if (THEME_LABEL[mirror]) setTheme(THEME_LABEL[mirror]); } catch (_) {}"
     },
     {
       "file": "settings.js",
-      "line": 3515,
+      "line": 3678,
       "operation": "localStorage.getItem",
       "expression": "localStorage.getItem(DENSITY_KEY) === 'comfortable' ? 'Comfortable' : 'Compact'); } catch (_) {}"
     },
@@ -2889,6 +2989,10 @@
     },
     "TRACKER_SITE_VIEW_MAX_DOMAINS": {
       "value": 12,
+      "file": "background.js"
+    },
+    "TRACKER_COOKIE_SITE_CACHE_MAX": {
+      "value": 500,
       "file": "background.js"
     },
     "DNR_FEEDBACK_CACHE_MS": {
@@ -3063,27 +3167,27 @@
   "sourceHashes": {
     "animated-image-saver.js": "c36de6e175d21ef215cc58621cb2d56734712cfcbe7c2affbe459c69f91d8135",
     "anti-redirect.js": "9725e1739bbe0ff97c4e46b5cf2bfab095f9408920c49d5a03f822050420dda6",
-    "background-cname.js": "af985c259d5f1997276ec71d8da1bd955069baa9b0e71e6bb2ae7c3e936d1dff",
-    "background-downloads.js": "44bf84daa86b71cd5b056484f249585bef74ee59e2eb80680173673845d9a9bf",
+    "background-cname.js": "5e03df3af65237759b48462318aa049f954079f0af785622c9e28d0ab5c1e957",
+    "background-downloads.js": "1b55067693513c567c20f4b828b6ceb225f4e493996bfbfd448a3fefacd30891",
     "background-extension-reputation.js": "3b2a971799ea1479e5911e2ab98cddcd1b2409ece66ffbcbfaf177afc5537d04",
     "background-extension-watch.js": "c40721af7bdb05d68762220f667fa4a3e8c19a19627ebbaa2a3904c0f64b5412",
     "background-identifiers.js": "6a2a5a80e7ae09a0f2977a34ecbddd4227366b1d7a73595ebc6a9a4d3e1e76e3",
-    "background-memory.js": "d8c0ea303917b2d6c6747944d3ae228da4a1174df3da589cc4ecb3371568e3b1",
+    "background-memory.js": "cf9412119d9dc08d55d4c2f14fd6fdc012c5a5abdf87f854c9c637ec6e9af217",
     "background-privacy-cleaner.js": "e8a546d219fe522fb875a51551c09e126366e0176c8d92163ae37eab3bd97785",
     "background-startup.js": "e0e1bbd12f9b3b14fbbc1aed9e6b1b58a84140e9c080ec6621d3e1e9d93bad4d",
-    "background.js": "5682d0b1ddf6b311cd39535e144c0c88242b5ea5179bc6aad5ea1f1ae90f1107",
-    "bridge.js": "e85c88310fa1ba96917991e0b01f38ca8fa60cb286816b4ae2ad9441859d45e2",
+    "background.js": "d40511d17757a1dec233f64dab43547a1214a2f20fd873a5a1465a88210118c3",
+    "bridge.js": "698cd9ae66fb0d21ca4ca34ba9124c55a057d243dd5a499ca230a74b0a7339b2",
     "build-profile.js": "830644487d588ab6e1a2408aef8168f330beb715cfaca516625e9b89f9963957",
     "build-update.js": "ece2d9874b6db7fe0eb0016d01cd25218f11092f21921dcefe2db1e5c429b9c8",
     "cert-error.js": "ac0774b44c483f3164f31124781fa8e1dc891f4dd2e4104b507f48168c567907",
-    "cname-utils.js": "4059125dcdf942abd298bd58559b187dd4fc1369248211637c54afe1a87cb71e",
+    "cname-utils.js": "319489f81741f0c4e536b1149c37126a5aba770fe6b9ac2e7e00cccc3caa8219",
     "command-palette.js": "593905c5e14645abcbca8c692560c4a03ae6b5960df5fec81b6c015b34a09ed4",
     "config-lock.js": "21a562eaded745db5c4d2dabccab20b25971853b39a8422392f66d01e1e3d7b1",
     "consent-reject.js": "1d5f5b99c839f9b32ede3e6a10480cced9fea1a3f7dbc403369eef21c89f8b78",
     "consent-state.js": "549094084540aeb837a73bfbd4af003d92da1d69dec4604aed7cdf5ebb3381b4",
     "consent-wall.js": "500212267ae122607f98cb86da57c73b7e5bc00c594334b5b6ab4114a7101ce7",
-    "content.min.js": "df36d28ba48b0f0f0299061de7061213bf5e9b3bef6a3b3bfb00881799309111",
-    "cookie-access.js": "dd31af85166efeb87f617d9faa047d4028e1bff1ea36cb06acaa861d2a8d64bc",
+    "content.min.js": "34cc632b2b76b61ecda9510f11c13d56a590c3c09fb9a785b2cf6010c5e6af75",
+    "cookie-access.js": "5935984897633c69d5e318852dd71e6ab2a48b397c6825ed632ae483e2d9a068",
     "cryptominer-detect.js": "dd4c5c677e72dfb11e2203a92762b7f33dddd7654708201101a978b790cd3057",
     "domain-utils-isolated.js": "5c8a3928d19a94eff48eea4bf777736e0ef020d17f16aee10f7263b6914f749d",
     "domain-utils.js": "5c8a3928d19a94eff48eea4bf777736e0ef020d17f16aee10f7263b6914f749d",
@@ -3104,7 +3208,7 @@
     "frame-image-logger.js": "8bad2a72d5c565649648434c097cb70cf8c916c888371ec44399c1ac6a02de2d",
     "hidden-elements.js": "bec90b795434c0bb9b04657c4eb9f26fdfc34152a22dc3eb48e479472b28994a",
     "history-store.js": "033dcfe0c618759988b6b197246503cbf4918675d5e438fcb39b2ac77b29a7d3",
-    "history.js": "bcff7544df7bbd1a26aafb5e361845178808ca2fd2feb5a55086bfec9f76b3f8",
+    "history.js": "76216b58e0c8addd4fe54c5105609a6738a3591737735778535db38d3d51f129",
     "identifier-detector.js": "2c9939d5198b1fd75755b6ce9eeb62f1fb87175f66017f0fde737572870f6e6c",
     "idn-utils.js": "6700e12e88662efb967e0fc1999fa14dfe23b143b2863f61e300374e612ef515",
     "ip-logger-warning.js": "0e919f0b941cf31ec186ec79274a34803a69a845aaab5cfc9c0e07e9f615343e",
@@ -3117,15 +3221,15 @@
     "notifications.js": "e16261be751f961d9b844dd4d429ce4508e6467aea03c6ed80591fe2edbb9fbf",
     "oauth-guard.js": "4484ee7730f798f318ac0185be9f922acc5b24fded182b7e351bf5f8aed70a85",
     "offscreen.js": "f37cbd7014f36e2fc780135a438eb891ac4ed9e445b5c54460ada045b9b0115a",
-    "onboarding.js": "4ab1c8fa879e9d3d4d1bdd688711c9823b6bae9531911719a64647e3aff3e0ce",
+    "onboarding.js": "ce42e2748a59052385eabda4863942f3f239f04593e0854f9f5c1ec38f5eebb3",
     "permission-chain.js": "c47abd30b27674bb64c7dda08e9a9542a61dc12aef9a08cc36d1788b5b8b2f17",
     "popup-diagnostics.js": "7b289b15a602bd88abcc7043caa016469275f73110cd8c1c5837060208853b9c",
     "popup-first-paint.js": "c58714b35daf8ae358b174500cfbf26b14ee45a4b66faed4f903e6b75bd40c08",
     "popup-health.js": "5fed69a40df89668cfe717acd3cef7c0a806c23d1691625e255d6189a1c2342d",
     "popup-privacy-cleaner.js": "5cc1eee1a0d2c0ff8fe7cf9673b2e230aafb0f01e1baedb3cad74356c793d6d5",
     "popup-scroll-memory.js": "1bb89cff7905920ddc5be80f9fbe92c847f733f3f11cf6930a749fe390d1efdd",
-    "popup-settings-search.js": "ddc26470b939f1993745905c6d4c5e97970fdf7b7b61cae8751921cd556967ff",
-    "popup.js": "af2615356cda98a84c0e2364799e97bed2002f16ff348f42f6e680e7491b58cd",
+    "popup-settings-search.js": "bbe17df37732e9d0f58c9d650bae9dd4a51dcd93ced786b8fa24c99637d564bd",
+    "popup.js": "70fee39cdaf5776b7f8ed610b82ae13f0460c4b2bd4b4a4172b428fc87dd713c",
     "privacy-probe.js": "5d4c266cc88913bb3a747341659fa81bceffa768bfc96677b62de8216a183f36",
     "privacy-signals.js": "8b5072149e1a8bf9567a55d281d385869ca2b2ac70212bc1cf3a023d1a883a6f",
     "privacy-test.js": "a4d837b3dc207180ea47db890fc99145afb22c806b5ed893288358d00eaf2c84",
@@ -3135,15 +3239,15 @@
     "safe-browsing-block.js": "4b49999912a6149ce4f95abcf3e1c562259fa5e14107e2ca45d8c2bfb3182ad1",
     "search-junk.js": "003ce6e584f42b1bf86fd98452424a187dba050401b5552ebce12e70af397e98",
     "search-loggers.js": "90965d81f373065f1895ca8349655917c81195de70e6f4c47ff577f190aeb1d8",
-    "settings-data.js": "d33dbfc8c505529a23ae9d2bbb4bb2a196c5a0dddaa042f13ccdb08bf5049480",
-    "settings.js": "84d9e81f51bdd054e2021214d8177da5cc580e8918d254d7439ceaebb1218928",
+    "settings-data.js": "4c23a17e328a850ee7d70b4541d5a91660f6ff2188aad5f30f659cf7995df1c6",
+    "settings.js": "a7f6fed20eaf68a156a0bddeb0810e1a85ad1aad193042f86d3489afbe4e6b71",
     "site-dashboard-shared.js": "5295406a7ae28ec052becc89d65951c07d5abd6612d665f2143bb748272a1619",
     "site-recovery.js": "b0090f627fd2b4f12e375ead4e00e35113785a06a1831c1fb3871fba5e5e4b80",
     "spotify-adblock.js": "7624982cde396ef625a620e1992c6bd93e0d93d064a1e34a3bc8776977a14a53",
     "theme.js": "7115e1f469a6bf59f0294b250509aa026c12306a74e8c94c6ea9190e60b27482",
-    "tracker-attribution.js": "8260cf1992bdbd190d93ea89c46ab0cace660eae0614a9706c5722704213e915",
-    "tracker-learner-utils.js": "ea549da148a04441e6c7cecfffa0458850e36d7d20fd6e04e8700e027f4c0dc9",
-    "tracker-network-data.js": "c8056c18030fd16537c46aaea9f92b59a5d8ab727d832f45842ea6080be42831",
+    "tracker-attribution.js": "1170a60677592bda7767aadc6efb719012ead61e16f7e5a613d59d08e2fa88b8",
+    "tracker-learner-utils.js": "ff48122bfca259670e93151005623045f80f310aeb2219c37593421a97847dbe",
+    "tracker-network-data.js": "ca9bc17bfc63338896c1d66d45a571ea27cdc21f36d961a4f37bbf553a05d970",
     "twitch-adblock.js": "7aaa95284f9d59535acce3191ca9bfcdbd2ce8d0cd8f5700bf8e7c7907411cc0",
     "twitch-rewind.js": "544962a70a643cf53ca038484614b806f2bc11df6081ff2ee37277b6121a3c0b",
     "twitch-vod-rewind.js": "373404ac80d01463ea60c7a6b659c295182b5b44de58cfd3f770cf8e4e1f420c",

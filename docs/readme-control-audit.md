@@ -6,7 +6,7 @@ The maintained inventory was updated on 27 October 2026 for Forced Download Prot
 
 ## Scope and result
 
-The source registry has **107 independently counted protection switches** and **3 watch-only protections**. The popup also has **24 non-protection checkbox controls** and **1 second-level WebRTC control**. Eight further popup controls use custom widgets. These make **143 registry, watch-only and popup entries** in the first inventory. The Settings page declares **21 more mode, value and presentation controls**, inventoried separately below. `antiFingerprint` is a legacy alias of `antiFingerprintNoise`, not another control.
+The source registry has **107 independently counted protection switches** and **3 watch-only protections**. The popup also has **24 non-protection checkbox controls** and **2 second-level controls** (WebRTC hardening and automatic tracker learning). Eight further popup controls use custom widgets. These make **144 registry, watch-only and popup entries** in the first inventory. The Settings page declares **21 more mode, value and presentation controls**, inventoried separately below. `antiFingerprint` is a legacy alias of `antiFingerprintNoise`, not another control.
 
 The Settings navigation has 23 pages and subviews, cross-checked below. Standalone pages, modes and actions are listed separately from switches so they cannot silently disappear from the audit.
 
@@ -185,11 +185,12 @@ Each row links to the README section that explains the behavior, sometimes as pa
 | --- | --- | --- | --- |
 | `loginCompatibility` | Login compatibility | [Consent protection](../README.md#consent-protection) | Explained |
 
-### Second-level control (1)
+### Second-level controls (2)
 
 | Source key | Reader-facing control | README coverage | Status |
 | --- | --- | --- | --- |
 | `blockSuspiciousWebRTC` | Harden WebRTC (may break calls) | [WebRTC & IP-logger Protection](../README.md#webrtc--ip-logger-protection) | Explained |
+| `trackerLearnerAuto` | Learning mode | [First-party Tracker Protection](../README.md#first-party-tracker-protection) | Explained |
 
 ### Other popup controls (8)
 
@@ -296,6 +297,7 @@ These are the page IDs in `settings.js`, including the two overview subviews tha
 | `cleanup` | Clean-up & backup | [Privacy Cleaner](../README.md#privacy-cleaner), [Settings Backup](../README.md#settings-backup) |
 | `access` | Permissions & keys | [Privacy, permissions & transparency](../README.md#privacy-permissions--transparency) |
 | `shortcuts` | Keyboard shortcuts | [Keyboard Shortcuts](../README.md#keyboard-shortcuts) |
+| `learned-trackers` | Learned trackers | [First-party Tracker Protection](../README.md#first-party-tracker-protection) |
 | `lists` | Blocklists & filters | [Threat Blocklist](../README.md#threat-blocklist), [Custom Lists](../README.md#custom-lists) |
 | `help` | Help & feedback | [Feedback & security reporting](../README.md#feedback--security-reporting) |
 | `about` | About WardenOne | [Quick install](../README.md#quick-install), [Licence & credits](../README.md#licence--credits) |

@@ -96,6 +96,7 @@ class FakeElement {
 
   querySelectorAll(selector) {
     if (selector.indexOf('.eyeshield-') >= 0) return eyeSearchChildren.slice();
+    if (selector === 'button') return this.children.filter((child) => child.tagName === 'BUTTON');
     return [];
   }
 }
@@ -148,7 +149,14 @@ const micHeading = new FakeElement({ tagName: 'H2', text: 'Media Shield' });
 micGroup.previousElementSibling = micHeading;
 const micRow = micGroup.append(new FakeElement({ classes: ['row'], text: 'Block camera and microphone includes speech recognition which reaches the microphone by a different route' }));
 
+/* The footer under the settings list: reachable by id, as in the real popup. */
+const footerButtons = [
+  ['allowlist', 'Allowlist this site'], ['verify-repair', 'Verify & repair'],
+  ['open-activity', 'Activity log'], ['open-notifications', 'Notification centre'], ['open-network', 'Network (DNS)'],
+].map(([id, text]) => new FakeElement({ id, tagName: 'BUTTON', text }));
+
 const byId = new Map([
+  ...footerButtons.map((button) => [button.id, button]),
   [searchInput.id, searchInput],
   [clearButton.id, clearButton],
   [resultCount.id, resultCount],
@@ -275,10 +283,21 @@ for (const typo of ['microphon', 'recogniton', 'camra']) {
   assert(!micRow.classList.contains('wo-hidden'), 'a one-edit typo must still find its setting: ' + typo);
 }
 
-searchInput.value = '';
+/* Searching used to filter the footer's buttons out one by one: Verify & repair and the
+   Activity / Notification / Network row vanished, leaving their description and an empty
+   band behind. The footer is not a search result; it stays whole, as it is with no search. */
+for (const query of ['cookies', 'repair', 'zzzz']) {
+  searchInput.value = query;
+  searchInput.emit('input');
+  for (const button of footerButtons) {
+    assert(!button.classList.contains('wo-hidden'), 'searching "' + query + '" must not hide the footer button ' + button.id);
+  }
+}
+searchInput.value = 'cookies';
 searchInput.emit('input');
+assert.strictEqual(resultCount.textContent, '0 results', 'footer buttons must not be counted as search results');
 
-initialMemory = { wardenone_popup_search_memory: { q: 'WebAssembly' } };
+initialMemory ={ wardenone_popup_search_memory: { q: 'WebAssembly' } };
 let restored = false;
 context.restorePopupSearch(() => {
   restored = true;

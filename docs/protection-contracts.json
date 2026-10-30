@@ -13,11 +13,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 2597
+          "line": 2609
         },
         {
           "file": "background.js",
-          "line": 2621
+          "line": 2622
         },
         {
           "file": "content.min.js",
@@ -57,7 +57,7 @@
         },
         {
           "file": "bridge.js",
-          "line": 2248
+          "line": 2268
         },
         {
           "file": "content.min.js",
@@ -73,7 +73,7 @@
         },
         {
           "file": "settings.js",
-          "line": 272
+          "line": 275
         },
         {
           "file": "site-recovery.js",
@@ -117,7 +117,7 @@
         },
         {
           "file": "settings.js",
-          "line": 264
+          "line": 267
         },
         {
           "file": "src/content.js",
@@ -137,7 +137,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2644
+          "line": 2645
         },
         {
           "file": "content.min.js",
@@ -153,7 +153,7 @@
         },
         {
           "file": "settings.js",
-          "line": 261
+          "line": 264
         },
         {
           "file": "src/content.js",
@@ -173,7 +173,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2582
+          "line": 2583
         },
         {
           "file": "bridge.js",
@@ -197,7 +197,7 @@
         },
         {
           "file": "settings.js",
-          "line": 77
+          "line": 79
         },
         {
           "file": "src/content.js",
@@ -237,7 +237,7 @@
         },
         {
           "file": "settings.js",
-          "line": 151
+          "line": 154
         },
         {
           "file": "site-recovery.js",
@@ -277,7 +277,7 @@
         },
         {
           "file": "settings.js",
-          "line": 278
+          "line": 281
         },
         {
           "file": "src/content.js",
@@ -295,11 +295,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 1272
+          "line": 1284
         },
         {
           "file": "background.js",
-          "line": 2670
+          "line": 2671
         },
         {
           "file": "popup.js",
@@ -311,7 +311,7 @@
         },
         {
           "file": "settings.js",
-          "line": 394
+          "line": 400
         }
       ]
     },
@@ -327,7 +327,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2651
+          "line": 2652
         },
         {
           "file": "content.min.js",
@@ -343,7 +343,7 @@
         },
         {
           "file": "settings.js",
-          "line": 278
+          "line": 281
         },
         {
           "file": "src/content.js",
@@ -379,7 +379,7 @@
         },
         {
           "file": "settings.js",
-          "line": 261
+          "line": 264
         },
         {
           "file": "src/content.js",
@@ -399,7 +399,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2589
+          "line": 2590
         },
         {
           "file": "content.min.js",
@@ -415,7 +415,7 @@
         },
         {
           "file": "settings.js",
-          "line": 155
+          "line": 158
         },
         {
           "file": "src/content.js",
@@ -439,11 +439,11 @@
         },
         {
           "file": "background.js",
-          "line": 2649
+          "line": 2650
         },
         {
           "file": "bridge.js",
-          "line": 2247
+          "line": 2267
         },
         {
           "file": "popup.js",
@@ -455,7 +455,7 @@
         },
         {
           "file": "settings.js",
-          "line": 262
+          "line": 265
         }
       ]
     },
@@ -471,7 +471,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2655
+          "line": 2656
         },
         {
           "file": "content.min.js",
@@ -487,7 +487,7 @@
         },
         {
           "file": "settings.js",
-          "line": 293
+          "line": 296
         },
         {
           "file": "site-recovery.js",
@@ -511,7 +511,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2652
+          "line": 2653
         },
         {
           "file": "content.min.js",
@@ -527,7 +527,7 @@
         },
         {
           "file": "settings.js",
-          "line": 292
+          "line": 295
         },
         {
           "file": "src/content.js",
@@ -539,7 +539,7 @@
       "key": "blockCnameTrackers",
       "owner": "background-cname.js",
       "name": "Block CNAME-cloaked trackers",
-      "contract": "On by default. Block confirmed tracking aliases from a local list; turn off for any site that needs an exception.",
+      "contract": "On by default. Blocks over 100,000 known disguised tracker addresses from a packaged list; fraud-check and tag-manager addresses only lose cookies. Turn off for any site that needs an exception.",
       "default": true,
       "siteOverride": [
         "network"
@@ -547,11 +547,11 @@
       "references": [
         {
           "file": "background-cname.js",
-          "line": 29
+          "line": 45
         },
         {
           "file": "background.js",
-          "line": 2591
+          "line": 2592
         },
         {
           "file": "popup.js",
@@ -563,7 +563,7 @@
         },
         {
           "file": "settings.js",
-          "line": 140
+          "line": 142
         }
       ]
     },
@@ -577,7 +577,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2672
+          "line": 2673
         },
         {
           "file": "popup.js",
@@ -589,7 +589,7 @@
         },
         {
           "file": "settings.js",
-          "line": 394
+          "line": 400
         }
       ]
     },
@@ -605,7 +605,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2584
+          "line": 2585
         },
         {
           "file": "content.min.js",
@@ -621,7 +621,7 @@
         },
         {
           "file": "settings.js",
-          "line": 156
+          "line": 159
         },
         {
           "file": "src/content.js",
@@ -641,7 +641,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2590
+          "line": 2591
         },
         {
           "file": "content.min.js",
@@ -657,7 +657,7 @@
         },
         {
           "file": "settings.js",
-          "line": 139
+          "line": 141
         },
         {
           "file": "src/content.js",
@@ -685,7 +685,7 @@
         },
         {
           "file": "bridge.js",
-          "line": 2244
+          "line": 2264
         },
         {
           "file": "content.min.js",
@@ -701,7 +701,7 @@
         },
         {
           "file": "settings.js",
-          "line": 277
+          "line": 280
         },
         {
           "file": "src/content.js",
@@ -719,7 +719,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2586
+          "line": 2587
         },
         {
           "file": "popup.js",
@@ -731,7 +731,7 @@
         },
         {
           "file": "settings.js",
-          "line": 160
+          "line": 163
         }
       ]
     },
@@ -747,7 +747,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2654
+          "line": 2655
         },
         {
           "file": "content.min.js",
@@ -763,7 +763,7 @@
         },
         {
           "file": "settings.js",
-          "line": 292
+          "line": 295
         },
         {
           "file": "src/content.js",
@@ -807,7 +807,7 @@
         },
         {
           "file": "settings.js",
-          "line": 278
+          "line": 281
         },
         {
           "file": "src/content.js",
@@ -843,7 +843,7 @@
         },
         {
           "file": "settings.js",
-          "line": 288
+          "line": 291
         },
         {
           "file": "src/content.js",
@@ -879,7 +879,7 @@
         },
         {
           "file": "settings.js",
-          "line": 260
+          "line": 263
         },
         {
           "file": "src/content.js",
@@ -897,7 +897,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2671
+          "line": 2672
         },
         {
           "file": "popup.js",
@@ -909,7 +909,7 @@
         },
         {
           "file": "settings.js",
-          "line": 394
+          "line": 400
         }
       ]
     },
@@ -941,7 +941,7 @@
         },
         {
           "file": "settings.js",
-          "line": 278
+          "line": 281
         },
         {
           "file": "src/content.js",
@@ -969,7 +969,7 @@
         },
         {
           "file": "bridge.js",
-          "line": 2244
+          "line": 2264
         },
         {
           "file": "popup.js",
@@ -981,7 +981,7 @@
         },
         {
           "file": "settings.js",
-          "line": 277
+          "line": 280
         }
       ]
     },
@@ -997,7 +997,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2653
+          "line": 2654
         },
         {
           "file": "content.min.js",
@@ -1013,7 +1013,7 @@
         },
         {
           "file": "settings.js",
-          "line": 292
+          "line": 295
         },
         {
           "file": "src/content.js",
@@ -1037,11 +1037,11 @@
         },
         {
           "file": "background.js",
-          "line": 2580
+          "line": 2581
         },
         {
           "file": "bridge.js",
-          "line": 2246
+          "line": 2266
         },
         {
           "file": "content.min.js",
@@ -1057,7 +1057,7 @@
         },
         {
           "file": "settings.js",
-          "line": 150
+          "line": 153
         },
         {
           "file": "src/content.js",
@@ -1081,11 +1081,11 @@
         },
         {
           "file": "background.js",
-          "line": 2588
+          "line": 2589
         },
         {
           "file": "bridge.js",
-          "line": 2246
+          "line": 2266
         },
         {
           "file": "content.min.js",
@@ -1105,7 +1105,7 @@
         },
         {
           "file": "settings.js",
-          "line": 149
+          "line": 152
         },
         {
           "file": "site-recovery.js",
@@ -1133,11 +1133,11 @@
         },
         {
           "file": "background.js",
-          "line": 2593
+          "line": 2594
         },
         {
           "file": "bridge.js",
-          "line": 2245
+          "line": 2265
         },
         {
           "file": "content.min.js",
@@ -1153,7 +1153,7 @@
         },
         {
           "file": "settings.js",
-          "line": 283
+          "line": 286
         },
         {
           "file": "src/content.js",
@@ -1189,7 +1189,7 @@
         },
         {
           "file": "settings.js",
-          "line": 138
+          "line": 140
         },
         {
           "file": "site-recovery.js",
@@ -1233,7 +1233,7 @@
         },
         {
           "file": "settings.js",
-          "line": 289
+          "line": 292
         },
         {
           "file": "src/content.js",
@@ -1253,7 +1253,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2597
+          "line": 2598
         },
         {
           "file": "content.min.js",
@@ -1269,7 +1269,7 @@
         },
         {
           "file": "settings.js",
-          "line": 283
+          "line": 286
         },
         {
           "file": "src/content.js",
@@ -1305,7 +1305,7 @@
         },
         {
           "file": "settings.js",
-          "line": 148
+          "line": 151
         },
         {
           "file": "src/content.js",
@@ -1323,7 +1323,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2651
+          "line": 2652
         },
         {
           "file": "content.min.js",
@@ -1357,7 +1357,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2604
+          "line": 2605
         },
         {
           "file": "popup.js",
@@ -1369,7 +1369,7 @@
         },
         {
           "file": "settings.js",
-          "line": 290
+          "line": 293
         }
       ]
     },
@@ -1385,7 +1385,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2706
+          "line": 2707
         },
         {
           "file": "content.min.js",
@@ -1401,7 +1401,7 @@
         },
         {
           "file": "settings.js",
-          "line": 145
+          "line": 148
         },
         {
           "file": "src/content.js",
@@ -1437,7 +1437,7 @@
         },
         {
           "file": "settings.js",
-          "line": 153
+          "line": 156
         }
       ]
     },
@@ -1463,7 +1463,7 @@
         },
         {
           "file": "settings.js",
-          "line": 154
+          "line": 157
         }
       ]
     },
@@ -1489,7 +1489,7 @@
         },
         {
           "file": "settings.js",
-          "line": 158
+          "line": 161
         }
       ]
     },
@@ -1499,42 +1499,6 @@
       "name": "Clipboard hijack protection",
       "contract": "Stop sites that secretly swap your clipboard — e.g. replacing a copied crypto wallet address with an attacker's. Keeps normal Copy buttons working. Opt-in.",
       "default": false,
-      "siteOverride": [
-        "page"
-      ],
-      "references": [
-        {
-          "file": "background.js",
-          "line": 2631
-        },
-        {
-          "file": "content.min.js",
-          "line": 1
-        },
-        {
-          "file": "popup.js",
-          "line": 39
-        },
-        {
-          "file": "settings-data.js",
-          "line": 14
-        },
-        {
-          "file": "settings.js",
-          "line": 285
-        },
-        {
-          "file": "src/content.js",
-          "line": 607
-        }
-      ]
-    },
-    {
-      "key": "clipboardSwapDetect",
-      "owner": "src/content.js",
-      "name": "Clipboard swap detection",
-      "contract": "Catches clipboard-swapping malware at paste time: if you paste a crypto address that differs from the one you just copied (same coin, within 2 minutes), it warns and shows both so you can check before sending. Works even against malware outside the browser. On by default.",
-      "default": true,
       "siteOverride": [
         "page"
       ],
@@ -1557,7 +1521,43 @@
         },
         {
           "file": "settings.js",
-          "line": 285
+          "line": 288
+        },
+        {
+          "file": "src/content.js",
+          "line": 607
+        }
+      ]
+    },
+    {
+      "key": "clipboardSwapDetect",
+      "owner": "src/content.js",
+      "name": "Clipboard swap detection",
+      "contract": "Catches clipboard-swapping malware at paste time: if you paste a crypto address that differs from the one you just copied (same coin, within 2 minutes), it warns and shows both so you can check before sending. Works even against malware outside the browser. On by default.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2633
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 288
         },
         {
           "file": "src/content.js",
@@ -1581,11 +1581,11 @@
         },
         {
           "file": "background.js",
-          "line": 2636
+          "line": 2637
         },
         {
           "file": "bridge.js",
-          "line": 2247
+          "line": 2267
         },
         {
           "file": "content.min.js",
@@ -1601,7 +1601,7 @@
         },
         {
           "file": "settings.js",
-          "line": 285
+          "line": 288
         },
         {
           "file": "src/content.js",
@@ -1621,7 +1621,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2594
+          "line": 2595
         },
         {
           "file": "content.min.js",
@@ -1637,7 +1637,7 @@
         },
         {
           "file": "settings.js",
-          "line": 283
+          "line": 286
         },
         {
           "file": "src/content.js",
@@ -1655,7 +1655,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2674
+          "line": 2675
         },
         {
           "file": "popup.js",
@@ -1667,7 +1667,7 @@
         },
         {
           "file": "settings.js",
-          "line": 394
+          "line": 400
         }
       ]
     },
@@ -1699,7 +1699,7 @@
         },
         {
           "file": "settings.js",
-          "line": 147
+          "line": 150
         },
         {
           "file": "src/content.js",
@@ -1735,7 +1735,7 @@
         },
         {
           "file": "settings.js",
-          "line": 260
+          "line": 263
         },
         {
           "file": "src/content.js",
@@ -1771,7 +1771,7 @@
         },
         {
           "file": "settings.js",
-          "line": 278
+          "line": 281
         },
         {
           "file": "src/content.js",
@@ -1795,11 +1795,11 @@
         },
         {
           "file": "background.js",
-          "line": 2595
+          "line": 2596
         },
         {
           "file": "bridge.js",
-          "line": 2245
+          "line": 2265
         },
         {
           "file": "content.min.js",
@@ -1815,7 +1815,7 @@
         },
         {
           "file": "settings.js",
-          "line": 284
+          "line": 287
         },
         {
           "file": "src/content.js",
@@ -1833,7 +1833,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2651
+          "line": 2652
         },
         {
           "file": "content.min.js",
@@ -1867,7 +1867,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2646
+          "line": 2647
         },
         {
           "file": "popup.js",
@@ -1879,7 +1879,7 @@
         },
         {
           "file": "settings.js",
-          "line": 262
+          "line": 265
         }
       ]
     },
@@ -1893,11 +1893,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 2903
+          "line": 2915
         },
         {
           "file": "background.js",
-          "line": 2613
+          "line": 2614
         },
         {
           "file": "popup.js",
@@ -1909,7 +1909,7 @@
         },
         {
           "file": "settings.js",
-          "line": 280
+          "line": 283
         }
       ]
     },
@@ -1925,7 +1925,7 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 1271
+          "line": 1283
         },
         {
           "file": "background.js",
@@ -1945,7 +1945,7 @@
         },
         {
           "file": "settings.js",
-          "line": 280
+          "line": 283
         },
         {
           "file": "src/content.js",
@@ -1965,11 +1965,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 2571
+          "line": 2583
         },
         {
           "file": "background.js",
-          "line": 2614
+          "line": 2615
         },
         {
           "file": "content.min.js",
@@ -2003,11 +2003,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 2574
+          "line": 2586
         },
         {
           "file": "background.js",
-          "line": 2616
+          "line": 2617
         },
         {
           "file": "popup.js",
@@ -2033,11 +2033,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 1509
+          "line": 1521
         },
         {
           "file": "background.js",
-          "line": 2617
+          "line": 2618
         },
         {
           "file": "popup.js",
@@ -2065,7 +2065,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2639
+          "line": 2640
         },
         {
           "file": "content.min.js",
@@ -2081,7 +2081,7 @@
         },
         {
           "file": "settings.js",
-          "line": 285
+          "line": 288
         },
         {
           "file": "src/content.js",
@@ -2101,7 +2101,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2651
+          "line": 2652
         },
         {
           "file": "content.min.js",
@@ -2117,7 +2117,7 @@
         },
         {
           "file": "settings.js",
-          "line": 293
+          "line": 296
         },
         {
           "file": "src/content.js",
@@ -2137,7 +2137,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2583
+          "line": 2584
         },
         {
           "file": "content.min.js",
@@ -2153,7 +2153,7 @@
         },
         {
           "file": "settings.js",
-          "line": 157
+          "line": 160
         },
         {
           "file": "src/content.js",
@@ -2173,7 +2173,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2600
+          "line": 2601
         },
         {
           "file": "content.min.js",
@@ -2189,7 +2189,7 @@
         },
         {
           "file": "settings.js",
-          "line": 290
+          "line": 293
         },
         {
           "file": "src/content.js",
@@ -2213,7 +2213,7 @@
         },
         {
           "file": "background.js",
-          "line": 2610
+          "line": 2611
         },
         {
           "file": "bridge.js",
@@ -2229,7 +2229,7 @@
         },
         {
           "file": "settings.js",
-          "line": 280
+          "line": 283
         }
       ]
     },
@@ -2245,7 +2245,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2638
+          "line": 2639
         },
         {
           "file": "content.min.js",
@@ -2261,7 +2261,7 @@
         },
         {
           "file": "settings.js",
-          "line": 284
+          "line": 287
         },
         {
           "file": "src/content.js",
@@ -2281,7 +2281,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2651
+          "line": 2652
         },
         {
           "file": "content.min.js",
@@ -2297,7 +2297,7 @@
         },
         {
           "file": "settings.js",
-          "line": 293
+          "line": 296
         },
         {
           "file": "src/content.js",
@@ -2333,7 +2333,7 @@
         },
         {
           "file": "settings.js",
-          "line": 264
+          "line": 267
         },
         {
           "file": "src/content.js",
@@ -2346,6 +2346,140 @@
       "owner": "src/content.js",
       "name": "Honeytoken mode",
       "contract": "Plants fake decoy secrets (api-key, token...) in page memory that real site code never touches. If a script reads one, it's credential-recon behavior and you're warned. Experimental and safe (it yields if the page actually uses a name), but off by default.",
+      "default": false,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2635
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 286
+        },
+        {
+          "file": "src/content.js",
+          "line": 610
+        }
+      ]
+    },
+    {
+      "key": "insecureLoginGuard",
+      "owner": "src/content.js",
+      "name": "Warn before an insecure sign-in",
+      "contract": "Stops you the moment you click into a password box on an unencrypted page, before you've typed anything, and offers the secure version of the site. Also catches the sneakier case: a page showing a padlock whose form still posts over plain http. Router and other local-network logins are left alone.",
+      "default": true,
+      "siteOverride": [
+        "page"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2604
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 293
+        },
+        {
+          "file": "src/content.js",
+          "line": 8669
+        }
+      ]
+    },
+    {
+      "key": "intranetNetworkRules",
+      "owner": "background.js",
+      "name": "Enforce it at the network layer too",
+      "contract": "Browser rules block direct private-network requests from public pages, including requests made by workers or through page APIs WardenOne does not see. Pages opened from your own network keep access to local devices. Turn this off if it breaks a local tool; the page-level check alone is easier for hostile site code to bypass.",
+      "default": true,
+      "siteOverride": [],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2648
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 265
+        }
+      ]
+    },
+    {
+      "key": "intranetProtection",
+      "owner": "background.js",
+      "name": "Intranet/router protection",
+      "contract": "Checks page requests aimed at local admin panels by IP or local name. Page API hooks can be bypassed by hostile site code; keep the browser network rule below on to block direct private-network requests across pages and workers. Public-looking names that resolve to your router are handled below.",
+      "default": true,
+      "siteOverride": [
+        "mixed"
+      ],
+      "references": [
+        {
+          "file": "background.js",
+          "line": 2646
+        },
+        {
+          "file": "content.min.js",
+          "line": 1
+        },
+        {
+          "file": "popup.js",
+          "line": 39
+        },
+        {
+          "file": "settings-data.js",
+          "line": 14
+        },
+        {
+          "file": "settings.js",
+          "line": 265
+        },
+        {
+          "file": "src/content.js",
+          "line": 618
+        }
+      ]
+    },
+    {
+      "key": "keystrokePressure",
+      "owner": "src/content.js",
+      "name": "Keystroke pressure detector",
+      "contract": "Warns when a page attaches an unusually large number of global keystroke listeners — the pattern a keylogger uses. It's a rough heuristic: rich editors and AI chat apps also attach many, so it can over-warn. Off by default; turn on if you want it.",
       "default": false,
       "siteOverride": [
         "page"
@@ -2369,141 +2503,7 @@
         },
         {
           "file": "settings.js",
-          "line": 283
-        },
-        {
-          "file": "src/content.js",
-          "line": 610
-        }
-      ]
-    },
-    {
-      "key": "insecureLoginGuard",
-      "owner": "src/content.js",
-      "name": "Warn before an insecure sign-in",
-      "contract": "Stops you the moment you click into a password box on an unencrypted page, before you've typed anything, and offers the secure version of the site. Also catches the sneakier case: a page showing a padlock whose form still posts over plain http. Router and other local-network logins are left alone.",
-      "default": true,
-      "siteOverride": [
-        "page"
-      ],
-      "references": [
-        {
-          "file": "background.js",
-          "line": 2603
-        },
-        {
-          "file": "content.min.js",
-          "line": 1
-        },
-        {
-          "file": "popup.js",
-          "line": 39
-        },
-        {
-          "file": "settings-data.js",
-          "line": 14
-        },
-        {
-          "file": "settings.js",
-          "line": 290
-        },
-        {
-          "file": "src/content.js",
-          "line": 8664
-        }
-      ]
-    },
-    {
-      "key": "intranetNetworkRules",
-      "owner": "background.js",
-      "name": "Enforce it at the network layer too",
-      "contract": "Browser rules block direct private-network requests from public pages, including requests made by workers or through page APIs WardenOne does not see. Pages opened from your own network keep access to local devices. Turn this off if it breaks a local tool; the page-level check alone is easier for hostile site code to bypass.",
-      "default": true,
-      "siteOverride": [],
-      "references": [
-        {
-          "file": "background.js",
-          "line": 2647
-        },
-        {
-          "file": "popup.js",
-          "line": 39
-        },
-        {
-          "file": "settings-data.js",
-          "line": 14
-        },
-        {
-          "file": "settings.js",
-          "line": 262
-        }
-      ]
-    },
-    {
-      "key": "intranetProtection",
-      "owner": "background.js",
-      "name": "Intranet/router protection",
-      "contract": "Checks page requests aimed at local admin panels by IP or local name. Page API hooks can be bypassed by hostile site code; keep the browser network rule below on to block direct private-network requests across pages and workers. Public-looking names that resolve to your router are handled below.",
-      "default": true,
-      "siteOverride": [
-        "mixed"
-      ],
-      "references": [
-        {
-          "file": "background.js",
-          "line": 2645
-        },
-        {
-          "file": "content.min.js",
-          "line": 1
-        },
-        {
-          "file": "popup.js",
-          "line": 39
-        },
-        {
-          "file": "settings-data.js",
-          "line": 14
-        },
-        {
-          "file": "settings.js",
-          "line": 262
-        },
-        {
-          "file": "src/content.js",
-          "line": 618
-        }
-      ]
-    },
-    {
-      "key": "keystrokePressure",
-      "owner": "src/content.js",
-      "name": "Keystroke pressure detector",
-      "contract": "Warns when a page attaches an unusually large number of global keystroke listeners — the pattern a keylogger uses. It's a rough heuristic: rich editors and AI chat apps also attach many, so it can over-warn. Off by default; turn on if you want it.",
-      "default": false,
-      "siteOverride": [
-        "page"
-      ],
-      "references": [
-        {
-          "file": "background.js",
-          "line": 2633
-        },
-        {
-          "file": "content.min.js",
-          "line": 1
-        },
-        {
-          "file": "popup.js",
-          "line": 39
-        },
-        {
-          "file": "settings-data.js",
-          "line": 14
-        },
-        {
-          "file": "settings.js",
-          "line": 284
+          "line": 287
         },
         {
           "file": "src/content.js",
@@ -2557,7 +2557,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2607
+          "line": 2608
         },
         {
           "file": "bridge.js",
@@ -2573,7 +2573,7 @@
         },
         {
           "file": "settings.js",
-          "line": 260
+          "line": 263
         }
       ]
     },
@@ -2605,7 +2605,7 @@
         },
         {
           "file": "settings.js",
-          "line": 162
+          "line": 165
         }
       ]
     },
@@ -2621,7 +2621,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2651
+          "line": 2652
         },
         {
           "file": "content.min.js",
@@ -2637,7 +2637,7 @@
         },
         {
           "file": "settings.js",
-          "line": 293
+          "line": 296
         },
         {
           "file": "src/content.js",
@@ -2673,7 +2673,7 @@
         },
         {
           "file": "settings.js",
-          "line": 261
+          "line": 264
         },
         {
           "file": "src/content.js",
@@ -2693,7 +2693,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2651
+          "line": 2652
         },
         {
           "file": "content.min.js",
@@ -2709,7 +2709,7 @@
         },
         {
           "file": "settings.js",
-          "line": 293
+          "line": 296
         },
         {
           "file": "src/content.js",
@@ -2729,7 +2729,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2641
+          "line": 2642
         },
         {
           "file": "oauth-guard.js",
@@ -2745,7 +2745,7 @@
         },
         {
           "file": "settings.js",
-          "line": 283
+          "line": 286
         }
       ]
     },
@@ -2761,11 +2761,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 2594
+          "line": 2606
         },
         {
           "file": "background.js",
-          "line": 2624
+          "line": 2625
         },
         {
           "file": "content.min.js",
@@ -2781,7 +2781,7 @@
         },
         {
           "file": "settings.js",
-          "line": 281
+          "line": 284
         },
         {
           "file": "src/content.js",
@@ -2801,7 +2801,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2637
+          "line": 2638
         },
         {
           "file": "content.min.js",
@@ -2817,7 +2817,7 @@
         },
         {
           "file": "settings.js",
-          "line": 285
+          "line": 288
         },
         {
           "file": "src/content.js",
@@ -2841,11 +2841,11 @@
         },
         {
           "file": "background.js",
-          "line": 2596
+          "line": 2597
         },
         {
           "file": "bridge.js",
-          "line": 2245
+          "line": 2265
         },
         {
           "file": "content.min.js",
@@ -2861,7 +2861,7 @@
         },
         {
           "file": "settings.js",
-          "line": 284
+          "line": 287
         },
         {
           "file": "src/content.js",
@@ -2881,7 +2881,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2640
+          "line": 2641
         },
         {
           "file": "bridge.js",
@@ -2901,7 +2901,7 @@
         },
         {
           "file": "settings.js",
-          "line": 263
+          "line": 266
         }
       ]
     },
@@ -2917,11 +2917,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 2591
+          "line": 2603
         },
         {
           "file": "background.js",
-          "line": 2625
+          "line": 2626
         },
         {
           "file": "content.min.js",
@@ -2973,7 +2973,7 @@
         },
         {
           "file": "settings.js",
-          "line": 152
+          "line": 155
         }
       ]
     },
@@ -3005,7 +3005,7 @@
         },
         {
           "file": "settings.js",
-          "line": 277
+          "line": 280
         },
         {
           "file": "site-recovery.js",
@@ -3029,7 +3029,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2643
+          "line": 2644
         },
         {
           "file": "content.min.js",
@@ -3045,7 +3045,7 @@
         },
         {
           "file": "settings.js",
-          "line": 260
+          "line": 263
         },
         {
           "file": "src/content.js",
@@ -3075,7 +3075,7 @@
         },
         {
           "file": "settings.js",
-          "line": 264
+          "line": 267
         }
       ]
     },
@@ -3091,7 +3091,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2635
+          "line": 2636
         },
         {
           "file": "content.min.js",
@@ -3107,7 +3107,7 @@
         },
         {
           "file": "settings.js",
-          "line": 285
+          "line": 288
         },
         {
           "file": "src/content.js",
@@ -3127,7 +3127,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2642
+          "line": 2643
         },
         {
           "file": "bridge.js",
@@ -3143,7 +3143,7 @@
         },
         {
           "file": "settings.js",
-          "line": 261
+          "line": 264
         }
       ]
     },
@@ -3175,7 +3175,7 @@
         },
         {
           "file": "settings.js",
-          "line": 272
+          "line": 275
         },
         {
           "file": "site-recovery.js",
@@ -3199,7 +3199,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2581
+          "line": 2582
         },
         {
           "file": "content.min.js",
@@ -3215,7 +3215,7 @@
         },
         {
           "file": "settings.js",
-          "line": 161
+          "line": 164
         },
         {
           "file": "src/content.js",
@@ -3235,7 +3235,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2592
+          "line": 2593
         },
         {
           "file": "content.min.js",
@@ -3251,7 +3251,7 @@
         },
         {
           "file": "settings.js",
-          "line": 283
+          "line": 286
         },
         {
           "file": "src/content.js",
@@ -3271,7 +3271,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2579
+          "line": 2580
         },
         {
           "file": "content.min.js",
@@ -3287,7 +3287,7 @@
         },
         {
           "file": "settings.js",
-          "line": 142
+          "line": 145
         },
         {
           "file": "src/content.js",
@@ -3321,7 +3321,7 @@
         },
         {
           "file": "settings.js",
-          "line": 263
+          "line": 266
         }
       ]
     },
@@ -3341,11 +3341,11 @@
         },
         {
           "file": "background.js",
-          "line": 2648
+          "line": 2649
         },
         {
           "file": "bridge.js",
-          "line": 2246
+          "line": 2266
         },
         {
           "file": "popup.js",
@@ -3357,7 +3357,7 @@
         },
         {
           "file": "settings.js",
-          "line": 262
+          "line": 265
         }
       ]
     },
@@ -3381,7 +3381,7 @@
         },
         {
           "file": "bridge.js",
-          "line": 2244
+          "line": 2264
         },
         {
           "file": "content.min.js",
@@ -3397,7 +3397,7 @@
         },
         {
           "file": "settings.js",
-          "line": 277
+          "line": 280
         },
         {
           "file": "src/content.js",
@@ -3417,7 +3417,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2705
+          "line": 2706
         },
         {
           "file": "content.min.js",
@@ -3437,7 +3437,7 @@
         },
         {
           "file": "settings.js",
-          "line": 144
+          "line": 147
         },
         {
           "file": "site-recovery.js",
@@ -3471,7 +3471,7 @@
         },
         {
           "file": "settings.js",
-          "line": 143
+          "line": 146
         }
       ]
     },
@@ -3479,7 +3479,7 @@
       "key": "trackerLearner",
       "owner": "background.js",
       "name": "Local tracker learner",
-      "contract": "Suggests repeated tracker domains and flags suspected URL identifiers in Activity. Identifier detection leaves URLs intact. Domain blocks need your approval; observations stay local.",
+      "contract": "Finds tracker candidates across your sites. Learning stays on this device; known tracker blocking works independently.",
       "default": true,
       "siteOverride": [
         "mixed"
@@ -3507,7 +3507,7 @@
         },
         {
           "file": "settings.js",
-          "line": 141
+          "line": 143
         },
         {
           "file": "src/content.js",
@@ -3531,7 +3531,7 @@
         },
         {
           "file": "bridge.js",
-          "line": 2248
+          "line": 2268
         },
         {
           "file": "content.min.js",
@@ -3547,7 +3547,7 @@
         },
         {
           "file": "settings.js",
-          "line": 274
+          "line": 277
         },
         {
           "file": "src/content.js",
@@ -3571,7 +3571,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2578
+          "line": 2579
         },
         {
           "file": "content.min.js",
@@ -3591,7 +3591,7 @@
         },
         {
           "file": "settings.js",
-          "line": 146
+          "line": 149
         },
         {
           "file": "src/content.js",
@@ -3611,11 +3611,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 2588
+          "line": 2600
         },
         {
           "file": "background.js",
-          "line": 2619
+          "line": 2620
         },
         {
           "file": "content.min.js",
@@ -3671,7 +3671,7 @@
         },
         {
           "file": "settings.js",
-          "line": 288
+          "line": 291
         },
         {
           "file": "src/content.js",
@@ -3707,7 +3707,7 @@
         },
         {
           "file": "settings.js",
-          "line": 260
+          "line": 263
         },
         {
           "file": "src/content.js",
@@ -3743,7 +3743,7 @@
         },
         {
           "file": "settings.js",
-          "line": 275
+          "line": 278
         }
       ]
     },
@@ -3775,7 +3775,7 @@
         },
         {
           "file": "settings.js",
-          "line": 260
+          "line": 263
         },
         {
           "file": "src/content.js",
@@ -3809,7 +3809,7 @@
         },
         {
           "file": "settings.js",
-          "line": 263
+          "line": 266
         }
       ]
     },
@@ -3825,7 +3825,7 @@
       "references": [
         {
           "file": "background.js",
-          "line": 2627
+          "line": 2628
         },
         {
           "file": "content.min.js",
@@ -3861,11 +3861,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 2600
+          "line": 2612
         },
         {
           "file": "background.js",
-          "line": 2629
+          "line": 2630
         },
         {
           "file": "content.min.js",
@@ -3901,11 +3901,11 @@
       "references": [
         {
           "file": "background-downloads.js",
-          "line": 2603
+          "line": 2615
         },
         {
           "file": "background.js",
-          "line": 2630
+          "line": 2631
         },
         {
           "file": "content.min.js",
@@ -3957,7 +3957,7 @@
         },
         {
           "file": "settings.js",
-          "line": 261
+          "line": 264
         },
         {
           "file": "src/content.js",
@@ -4626,6 +4626,11 @@
       "key": "trackerLearner",
       "type": "boolean",
       "default": true
+    },
+    {
+      "key": "trackerLearnerAuto",
+      "type": "boolean",
+      "default": false
     },
     {
       "key": "twitchAdBlock",
@@ -5405,27 +5410,27 @@
     {
       "type": "popup",
       "file": "background-downloads.js",
-      "line": 1894
+      "line": 1906
     },
     {
       "type": "basic",
       "file": "background-downloads.js",
-      "line": 1913
+      "line": 1925
     },
     {
       "type": "download_reputation",
       "file": "background-downloads.js",
-      "line": 1981
+      "line": 1993
     },
     {
       "type": "download_guard",
       "file": "background-downloads.js",
-      "line": 2006
+      "line": 2018
     },
     {
       "type": "download_guard",
       "file": "background-downloads.js",
-      "line": 2971
+      "line": 2983
     },
     {
       "type": "basic",
@@ -5445,42 +5450,42 @@
     {
       "type": "memory_tab_slept",
       "file": "background-memory.js",
-      "line": 336
+      "line": 345
     },
     {
       "type": "memory_free_ram",
       "file": "background-memory.js",
-      "line": 385
+      "line": 394
     },
     {
       "type": "memory_dupes_closed",
       "file": "background-memory.js",
-      "line": 448
+      "line": 457
     },
     {
       "type": "basic",
       "file": "background-memory.js",
-      "line": 534
+      "line": 543
     },
     {
       "type": "tab_limit_closed",
       "file": "background-memory.js",
-      "line": 636
+      "line": 645
     },
     {
       "type": "tab_limit_slept",
       "file": "background-memory.js",
-      "line": 641
+      "line": 650
     },
     {
       "type": "memory_tab_slept_by_hand",
       "file": "background-memory.js",
-      "line": 880
+      "line": 889
     },
     {
       "type": "memory_group_slept",
       "file": "background-memory.js",
-      "line": 950
+      "line": 959
     },
     {
       "type": "startup_review",
@@ -5545,47 +5550,42 @@
     {
       "type": "block",
       "file": "background.js",
-      "line": 4717
+      "line": 4721
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 4996
+      "line": 5000
     },
     {
       "type": "redirect",
       "file": "background.js",
-      "line": 5002
+      "line": 5006
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 5008
+      "line": 5012
     },
     {
       "type": "blocked_grabber_navigation",
       "file": "background.js",
-      "line": 5247
+      "line": 5251
     },
     {
       "type": "blocked_grabber_network",
       "file": "background.js",
-      "line": 5282
+      "line": 5286
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 6314
+      "line": 6319
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 6645
-    },
-    {
-      "type": "block",
-      "file": "background.js",
-      "line": 6705
+      "line": 6650
     },
     {
       "type": "block",
@@ -5593,199 +5593,224 @@
       "line": 6710
     },
     {
+      "type": "block",
+      "file": "background.js",
+      "line": 6715
+    },
+    {
+      "type": "auto_blocked_tracker_domain",
+      "file": "background.js",
+      "line": 7464
+    },
+    {
       "type": "proposed_tracker_domain",
       "file": "background.js",
-      "line": 7369
+      "line": 7482
     },
     {
       "type": "learned_tracker_domain",
       "file": "background.js",
-      "line": 7425
+      "line": 7589
+    },
+    {
+      "type": "unblocked_tracker_domain",
+      "file": "background.js",
+      "line": 7603
+    },
+    {
+      "type": "unblocked_tracker_domains",
+      "file": "background.js",
+      "line": 7629
     },
     {
       "type": "redirect_interstitial_shown",
       "file": "background.js",
-      "line": 10381
+      "line": 10570
     },
     {
       "type": "warned_reputation_bypassed",
       "file": "background.js",
-      "line": 10527
+      "line": 10716
     },
     {
       "type": "blocked_safe_browsing_page",
       "file": "background.js",
-      "line": 10588
+      "line": 10777
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 11093
+      "line": 11282
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 11125
+      "line": 11314
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 11173
+      "line": 11362
     },
     {
       "type": "search_junk_seed_unavailable",
       "file": "background.js",
-      "line": 12238
+      "line": 12432
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 13000
+      "line": 13194
     },
     {
       "type": "forget_me_wiped",
       "file": "background.js",
-      "line": 13939
+      "line": 14133
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 14099
+      "line": 14293
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 14421
+      "line": 14618
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 14432
+      "line": 14629
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 14449
+      "line": 14646
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 15225
+      "line": 15446
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 15238
+      "line": 15459
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 15368
+      "line": 15589
     },
     {
       "type": "redirect",
       "file": "background.js",
-      "line": 15370
+      "line": 15591
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 15431
+      "line": 15652
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 15440
+      "line": 15661
     },
     {
       "type": "allow",
       "file": "background.js",
-      "line": 15564
+      "line": 15785
     },
     {
       "type": "warned_list_integrity",
       "file": "background.js",
-      "line": 16280
+      "line": 16502
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 17633
+      "line": 17855
     },
     {
       "type": "block",
       "file": "background.js",
-      "line": 17717
+      "line": 17939
     },
     {
       "type": "dns_rebind_quarantine",
       "file": "background.js",
-      "line": 17768
+      "line": 17990
     },
     {
       "type": "warned_permission_chain",
       "file": "background.js",
-      "line": 18865
+      "line": 19089
     },
     {
       "type": "warned_oauth_grant",
       "file": "background.js",
-      "line": 18978
+      "line": 19202
     },
     {
       "type": "warned_script_drift",
       "file": "background.js",
-      "line": 19220
+      "line": 19444
     },
     {
       "type": "separator",
       "file": "background.js",
-      "line": 19810
+      "line": 20034
     },
     {
       "type": "basic",
       "file": "background.js",
-      "line": 19867
+      "line": 20091
     },
     {
       "type": "cleaned_site_storage",
       "file": "background.js",
-      "line": 21023
+      "line": 21247
     },
     {
       "type": "cleaned_site_service_worker",
       "file": "background.js",
-      "line": 21127
+      "line": 21351
     },
     {
       "type": "cleaned_site_cookies",
       "file": "background.js",
-      "line": 21215
+      "line": 21439
     },
     {
       "type": "warned_new_domain_login",
       "file": "background.js",
-      "line": 23058
+      "line": 23282
     },
     {
       "type": "blocked_phishing",
       "file": "background.js",
-      "line": 23062
+      "line": 23286
     },
     {
       "type": "gated_tokens_cleared",
       "file": "background.js",
-      "line": 23828
+      "line": 24052
     },
     {
       "type": "gated_cookies_hardened",
       "file": "background.js",
-      "line": 23875
+      "line": 24099
     },
     {
       "type": "block",
       "file": "cname-utils.js",
-      "line": 94
+      "line": 109
+    },
+    {
+      "type": "allow",
+      "file": "cname-utils.js",
+      "line": 140
     },
     {
       "type": "consent_outcome",
@@ -5845,112 +5870,112 @@
     {
       "type": "switch",
       "file": "settings.js",
-      "line": 167
+      "line": 170
     },
     {
       "type": "site",
       "file": "settings.js",
-      "line": 169
+      "line": 172
     },
     {
       "type": "action",
       "file": "settings.js",
-      "line": 170
+      "line": 173
     },
     {
       "type": "choice",
       "file": "settings.js",
-      "line": 171
+      "line": 174
     },
     {
       "type": "custom",
       "file": "settings.js",
-      "line": 173
+      "line": 176
     },
     {
       "type": "num",
       "file": "settings.js",
-      "line": 177
+      "line": 180
     },
     {
       "type": "slider",
       "file": "settings.js",
-      "line": 178
+      "line": 181
     },
     {
       "type": "pick",
       "file": "settings.js",
-      "line": 179
+      "line": 182
     },
     {
       "type": "flag",
       "file": "settings.js",
-      "line": 180
+      "line": 183
     },
     {
       "type": "note",
       "file": "settings.js",
-      "line": 207
+      "line": 210
     },
     {
       "type": "note",
       "file": "settings.js",
-      "line": 225
+      "line": 228
     },
     {
       "type": "note",
       "file": "settings.js",
-      "line": 230
+      "line": 233
     },
     {
       "type": "feed",
       "file": "settings.js",
-      "line": 249
+      "line": 252
     },
     {
       "type": "select",
       "file": "settings.js",
-      "line": 359
+      "line": 362
     },
     {
       "type": "chips",
       "file": "settings.js",
-      "line": 360
+      "line": 363
     },
     {
       "type": "switch",
       "file": "settings.js",
-      "line": 763
+      "line": 777
     },
     {
       "type": "switch",
       "file": "settings.js",
-      "line": 986
+      "line": 1039
     },
     {
       "type": "setting",
       "file": "settings.js",
-      "line": 1708
+      "line": 1799
     },
     {
       "type": "setting",
       "file": "settings.js",
-      "line": 1713
+      "line": 1804
     },
     {
       "type": "preset",
       "file": "settings.js",
-      "line": 1715
+      "line": 1806
     },
     {
       "type": "setting",
       "file": "settings.js",
-      "line": 1811
+      "line": 1904
     },
     {
       "type": "preset",
       "file": "settings.js",
-      "line": 1812
+      "line": 1905
     },
     {
       "type": "warning_panel",
@@ -5970,7 +5995,7 @@
     {
       "type": "warning_toast",
       "file": "src/content.js",
-      "line": 21595
+      "line": 21637
     },
     {
       "type": "config",
@@ -6034,27 +6059,27 @@
   "sourceHashes": {
     "animated-image-saver.js": "c36de6e175d21ef215cc58621cb2d56734712cfcbe7c2affbe459c69f91d8135",
     "anti-redirect.js": "9725e1739bbe0ff97c4e46b5cf2bfab095f9408920c49d5a03f822050420dda6",
-    "background-cname.js": "af985c259d5f1997276ec71d8da1bd955069baa9b0e71e6bb2ae7c3e936d1dff",
-    "background-downloads.js": "44bf84daa86b71cd5b056484f249585bef74ee59e2eb80680173673845d9a9bf",
+    "background-cname.js": "5e03df3af65237759b48462318aa049f954079f0af785622c9e28d0ab5c1e957",
+    "background-downloads.js": "1b55067693513c567c20f4b828b6ceb225f4e493996bfbfd448a3fefacd30891",
     "background-extension-reputation.js": "3b2a971799ea1479e5911e2ab98cddcd1b2409ece66ffbcbfaf177afc5537d04",
     "background-extension-watch.js": "c40721af7bdb05d68762220f667fa4a3e8c19a19627ebbaa2a3904c0f64b5412",
     "background-identifiers.js": "6a2a5a80e7ae09a0f2977a34ecbddd4227366b1d7a73595ebc6a9a4d3e1e76e3",
-    "background-memory.js": "d8c0ea303917b2d6c6747944d3ae228da4a1174df3da589cc4ecb3371568e3b1",
+    "background-memory.js": "cf9412119d9dc08d55d4c2f14fd6fdc012c5a5abdf87f854c9c637ec6e9af217",
     "background-privacy-cleaner.js": "e8a546d219fe522fb875a51551c09e126366e0176c8d92163ae37eab3bd97785",
     "background-startup.js": "e0e1bbd12f9b3b14fbbc1aed9e6b1b58a84140e9c080ec6621d3e1e9d93bad4d",
-    "background.js": "5682d0b1ddf6b311cd39535e144c0c88242b5ea5179bc6aad5ea1f1ae90f1107",
-    "bridge.js": "e85c88310fa1ba96917991e0b01f38ca8fa60cb286816b4ae2ad9441859d45e2",
+    "background.js": "d40511d17757a1dec233f64dab43547a1214a2f20fd873a5a1465a88210118c3",
+    "bridge.js": "698cd9ae66fb0d21ca4ca34ba9124c55a057d243dd5a499ca230a74b0a7339b2",
     "build-profile.js": "830644487d588ab6e1a2408aef8168f330beb715cfaca516625e9b89f9963957",
     "build-update.js": "ece2d9874b6db7fe0eb0016d01cd25218f11092f21921dcefe2db1e5c429b9c8",
     "cert-error.js": "ac0774b44c483f3164f31124781fa8e1dc891f4dd2e4104b507f48168c567907",
-    "cname-utils.js": "4059125dcdf942abd298bd58559b187dd4fc1369248211637c54afe1a87cb71e",
+    "cname-utils.js": "319489f81741f0c4e536b1149c37126a5aba770fe6b9ac2e7e00cccc3caa8219",
     "command-palette.js": "593905c5e14645abcbca8c692560c4a03ae6b5960df5fec81b6c015b34a09ed4",
     "config-lock.js": "21a562eaded745db5c4d2dabccab20b25971853b39a8422392f66d01e1e3d7b1",
     "consent-reject.js": "1d5f5b99c839f9b32ede3e6a10480cced9fea1a3f7dbc403369eef21c89f8b78",
     "consent-state.js": "549094084540aeb837a73bfbd4af003d92da1d69dec4604aed7cdf5ebb3381b4",
     "consent-wall.js": "500212267ae122607f98cb86da57c73b7e5bc00c594334b5b6ab4114a7101ce7",
-    "content.min.js": "df36d28ba48b0f0f0299061de7061213bf5e9b3bef6a3b3bfb00881799309111",
-    "cookie-access.js": "dd31af85166efeb87f617d9faa047d4028e1bff1ea36cb06acaa861d2a8d64bc",
+    "content.min.js": "34cc632b2b76b61ecda9510f11c13d56a590c3c09fb9a785b2cf6010c5e6af75",
+    "cookie-access.js": "5935984897633c69d5e318852dd71e6ab2a48b397c6825ed632ae483e2d9a068",
     "cryptominer-detect.js": "dd4c5c677e72dfb11e2203a92762b7f33dddd7654708201101a978b790cd3057",
     "domain-utils-isolated.js": "5c8a3928d19a94eff48eea4bf777736e0ef020d17f16aee10f7263b6914f749d",
     "domain-utils.js": "5c8a3928d19a94eff48eea4bf777736e0ef020d17f16aee10f7263b6914f749d",
@@ -6075,7 +6100,7 @@
     "frame-image-logger.js": "8bad2a72d5c565649648434c097cb70cf8c916c888371ec44399c1ac6a02de2d",
     "hidden-elements.js": "bec90b795434c0bb9b04657c4eb9f26fdfc34152a22dc3eb48e479472b28994a",
     "history-store.js": "033dcfe0c618759988b6b197246503cbf4918675d5e438fcb39b2ac77b29a7d3",
-    "history.js": "bcff7544df7bbd1a26aafb5e361845178808ca2fd2feb5a55086bfec9f76b3f8",
+    "history.js": "76216b58e0c8addd4fe54c5105609a6738a3591737735778535db38d3d51f129",
     "identifier-detector.js": "2c9939d5198b1fd75755b6ce9eeb62f1fb87175f66017f0fde737572870f6e6c",
     "idn-utils.js": "6700e12e88662efb967e0fc1999fa14dfe23b143b2863f61e300374e612ef515",
     "ip-logger-warning.js": "0e919f0b941cf31ec186ec79274a34803a69a845aaab5cfc9c0e07e9f615343e",
@@ -6088,15 +6113,15 @@
     "notifications.js": "e16261be751f961d9b844dd4d429ce4508e6467aea03c6ed80591fe2edbb9fbf",
     "oauth-guard.js": "4484ee7730f798f318ac0185be9f922acc5b24fded182b7e351bf5f8aed70a85",
     "offscreen.js": "f37cbd7014f36e2fc780135a438eb891ac4ed9e445b5c54460ada045b9b0115a",
-    "onboarding.js": "4ab1c8fa879e9d3d4d1bdd688711c9823b6bae9531911719a64647e3aff3e0ce",
+    "onboarding.js": "ce42e2748a59052385eabda4863942f3f239f04593e0854f9f5c1ec38f5eebb3",
     "permission-chain.js": "c47abd30b27674bb64c7dda08e9a9542a61dc12aef9a08cc36d1788b5b8b2f17",
     "popup-diagnostics.js": "7b289b15a602bd88abcc7043caa016469275f73110cd8c1c5837060208853b9c",
     "popup-first-paint.js": "c58714b35daf8ae358b174500cfbf26b14ee45a4b66faed4f903e6b75bd40c08",
     "popup-health.js": "5fed69a40df89668cfe717acd3cef7c0a806c23d1691625e255d6189a1c2342d",
     "popup-privacy-cleaner.js": "5cc1eee1a0d2c0ff8fe7cf9673b2e230aafb0f01e1baedb3cad74356c793d6d5",
     "popup-scroll-memory.js": "1bb89cff7905920ddc5be80f9fbe92c847f733f3f11cf6930a749fe390d1efdd",
-    "popup-settings-search.js": "ddc26470b939f1993745905c6d4c5e97970fdf7b7b61cae8751921cd556967ff",
-    "popup.js": "af2615356cda98a84c0e2364799e97bed2002f16ff348f42f6e680e7491b58cd",
+    "popup-settings-search.js": "bbe17df37732e9d0f58c9d650bae9dd4a51dcd93ced786b8fa24c99637d564bd",
+    "popup.js": "70fee39cdaf5776b7f8ed610b82ae13f0460c4b2bd4b4a4172b428fc87dd713c",
     "privacy-probe.js": "5d4c266cc88913bb3a747341659fa81bceffa768bfc96677b62de8216a183f36",
     "privacy-signals.js": "8b5072149e1a8bf9567a55d281d385869ca2b2ac70212bc1cf3a023d1a883a6f",
     "privacy-test.js": "a4d837b3dc207180ea47db890fc99145afb22c806b5ed893288358d00eaf2c84",
@@ -6106,16 +6131,16 @@
     "safe-browsing-block.js": "4b49999912a6149ce4f95abcf3e1c562259fa5e14107e2ca45d8c2bfb3182ad1",
     "search-junk.js": "003ce6e584f42b1bf86fd98452424a187dba050401b5552ebce12e70af397e98",
     "search-loggers.js": "90965d81f373065f1895ca8349655917c81195de70e6f4c47ff577f190aeb1d8",
-    "settings-data.js": "d33dbfc8c505529a23ae9d2bbb4bb2a196c5a0dddaa042f13ccdb08bf5049480",
-    "settings.js": "84d9e81f51bdd054e2021214d8177da5cc580e8918d254d7439ceaebb1218928",
+    "settings-data.js": "4c23a17e328a850ee7d70b4541d5a91660f6ff2188aad5f30f659cf7995df1c6",
+    "settings.js": "a7f6fed20eaf68a156a0bddeb0810e1a85ad1aad193042f86d3489afbe4e6b71",
     "site-dashboard-shared.js": "5295406a7ae28ec052becc89d65951c07d5abd6612d665f2143bb748272a1619",
     "site-recovery.js": "b0090f627fd2b4f12e375ead4e00e35113785a06a1831c1fb3871fba5e5e4b80",
     "spotify-adblock.js": "7624982cde396ef625a620e1992c6bd93e0d93d064a1e34a3bc8776977a14a53",
-    "src/content.js": "956f100e4e64bd62ebdbf01af7640589b2045ada856f0858849d44a672c1bfb8",
+    "src/content.js": "19a53c6d6eb7448eee88fe23f23f7554eb7e96073c20e4233d1595537b67e1a5",
     "theme.js": "7115e1f469a6bf59f0294b250509aa026c12306a74e8c94c6ea9190e60b27482",
-    "tracker-attribution.js": "8260cf1992bdbd190d93ea89c46ab0cace660eae0614a9706c5722704213e915",
-    "tracker-learner-utils.js": "ea549da148a04441e6c7cecfffa0458850e36d7d20fd6e04e8700e027f4c0dc9",
-    "tracker-network-data.js": "c8056c18030fd16537c46aaea9f92b59a5d8ab727d832f45842ea6080be42831",
+    "tracker-attribution.js": "1170a60677592bda7767aadc6efb719012ead61e16f7e5a613d59d08e2fa88b8",
+    "tracker-learner-utils.js": "ff48122bfca259670e93151005623045f80f310aeb2219c37593421a97847dbe",
+    "tracker-network-data.js": "ca9bc17bfc63338896c1d66d45a571ea27cdc21f36d961a4f37bbf553a05d970",
     "twitch-adblock.js": "7aaa95284f9d59535acce3191ca9bfcdbd2ce8d0cd8f5700bf8e7c7907411cc0",
     "twitch-rewind.js": "544962a70a643cf53ca038484614b806f2bc11df6081ff2ee37277b6121a3c0b",
     "twitch-vod-rewind.js": "373404ac80d01463ea60c7a6b659c295182b5b44de58cfd3f770cf8e4e1f420c",

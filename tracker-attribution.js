@@ -105,7 +105,7 @@ const WOTrackerAttribution = (() => {
     return { kind, requestedHost, label: kind === 'suspected-tracker' ? 'Locally suspected tracker · ' + suffix : kind === 'blocked-unattributed' ? 'Blocked request · ' + suffix : '' };
   }
   function historyHost(entry) {
-    if (!/^(?:blocked_tracker_request|detected_thirdparty_tracker|proposed_tracker_domain|learned_tracker_domain|detected_beacon|warned_logger_api|blocked_fingerprint_script)$/.test(entry?.type || '')) return '';
+    if (!/^(?:blocked_tracker_request|detected_thirdparty_tracker|proposed_tracker_domain|learned_tracker_domain|auto_learned_tracker_domain|auto_blocked_tracker_domain|unblocked_tracker_domain|detected_beacon|warned_logger_api|blocked_fingerprint_script)$/.test(entry?.type || '')) return '';
     const d = entry.detail || {};
     return host(d.domain || d.host || d.dest || d.url) || '';
   }

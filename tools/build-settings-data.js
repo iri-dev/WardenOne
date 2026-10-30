@@ -45,8 +45,7 @@ function literal(src, marker, file, sandbox) {
   throw new Error(file + ': unbalanced ' + marker);
 }
 
-/* Every switch in the popup: a checkbox in a .tg toggle, keyed by data-key, or by id for the few
-   the popup wires itself. Each takes the section heading above it and its own row's words. */
+/* Boolean popup controls use checkboxes or mode selectors. Each takes its section and row text. */
 function popupSwitches(html) {
   const omitted = [];
   for (const m of html.matchAll(/<!-- STORE-OMIT-([A-Z-]+)-BEGIN -->[\s\S]*?<!-- STORE-OMIT-\1-END -->/g)) omitted.push([m.index, m.index + m[0].length]);
@@ -54,9 +53,9 @@ function popupSwitches(html) {
   /* A row is any div whose class list holds "row", wherever the attribute sits in the tag. */
   const rowStarts = Array.from(html.matchAll(/<div\b[^>]*\bclass="(?:[^"]*\s)?row(?:\s[^"]*)?"[^>]*>/g)).map((m) => m.index);
   const rows = [];
-  for (const m of html.matchAll(/<label class="tg"[^>]*>\s*<input\b([^>]*)>/g)) {
-    const attrs = m[1];
-    if (!/type="checkbox"/.test(attrs)) continue;
+  for (const m of html.matchAll(/<label class="tg"[^>]*>\s*<input\b([^>]*)>|<select\b([^>]*\bdata-config-bool\b[^>]*)>/g)) {
+    const attrs = m[1] || m[2];
+    if (!m[2] && !/type="checkbox"/.test(attrs)) continue;
     const dataKey = /data-key="([^"]+)"/.exec(attrs);
     const id = /\bid="([^"]+)"/.exec(attrs);
     const key = dataKey ? dataKey[1] : id ? id[1] : '';

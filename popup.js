@@ -44,7 +44,7 @@ const KEYS = [
   'memoryShield', 'memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment',
   'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews', 'pauseAnimatedImages',
   'deAmp', 'clientHintProtection', 'capReferrer', 'trackerCacheProtection', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
-  'trackerLearner', 'unshimLinks', 'stripTrackingParams', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies'
+  'trackerLearner', 'trackerLearnerAuto', 'unshimLinks', 'stripTrackingParams', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies'
 ];
 
 const DEFAULTS = {
@@ -68,7 +68,7 @@ const DEFAULTS = {
   blockAutoplay: false, throttleBackgroundTabs: false, killPrefetch: false, lazyLoadMedia: false, disableYouTubeAmbientMode: false, stopAnimatedVideoPreviews: false, pauseAnimatedImages: false,
   webglSaverMode: 'off', webglSaverBlockHosts: [], webglSaverAllowHosts: [],
   deAmp: false, clientHintProtection: true, capReferrer: false, trackerCacheProtection: false, autoRejectConsent: true, removeConsentWalls: false, mailTrackingShield: true,
-  trackerLearner: true, unshimLinks: true, cleanCopyLinks: true, socialWidgetGuard: true, blockSupercookies: true,
+  trackerLearner: true, trackerLearnerAuto: false, unshimLinks: true, cleanCopyLinks: true, socialWidgetGuard: true, blockSupercookies: true,
   forgetMeMode: 'off', forgetMeList: [], forgetMeHistory: false, forgetMeAllConfirmedAt: 0,
   oneOpenPerGesture: true, stripTrackingParams: true, gestureWindowMs: 2400, allowlist: [],
   // host -> epoch ms at which its allowlisting lapses. Lets "allow this site" be
@@ -125,7 +125,7 @@ const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVER
 const SITE_OVERRIDE_MIXED = new Set(SITE_OVERRIDE_SCOPE.mixed);
 
 // Keep costly or compatibility-sensitive switches out of "Turn everything on".
-const MANUAL_ONLY_TOGGLES = new Set(['blockCnameTrackers', 'blockAllCookies', 'silentMode', 'cryptominerCpuWatch', 'trackerCacheProtection', 'blockAllStorageAccess', 'blockSuspiciousWebRTC']);
+const MANUAL_ONLY_TOGGLES = new Set(['blockCnameTrackers', 'trackerLearnerAuto', 'blockAllCookies', 'silentMode', 'cryptominerCpuWatch', 'trackerCacheProtection', 'blockAllStorageAccess', 'blockSuspiciousWebRTC']);
 const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'xssBehaviorGuard', 'commandPasteGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'paymentCardGuard', 'blockGeolocation']);
 
 const REPUTATION_PROVIDERS = [
@@ -202,6 +202,14 @@ function applyToUI() {
   paintMemoryModes();
   paintWebGLSaver();
   paintTwitchRewindUI();
+  paintTrackerLearningMode();
+}
+
+function paintTrackerLearningMode() {
+  const select = $('tracker-learning-mode');
+  if (!select) return;
+  select.value = config.trackerLearnerAuto === true ? 'true' : 'false';
+  select.disabled = config.enabled === false || config.trackerLearner === false;
 }
 
 /* STORE-OMIT-TWITCH-PAINT-BEGIN */
@@ -593,6 +601,8 @@ function readFromUI() {
     const els = document.querySelectorAll(`input[data-key="${k}"]`);
     if (els.length) config[k] = els[0].checked;
   });
+  const learningMode = $('tracker-learning-mode');
+  if (learningMode) config.trackerLearnerAuto = learningMode.value === 'true';
   /* One switch, one meaning: the fingerprint-noise switch is the whole truth once saved. */
   if (document.querySelector('input[data-key="antiFingerprintNoise"]')) config.antiFingerprint = false;
   config.googleSearchResultCleanup = false;
@@ -1038,6 +1048,7 @@ function repaintExternalConfigKeys(keys) {
   }
   reflectSilentMode();
   syncBreachVisibility();
+  paintTrackerLearningMode();
   if ((keys || []).some((key) => key === 'eyeShieldSites' || key === 'eyeShieldMode' || key.startsWith('eyeShield'))) paintEyeShield();
   if ((keys || []).some((key) => key.startsWith('webglSaver'))) paintWebGLSaver();
 }
@@ -1162,6 +1173,7 @@ function showLeftOffNote() {
     const text = String((label && label.textContent) || '').trim();
     if (text) names.push(text);
   });
+  if (config.trackerLearnerAuto !== true) names.push('Automatic tracker protection (Learning mode)');
   if (!names.length) { note.hidden = true; note.textContent = ''; return; }
   note.textContent = 'Left off on purpose, because each can break sites or costs more than it saves for most people: '
     + names.join('; ') + '. Turn any of them on by name if you want it.';
@@ -2622,10 +2634,13 @@ function activeTabUrl(callback) {
 }
 
 function trackerModeLabel(item) {
-  if (!item) return 'Auto';
+  if (!item) return 'Default';
   if (item.mode === 'allow') return 'Allowed here';
   if (item.mode === 'block') return 'Blocked here';
-  return item.state === 'learned' ? 'Auto block' : 'Learning';
+  if (item.state === 'unblocked') return 'Unblocked by you';
+  if (item.state === 'learned') return config.enabled === false || config.trackerLearner === false ? 'Block paused' : item.automatic ? 'Blocked automatically' : 'Approved request block';
+  if (item.state === 'proposed') return 'Suggestion to review';
+  return 'Gathering evidence';
 }
 
 function renderTrackerLearner() {
@@ -2691,9 +2706,9 @@ function renderTrackerLearner() {
         const actions = document.createElement('div');
         actions.className = 'tracker-mode-buttons';
         [
-          ['auto', item.state === 'learned' ? 'Auto block' : 'Auto learn', 'Auto'],
-          ['allow', 'Allow this tracker on this site', 'Allow'],
-          ['block', 'Block this tracker on this site', 'Block'],
+          ['auto', 'Use the learner decision without a site override', 'Default'],
+          ['allow', 'Allow this domain on this site', 'Allow'],
+          ['block', 'Block this domain\u2019s tracking requests on this site', 'Block'],
         ].forEach(([value, titleText, text]) => {
           const btn = document.createElement('button');
           btn.type = 'button';
@@ -2722,26 +2737,36 @@ function renderTrackerLearner() {
   });
 }
 
-/* Evidence can justify a proposal; only an explicit decision authorizes a learner rule. */
 function renderTrackerProposals() {
   const row = $('tracker-proposals-row');
   const box = $('tracker-learner-proposals');
   const all = $('tracker-proposals-all');
+  const desc = $('tracker-proposals-desc');
   if (!row || !box || !all) return;
-  chrome.runtime.sendMessage({ kind: 'tracker-learner-proposals' }, (res) => {
-    void chrome.runtime.lastError;
+  const automaticMode = config.trackerLearnerAuto === true;
+  chrome.runtime.sendMessage({ kind: 'tracker-learner-history', filter: automaticMode ? 'blocked' : 'suggestions', page: 0, pageSize: 5 }, (res) => {
+    const error = chrome.runtime.lastError;
     const items = (res && res.ok && Array.isArray(res.items)) ? res.items : [];
     box.textContent = '';
-    if (!items.length) { row.style.display = 'none'; return; }
     row.style.display = 'flex';
-    all.style.display = items.length > 1 ? 'flex' : 'none';
+    if (error || !res?.ok) { if (desc) desc.textContent = 'Could not load learned trackers. Open history to try again.'; all.style.display = 'none'; return; }
+    const batchSuggestions = !automaticMode && res.total > 1 && res.total <= 5;
+    all.style.display = batchSuggestions || (automaticMode && res.counts.automatic) ? 'flex' : 'none';
+    for (const [id, shown] of [['block', batchSuggestions], ['ignore', batchSuggestions], ['undo', automaticMode && res.counts.automatic > 0]]) {
+      const btn = $('tracker-proposals-' + id + '-all');
+      if (btn) btn.style.display = shown ? '' : 'none';
+    }
+    if (desc) desc.textContent = res.counts.blocked + (res.enabled ? ' learned tracker block' + (res.counts.blocked === 1 ? '' : 's') : ' saved blocks; learner paused') + ' · ' + res.counts.unblocked + ' unblocked. '
+      + (res.capacityReached ? 'Saved-decision storage is full; existing decisions are kept. ' : '')
+      + (automaticMode ? 'New qualifying trackers are blocked automatically. Review history whenever you want.' : 'Suggestions need review. Existing learned blocks stay until you unblock them.');
     const decide = (domain, decision, el) => {
       if (el) el.classList.add('perm-row-saving');
       chrome.runtime.sendMessage({ kind: 'tracker-learner-decide', domain, decision }, (r) => {
         const err = chrome.runtime.lastError;
         if (err || !r || !r.ok) setSavedTick((r && r.error) || 'Could not save that decision', true);
-        else setSavedTick(decision === 'block' ? 'Blocked ' + domain + ' everywhere' : 'Ignored ' + domain, false);
+        else setSavedTick((decision === 'block' ? 'Added tracking-request block for ' : decision === 'unblock' ? 'Unblocked ' : 'Dismissed suggestion for ') + domain, false);
         renderTrackerProposals();
+        renderTrackerLearner();
       });
     };
     items.forEach((item) => {
@@ -2749,18 +2774,15 @@ function renderTrackerProposals() {
       line.className = 'perm-row';
       const label = document.createElement('div');
       label.className = 'perm-row-label';
-      const sites = Number(item.sites || 0);
-      const sessions = Number(item.sessions || 0);
-      const age = Math.max(0, Math.floor((Date.now() - Number(item.proposedAt || Date.now())) / 86400000));
-      label.textContent = item.domain + ' \u2014 seen on ' + sites + ' site' + (sites === 1 ? '' : 's')
-        + (sessions > 1 ? ' across ' + sessions + ' sessions' : '')
-        + ' · ' + String(item.confidence || 'unverified') + ' · ' + String(item.source || 'No corroborated source recorded')
-        + ' · ' + age + ' day' + (age === 1 ? '' : 's') + ' old'
-        + (item.legacy ? '. Learned automatically by an earlier version; approve it to keep blocking it.' : '');
-      label.title = String(item.reason || '');
+      const blocked = item.state === 'learned';
+      label.textContent = item.domain + ' \u2014 ' + (blocked ? (res.enabled ? (item.automatic ? 'blocked automatically' : 'approved block') : 'block paused') : 'suggestion to review · ' + String(item.confidence || 'unverified'));
+      if (item.legacy) label.textContent += ' · Earlier unapproved rule; review before blocking.';
+      label.title = [item.reason, item.source].filter(Boolean).join(' · ');
       const actions = document.createElement('div');
       actions.className = 'tracker-mode-buttons';
-      [['block', 'Block', 'Block this domain\u2019s tracking requests on every site'], ['ignore', 'Ignore', 'Forget this suggestion']].forEach(([value, text, titleText]) => {
+      (blocked
+        ? [['unblock', 'Unblock', 'Unblock this tracker and prevent automatic learning from blocking it again']]
+        : [['block', 'Block requests', 'Block this domain\u2019s third-party beacon, image and data requests across sites'], ['ignore', 'Ignore', 'Dismiss this suggestion']]).forEach(([value, text, titleText]) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'btn tracker-mode-btn';
@@ -2775,7 +2797,7 @@ function renderTrackerProposals() {
     });
   });
 }
-['block', 'ignore'].forEach((decision) => {
+['block', 'ignore', 'undo'].forEach((decision) => {
   const btn = $('tracker-proposals-' + decision + '-all');
   if (!btn) return;
   btn.addEventListener('click', () => {
@@ -2784,10 +2806,14 @@ function renderTrackerProposals() {
       const err = chrome.runtime.lastError;
       btn.disabled = false;
       if (err || !r || !r.ok) setSavedTick('Could not save those decisions', true);
-      else setSavedTick((decision === 'block' ? 'Blocked ' : 'Ignored ') + Number(r.decided || 0) + ' domain' + (Number(r.decided || 0) === 1 ? '' : 's'), false);
+      else setSavedTick({ block: 'Added tracking-request blocks for ', ignore: 'Dismissed suggestions for ', undo: 'Unblocked ' }[decision] + Number(r.decided || 0) + ' domain' + (Number(r.decided || 0) === 1 ? '' : 's'), false);
       renderTrackerProposals();
+      renderTrackerLearner();
     });
   });
+});
+$('tracker-history-open')?.addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('settings.html#page=learned-trackers') });
 });
 
 function trustCurrentDownloadSite() {
@@ -2917,7 +2943,12 @@ document.querySelectorAll('input[data-key]').forEach((el) => {
     syncConfigCheckboxes(key, el.checked);
     save(ACTIVE_TAB_RELOAD_TOGGLES.has(key) ? reloadActiveHttpTab : undefined);
     syncBreachVisibility();
-    if (key === 'trackerLearner') renderTrackerLearner();
+    if (key === 'trackerLearner') { renderTrackerLearner(); renderTrackerProposals(); }
+  });
+});
+document.querySelectorAll('select[data-config-bool]').forEach((el) => {
+  el.addEventListener('change', () => {
+    save(() => { renderTrackerLearner(); renderTrackerProposals(); });
   });
 });
 document.querySelectorAll('[data-config-text]').forEach((el) => {
@@ -2983,6 +3014,7 @@ $('update-now').addEventListener('click', () => {
 chrome.storage.onChanged.addListener((changes, area) => {
   // Adopt changes from other surfaces while this popup remains open.
   if (area === 'local' && changes.wardenone_config) adoptExternalConfigChange(changes.wardenone_config.newValue);
+  if (area === 'local' && changes.wardenone_config) { renderTrackerLearner(); renderTrackerProposals(); }
   if (area === 'local' && (changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_adshield_cosmetic_publishers || changes.wardenone_download_threat_meta)) renderListMeta();
   if (area === 'local' && (changes.wardenone_config || changes.wardenone_history || changes.wardenone_list_meta || changes.wardenone_aux_list_meta || changes.wardenone_adshield_cosmetic_publishers || changes.wardenone_ext_alerts || changes.wardenone_startup_report)) renderProtectionHealth();
   if (area === 'local' && (changes.wardenone_ext_alerts || changes.wardenone_ext_reviews

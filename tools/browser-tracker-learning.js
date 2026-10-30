@@ -160,13 +160,14 @@ async function runOne(build, run, options, server, hits) {
         await evaluate(cdp, ui, `(()=>{const row=[...document.querySelectorAll('#tracker-learner-proposals .perm-row')].find(row=>row.textContent.includes(${JSON.stringify(domain)}));
           const button=[...row.querySelectorAll('button')].find(button=>button.textContent===${JSON.stringify(label)});button.click();return true;})()`);
       };
-      result.proposalText = await evaluate(cdp, ui, 'document.getElementById("tracker-learner-proposals").textContent');
-      assert(result.proposalText.includes('corroborated') && result.proposalText.includes('Local CNAME mapping'));
+      /* The compact popup row names the confidence; its source is in the row's title and in Settings history. */
+      result.proposalText = await evaluate(cdp, ui, '[...document.querySelectorAll("#tracker-learner-proposals .perm-row-label")].map(row=>row.textContent+" | "+row.title).join("\\n")');
+      assert(result.proposalText.includes('corroborated') && result.proposalText.includes('Local CNAME mapping'), result.proposalText);
       await choose('doubleclick.net', 'Ignore');
       await until(() => worker('TRACKER_LEARNER.domains["doubleclick.net"].state==="dismissed"'), 'ignore choice');
       await request('g.doubleclick.net');
       assert.equal(await worker('trackerLearnerProposals().some(row=>row.domain==="doubleclick.net")'), false);
-      await choose('etracker.com', 'Block');
+      await choose('etracker.com', 'Block requests');
       await until(() => worker('TRACKER_LEARNER.domains["etracker.com"].state==="learned"'), 'approval');
       await until(async () => (await learnerRules()).length > 1, 'native approval installed');
       await until(() => evaluate(cdp, ui, '!document.getElementById("tracker-learner-proposals").textContent.includes("etracker.com")'), 'approval acknowledged');

@@ -34,7 +34,7 @@ const constants = ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'OPTION_RULE_BASE', 'OPTI
   'GRABBER_FEED_RULE_BASE', 'GRABBER_FEED_MAX', 'GRABBER_NAV_RULE_ID', 'GRABBER_MALWARE_NAV_RULE_ID',
   'TRACKER_RULE_BASE', 'TRACKER_RULE_MAX', 'USER_RULE_BASE', 'USER_RULE_MAX', 'USER_BLOCKLIST_RULE_BASE',
   'FIREWALL_RULE_BASE', 'FIREWALL_RULE_MAX', 'ADSHIELD_STATIC_RULESET_ID', 'SPOTIFY_MEDIA_RULESET_ID',
-  'TRACKERS_STATIC_RULESET_ID', 'EASYPRIVACY_STATIC_RULESET_ID'];
+  'TRACKERS_STATIC_RULESET_ID', 'EASYPRIVACY_STATIC_RULESET_ID', 'CNAME_STATIC_RULESET_ID'];
 const orchestrator = between('const RECONCILE_DEGRADED_KEY = ', '\nfunction searchAiCleanupActive');
 const health = between('  let enabledRulesets = null;', "  // The tab the popup is open on, asked rather than assumed (FEAT-02).");
 const tick = () => new Promise(resolve => setImmediate(resolve));

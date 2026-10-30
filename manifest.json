@@ -129,6 +129,11 @@
         "id": "easyprivacy",
         "enabled": true,
         "path": "rules-easyprivacy.json"
+      },
+      {
+        "id": "cname_trackers",
+        "enabled": true,
+        "path": "rules-cname.json"
       }
     ]
   },

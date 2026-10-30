@@ -98,7 +98,14 @@ async function main(){
   await r.window.cookieStore.delete('seed');assert(r.cookies.has('seed'));
   let observed=0;r.window.cookieStore.addEventListener('change',()=>observed++);
   r.window.cookieStore.dispatchEvent({type:'change'});assert.equal(observed,0,'cookie change events do not expose values while isolated');
-  assert.throws(()=>Object.defineProperty(r.document,'cookie',{get:()=> 'bypass'}));
+  /* A page may wrap the guard as it could the native accessor; the wrapper still reaches no cookies. */
+  const guarded=Object.getOwnPropertyDescriptor(r.FakeDocument.prototype,'cookie');
+  assert(guarded.configurable&&guarded.enumerable,'the guard keeps the native descriptor shape');
+  assert.equal(Object.getOwnPropertyDescriptor(r.document,'cookie'),undefined,'no own property the native document lacks');
+  Object.defineProperty(r.document,'cookie',{configurable:true,get(){return 'wrapped:'+guarded.get.call(this);},set(v){guarded.set.call(this,v);}});
+  assert.equal(r.document.cookie,'wrapped:','a page wrapper sees nothing while isolated');
+  r.document.cookie='wrap=leak';assert(!r.cookies.has('wrap'));
+  delete r.document.cookie;
   const old=auth.configMessage(r.handoff.signer,r.handoff.token,{frameCookieIsolation:false});
   r.handoff.sendConfig({frameCookieIsolation:true});r.send(old);assert.equal(r.document.cookie,'','signed replay cannot reverse a newer decision');
   r.handoff.sendConfig({frameCookieIsolation:false});
@@ -108,7 +115,32 @@ async function main(){
   for(const patch of [{enabled:false,frameCookieIsolation:true},{enabled:true,blockThirdPartyCookies:false,frameCookieIsolation:true}]){
     r.handoff.sendConfig(patch);assert(r.document.cookie.includes('seed=fixed'),'off/exception restores native reads');
   }
-  vm.runInContext(source,r.context);assert(r.document.cookie.includes('seed=fixed'),'reinjection cannot stack another guard');
+  vm.runInContext(source,r.context);assert(r.document.cookie.includes('seed=fixed'),'a late reinjection only passes through');
+  r.handoff.sendConfig({enabled:true,blockThirdPartyCookies:true,frameCookieIsolation:true});
+  assert.equal(r.document.cookie,'','and the first guard still isolates beneath it');
+  r.handoff.sendConfig({frameCookieIsolation:false});
+  {
+    /* An embedded app instruments cookies while isolated, then again after protection is switched off. */
+    const app=realm(false,false,marker),seen=[];
+    const instrument=()=>{
+      const base=Object.getOwnPropertyDescriptor(app.FakeDocument.prototype,'cookie');
+      Object.defineProperty(app.FakeDocument.prototype,'cookie',{configurable:true,enumerable:true,
+        get(){const v=base.get.call(this);seen.push(v);return v;},set(v){seen.push('set '+v);base.set.call(this,v);}});
+      const store=app.context.CookieStore.prototype,get=store.get;
+      store.get=async function(name){seen.push('store '+name);return get.call(this,name);};
+    };
+    instrument();
+    assert.equal(app.document.cookie,'','the app wrapper installs and reads nothing while isolated');
+    assert.equal(await app.window.cookieStore.get('seed'),null);
+    assert.deepEqual(seen,['','store seed']);
+    app.handoff.sendConfig({enabled:false,frameCookieIsolation:true});
+    assert(app.document.cookie.includes('seed=fixed'),'its wrapper sees real cookies once protection is off');
+    instrument();
+    app.document.cookie='app=1';assert.equal(app.cookies.get('app'),'1','a second wrapper after the toggle writes through');
+    assert.equal((await app.window.cookieStore.get('seed')).value,'fixed');
+    const shape=Object.getOwnPropertyDescriptor(app.FakeDocument.prototype,'cookie');
+    assert(shape.configurable&&shape.enumerable&&shape.get&&shape.set,'the descriptor stays native-shaped across the toggle');
+  }
   const top=realm(true);top.handoff.sendConfig({frameCookieIsolation:true});assert(top.document.cookie.includes('seed=fixed'));
   const late=realm(false,true);late.handoff.sendConfig({frameCookieIsolation:true});assert(late.document.cookie.includes('seed=fixed'),'a late public key cannot gain authority');
   console.log('[ok] authenticated frame cookie policy, prototype/Cookie Store guards, events, exceptions and native restoration');

@@ -23,6 +23,11 @@ async function run() {
   const forgedRecovery = deliver({ kind: 'site-recovery', action: 'start', tabId: 91, key: 'removeOverlays' });
   assert.equal(forgedRecovery.length, 1);
   assert.equal(forgedRecovery[0].ok, false, 'web content cannot start a site recovery trial');
+  for (const message of [{ kind: 'tracker-learner-history', filter: 'all' }, { kind: 'tracker-learner-decide', domain: 'victim.example', decision: 'unblock' }]) {
+    const replies = deliver(message);
+    assert.equal(replies.length, 1);
+    assert.equal(replies[0].ok, false, 'web content cannot read tracker history or change decisions');
+  }
   await sleep(40);
   assert.equal(learned.length, 0, 'page-derived grabber claims must not persist learned blocks');
   for (const sender of [ { ...tab, id: 'foreign-extension' }, { ...tab, id: undefined }, { ...tab, tab: { id: -1 } }, { ...tab, tab: { id: '91' } } ]) {

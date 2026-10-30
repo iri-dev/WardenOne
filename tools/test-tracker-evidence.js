@@ -86,7 +86,8 @@ async function pressure() {
   assert.equal(rig.api.learner().domains['etracker.com'].sites, 1);
   assert.equal(rig.api.learner().domains['etracker.com'].sessions, 1, 'days and tab churn cannot spoof browser sessions');
   const full = create(); await full.api.load(); await new Promise(resolve => setImmediate(resolve));
-  for (let i = 0; i < 600; i++) full.api.learner().domains['candidate-' + i + '.net'] = {
+  /* 600 observations fill the store; the one decision is held apart from that cap. */
+  for (let i = 0; i < 601; i++) full.api.learner().domains['candidate-' + i + '.net'] = {
     state: i === 0 ? 'learned' : 'candidate', approvedAt: full.state.now, lastSeen: full.state.now,
     firstSeen: full.state.now, sites: 0, sessions: 0, hits: 1, signals: {}, evidence: {},
   };
@@ -95,7 +96,7 @@ async function pressure() {
   await full.network('first.example', 'a.trowow.de');
   assert(full.api.learner().domains['etracker.com']);
   assert(full.api.learner().domains['candidate-0.net'], 'pressure preserves an explicit decision');
-  assert.equal(Object.keys(full.api.learner().domains).length, 600);
+  assert.equal(Object.keys(full.api.learner().domains).length, 601, 'observations stay at their cap beside the decision');
   assert.equal(full.state.rules.length, 0, 'evidence admission never applies rules');
 }
 async function failures() {

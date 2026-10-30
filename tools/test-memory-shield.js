@@ -444,6 +444,30 @@ async function testFrameLiveState() {
     assert.strictEqual((await run.memory.tabLiveState(1)).ok, false, 'unreliable frame enumeration must keep the tab');
     assert.strictEqual(run.state.frameChecks.length, 0);
   }
+  /* A blocked or failed subframe shows an error page no script can enter; it cannot hold user work. */
+  const withAd = [...frames, { frameId: 12, documentId: 'ad-error', errorOccurred: true }];
+  const adFrame = (reply) => (_id, target) => target && target.frameId === 12 ? reply : clean;
+  {
+    const run = loadMemoryShield({ frames: withAd, liveReply: adFrame(UNREACHABLE) });
+    const live = await run.memory.tabLiveState(1);
+    assert.strictEqual(live.ok, true, 'an unreachable failed subframe must not keep the whole tab');
+    assert(run.state.frameChecks.some(({ target }) => target.frameId === 12), 'the failed frame is still asked');
+  }
+  {
+    const run = loadMemoryShield({ frames: withAd, liveReply: adFrame({ formDirty: true, mediaActive: false }) });
+    const live = await run.memory.tabLiveState(1);
+    assert.strictEqual(live.formDirty, true, 'an aborted load keeps the old document, and its draft still counts');
+  }
+  for (const bad of [MALFORMED, { formDirty: 'false', mediaActive: false }]) {
+    const run = loadMemoryShield({ frames: withAd, liveReply: adFrame(bad) });
+    assert.strictEqual((await run.memory.tabLiveState(1)).ok, false, 'only an unreachable failed frame counts as clean');
+  }
+  {
+    let reads = 0;
+    const failing = frames.map((frame) => frame.frameId === 4 ? { ...frame, errorOccurred: true } : frame);
+    const run = loadMemoryShield({ frames: () => ++reads === 1 ? frames : failing });
+    assert.strictEqual((await run.memory.tabLiveState(1)).ok, false, 'a frame that fails during the check has not answered');
+  }
   for (const changed of [[...frames, { frameId: 10, documentId: 'new' }], frames.slice(0, 2),
     frames.map((frame) => frame.frameId === 4 ? { ...frame, documentId: 'replacement' } : frame), UNREACHABLE]) {
     let reads = 0;

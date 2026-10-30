@@ -174,13 +174,15 @@ function memoryTabFrames(tabId) {
       chrome.webNavigation.getAllFrames({ tabId }, (frames) => {
         if (chrome.runtime.lastError || !Array.isArray(frames)) return resolve(null);
         const documents = new Map();
+        const failed = new Set();
         for (const frame of frames) {
           if (!frame || !Number.isInteger(frame.frameId) || frame.frameId < 0
             || typeof frame.documentId !== 'string' || !frame.documentId || documents.has(frame.frameId)
-            || frame.errorOccurred || (frame.documentLifecycle && frame.documentLifecycle !== 'active')) return resolve(null);
+            || (frame.errorOccurred && frame.frameId === 0) || (frame.documentLifecycle && frame.documentLifecycle !== 'active')) return resolve(null);
           documents.set(frame.frameId, frame.documentId);
+          if (frame.errorOccurred) failed.add(frame.frameId);
         }
-        resolve(documents.has(0) ? documents : null);
+        resolve(documents.has(0) ? { documents, failed } : null);
       });
     } catch (_) { resolve(null); }
   });
@@ -219,7 +221,12 @@ function tabLiveState(tabId) {
       const before = await memoryTabFrames(tabId);
       if (done) return;
       if (!before) return unknown('frames-unavailable');
-      const replies = await Promise.all(Array.from(before, ([frameId, documentId]) => memoryFrameLiveState(tabId, frameId, documentId)));
+      /* A subframe whose load failed, including one WardenOne blocked, usually shows an error page no
+         script can enter, and that page holds no form, media or typing. An aborted load keeps the old
+         document instead, whose bridge still answers, so only an unreachable failed frame counts as clean. */
+      const replies = await Promise.all(Array.from(before.documents, ([frameId, documentId]) => memoryFrameLiveState(tabId, frameId, documentId)
+        .then((reply) => !reply.ok && reply.why === 'unreachable' && before.failed.has(frameId)
+          ? { ok: true, formDirty: false, mediaActive: false } : reply)));
       if (done) return;
       const formDirty = replies.some((reply) => reply.formDirty === true);
       const mediaActive = replies.some((reply) => reply.mediaActive === true);
@@ -228,7 +235,9 @@ function tabLiveState(tabId) {
       const after = await memoryTabFrames(tabId);
       if (done) return;
       /* A frame added or navigated during the check has not supplied a verified answer. */
-      if (!after || after.size !== before.size || Array.from(before).some(([id, documentId]) => after.get(id) !== documentId)) {
+      if (!after || after.documents.size !== before.documents.size
+        || Array.from(before.documents).some(([id, documentId]) => after.documents.get(id) !== documentId)
+        || Array.from(after.failed).some((id) => !before.failed.has(id))) {
         return finish({ ok: false, why: 'frames-changed', formDirty, mediaActive });
       }
       finish({ ok: true, why: '', formDirty, mediaActive });

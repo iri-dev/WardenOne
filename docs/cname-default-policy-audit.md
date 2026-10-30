@@ -4,6 +4,10 @@ This supersedes the default-off policy in `cname-toggle-audit.md`. The switch
 remains independent and the protection count remains 109. No release version
 changed. Work remains local.
 
+The [catalog audit](cname-catalog-audit.md) later replaced the four-provider
+dynamic block band described below with a packaged ruleset; the default and switch
+behaviour here still hold.
+
 ## Classification boundary
 
 Only exact aliases in the packaged AdGuard mapping qualify. A qualifying alias

@@ -47,7 +47,7 @@ check('disabled cleanup restores hidden or removed nodes',
 check('live config changes start or restore the cleaner',
   /"wo-config-change",\s*\(\)=>\{\s*overlayCleanerOn\(\)\?start\(\):restoreCleanerChanges\(\)/.test(source));
 check('normal WebRTC transport is not rewritten by the IP lookup guard',
-  /if\(WO\.blockWebRTCLeak&&!trustedMediaHost&&WO\.blockSuspiciousWebRTC\)try\{/.test(source));
+  /if\(WO\.blockWebRTCLeak&&!webrtcCompatHost&&WO\.blockSuspiciousWebRTC\)try\{/.test(source));
 check('runtime reports compatibility-preserving WebRTC behavior',
   source.includes('log("webrtc_transport_preserved"'));
 

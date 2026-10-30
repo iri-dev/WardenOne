@@ -8,7 +8,7 @@ const WOLearner = require('../../tracker-learner-utils.js');
 function create(options = {}) {
   const source = fs.readFileSync(options.background || path.join(ROOT, 'background.js'), 'utf8');
   const data = options.data || require('../build-tracker-network-data.js').build();
-  const state = { local: options.local || {}, session: {}, writes: [], history: [], rules: [], frames: {}, now: Date.UTC(2026, 9, 26) };
+  const state = { local: options.local || {}, session: {}, writes: [], history: [], rules: [], frames: {}, cookies: {}, ruleWrites: 0, now: Date.UTC(2026, 9, 26) };
   let saltSequence = 0;
   const context = vm.createContext({ URL, console: { warn() {} }, Uint8Array,
     crypto: { getRandomValues(bytes) { for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 17 + saltSequence) & 255; saltSequence++; return bytes; } },
@@ -24,7 +24,9 @@ function create(options = {}) {
     hostMatchesSite: (host, domain) => host === domain || host.endsWith('.' + domain),
     getDynamicRulesInBand: async () => state.rules,
     dnrBandUnchanged: (a, b) => JSON.stringify(a) === JSON.stringify(b),
-    writeDynamicRules: async change => { if (state.rejectNative) throw new Error('Native update rejected'); state.rules = change.addRules; },
+    writeDynamicRules: async change => { if (state.rejectNative) throw new Error('Native update rejected'); state.ruleWrites++; state.rules = change.addRules; },
+    INCOGNITO_CONTEXT: false,
+    trackerCookieCompatibility: cfg => ({ ...((cfg.allowlist || []).length ? { excludedInitiatorDomains: [...cfg.allowlist].sort() } : {}), excludedRequestDomains: ['accounts.google.com'] }),
     loadKnownAliases: async () => context.WOCname.validateData(JSON.parse(fs.readFileSync(path.join(ROOT, 'cname-trackers.json')))),
     resolveKnownAlias: host => context.WOCname.resolve(context.mapping, host, 'fixture'),
     isMediaCompatDomain: host => /(^|\.)(youtube\.com|googlevideo\.com|twitch\.tv|ttvnw\.net)$/.test(host),
@@ -34,6 +36,7 @@ function create(options = {}) {
         persist: () => { state.session[key] = JSON.parse(JSON.stringify(snapshot())); } };
     },
     chrome: { runtime: { getManifest: () => ({ host_permissions: ['<all_urls>'] }) },
+      cookies: { getAll: async query => JSON.parse(JSON.stringify(state.cookies[query.domain] || [])) },
       storage: { local: { get: (key, callback) => callback({ [key]: state.local[key] }) } },
       webNavigation: { getFrame: async query => state.frames[query.tabId + ':' + query.frameId] },
       webRequest: { onBeforeRequest: { addListener() {}, removeListener() {}, hasListener: () => true } } },
@@ -48,8 +51,15 @@ function create(options = {}) {
     + '\nthis.api={note:noteTrackerObservation,load:loadTrackerLearner,proposals:trackerLearnerProposals,decide:decideTrackerProposal,'
     + 'learner:()=>TRACKER_LEARNER,shape:trackerStoreShape,network:typeof noteTrackerNetworkRequest===\'function\'?noteTrackerNetworkRequest:null,'
     + 'page:typeof noteTrackerPageObservation===\'function\'?noteTrackerPageObservation:null,status:trackerLearnerStatus,setMode:setTrackerLearnerSiteMode,clear:clearTrackerLearnerObservations,'
-    + 'restart:()=>{__trackerSession=null;__initTrackerLearner=null;}};', context);
+    + 'restart:()=>{__trackerSession=null;__initTrackerLearner=null;},'
+    + 'cookieRequest:typeof noteTrackerCookieRequest===\'function\'?noteTrackerCookieRequest:null,rules:applyTrackerLearnerRules,'
+    + 'decideAll:decideAllTrackerProposals,history:trackerLearnerHistory,save:saveTrackerLearner,forgetCookieVerdicts:()=>{TRACKER_COOKIE_SITES.clear();TRACKER_COOKIE_SEEN.clear();}};', context);
   return { state, context, api: context.api, browserRestart() { state.session = {}; context.api.restart(); },
+    async cookieRequest(site, host, overrides = {}) {
+      state.frames['1:0'] = { url: 'https://' + site + '/', documentId: 'doc-' + site, parentFrameId: -1, documentLifecycle: 'active' };
+      return context.api.cookieRequest({ tabId: 1, frameId: 0, documentId: 'doc-' + site, initiator: 'https://' + site,
+        url: 'https://' + host + '/pixel', type: 'image', ...overrides });
+    },
     async network(site, host, overrides = {}) {
       state.frames['1:0'] = { url: 'https://' + site + '/', documentId: 'doc-' + site, parentFrameId: -1, documentLifecycle: 'active' };
       return context.api.network({ tabId: 1, frameId: 0, documentId: 'doc-' + site, initiator: 'https://' + site,

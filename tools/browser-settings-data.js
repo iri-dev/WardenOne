@@ -270,7 +270,8 @@ async function run() {
     /* Search results say where each setting lives and how it is set. */
     await value("document.querySelector('#q').value = 'cookie'; document.querySelector('#q').dispatchEvent(new Event('input')); true");
     const rows = await value(`[...document.querySelectorAll('#pane .search-results .row[data-key]')].map(r => ({
-      key: r.dataset.key, state: r.querySelector('[data-st]').textContent, on: r.querySelector('.tg').getAttribute('aria-checked') === 'true',
+      key: r.dataset.key, state: r.querySelector('[data-st]').textContent,
+      on: r.querySelector('.tg') ? r.querySelector('.tg').getAttribute('aria-checked') === 'true' : r.querySelector('[data-tracker-learning-mode]').value === 'true',
       crumb: (r.querySelector('.r-crumb') || {}).textContent || '' }))`);
     ok(rows.length >= 5, 'cookie finds several settings');
     ok(rows.every((r) => r.state === (r.on ? 'On' : 'Off')), 'every result shows its current state');
@@ -307,7 +308,9 @@ async function run() {
     same(chipCounts.on + chipCounts.off <= chipCounts.all, true, 'on and off are parts of everything');
     for (const [filter, test] of [['on', "s.on"], ['off', "!s.on"], ['risk', "s.risk"]]) {
       await value(`document.querySelector('#pane .chip[data-filter=${filter}]').click(); true`);
-      const shown = await value(`[...document.querySelectorAll('#pane .search-results .row[data-key]')].map(r => ({ key: r.dataset.key, on: r.querySelector('.tg').getAttribute('aria-checked') === 'true', risk: info(r.dataset.key).badge === 'risk' }))`);
+      const shown = await value(`[...document.querySelectorAll('#pane .search-results .row[data-key]')].map(r => ({ key: r.dataset.key,
+        on: r.querySelector('.tg') ? r.querySelector('.tg').getAttribute('aria-checked') === 'true' : r.querySelector('[data-tracker-learning-mode]').value === 'true',
+        risk: info(r.dataset.key).badge === 'risk' }))`);
       same(shown.length, chipCounts[filter], 'the ' + filter + ' filter shows as many as its count says');
       ok(shown.every((s) => new Function('s', 'return ' + test)(s)), 'and only results that are ' + filter);
       ok(await value(`document.querySelector('#pane .chip[data-filter=${filter}]').getAttribute('aria-pressed') === 'true'`), 'the chosen filter says it is chosen');
@@ -632,6 +635,23 @@ async function run() {
     await value("document.querySelector('#ov-resume').click(); true");
     await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.enabled === true)))", 'resumed');
     ok(await value("document.querySelector('#ov-resume').hidden"), 'the resume button hides once protection is on');
+
+    await go('privacy');
+    ok(await value("!!document.querySelector('.row[data-key=trackerLearner] .tg') && !document.querySelector('.row[data-key=trackerLearnerAuto] .tg')"), 'Settings has one learner switch and a learning-mode selector');
+    await value("openInspector({type:'setting',key:'trackerLearnerAuto'});paint();true");
+    ok(await value("!!document.querySelector('#rail [data-tracker-learning-mode]') && !document.querySelector('#rail [data-toggle=trackerLearnerAuto]')"), 'the learning-mode inspector also uses a selector');
+    const mode = "document.querySelector('[data-tracker-learning-mode]')";
+    await value(mode + ".value='true';" + mode + ".dispatchEvent(new Event('change',{bubbles:true}));true");
+    await until('config.trackerLearnerAuto === true', 'automatic tracker protection saved');
+    ok((await stored('wardenone_config')).trackerLearnerAuto === true, 'mode choice reaches storage');
+    await value("document.querySelector('.row[data-key=trackerLearner] .tg').click();true");
+    await until('config.trackerLearner === false', 'learner paused');
+    ok(await value(mode + '.disabled && ' + mode + '.value === "true"'), 'paused learner disables its mode without forgetting it');
+    await value("document.querySelector('.row[data-key=trackerLearner] .tg').click();true");
+    await until('config.trackerLearner === true', 'learner resumed');
+    ok(await value('!' + mode + '.disabled && ' + mode + '.value === "true"'), 'resuming restores the chosen mode');
+    await value(mode + ".value='false';" + mode + ".dispatchEvent(new Event('change',{bubbles:true}));true");
+    await until('config.trackerLearnerAuto === false', 'review mode saved');
 
     same(await value('window.__errors'), [], 'no page errors');
 

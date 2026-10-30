@@ -12,12 +12,38 @@ const profile = require('./perf-profile.js');
 const root = path.resolve(__dirname, '..');
 const parentHost = 'site.wardenone-memory.example';
 const editorHost = 'editor.wardenone-memory.example';
+const deadHost = 'dead.wardenone-memory.example';
+const blockedHost = 'g.doubleclick.net';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const frameDoc = (draft) => '<textarea></textarea>' + (draft ? '<script>document.querySelector("textarea").value="Unsaved draft"</script>' : '');
+const attr = (html) => html.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+/* Frame shapes a page can have. Clean ones must be verified, not skipped; drafts in any of them keep the tab. */
+function compositions(port, draft) {
+  return {
+    'cross-origin': `<iframe src="http://${editorHost}:${port}/child${draft ? '?draft=1' : ''}"></iframe>`,
+    srcdoc: `<iframe srcdoc="${attr(frameDoc(draft))}"></iframe>`,
+    'sandboxed-scripts': `<iframe sandbox="allow-scripts" srcdoc="${attr(frameDoc(draft))}"></iframe>`,
+    'about-blank': `<iframe id="b"></iframe><script>b.contentDocument.body.innerHTML="<textarea></textarea>";${draft ? 'b.contentDocument.querySelector("textarea").value="Unsaved draft";' : ''}</script>`,
+    'data-url': `<iframe src="data:text/html,${encodeURIComponent(frameDoc(draft))}"></iframe>`,
+    ...(draft ? {} : {
+      'sandboxed-no-scripts': '<iframe sandbox="" srcdoc="<p>static</p>"></iframe>',
+      replaced: `<iframe id="b" src="http://${editorHost}:${port}/child"></iframe><script>let n=0;setInterval(()=>{b.src="http://${editorHost}:${port}/child?"+(n++)},400)</script>`,
+      unreachable: `<iframe src="http://${deadHost}:1/"></iframe>`,
+      'blocked-by-wardenone': `<iframe src="http://${blockedHost}:${port}/ad"></iframe>`,
+    }),
+  };
+}
 
 async function run() {
   const serverPort = await profile.freePort();
   const server = http.createServer((req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    const shape = req.url.match(/^\/case\/([a-z-]+)\?draft=([01])/);
+    if (shape || req.url.startsWith('/child')) {
+      res.end('<!doctype html><title>Memory frame shape</title>'
+        + (shape ? compositions(serverPort, shape[2] === '1')[shape[1]] || '' : frameDoc(req.url.includes('draft=1'))));
+      return;
+    }
     const body = req.url.startsWith('/forms')
       ? `<form><input id="prefilled" value="Important draft"><textarea id="textarea">Important draft</textarea>
         <input id="empty"><div id="plain" contenteditable="plaintext-only" data-test-editor></div>
@@ -39,7 +65,7 @@ async function run() {
   let cdp;
   try {
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir,
-      [`--host-resolver-rules=MAP ${parentHost} 127.0.0.1, MAP ${editorHost} 127.0.0.1`]);
+      [`--host-resolver-rules=MAP ${parentHost} 127.0.0.1, MAP ${editorHost} 127.0.0.1, MAP ${deadHost} 127.0.0.1, MAP ${blockedHost} 127.0.0.1`]);
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     console.log('[info] browser: ' + browser.Browser);
@@ -162,6 +188,31 @@ async function run() {
     assert.equal(await evaluate(`chrome.tabs.get(${formId}).then(tab=>tab.discarded)`), false,
       'clearing a prefilled field protects the tab from Tab Limit close');
     console.log('[ok] real DOM edits: cleared defaults and valid editable variants protect the tab; restored and read-only fields stay eligible');
+
+    await config({ tabLimitGuard: false });
+    const shapeTab = async (name, draft) => {
+      const id = await evaluate(`chrome.tabs.create({windowId:${window.id},url:${JSON.stringify(`http://${parentHost}:${serverPort}/case/${name}?draft=${draft ? 1 : 0}`)},active:false}).then(tab=>tab.id)`);
+      await sleep(1500);
+      return id;
+    };
+    const firstChecks = {};
+    for (const name of Object.keys(compositions(serverPort, false))) {
+      const id = await shapeTab(name, false);
+      let verified = 0;
+      for (let i = 0; i < 3; i++) if ((await live(id)).ok) verified++;
+      firstChecks[name] = verified + '/3';
+      const state = await until(async () => { const s = await live(id); return s.ok ? s : false; }, name + ' verified');
+      assert.equal(state.formDirty, false, name + ': a clean tab is verified, not skipped');
+      await evaluate(`chrome.tabs.remove(${id}).then(()=>true)`);
+    }
+    console.log('[info] clean-tab checks verified per frame shape: ' + JSON.stringify(firstChecks));
+    for (const name of Object.keys(compositions(serverPort, true))) {
+      const id = await shapeTab(name, true);
+      const state = await until(async () => { const s = await live(id); return s.ok ? s : false; }, name + ' draft verified');
+      assert.equal(state.formDirty, true, name + ': a draft inside this frame shape keeps the tab');
+      await evaluate(`chrome.tabs.remove(${id}).then(()=>true)`);
+    }
+    console.log('[ok] cross-origin, srcdoc, sandboxed, about:blank, data:, replaced, unreachable and blocked frames are verified; drafts in them keep the tab');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     server.close();

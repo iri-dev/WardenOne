@@ -189,7 +189,16 @@ function createHarness(options = {}) {
       if (value.wardenone_script_trusted_hosts) state.trusted = value.wardenone_script_trusted_hosts.slice();
       return { persisted: true, keys: Object.keys(value) };
     },
+    // Unreadable unless a test supplies matches, the case where the notice judges without feedback.
+    async readMatchedRuleEvidence(filter, purpose) {
+      state.feedbackReads.push({ filter, purpose });
+      if (!options.matchedRules) return { ok: false, reason: 'unsupported' };
+      return { ok: true, matches: options.matchedRules.filter((info) => info.tabId === filter.tabId
+        && Number(info.timeStamp) >= Number(filter.minTimeStamp || 0)) };
+    },
   };
+  if (options.trackerHosts) sandbox.WO_TRACKER_NETWORK_DATA = { trackerHosts: Array.from(options.trackerHosts) };
+  state.feedbackReads = [];
   vm.createContext(sandbox);
   vm.runInContext(
     /* Script Shield reads its dynamic band through the worker's shared read, and compares
@@ -1106,12 +1115,16 @@ async function testFirstPartyAppHostsAreExcludedUpFront() {
   const { api, state } = createHarness();
   await api.applyScriptShieldRules('smart');
   const excluded = Array.from(smartRule(state).condition.excludedRequestDomains || []);
-  for (const host of ['office.net', 'officeapps.live.com', 'tiktokcdn-eu.com', 'ttwstatic.com']) {
+  // ChatGPT's reply runner loads from cdn.platform.openai.com inside an opaque-origin sandbox, where
+  // every request reads as third-party; refusing it left every signed-in reply loading forever.
+  for (const host of ['office.net', 'officeapps.live.com', 'tiktokcdn-eu.com', 'ttwstatic.com', 'cdn.platform.openai.com']) {
     assert(excluded.includes(host),
       host + ' is not excluded by the base smart rule, so that site loads nothing before any recovery can run');
   }
   // The exclusion must be a listed first-party app host, not a side effect of some broader wildcard
   // that would also spare unrelated third parties.
+  assert(!excluded.includes('openai.com') && !excluded.includes('platform.openai.com'),
+    'the ChatGPT runner exemption grew past its own host to the brand domain');
   assert(!excluded.includes('microsoft.com'),
     'the exclusion list has grown a whole brand domain, which is wider than first-party app hosts');
   assert(!excluded.some((h) => h === 'akamaized.net' || h === 'azureedge.net'),
@@ -1345,6 +1358,58 @@ async function testSilentBreakageIsExplained() {
   }
 }
 
+// corehalla.com/stats/player/... loaded fine, yet the notice said Smart had broken it: the two
+// scripts it named were Google's tag and ad scripts, refused by the tracker lists (Brave Shields
+// refuses them too), which trusting the site would not have brought back. Only blocks the browser
+// attributes to Smart's own rules earn the notice, and hosts other lists block are never named.
+async function testNoticeNeedsSmartsOwnBlock() {
+  const page = 'https://corehalla.com/stats/player/7838302';
+  const sender = { tab: { id: 9, url: page }, frameId: 0 };
+  const refuse = async (api) => {
+    await api.handleSmartScriptFailure(blockedScriptOn(9, 0, page, 'https://www.googletagmanager.com/gtag/js?id=G-1'));
+    await api.handleSmartScriptFailure(blockedScriptOn(9, 0, page, 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js'));
+  };
+  const now = Date.now() + 1000;
+  const smartMatch = { tabId: 9, timeStamp: now, rule: { ruleId: 930000, rulesetId: '_session' } };
+
+  for (const [label, matchedRules] of [
+    ['no rule matched at all', []],
+    ['only a tracker list matched', [{ tabId: 9, timeStamp: now, rule: { ruleId: 5, rulesetId: 'rules_trackers' } }]],
+    ['only a Smart allow rule matched', [{ tabId: 9, timeStamp: now, rule: { ruleId: 930100, rulesetId: '_session' } }]],
+    ['Smart blocked on another tab', [Object.assign({}, smartMatch, { tabId: 10 })]],
+    ['a dynamic rule shares Smart\'s id', [{ tabId: 9, timeStamp: now, rule: { ruleId: 930000, rulesetId: '_dynamic' } }]],
+  ]) {
+    const { api, state } = createHarness({ matchedRules });
+    await api.applyScriptShieldRules('smart');
+    await refuse(api);
+    assert.strictEqual((await api.handleSmartScriptPageStatus(sender)).refused, 0,
+      'blamed Smart Script Shield for a page where ' + label);
+    assert(state.feedbackReads.some((read) => read.purpose === 'notice' && read.filter.tabId === 9),
+      'the notice did not ask which rule refused the scripts');
+  }
+
+  const { api } = createHarness({ matchedRules: [smartMatch] });
+  await api.applyScriptShieldRules('smart');
+  await refuse(api);
+  const status = await api.handleSmartScriptPageStatus(sender);
+  assert.strictEqual(status.refused, 2, 'a block Smart really made was not explained');
+  assert.deepStrictEqual(Array.from(status.hosts), ['www.googletagmanager.com', 'pagead2.googlesyndication.com']);
+
+  // Feedback can be unreadable (quota). Hosts another WardenOne list blocks are still never named,
+  // and a page whose only refusals are theirs gets no notice.
+  const listed = createHarness({ trackerHosts: ['googletagmanager.com'], blocked: ['googlesyndication.com'] });
+  await listed.api.applyScriptShieldRules('smart');
+  await refuse(listed.api);
+  assert.strictEqual((await listed.api.handleSmartScriptPageStatus(sender)).refused, 0,
+    'named scripts the tracker and security lists block as Smart Script Shield\'s doing');
+  await listed.api.handleSmartScriptFailure(blockedScriptOn(9, 0, page, 'https://cdn.widgets.example/app.js'));
+  assert.deepStrictEqual(Array.from((await listed.api.handleSmartScriptPageStatus(sender)).hosts),
+    ['cdn.widgets.example'], 'a listed host was named beside the one Smart may have refused');
+
+  assert(/const DNR_FEEDBACK_READ_LIMITS = \{[^}]*\bnotice: [1-9]/.test(BACKGROUND),
+    'the notice has no matched-rule read budget, so every read would be refused for quota');
+}
+
 // The page's half of the condition, run against real documents rather than asserted from source.
 // It is deliberately narrow: it catches the shapes the three reports actually had, and a detector
 // broad enough to catch "one widget did not render" would fire on working pages.
@@ -1440,6 +1505,7 @@ void (async () => {
   testRegistrationAndBridgeBounds();
   console.log('ok - observer, isolated bridge, rate, and permission bounds hold');
   await testSilentBreakageIsExplained();
+  await testNoticeNeedsSmartsOwnBlock();
   console.log('ok - a page the shield broke is explained, and trust cannot be aimed elsewhere');
   testStalledPageDetection();
   console.log('ok - only the broken-page shapes ask, and the notice is owned and non-modal');

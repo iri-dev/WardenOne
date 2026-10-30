@@ -5,8 +5,26 @@ const WOLearner = (() => {
     'tracking-params': 'page-behavior', 'beacon-api': 'page-behavior' });
   const sources = Object.freeze({ 'page-claim': 'Page claim', 'page-behavior': 'Page API/path observation',
     network: 'Browser network observation', 'curated-feed': 'Packaged tracker list',
-    'curated-cname': 'Local CNAME mapping', 'fingerprint-feed': 'Known fingerprint library' });
-  const signals = Object.freeze([...Object.keys(pageSignals), 'curated-feed', 'curated-cname', 'fingerprint-feed']);
+    'curated-cname': 'Local CNAME mapping', 'fingerprint-feed': 'Known fingerprint library',
+    'tracking-cookie': 'Browser-held cross-site identifying cookie' });
+  const signals = Object.freeze([...Object.keys(pageSignals), 'curated-feed', 'curated-cname', 'fingerprint-feed', 'tracking-cookie']);
+  /* Infrastructure and consent cookies can look like identifiers; keep those outside automatic learning. */
+  const benignCookie = /^(?:awsalb|awsalbcors|awselb|awselbcors|__cf|cf_|__cflb|arraffinity|bigipserver|incap_|visid_incap|nlbi_|ak_bmsc|bm_|_abck|ts[0-9a-f]{6,}$)|consent|gdpr|ccpa|usprivacy|optanon|cookieyes|cookielaw|tcf|cmp/i;
+  const COOKIE_MIN_LIFE_MS = 30 * 86400000;
+  /* Classify persistent cross-site ID-shaped cookies held by the browser. Page reports cannot supply this evidence. */
+  function identifyingCookie(cookie, now) {
+    if (!cookie || typeof cookie !== 'object' || cookie.sameSite !== 'no_restriction' || cookie.session !== false || cookie.partitionKey
+        || typeof cookie.name !== 'string' || typeof cookie.value !== 'string' || benignCookie.test(cookie.name)) return false;
+    if (!(Number(cookie.expirationDate) * 1000 - now >= COOKIE_MIN_LIFE_MS)) return false;
+    const value = cookie.value.replace(/^"|"$/g, '');
+    if (value.length < 10 || value.length > 512 || /^\d+$/.test(value) && value.length < 16 || /^(?:true|false|null|undefined)$/i.test(value)) return false;
+    const counts = new Map();
+    for (const c of value) counts.set(c, (counts.get(c) || 0) + 1);
+    if (counts.size < 8) return false;
+    let bits = 0;
+    for (const n of counts.values()) bits -= n * Math.log2(n / value.length);
+    return bits >= 40;
+  }
   function pageEvidence(detail) {
     if (!detail || typeof detail !== 'object' || Array.isArray(detail) || typeof detail.signal !== 'string' || detail.signal.length > 40 || !Object.hasOwn(pageSignals, detail.signal)) return null;
     return { signal: detail.signal, source: pageSignals[detail.signal] };
@@ -58,6 +76,6 @@ const WOLearner = (() => {
     for (const bit of [a, b]) words[bit >>> 5] = (words[bit >>> 5] | (1 << (bit & 31))) >>> 0;
     return words.map(word => word.toString(16).padStart(8, '0')).join('');
   }
-  return Object.freeze({ pageSignals, sources, signals, pageEvidence, counts, summary, positions, validMarks, has, add });
+  return Object.freeze({ pageSignals, sources, signals, pageEvidence, counts, summary, positions, validMarks, has, add, identifyingCookie });
 })();
 if (typeof module !== 'undefined') module.exports = WOLearner;

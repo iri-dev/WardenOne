@@ -62,6 +62,8 @@ let listState = { loading: true };
 let keyEdit = '';
 const keyMsg = {};
 const results = {};
+const trackerHistoryState = { query: '', filter: 'all', page: 0, data: null, error: '', loading: false, request: 0 };
+let trackerHistoryTimer = 0;
 const cleanPicks = new Set(['cache', 'consentCookies']);
 let eraseMode = 'all';
 let erasePlan = null;
@@ -137,8 +139,9 @@ const ask = (message) => new Promise((resolve) => {
 const COPY = {
   blockTrackers: ['Block trackers & ad analytics', 'rec', 'Blocks known analytics and tracking networks before they load.'],
   blockFirstPartyTrackers: ['First-party trackers', 'risk', 'Catches known analytics paths served from a site’s own domain.'],
-  blockCnameTrackers: ['Block CNAME-cloaked trackers', 'risk', 'On by default. Blocks confirmed tracking aliases from a local list; can be turned off for one site.'],
-  trackerLearner: ['Tracker learner', '', 'Suggests repeated trackers and suspected URL identifiers locally. Never blocks without you.'],
+  blockCnameTrackers: ['Block CNAME-cloaked trackers', 'risk', 'On by default. Blocks over 100,000 known disguised tracker addresses from a packaged list, and strips cookies from the few that sign-in or site tools rely on; can be turned off for one site.'],
+  trackerLearner: ['Local tracker learner', '', 'Learns from repeated third-party activity across your sites. Choose its learning mode below. Observations stay on this device; known tracker blocking works separately.'],
+  trackerLearnerAuto: ['Learning mode', '', 'Automatic tracker protection learns from browser evidence and blocks learned trackers until you unblock them. Switching to review stops new automatic decisions; saved blocks stay. Open Learned trackers to search your history, review evidence or unblock a domain.'],
   socialWidgetGuard: ['Click to load social embeds', '', 'Facebook, X, Instagram and TikTok embeds wait for your click.'],
   trackerCacheProtection: ['Block cache-tag tracking', 'adv', 'Stops trackers rebuilding an ID from your browser cache.'],
   stripTrackingParams: ['Strip tracking from addresses', 'rec', 'Removes utm, fbclid and friends when a site rewrites its address.'],
@@ -263,7 +266,7 @@ const PAGES = [
     G('i-puzzle', 'Extensions & startup', 'Keeps an eye on what else runs in your browser.', ['watchExtensionPermissions', 'startupCheck', 'permissionChainGuard']),
     G('i-eye-off', 'Adult-site safety', 'Warnings and safe search.', ['gateAdultSites', 'adultHeuristics', 'safeSearch']) ] },
   { id: 'privacy', title: 'Privacy', icon: 'i-lock', nav: 1, desc: 'Stops trackers, strips tracking out of links, and keeps sites from fingerprinting your browser.', groups: [
-    G('i-eye-off', 'Tracking', 'Block trackers and limit how sites follow you around the web.', ['blockTrackers', 'blockFirstPartyTrackers', 'blockCnameTrackers', 'trackerLearner', 'socialWidgetGuard', 'trackerCacheProtection']),
+    G('i-eye-off', 'Tracking', 'Block trackers and limit how sites follow you around the web.', ['blockTrackers', 'blockFirstPartyTrackers', 'blockCnameTrackers', 'trackerLearner', 'trackerLearnerAuto', 'socialWidgetGuard', 'trackerCacheProtection']),
     G('i-link', 'Links', 'Keep shared links and navigation private.', ['stripTrackingParams', 'cleanCopyLinks', 'unshimLinks', 'deAmp', 'capReferrer']),
     G('i-cookie', 'Cookies & storage', 'Control what sites store on your device.', ['blockThirdPartyCookies', 'blockSupercookies', 'autoRejectConsent', 'removeConsentWalls', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'blockAllCookies']),
     G('i-fingerprint', 'Fingerprinting', 'Make it harder for sites to recognise your browser or device.', ['blockFingerprintScripts', 'fingerprintProbeDetection', 'clientHintProtection', 'antiFingerprintNoise', 'blockFraudVendorScripts', 'sendPrivacySignals']),
@@ -390,6 +393,9 @@ const PAGES = [
       action('Change a shortcut', 'Your browser’s shortcuts page sets, changes or clears them, and says when a key is already taken.', [{ label: 'Open the shortcuts page', icon: 'i-external', act: 'open-shortcuts' }]) ]),
     G('i-search', 'Keys on this page', 'For getting around Settings without the mouse.', [
       custom('page-keys', 'keyboard settings page keys slash escape enter arrows', pageKeysHTML) ]) ] },
+  { id: 'learned-trackers', title: 'Learned trackers', icon: 'i-history', nav: 2, desc: 'Your local history of learned trackers. Blocks and unblock choices stay until you change them or reset WardenOne.', groups: [
+    G('i-eye-off', 'History & review', 'Search your learned blocks, review the evidence, or unblock a tracker.', [
+      custom('tracker-history', 'learned trackers automatic tracker protection history unblock review', trackerHistoryHTML) ]) ] },
   { id: 'lists', title: 'Blocklists & filters', icon: 'i-filter', nav: 2, desc: 'Where WardenOne’s lists come from, how fresh they are, and your own rules.', groups: () => [
     G('i-shield', 'Protection lists', 'The switches that use the lists.', ['blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists']),
     G('i-refresh', 'Update status', 'When WardenOne last refreshed its lists, and how that went.', [
@@ -449,9 +455,14 @@ function crumbOf(key) {
 }
 function metaHTML(key, lead) {
   const crumb = crumbOf(key);
+  /* One quiet line: what happened, where it lives, then what Recommended would be. The On/Off chip
+     only repeats the switch, so the stylesheet hides it. */
   return '<div class="r-meta">' + (lead ? '<span class="r-lead">' + lead + '</span>' : '') +
-    '<span class="st" data-st="' + esc(key) + '"></span><span class="st chg" data-chg="' + esc(key) + '" hidden></span>' +
-    (crumb ? '<button class="r-crumb" data-reveal="' + esc(key) + '">' + esc(crumb) + '</button>' : '') + '</div>';
+    (crumb ? '<button class="r-crumb" data-reveal="' + esc(key) + '">' + esc(crumb) + '</button>' : '') +
+    '<span class="st chg" data-chg="' + esc(key) + '" hidden></span><span class="st" data-st="' + esc(key) + '"></span></div>';
+}
+function trackerLearningModeHTML() {
+  return '<select data-tracker-learning-mode aria-label="Learning mode"><option value="false"' + (state.trackerLearnerAuto ? '' : ' selected') + '>Review suggestions</option><option value="true"' + (state.trackerLearnerAuto ? ' selected' : '') + '>Automatic tracker protection</option></select>';
 }
 function itemHTML(it, opts) {
   opts = opts || {};
@@ -461,11 +472,13 @@ function itemHTML(it, opts) {
     const renamed = i.popupName && i.popupName !== i.name ? '<small>In the popup today: ' + esc(i.popupName) + '</small>' : '';
     const starred = favorites.includes(it.key);
     const star = it.key === '__master' ? '' : '<button class="r-star" data-fav="' + esc(it.key) + '" aria-pressed="' + starred + '" aria-label="' + (starred ? 'Remove ' : 'Add ') + esc(i.name) + (starred ? ' from' : ' to') + ' favorites" title="' + (starred ? 'Remove from favorites' : 'Add to favorites') + '">' + icon('i-star') + '</button>';
-    return '<div class="row" data-key="' + esc(it.key) + '">' +
+    return '<div class="row' + (it.key === 'trackerLearnerAuto' ? ' learning-mode' : '') + '" data-key="' + esc(it.key) + '">' +
       '<div class="r-name"><span class="r-label">' + esc(i.name) + '</span>' + badge(i.badge) + star + '</div>' +
       '<div class="r-desc">' + esc(i.line) + where + '</div>' +
       (i.long ? '<button class="r-more" aria-expanded="false" aria-label="How ' + esc(i.name) + ' works">' + icon('i-info') + '</button>' : '<span></span>') +
-      '<button class="tg" role="switch" aria-checked="' + !!state[it.key] + '" aria-label="' + esc(i.name) + '"></button>' +
+      (it.key === 'trackerLearnerAuto'
+        ? trackerLearningModeHTML()
+        : '<button class="tg" role="switch" aria-checked="' + !!state[it.key] + '" aria-label="' + esc(i.name) + '"></button>') +
       (opts.meta ? metaHTML(it.key, opts.lead) : '') +
       (i.long ? '<div class="r-long">' + esc(i.long) + renamed + '</div>' : '') + '</div>';
   }
@@ -545,6 +558,7 @@ const DETAIL = {
   blockAllCookies: { breaks: 'You’ll be signed out of sites each time the browser starts again. Sign-ins still work while you browse.' },
   blockFraudVendorScripts: { breaks: 'A sign-in can be refused or an order declined, and the site won’t say why. These scripts are what decides whether you get in.' },
   antiFingerprintNoise: { breaks: 'Rare setups can end up more unique, not less. Web workers aren’t covered and can still show your real graphics.' },
+  trackerLearnerAuto: { breaks: 'A learned domain may also serve an embedded feature a site needs. Unblock it in Learned trackers if that feature stops working. Known sign-in and media hosts are excluded from automatic learning.' },
   trackerCacheProtection: { breaks: 'Repeated tracker responses can use a little more bandwidth. Normal browser caching is untouched.' },
   autoRejectConsent: { does: ['Says no whenever the banner offers a way to', 'Opens the banner’s choices if it has to', 'Turns off optional tracking', 'Never clicks Accept for you'], doesnt: 'Walls with no way to say no. Lift cookie walls handles those.' },
   blockThirdPartyCookies: { doesnt: 'All cross-site cookies, all storage or every frame bypass. Early frame isolation needs an installed native policy and supported navigation timing; other frames use verified configuration. Unknown hosts retain existing policy. Direct visits, first-party service use, media workarounds and explicit site exceptions retain cookies.' },
@@ -902,16 +916,54 @@ function paintNavCounts() {
     slot.title = n && (changes || alert) ? said : '';
     slot.innerHTML = n ? '<span aria-hidden="true">' + n + '</span><span class="sr">, ' + esc(said) + '</span>' : '';
   });
+  paintNavGroupCounts();
+}
+/* Manage and Help start folded so the sidebar leads with what people change most. A group holding
+   the open page always shows; a folded group still surfaces attention counts on its label. */
+const NAV_COLLAPSE_KEY = 'wardenone_settings_nav';
+const navCollapsed = { 1: false, 2: true, 3: true };
+try {
+  const saved = JSON.parse(localStorage.getItem(NAV_COLLAPSE_KEY) || 'null');
+  if (saved && typeof saved === 'object') for (const n of Object.keys(navCollapsed)) if (typeof saved[n] === 'boolean') navCollapsed[n] = saved[n];
+} catch (_) {}
+/* The side cards fold the same way and remember it per card; every card starts open. */
+const RAIL_FOLD_KEY = 'wardenone_settings_rail';
+const railFolded = Object.create(null);
+try {
+  const saved = JSON.parse(localStorage.getItem(RAIL_FOLD_KEY) || 'null');
+  if (saved && typeof saved === 'object') for (const id of Object.keys(saved)) if (saved[id] === true) railFolded[id] = true;
+} catch (_) {}
+function toggleRailFold(button) {
+  const id = button.dataset.railFold, open = button.getAttribute('aria-expanded') !== 'true';
+  if (open) delete railFolded[id];
+  else railFolded[id] = true;
+  try { localStorage.setItem(RAIL_FOLD_KEY, JSON.stringify(railFolded)); } catch (_) {}
+  button.setAttribute('aria-expanded', String(open));
+  const body = document.getElementById('rail-body-' + id);
+  if (body) body.hidden = !open;
+}
+function paintNavGroupCounts() {
+  $$('#nav [data-nav-group]').forEach((label) => {
+    const group = $('#nav-group-' + label.dataset.navGroup), slot = $('.n', label);
+    if (!group || !slot) return;
+    const n = group.classList.contains('closed')
+      ? $$('.nav .n.alert', group).reduce((total, el) => total + (el.hidden ? 0 : Number(($('[aria-hidden]', el) || {}).textContent) || 0), 0) : 0;
+    slot.hidden = !n;
+    slot.innerHTML = n ? '<span aria-hidden="true">' + n + '</span><span class="sr">, ' + esc(plural(n, 'thing') + (n === 1 ? ' needs' : ' need')) + ' attention inside</span>' : '';
+  });
 }
 function renderNav() {
-  let last = -1;
   const searching = !!$('#q').value.trim();
   const page = PAGES.find((x) => x.id === current) || PAGES[0];
   const active = page.parent || page.id;
-  $('#nav').innerHTML = PAGES.filter((p) => !p.hidden).map((p) => {
-    const label = p.nav !== last && NAV_LABELS[p.nav] ? '<div class="nav-label">' + NAV_LABELS[p.nav] + '</div>' : '';
-    last = p.nav;
-    return label + '<button class="nav" data-go="' + p.id + '"' + (p.id === active && !searching ? ' aria-current="page"' : '') + '>' + icon(p.icon) + esc(p.title) + '<span class="n" hidden></span></button>';
+  const item = (p) => '<button class="nav" data-go="' + p.id + '"' + (p.id === active && !searching ? ' aria-current="page"' : '') + '>' + icon(p.icon) + esc(p.title) + '<span class="n" hidden></span></button>';
+  $('#nav').innerHTML = NAV_LABELS.map((label, n) => {
+    const pages = PAGES.filter((p) => !p.hidden && p.nav === n);
+    if (!label) return pages.map(item).join('');
+    const closed = !!navCollapsed[n] && !pages.some((p) => p.id === active);
+    return '<button class="nav-label" data-nav-group="' + n + '" aria-expanded="' + !closed + '" aria-controls="nav-group-' + n + '">' + label +
+      '<span class="n alert" hidden></span>' + icon('i-chev-up', 'nav-chev') + '</button>' +
+      '<div class="nav-group' + (closed ? ' closed' : '') + '" id="nav-group-' + n + '" role="group" aria-label="' + label + '">' + pages.map(item).join('') + '</div>';
   }).join('');
   paintNavCounts();
 }
@@ -934,6 +986,7 @@ function renderPage() {
     if (p.id === 'cleanup') void loadListsBundle();
   }
   paint();
+  if (!q && current === 'learned-trackers') void loadTrackerHistory();
   if (!q && current === 'about' && typeof WO_BUILD_UPDATE !== 'undefined') void WO_BUILD_UPDATE.renderAbout();
 }
 
@@ -976,7 +1029,7 @@ const LIST_EMPTY = {
 };
 function listEntries(id) {
   if (id === 'recent') {
-    return recentRows().map((row) => ({ key: row.key, lead: '<b>' + (row.on ? 'Turned on' : 'Turned off') + '</b> · <time datetime="' + new Date(row.at).toISOString() + '" title="' + esc(new Date(row.at).toLocaleString()) + '">' + esc(ago(row.at)) + '</time>' }));
+    return recentRows().map((row) => ({ key: row.key, lead: (row.on ? 'Turned on' : 'Turned off') + ' <time datetime="' + new Date(row.at).toISOString() + '" title="' + esc(new Date(row.at).toLocaleString()) + '">' + esc(ago(row.at)) + '</time>' }));
   }
   if (id === 'favorites') return favoriteKeys().map((key) => ({ key }));
   if (id === 'changed') return ALL_KEYS.filter(differs).map((key) => ({ key }));
@@ -998,7 +1051,7 @@ function listPage(p) {
 function keepFocus(box, draw) {
   const active = document.activeElement;
   const row = active && box.contains(active) ? active.closest('[data-key]') : null;
-  const part = row ? (active.classList.contains('tg') ? '.tg' : active.classList.contains('r-star') ? '.r-star' : '') : '';
+  const part = row ? (active.classList.contains('tg') ? '.tg' : active.classList.contains('r-star') ? '.r-star' : active.matches('[data-tracker-learning-mode]') ? '[data-tracker-learning-mode]' : '') : '';
   draw();
   if (row && part) {
     const again = box.querySelector('[data-key="' + row.dataset.key + '"] ' + part);
@@ -1276,8 +1329,6 @@ const CHECKS = [
 ];
 function renderOverview() {
   $('#pane').innerHTML = headHTML('Overview', 'How WardenOne is set up right now. Pick a category to change it.', { preset: true }) +
-    '<div class="status"><span class="status-ico">' + icon('i-shield') + '</span><div><h3 id="ov-title"></h3><div class="sub" id="ov-sub"></div></div>' +
-      '<div class="btns"><button class="btn primary" id="ov-resume" data-act="resume" hidden>Turn protection on</button><button class="btn" data-go="activity">' + icon('i-pulse') + 'Activity Centre</button><button class="btn" data-act="privacy-test">' + icon('i-check-circle') + 'Privacy self-test</button></div></div>' +
     '<ul class="facts" id="ov-facts"></ul>' +
     '<details class="sec" open id="ov-attention-sec" hidden><summary>' + icon('i-alert', 'g-ico') + '<span class="g-title">Needs attention</span><span class="g-sub">From WardenOne’s own health check, the same one the popup shows.</span>' + icon('i-chev-up', 'g-chev') + '</summary><div class="rows flat" id="ov-attention"></div></details>' +
     '<details class="sec" open data-idx="r"><summary>' + icon('i-history', 'g-ico') + '<span class="g-title">Recently changed</span><span class="g-sub">Newest first, from every WardenOne page.</span><button class="link-btn" data-go="recent">See all ' + icon('i-chev-right') + '</button>' + icon('i-chev-up', 'g-chev') + '</summary><div class="rows flat" id="ov-recent"></div></details>' +
@@ -1293,14 +1344,22 @@ function pausedSiteCount() {
   return hosts.size;
 }
 function paintOverviewFacts() {
-  if (!$('#ov-facts')) return;
+  const list = $('#ov-facts');
+  if (!list) return;
   const paused = loaded && !state.__master;
   const sites = pausedSiteCount();
-  $('#ov-title').textContent = !loaded ? 'Reading your settings…' : paused ? 'Protection is paused.' : 'Protection is on.';
-  $('#ov-sub').textContent = !loaded ? '' : paused ? 'WardenOne is off on every site. Your choices are kept for when you turn it back on.'
-    : sites ? 'Running everywhere except ' + plural(sites, 'site') + ' you paused.' : 'Running on every site you open.';
-  $('#ov-resume').hidden = !paused;
   const on = protectionsOn();
+  /* One headline row: whether protection runs, how many protections, and where. The count keeps
+     its first-fact place; how it is counted is the line's tooltip. */
+  const where = !loaded ? '' : paused ? 'WardenOne is off on every site. Your choices are kept for when you turn it back on.'
+    : sites ? 'Running everywhere except ' + plural(sites, 'site') + ' you paused.' : 'Running on every site you open.';
+  const count = paused ? 'None of the ' + PROTECTION_TOTAL + ' protections are running while WardenOne is paused.' : on + ' of ' + PROTECTION_TOTAL + ' protections enabled.';
+  const how = SHIELD_KEYS.length + ' have a switch, and ' + WATCH_ONLY_KEYS.length + ' only watch and have none. Sleeping tabs, page clean-up, tools and how WardenOne looks are settings, not protections, so they aren’t counted.';
+  const summary = '<li class="summary' + (paused || (loaded && !on) ? ' off' : '') + '"><span class="status-ico">' + icon('i-shield') + '</span><span class="fw">' +
+    '<span class="sum-title" id="ov-title">' + esc(!loaded ? 'Reading your settings…' : paused ? 'Protection is paused.' : 'Protection is on.') + '</span>' +
+    (loaded ? '<span class="sum-line"><span class="ft" title="' + esc(how) + '">' + esc(count) + '</span> <span id="ov-sub">' + esc(where) + '</span></span>' : '') + '</span>' +
+    '<span class="btns"><button class="btn primary" id="ov-resume" data-act="resume"' + (paused ? '' : ' hidden') + '>Turn protection on</button><button class="btn" data-go="activity">' + icon('i-pulse') + 'Activity Centre</button>' +
+    '<button class="btn" data-act="privacy-test">' + icon('i-check-circle') + 'Privacy self-test</button></span></li>';
   const changed = ALL_KEYS.filter(differs).length;
   const riskyKeysOn = ALL_KEYS.filter((k) => info(k).badge === 'risk' && state[k]);
   const risky = riskyKeysOn.length;
@@ -1315,13 +1374,15 @@ function paintOverviewFacts() {
     : fact(health.items.some((i) => i.severity === 'danger') ? 'bad' : urgent ? 'warn' : 'ok', urgent ? 'i-alert' : 'i-check-circle',
       urgent ? plural(urgent, 'thing') + (urgent === 1 ? ' needs' : ' need') + ' attention.' : 'Nothing needs your attention.',
       urgent ? 'act:show-attention' : '', !urgent && notes ? plural(notes, 'note') + ' below, nothing urgent.' : '');
-  $('#ov-facts').innerHTML = !loaded ? '' : [
-    fact(paused || !on ? 'off' : 'ok', 'i-shield', paused ? 'None of the ' + PROTECTION_TOTAL + ' protections are running while WardenOne is paused.' : on + ' of ' + PROTECTION_TOTAL + ' protections enabled.', '',
-      SHIELD_KEYS.length + ' have a switch, and ' + WATCH_ONLY_KEYS.length + ' only watch and have none. Sleeping tabs, page clean-up, tools and how WardenOne looks are settings, not protections, so they aren’t counted.'),
+  /* The list is redrawn when settings or health change; a focused button keeps its focus. */
+  const focused = list.contains(document.activeElement) ? document.activeElement : null;
+  const again = focused ? (focused.dataset.act ? '[data-act="' + focused.dataset.act + '"]' : focused.dataset.go ? '[data-go="' + focused.dataset.go + '"]' : '') : '';
+  list.innerHTML = summary + (!loaded ? '' : [
     fact(changed ? '' : 'ok', 'i-sliders', changed ? plural(changed, 'setting') + ' changed from Recommended.' : 'Every setting matches Recommended.', changed ? 'changed' : ''),
     fact(risky ? 'warn' : 'ok', 'i-alert', risky ? risky + ' ' + riskyWord[risky === 1 ? 0 : 1] + ' may affect compatibility.' : 'Nothing that may affect compatibility is on.', risky ? 'compat' : ''),
     attention
-  ].join('');
+  ].join(''));
+  if (again && $(again, list)) $(again, list).focus({ preventScroll: true });
 }
 
 function presetOf() {
@@ -1332,8 +1393,20 @@ function presetOf() {
   return dRec <= dMax ? { id: 'custom', from: 'Recommended', n: dRec } : { id: 'custom', from: 'Maximum privacy', n: dMax };
 }
 const bar = (n, of) => '<span class="bar"><i style="width:' + (of ? Math.round(100 * n / of) : 0) + '%"></i></span>';
-const cardHead = (ic, title, sub, opts) => '<div class="rc-h"><span class="tile' + (opts && opts.warm ? ' warm' : '') + '">' + icon(ic) + '</span><div class="tt"><h3>' + title + '</h3>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>' +
-  (opts && opts.close ? '<button class="rc-x" id="ins-close" aria-label="Close">' + icon('i-x') + '</button>' : '') + '</div>';
+const cardHead = (ic, title, sub, opts) => {
+  const tile = '<span class="tile' + (opts && opts.warm ? ' warm' : '') + '">' + icon(ic) + '</span>';
+  const fold = opts && opts.fold;
+  /* A heading holding a button, so the whole header folds the card and the title stays a heading. */
+  if (fold) return '<h3 class="rc-fold-h"><button type="button" class="rc-h rc-fold" data-rail-fold="' + fold.id + '" aria-expanded="' + fold.open + '" aria-controls="rail-body-' + fold.id + '">' +
+    tile + '<span class="tt"><span class="rc-title">' + title + '</span>' + (sub ? '<span class="rc-sub">' + sub + '</span>' : '') + '</span>' + icon('i-chev-up', 'rc-chev') + '</button></h3>';
+  return '<div class="rc-h">' + tile + '<div class="tt"><h3>' + title + '</h3>' + (sub ? '<p>' + sub + '</p>' : '') + '</div>' +
+    (opts && opts.close ? '<button class="rc-x" id="ins-close" aria-label="Close">' + icon('i-x') + '</button>' : '') + '</div>';
+};
+const railCard = (id, ic, title, sub, body, opts) => {
+  const open = !railFolded[id];
+  return '<section class="rcard">' + cardHead(ic, title, sub, Object.assign({}, opts, { fold: { id, open } })) +
+    '<div class="rc-body" id="rail-body-' + id + '"' + (open ? '' : ' hidden') + '>' + body + '</div></section>';
+};
 const plural = (n, word, many) => n + ' ' + (n === 1 ? word : many || word + 's');
 let previewState = { status: 'loading' };
 let previewLoadNumber = 0;
@@ -1354,7 +1427,7 @@ function previewCard() {
         + (counts.networkAvailable ? '' : '<div class="live-note">Network-rule counts are unavailable; page actions are still included.</div>')
         : '<div class="live-note">Site activity is unavailable for this tab.</div>') + '</div>';
   }
-  return '<section class="rcard">' + cardHead('i-eye', 'Recent site', 'Activity from the last website you used in this window.') + body + '</section>';
+  return railCard('recent', 'i-eye', 'Recent site', 'Activity from the last website you used in this window.', body);
 }
 const countOf = (value) => Number.isFinite(Number(value)) ? Math.max(0, Math.floor(Number(value))) : 0;
 async function loadPreview() {
@@ -1396,28 +1469,29 @@ function idleCards(p, q) {
   const presetName = pr.id === 'custom' ? 'Custom settings' : (pr.id === 'rec' ? 'Recommended' : 'Maximum privacy') + ' preset';
   let html = '';
   if (q) {
-    html += '<section class="rcard">' + cardHead('i-search', 'Searching', 'Names and full explanations, across every category.') +
+    html += railCard('search', 'i-search', 'Searching', 'Names and full explanations, across every category.',
       '<div class="tips">Words can come in any order. Everyday words work too, like “ads” or “vpn”, and a small typo is forgiven. Press <kbd>/</kbd> to search and <kbd>Esc</kbd> to clear. Click a setting’s name to read about it here.<div class="chips">' +
-      ['cookie', 'ads', 'vpn', 'phishing', 'backup'].map((w) => '<button class="chip" data-q="' + w + '">' + w + '</button>').join('') + '</div></div></section>';
+      ['cookie', 'ads', 'vpn', 'phishing', 'backup'].map((w) => '<button class="chip" data-q="' + w + '">' + w + '</button>').join('') + '</div></div>');
   } else if (p.kind === 'overview') {
-    html += '<section class="rcard">' + cardHead('i-bars', 'What’s protected', protectionsOn() + ' of ' + PROTECTION_TOTAL + ' protections on · ' + (pr.id === 'custom' ? 'Custom' : pr.id === 'rec' ? 'Recommended' : 'Maximum privacy')) +
-      '<ul class="rlist">' + CHECKS.slice(0, 5).filter(([k]) => k in ROWS).map(([k, yes, no]) => '<li class="' + (state[k] ? '' : 'off') + '"><span class="ck">' + icon('i-check') + '</span>' + (state[k] ? yes : no) + '</li>').join('') + '</ul></section>';
+    /* The count is already the Overview's first line; this card says what it means in plain words. */
+    html += railCard('protected', 'i-bars', 'What’s protected', 'Preset: ' + (pr.id === 'custom' ? 'Custom' : pr.id === 'rec' ? 'Recommended' : 'Maximum privacy'),
+      '<ul class="rlist">' + CHECKS.slice(0, 5).filter(([k]) => k in ROWS).map(([k, yes, no]) => '<li class="' + (state[k] ? '' : 'off') + '"><span class="ck">' + icon('i-check') + '</span>' + (state[k] ? yes : no) + '</li>').join('') + '</ul>');
   } else if (switchKeysOf(p).length) {
     const keys = switchKeysOf(p), on = keys.filter((k) => state[k]).length;
-    html += '<section class="rcard">' + cardHead('i-bars', 'What’s protected', on + ' of ' + keys.length + ' on · ' + (pr.id === 'custom' ? 'Custom' : pr.id === 'rec' ? 'Recommended' : 'Maximum privacy')) +
+    html += railCard('protected', 'i-bars', 'What’s protected', on + ' of ' + keys.length + ' on · ' + (pr.id === 'custom' ? 'Custom' : pr.id === 'rec' ? 'Recommended' : 'Maximum privacy'),
       '<ul class="rlist">' + groupsOf(p).filter((g) => g.items.some((it) => it.type === 'switch')).map((g) => {
         const gk = g.items.filter((it) => it.type === 'switch').map((it) => it.key);
         const n = gk.filter((k) => state[k]).length;
         return '<li class="' + (n ? '' : 'off') + '"><span class="ck">' + icon('i-check') + '</span>' + esc(g.title) + '<span class="c">' + n + ' of ' + gk.length + '</span></li>';
-      }).join('') + '</ul></section>';
+      }).join('') + '</ul>');
   }
   if (!q) {
     html += previewCard();
-    html += '<section class="rcard">' + cardHead('i-bulb', 'Did you know?', '', { warm: true }) + '<p class="tip">' + esc(TIPS[p.id] || TIPS.overview) + ' <a class="link-btn" href="' + PROJECT_LINKS.readme + '" target="_blank" rel="noopener noreferrer">Read the guide ' + icon('i-external') + '</a></p></section>';
+    html += railCard('tip', 'i-bulb', 'Did you know?', '', '<p class="tip">' + esc(TIPS[p.id] || TIPS.overview) + ' <a class="link-btn" href="' + PROJECT_LINKS.readme + '" target="_blank" rel="noopener noreferrer">Read the guide ' + icon('i-external') + '</a></p>', { warm: true });
   }
-  html += '<section class="rcard">' + cardHead('i-sliders', 'Related settings') + '<ul class="rel">' +
+  html += railCard('related', 'i-sliders', 'Related settings', '', '<ul class="rel">' +
     [['sites', 'i-list', 'Manage site exceptions'], ['cleanup', 'i-trash', 'Clear browsing data'], ['access', 'i-key', 'Permissions & API keys'], ['arrange', 'i-tabs', 'Arrange the popup\u2019s sections'], ['activity', 'i-pulse', 'Open the Activity Centre']]
-      .map(([go, ic, label]) => '<li><button data-go="' + go + '">' + icon(ic) + label + icon('i-chev-right', 'chev') + '</button></li>').join('') + '</ul></section>';
+      .map(([go, ic, label]) => '<li><button data-go="' + go + '">' + icon(ic) + label + icon('i-chev-right', 'chev') + '</button></li>').join('') + '</ul>');
   return html;
 }
 
@@ -1452,7 +1526,8 @@ function settingInspector(key) {
       (DATA.maxAdds[key] ? '<dt>Maximum privacy</dt><dd>On</dd>' : '') +
       '<dt>Takes effect</dt><dd>On pages you load next</dd>' +
       (i.popupName && i.popupName !== i.name ? '<dt>In the popup</dt><dd>' + esc(i.popupName) + '</dd>' : '') + '</dl>' +
-    '<button class="btn ins-btn' + (on ? '' : ' primary') + '" data-toggle="' + key + '">' + (on ? 'Turn off' : 'Turn on') + '</button>' +
+    (key === 'trackerLearnerAuto' ? '<div class="r-act">' + trackerLearningModeHTML() + '</div>'
+      : '<button class="btn ins-btn' + (on ? '' : ' primary') + '" data-toggle="' + key + '">' + (on ? 'Turn off' : 'Turn on') + '</button>') +
     '<div class="ins-links"><button class="link-btn" data-go="sites">Site exceptions ' + icon('i-chev-right') + '</button></div></section>';
 }
 
@@ -1478,11 +1553,15 @@ function paint() {
   paintChoices();
   paintControls();
   $$('.row[data-key]').forEach((row) => { const tg = $('.tg', row); if (tg) tg.setAttribute('aria-checked', String(!!state[row.dataset.key])); });
+  $$('[data-tracker-learning-mode]').forEach((select) => {
+    select.value = state.trackerLearnerAuto ? 'true' : 'false';
+    select.disabled = !state.__master || !state.trackerLearner;
+  });
   $$('[data-st]').forEach((el) => { const on = !!state[el.dataset.st]; el.textContent = onOff(on); el.classList.toggle('off', !on); });
   $$('[data-chg]').forEach((el) => {
     const key = el.dataset.chg, changed = key !== '__master' && differs(key);
     el.hidden = !changed;
-    el.textContent = changed ? 'Recommended: ' + onOff(!!REC[key]) : '';
+    el.textContent = changed ? 'Recommended: ' + onOff(!!REC[key]).toLowerCase() : '';
   });
   $$('.sec').forEach((g) => {
     const keys = (g.dataset.keys || '').split(' ').filter(Boolean);
@@ -1626,7 +1705,7 @@ function revealSetting(key) {
   if (sec) sec.open = true;
   row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash');
   row.scrollIntoView({ block: 'center' });
-  const tg = $('.tg', row);
+  const tg = $('.tg, [data-tracker-learning-mode]', row);
   if (tg) tg.focus({ preventScroll: true });
 }
 
@@ -1666,6 +1745,18 @@ function goTo(id) {
 
 document.addEventListener('click', (e) => {
   const t = e.target;
+  const railFold = t.closest('[data-rail-fold]');
+  if (railFold) { toggleRailFold(railFold); return; }
+  const navToggle = t.closest('[data-nav-group]');
+  if (navToggle) {
+    const n = navToggle.dataset.navGroup, open = navToggle.getAttribute('aria-expanded') !== 'true';
+    navCollapsed[n] = !open;
+    try { localStorage.setItem(NAV_COLLAPSE_KEY, JSON.stringify(navCollapsed)); } catch (_) {}
+    navToggle.setAttribute('aria-expanded', String(open));
+    $('#nav-group-' + n).classList.toggle('closed', !open);
+    paintNavGroupCounts();
+    return;
+  }
   const flagButton = t.closest('[data-flag]');
   if (flagButton) {
     const it = CONTROLS[flagButton.dataset.flag];
@@ -1746,6 +1837,8 @@ document.addEventListener('click', (e) => {
   if (t.closest('#theme')) { saveTheme(document.documentElement.dataset.theme === 'dark' ? 'Light' : 'Dark'); return; }
 });
 document.addEventListener('change', (e) => {
+  if (e.target.id === 'tracker-history-filter') { trackerHistoryState.filter = e.target.value; trackerHistoryState.page = 0; void loadTrackerHistory(); }
+  if (e.target.matches('[data-tracker-learning-mode]')) void setSwitch('trackerLearnerAuto', e.target.value === 'true');
   if (e.target.matches('[data-eye-state]')) void changeEyeSiteState(e.target.value);
   if (e.target.matches('[data-eye-field]')) void changeEyeSiteField(e.target.dataset.eyeField, e.target.value);
   if (e.target.matches('select[data-choice]')) choices[e.target.dataset.choice] = e.target.value;
@@ -1812,6 +1905,71 @@ if (hash.get('inspect')) inspect = { type: 'setting', key: hash.get('inspect') }
 if (hash.get('presets')) inspect = { type: 'preset' };
 
 /* ---------- Real data management ---------- */
+function trackerDate(value) {
+  const date = new Date(Number(value));
+  return Number(value) > 0 && Number.isFinite(date.getTime()) ? date.toLocaleDateString() : 'Unknown';
+}
+function trackerHistoryResultsHTML() {
+  const data = trackerHistoryState.data;
+  const error = trackerHistoryState.error ? '<p class="msg err" role="status">' + esc(trackerHistoryState.error) + '</p>' : '';
+  if (!data) return error || '<p class="msg" role="status">Loading learned trackers…</p>';
+  const disabled = trackerHistoryState.loading ? ' disabled' : '';
+  const counts = data.counts;
+  const summary = '<p class="msg" role="status">' + counts.blocked + (data.enabled ? ' blocked' : ' saved blocks; learner paused') + ' · ' + counts.unblocked + ' unblocked by you</p>';
+  const capacity = data.capacityReached ? '<p class="msg warn">The ' + data.decisionLimit.toLocaleString() + ' saved-decision limit is full. Existing blocks and unblock choices are kept; new automatic decisions are paused.</p>' : '';
+  const rows = data.items.map((item) => {
+    const blocked = item.state === 'learned', unblocked = item.state === 'unblocked';
+    const label = unblocked ? 'Unblocked by you' : blocked ? (data.enabled ? 'Blocked' : 'Block paused') : 'Suggestion to review';
+    const origin = item.automatic ? 'Automatically learned' : blocked || unblocked ? 'Approved by you' : String(item.confidence || 'unverified');
+    const dates = item.learnedAt ? 'First learned ' + trackerDate(item.learnedAt) + (unblocked ? ' · Unblocked ' + trackerDate(item.unblockedAt) : '') : 'Suggested ' + trackerDate(item.proposedAt);
+    return '<article class="tracker-history-entry"><div><strong>' + esc(item.domain) + '</strong><p>' + esc(label + ' · ' + origin) + '</p><p>' + esc(dates) + '</p>' +
+      (blocked ? '<p>' + (item.fullBlock ? 'All third-party resources' : 'Image, beacon and data requests') + '</p>' : '') +
+      '<details><summary>Review evidence</summary><p>' + (item.legacy ? 'Earlier unapproved rule; review before blocking. ' : '') + esc(item.reason) + '</p><p>' + esc(item.source) + '</p></details></div><div class="r-act">' +
+      '<button class="btn" data-act="' + (blocked ? 'tracker-unblock' : 'tracker-reblock') + '" data-domain="' + esc(item.domain) + '"' + disabled + '>' + (blocked ? 'Unblock' : unblocked ? 'Block again' : 'Block requests') + '</button>' +
+      (!blocked && !unblocked ? '<button class="btn" data-act="tracker-ignore" data-domain="' + esc(item.domain) + '"' + disabled + '>Ignore</button>' : '') + '</div></article>';
+  }).join('');
+  const pages = Math.max(1, Math.ceil(data.total / data.pageSize));
+  const pager = '<div class="tracker-history-pager"><button class="btn" data-act="tracker-history-prev"' + (data.page === 0 || trackerHistoryState.loading ? ' disabled' : '') + '>Previous</button>' +
+    '<span>Page ' + (data.page + 1) + ' of ' + pages + ' · ' + data.total + ' results</span><button class="btn" data-act="tracker-history-next"' + (data.page + 1 >= pages || trackerHistoryState.loading ? ' disabled' : '') + '>Next</button></div>';
+  return error + summary + capacity + (rows || '<p class="msg">No trackers match this view.</p>') + pager;
+}
+function trackerHistoryHTML() {
+  return '<div class="tracker-history-tools"><label>Search learned trackers<input id="tracker-history-search" type="search" maxlength="200" placeholder="Domain name" value="' + esc(trackerHistoryState.query) + '"></label>' +
+    '<label>Show<select id="tracker-history-filter">' + [['all', 'All learned'], ['blocked', 'Blocked'], ['unblocked', 'Unblocked'], ['suggestions', 'Suggestions']].map(([value, label]) => '<option value="' + value + '"' + (trackerHistoryState.filter === value ? ' selected' : '') + '>' + label + '</option>').join('') + '</select></label></div>' +
+    '<div id="tracker-history-results" aria-busy="' + trackerHistoryState.loading + '">' + trackerHistoryResultsHTML() + '</div>';
+}
+function paintTrackerHistory() {
+  const box = $('#tracker-history-results');
+  if (!box) return;
+  box.setAttribute('aria-busy', String(trackerHistoryState.loading));
+  box.innerHTML = trackerHistoryResultsHTML();
+}
+async function loadTrackerHistory() {
+  const request = ++trackerHistoryState.request;
+  trackerHistoryState.loading = true;
+  paintTrackerHistory();
+  const response = await ask({ kind: 'tracker-learner-history', query: trackerHistoryState.query, filter: trackerHistoryState.filter, page: trackerHistoryState.page, pageSize: 25 });
+  if (request !== trackerHistoryState.request) return;
+  trackerHistoryState.loading = false;
+  trackerHistoryState.error = response.ok ? '' : response.error || 'Could not load learned trackers.';
+  if (response.ok) { trackerHistoryState.data = response; trackerHistoryState.page = response.page; }
+  paintTrackerHistory();
+}
+async function decideTrackerHistory(button) {
+  button.disabled = true;
+  const decision = button.dataset.act === 'tracker-unblock' ? 'unblock' : button.dataset.act === 'tracker-ignore' ? 'ignore' : 'block';
+  const response = await ask({ kind: 'tracker-learner-decide', domain: button.dataset.domain, decision });
+  toast(response.ok ? (decision === 'unblock' ? 'Tracker unblocked. Automatic learning will respect your choice.' : decision === 'block' ? 'Tracker block saved.' : 'Suggestion dismissed.') : response.error || 'Could not save that decision.');
+  await loadTrackerHistory();
+}
+document.addEventListener('input', (event) => {
+  if (event.target.id !== 'tracker-history-search') return;
+  trackerHistoryState.query = event.target.value;
+  trackerHistoryState.page = 0;
+  clearTimeout(trackerHistoryTimer);
+  trackerHistoryTimer = setTimeout(() => { void loadTrackerHistory(); }, 200);
+});
+
 /* Blocks drawn from live state are redrawn in place when that state changes, except one you are
    typing in: a key half pasted is never wiped under the cursor. */
 function refreshCustom(only) {
@@ -1848,7 +2006,9 @@ const trimStop = (text) => String(text || '').replace(/[.\s]+$/, '');
 
 function runAction(act, el) {
   const provider = PROVIDERS.find((p) => p.id === el.dataset.provider);
-  if (act === 'export') void exportSettings();
+  if (act === 'tracker-history-prev' || act === 'tracker-history-next') { trackerHistoryState.page += act.endsWith('prev') ? -1 : 1; void loadTrackerHistory(); }
+  else if (act === 'tracker-unblock' || act === 'tracker-reblock' || act === 'tracker-ignore') void decideTrackerHistory(el);
+  else if (act === 'export') void exportSettings();
   else if (act === 'import') $('#import-file').click();
   else if (act === 'clean') void cleanBrowsingData(el);
   else if (act === 'open-activity') openPage('history.html');
@@ -2266,7 +2426,7 @@ async function runErase(button) {
   button.disabled = true;
   const answer = await ask({ kind: 'privacy-data-erase', mode: eraseMode });
   if (answer.ok) {
-    try { ['wardenone_theme', SETTINGS_PAGE_KEY, DENSITY_KEY].forEach((key) => localStorage.removeItem(key)); } catch (_) {}
+    try { ['wardenone_theme', SETTINGS_PAGE_KEY, DENSITY_KEY, NAV_COLLAPSE_KEY, RAIL_FOLD_KEY].forEach((key) => localStorage.removeItem(key)); } catch (_) {}
     erasePlan = null;
     results.erase = { text: 'WardenOne was reset and is restarting. This tab will close.', tone: 'ok' };
   } else {
@@ -2498,6 +2658,9 @@ async function loadSaved() {
 }
 function followStorage(changes, area) {
   if (area !== 'local') return;
+  if (current === 'learned-trackers' && (changes.wardenone_tracker_learner || changes[CONFIG_KEY])) {
+    clearTimeout(trackerHistoryTimer); trackerHistoryTimer = setTimeout(() => { void loadTrackerHistory(); }, 200);
+  }
   const searching = !!$('#q').value.trim();
   if (changes[CONFIG_KEY] || changes[SCRIPT_MODE_KEY]) {
     adoptConfig(changes[CONFIG_KEY] ? changes[CONFIG_KEY].newValue : config, changes[SCRIPT_MODE_KEY] ? changes[SCRIPT_MODE_KEY].newValue : undefined);

@@ -180,15 +180,12 @@
     if (cfg) blocked = cfg.frameCookieIsolation === true && cfg.enabled !== false && cfg.blockThirdPartyCookies !== false;
   }, true);
 
-  {
-    const guard = original => ({ enumerable: original.enumerable, configurable: false,
-      get() { return blocked ? '' : apply(original.get, this, []); },
-      set(value) { if (!blocked) return apply(original.set, this, [value]); } });
-    const own = descriptor(document, 'cookie');
-    // Guard the document and prototype; an extracted prototype getter must not bypass the decision.
-    define(Document.prototype, 'cookie', guard(cookie));
-    if (!own || (own.configurable && own.get && own.set)) define(document, 'cookie', guard(own || cookie));
-  }
+  /* The native accessors survive only in this closure, so the guards keep the native descriptor shape:
+     a page or embedded app may still wrap or replace them, but any wrapper reaches cookies through
+     the guard. Locking them broke apps that instrument cookies, even with protection off. */
+  define(Document.prototype, 'cookie', { enumerable: cookie.enumerable, configurable: true,
+    get() { return blocked ? '' : apply(cookie.get, this, []); },
+    set(value) { if (!blocked) return apply(cookie.set, this, [value]); } });
 
   if (typeof CookieStore === 'function' && window.cookieStore) {
     for (const name of ['get', 'getAll', 'set', 'delete']) {
@@ -198,8 +195,7 @@
         if (!blocked) return apply(entry.value, this, args);
         return resolve(name === 'get' ? null : name === 'getAll' ? [] : undefined);
       };
-      define(CookieStore.prototype, name, { ...entry, configurable: false, writable: false, value });
-      define(window.cookieStore, name, { configurable: false, writable: false, value });
+      define(CookieStore.prototype, name, { ...entry, value });
     }
     const stop = Event.prototype.stopImmediatePropagation;
     apply(EventTarget.prototype.addEventListener, window.cookieStore, ['change', event => {

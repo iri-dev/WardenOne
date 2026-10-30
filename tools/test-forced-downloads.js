@@ -51,12 +51,13 @@ function page() {
     events.get(type)(event);
     return event;
   };
-  const snapshot = (sender = { id: 'wardenone' }) => {
+  const ask = (message, sender = { id: 'wardenone' }) => {
     let response;
-    query({ kind: 'download-intent-query', filename: 'setup.exe' }, sender, value => { response = value; });
+    query(message, sender, value => { response = value; });
     return response;
   };
-  return { box, offers, control, click, snapshot, events };
+  const snapshot = (sender = { id: 'wardenone' }) => ask({ kind: 'download-intent-query', filename: 'setup.exe' }, sender);
+  return { box, offers, control, click, snapshot, ask, events };
 }
 
 async function run() {
@@ -192,6 +193,56 @@ async function run() {
     observe({ url: item.url, tabId: 7, frameId: 0, initiator: 'https://shop.example' });
     observe({ url: item.url, tabId: 8, frameId: 0, initiator: 'https://shop.example' });
     assert.equal(await vm.runInContext('forcedDownloadContext', sandbox)(item), null, 'concurrent sources cannot borrow another tab’s click');
+  }
+  /* Adversarial: one legitimate click must not cover a second, unrelated file. */
+  {
+    const p = page();
+    p.click(p.control('Download', 'https://cdn.example/setup.exe'));
+    assert(p.click(p.control('', 'https://evil.example/other.exe', { hidden: true }), false).stopped,
+      'a request that named setup.exe does not cover a different file the page clicks');
+    assert(!p.click(p.control('', 'https://cdn.example/setup.exe#again', { hidden: true }), false).stopped,
+      'the named file itself may still be started by the page');
+  }
+  {
+    const p = page();
+    p.click(p.control('Export report', ''));
+    assert(!p.click(p.control('', 'blob:https://shop.example/one', { hidden: true, claimed: 'report.csv' }), false).stopped, 'the first file after a button is covered');
+    assert(!p.click(p.control('', 'blob:https://shop.example/one', { hidden: true, claimed: 'report.csv' }), false).stopped, 'and so are retries of it');
+    assert(p.click(p.control('', 'https://evil.example/second.exe', { hidden: true }), false).stopped,
+      'a second, different file cannot reuse the same button press');
+  }
+  {
+    const p = page();
+    p.click(p.control('Export report', ''));
+    const query = (downloadId, urls) => p.ask({ kind: 'download-intent-query', filename: 'setup.exe', downloadId, urls });
+    assert.equal(query('1', ['https://cdn.example/a.exe']).spent, false, 'the first download claims a request that named no file');
+    assert.equal(query('1', ['https://cdn.example/a.exe']).spent, false, 'and asking again for the same download is not reuse');
+    assert.equal(query('2', ['https://cdn.example/b.exe']).spent, true, 'a second download finds the request spent');
+  }
+  {
+    const p = page();
+    p.click(p.control('Download', 'https://cdn.example/setup.exe'));
+    const query = (downloadId, urls) => p.ask({ kind: 'download-intent-query', filename: 'setup.exe', downloadId, urls });
+    assert.equal(query('9', ['https://evil.example/other.exe']).spent, false, 'an unrelated file cannot claim a request that named another');
+    assert.equal(query('10', ['https://cdn.example/setup.exe', 'https://mirror.example/setup.exe']).spent, false, 'the named file claims it');
+    assert.equal(query('9', ['https://evil.example/other.exe']).spent, true, 'and the unrelated file then finds it spent');
+  }
+  {
+    const { sandbox } = worker();
+    const reason = vm.runInContext('unexpectedDownloadReason', sandbox);
+    const named = { gesture: { at: now, requested: true, label: 'Download', href: 'https://cdn.example/setup.exe' } };
+    for (const [label, patch, itemPatch, expected] of [
+      ['a second file after the request was used', { spent: true, gesture: { at: now, requested: true } }, { filename: 'setup.exe' }, true],
+      ['a second harmless file after the request was used', { spent: true, gesture: { at: now, requested: true } }, { filename: 'report.pdf' }, false],
+      ['an unrelated active file after a named request', named, { url: 'https://evil.example/get', finalUrl: 'https://evil.example/get', filename: 'other.exe' }, true],
+      ['the named file through a verified server redirect', named, { url: 'https://cdn.example/setup.exe', finalUrl: 'https://mirror.example/x/setup.exe', filename: 'setup.exe' }, false],
+      ['a spent request expired too', { spent: true, hadGesture: true }, { filename: 'setup.exe' }, true],
+    ]) assert.equal(!!reason({ ...item, ...itemPatch }, { ...context, ...patch }), expected, label);
+    let sent;
+    sandbox.chrome.tabs.sendMessage = (_id, message, _options, callback) => { sent = message; callback(context); };
+    vm.runInContext('FORCED_DOWNLOAD_REQUESTS.clear()', sandbox);
+    await vm.runInContext('forcedDownloadContext', sandbox)(item);
+    assert(sent && sent.downloadId === '501' && sent.urls.includes(item.url), 'the worker names the download and its addresses when it asks');
   }
   console.log('[ok] forced download intent, page interception, independent switches, review continuation and source boundaries');
 }
