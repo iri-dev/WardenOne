@@ -219,6 +219,13 @@ function oddReleaseLinks(text) {
       && /cmp WardenOne-latest\.zip downloaded-release\/WardenOne-latest\.zip/.test(rolling)
       && /cmp WardenOne-latest\.zip\.sha256 downloaded-release\/WardenOne-latest\.zip\.sha256/.test(rolling)
       && /cd downloaded-release && sha256sum --check WardenOne-latest\.zip\.sha256/.test(rolling));
+  /* The release API answered 502 and then 500s and stranded a commit's publication as a draft. Each
+     release step retries, re-reading the release every attempt, and a rerun keeps matching assets. */
+  check('every release step retries GitHub API errors and re-reads the release each attempt',
+    ['prepare', 'verify', 'promote'].every((fn) => new RegExp(fn + '\\(\\) \\{[\\s\\S]*?\\n\\s*\\}\\n\\s*for wait in 15 45 90; do '
+      + fn + ' && exit 0; [^\\n]*sleep "\\$wait"; done\\n\\s*' + fn + '\\n').test(rolling)));
+  check('a retried draft keeps assets that already match instead of replacing them',
+    /cmp -s WardenOne-latest\.zip existing-assets\/WardenOne-latest\.zip[\s\S]*?return 0[\s\S]*?gh release upload "\$BUILD_TAG"/.test(rolling));
   check('the publish step rejects stale pushes and never moves a tag or replaces published assets',
     /git ls-remote origin refs\/heads\/main/.test(rolling)
       && !/git tag -f latest-build|git push -f origin latest-build/.test(rolling)
