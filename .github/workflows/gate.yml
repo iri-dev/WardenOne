@@ -428,26 +428,42 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           BUILD_TAG="build-$GITHUB_SHA"
-          if gh release view "$BUILD_TAG" >/dev/null 2>&1; then
-            if [ "$(gh release view "$BUILD_TAG" --json isDraft --jq .isDraft)" = true ]; then
+          # The release API can answer 5xx for a moment, and a create that errored may still have landed.
+          # Each attempt re-reads the release, and identical assets already on the draft are left alone.
+          prepare() {
+            if gh release view "$BUILD_TAG" >/dev/null 2>&1; then
+              draft="$(gh release view "$BUILD_TAG" --json isDraft --jq .isDraft)" || return 1
+              [ "$draft" = true ] || return 0
+              rm -rf existing-assets
+              if gh release download "$BUILD_TAG" --pattern 'WardenOne-latest.zip*' --dir existing-assets \
+                && cmp -s WardenOne-latest.zip existing-assets/WardenOne-latest.zip \
+                && cmp -s WardenOne-latest.zip.sha256 existing-assets/WardenOne-latest.zip.sha256; then
+                return 0
+              fi
               gh release upload "$BUILD_TAG" WardenOne-latest.zip WardenOne-latest.zip.sha256 --clobber
+            else
+              gh release create "$BUILD_TAG" WardenOne-latest.zip WardenOne-latest.zip.sha256 \
+                --target "$GITHUB_SHA" --title "WardenOne Build $(git rev-parse --short HEAD)" \
+                --notes-file notes.md --draft
             fi
-          else
-            gh release create "$BUILD_TAG" WardenOne-latest.zip WardenOne-latest.zip.sha256 \
-              --target "$GITHUB_SHA" --title "WardenOne Build $(git rev-parse --short HEAD)" \
-              --notes-file notes.md --draft
-          fi
+          }
+          for wait in 15 45 90; do prepare && exit 0; echo "Release API call failed; retrying in ${wait}s"; sleep "$wait"; done
+          prepare
 
       - name: Verify both assets before publication
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           BUILD_TAG="build-$GITHUB_SHA"
-          mkdir -p downloaded-release
-          gh release download "$BUILD_TAG" --pattern 'WardenOne-latest.zip*' --dir downloaded-release
-          cmp WardenOne-latest.zip downloaded-release/WardenOne-latest.zip
-          cmp WardenOne-latest.zip.sha256 downloaded-release/WardenOne-latest.zip.sha256
-          (cd downloaded-release && sha256sum --check WardenOne-latest.zip.sha256)
+          verify() {
+            rm -rf downloaded-release && mkdir -p downloaded-release
+            gh release download "$BUILD_TAG" --pattern 'WardenOne-latest.zip*' --dir downloaded-release || return 1
+            cmp WardenOne-latest.zip downloaded-release/WardenOne-latest.zip || return 1
+            cmp WardenOne-latest.zip.sha256 downloaded-release/WardenOne-latest.zip.sha256 || return 1
+            (cd downloaded-release && sha256sum --check WardenOne-latest.zip.sha256)
+          }
+          for wait in 15 45 90; do verify && exit 0; echo "Asset check failed; retrying in ${wait}s"; sleep "$wait"; done
+          verify
 
       - name: Make the complete release Latest
         env:
@@ -459,16 +475,21 @@ jobs:
             echo "main advanced to $MAIN_SHA; keeping $BUILD_TAG without changing Latest"
             exit 0
           fi
-          gh release edit "$BUILD_TAG" --draft=false --latest --title "WardenOne Latest"
-          test "$(gh release view --json tagName --jq .tagName)" = "$BUILD_TAG"
-          for OLD_TAG in $(gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName'); do
-            if [ "$OLD_TAG" != "$BUILD_TAG" ] && [[ "$OLD_TAG" =~ ^build-[0-9a-f]{40}$ ]]; then
-              gh release delete "$OLD_TAG" --cleanup-tag --yes
+          # Each attempt re-reads what is published, so a retried call never edits or deletes twice.
+          promote() {
+            gh release edit "$BUILD_TAG" --draft=false --latest --title "WardenOne Latest" || return 1
+            test "$(gh release view --json tagName --jq .tagName)" = "$BUILD_TAG" || return 1
+            for OLD_TAG in $(gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName'); do
+              if [ "$OLD_TAG" != "$BUILD_TAG" ] && [[ "$OLD_TAG" =~ ^build-[0-9a-f]{40}$ ]]; then
+                gh release delete "$OLD_TAG" --cleanup-tag --yes || return 1
+              fi
+            done
+            # The old fixed-tag asset URL would otherwise keep serving a stale ZIP.
+            if gh release view latest-build >/dev/null 2>&1; then
+              gh release delete latest-build --cleanup-tag --yes || return 1
             fi
-          done
-          # The old fixed-tag asset URL would otherwise keep serving a stale ZIP.
-          if gh release view latest-build >/dev/null 2>&1; then
-            gh release delete latest-build --cleanup-tag --yes
-          fi
-          ROLLING_TAGS="$(gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName' | grep -E '^build-[0-9a-f]{40}$' || true)"
-          test "$ROLLING_TAGS" = "$BUILD_TAG"
+            ROLLING_TAGS="$(gh release list --limit 1000 --json tagName,isDraft --jq '.[] | select(.isDraft == false) | .tagName' | grep -E '^build-[0-9a-f]{40}$' || true)"
+            test "$ROLLING_TAGS" = "$BUILD_TAG"
+          }
+          for wait in 15 45 90; do promote && exit 0; echo "Publishing failed; retrying in ${wait}s"; sleep "$wait"; done
+          promote
