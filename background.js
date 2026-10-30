@@ -2575,6 +2575,7 @@ const DEFAULT_CONFIG = {
      you opened their mail and not. */
   mailTrackingShield: true,
   trackerLearner: true,
+  trackerLearnerAuto: false,
   unshimLinks: true,
   socialWidgetGuard: true,
   blockSupercookies: true,
@@ -3809,6 +3810,8 @@ const TRACKERS_STATIC_RULESET_ID = 'trackers';
 // EasyPrivacy-derived third-party tracker host blocks (~15k hosts batched into ~150 rules).
 // Gated by the SAME blockTrackers toggle as the curated 'trackers' ruleset.
 const EASYPRIVACY_STATIC_RULESET_ID = 'easyprivacy';
+// AdGuard's CNAME tracker catalog (rules-cname.json, tools/build-cname-data.js), gated by blockCnameTrackers.
+const CNAME_STATIC_RULESET_ID = 'cname_trackers';
 // Network filter-OPTION rules (uBlock $third-party/$script/domain=/@@) live in their
 // own ID band, separate from whole-domain blocks. Capped (Chrome's 30k dynamic-rule
 // ceiling is shared) and per-source-capped so one huge list can't eat the budget.
@@ -3865,8 +3868,9 @@ const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDG
 const TOTAL_SESSION_BUDGET = ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
   + SAFE_SEARCH_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET
   + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET + FIREWALL_SESSION_RULES_BUDGET + TRACKER_COOKIE_ALIAS_RULES_BUDGET;
-// All other dynamic builders emit only safe actions. The grabber band has one redirect;
-// every firewall slot is conservatively reserved for a cookie-header modification.
+// All other dynamic builders emit only safe actions. The grabber band has one redirect, the
+// tracker learner one automatic cookie removal; every firewall slot is conservatively reserved
+// for a cookie-header modification.
 const TOTAL_UNSAFE_DYNAMIC_BUDGET = FIREWALL_RULES_BUDGET + 1;
 // Keep room for migration cleanup and new protections without shrinking existing lists.
 const DNR_MIN_RULE_HEADROOM = 1000;
@@ -4561,17 +4565,17 @@ const TRACKER_LEARNER_KEY = 'wardenone_tracker_learner';
 const TRACKER_RULE_BASE = 720000;
 const TRACKER_RULE_MAX = TRACKER_RULES_BUDGET;
 const TRACKER_LEARN_MIN_SITES = 3;
-// Distinct browser sessions, not just distinct sites. Everything else in the corroboration set
-// is supplied by the party making the claim; this is the one axis that costs an attacker a
-// browser restart they do not control.
+/* One browsing session cannot satisfy the independent-session threshold. */
 const TRACKER_LEARN_MIN_SESSIONS = 2;
 const TRACKER_LEARN_MIN_HITS = 3;
 const TRACKER_LEARN_STORAGE_MAX = 600;
+const TRACKER_LEARN_DECISIONS_MAX = 10000;
+const TRACKER_DOMAIN_BATCH_SIZE = 100;
 /* Retain bounded counts/sketches and day-level times, not named site-to-tracker edges or session IDs (PRIV-01).
    Expire observations and drop the site sketch after candidacy; explicit user decisions remain settings. */
 const TRACKER_LEARN_TTL_MS = 30 * 86400000;
 const TRACKER_LEARN_MAX_SESSIONS = 4;
-const TRACKER_LEARNER_STORE_VERSION = 4;
+const TRACKER_LEARNER_STORE_VERSION = 5;
 const TRACKER_NETWORK_TOKEN = Symbol('tracker network evidence');
 const TRACKER_NETWORK_TYPES = ['script', 'xmlhttprequest', 'image', 'ping'];
 let __trackerObservationQueue = Promise.resolve();
@@ -4584,11 +4588,11 @@ let __trackerNetworkAliasHosts = null;
 // This session's "what did this site see" list for the popup: sites and trackers per site.
 const TRACKER_SITE_VIEW_MAX_SITES = 40;
 const TRACKER_SITE_VIEW_MAX_DOMAINS = 12;
-// Ambiguous locally-learned tracker candidates are deliberately limited to
-// request-shaped telemetry. A shared player/embed host can legitimately serve
-// both scripts and frames, so learner evidence must never take either of those
-// functional resource types offline.
+/* Manual suggestions retain their telemetry scope. The automatic-mode opt-in grants broader resource blocking. */
 const TRACKER_RESOURCE_TYPES = ['image', 'xmlhttprequest', 'ping', 'webtransport'];
+/* Automatic blocks cover third-party resources. Direct visits and protected service hosts retain their policy. */
+const TRACKER_AUTO_DAILY_MAX = 20;
+const TRACKER_COOKIE_SITE_CACHE_MAX = 500;
 const X_APP_COMPAT_DOMAINS = new Set(['x.com', 'twitter.com', 'twimg.com']);
 const TRACKER_PROTECTED_DOMAINS = new Set([
   'google.com', 'gstatic.com', 'googleusercontent.com', 'googleapis.com',
@@ -5057,7 +5061,7 @@ loadGrabberFeed(true);
 const DNR_FEEDBACK_WINDOW_MS = 10 * 60 * 1000;
 const DNR_FEEDBACK_CACHE_MS = 1500;
 const DNR_FEEDBACK_EVENT_BATCH_MS = 120;
-const DNR_FEEDBACK_READ_LIMITS = { background: 10, dashboard: 5, event: 4 };
+const DNR_FEEDBACK_READ_LIMITS = { background: 10, dashboard: 5, event: 4, notice: 2 };
 const DNR_FEEDBACK_READS = [];
 let DNR_FEEDBACK_SNAPSHOT = null;
 let DNR_FEEDBACK_PENDING = null;
@@ -5673,6 +5677,7 @@ const LOG_STATIC_RULESETS = {
   spotify_media: 'Spotify web player media',
   trackers: 'Tracker list',
   easyprivacy: 'EasyPrivacy',
+  cname_trackers: 'CNAME-cloaked tracker catalog',
 };
 
 /* Which part of WardenOne owns a dynamic rule id. Built lazily so it does not
@@ -5685,7 +5690,7 @@ function logRuleBases() {
     [USER_RULE_BASE, 'My rules'],
     [LEARNED_RULE_BASE, 'Blocked sites'],
     [TRACKER_RULE_BASE, 'Tracker blocking'],
-    [CNAME_RULE_BASE, 'CNAME-cloaked tracker — local mapping'],
+    [CNAME_RULE_BASE, 'CNAME site exception'],
     [GRABBER_FEED_RULE_BASE, 'IP-logger feed'],
     [MINER_FEED_RULE_BASE, 'Cryptominer feed'],
     [SAFE_SEARCH_RULE_BASE, 'SafeSearch'],
@@ -6780,6 +6785,7 @@ function trackerStoreShape(raw) {
   const salt = trackerSaltShape(src.salt);
   const out = { version: TRACKER_LEARNER_STORE_VERSION, salt, domains: {}, siteControls: {} };
   const domains = src.domains && typeof src.domains === 'object' ? src.domains : {};
+  const evidenceVersion = [4, TRACKER_LEARNER_STORE_VERSION].includes(Number(src.version));
   Object.keys(domains).forEach((key) => {
     const domain = normalizeTrackerDomain(key);
     if (!domain) return;
@@ -6805,9 +6811,11 @@ function trackerStoreShape(raw) {
     // Candidates collect evidence; proposals await approval; learned rules require it; dismissals suppress repeat
     // proposals. SEC-04: legacy unapproved rules return as proposals.
     const approvedAt = Number(v.approvedAt || 0);
-    let state = v.state === 'learned' ? 'learned' : v.state === 'proposed' ? 'proposed' : v.state === 'dismissed' ? 'dismissed' : 'candidate';
+    let state = ['learned', 'proposed', 'dismissed', 'unblocked'].includes(v.state) ? v.state : 'candidate';
     let legacy = v.legacy === true;
     if (state === 'learned' && !approvedAt) { state = 'proposed'; legacy = true; }
+    if (v.automatic === 'cookies' && state === 'learned') { state = 'proposed'; legacy = false; }
+    if (state === 'unblocked' && !(approvedAt > 0)) state = 'dismissed';
     // An earlier build kept the session ids themselves; only how many there were survives.
     const sessions = Array.isArray(v.sessions)
       ? new Set(v.sessions.filter(Boolean).map(String)).size
@@ -6820,14 +6828,20 @@ function trackerStoreShape(raw) {
       reason: String(v.reason || 'tracker-like third-party requests').slice(0, 120),
       sites: siteCount,
       signals,
-      evidence: Number(src.version) === TRACKER_LEARNER_STORE_VERSION ? WOLearner.counts(v.evidence, Object.keys(WOLearner.sources)) : {},
+      evidence: evidenceVersion ? WOLearner.counts(v.evidence, Object.keys(WOLearner.sources)) : {},
       sessions: Math.max(0, Math.min(TRACKER_LEARN_MAX_SESSIONS, sessions)),
       proposedAt: trackerDay(v.proposedAt || (state === 'proposed' ? Date.now() : 0)),
-      approvedAt: state === 'learned' ? trackerDay(approvedAt) : 0,
+      approvedAt: state === 'learned' || state === 'unblocked' ? trackerDay(approvedAt) : 0,
       dismissedAt: trackerDay(v.dismissedAt || 0),
       legacy,
     };
-    if (state === 'learned' && approvedAt > 0 && Number(src.version) === TRACKER_LEARNER_STORE_VERSION && v.cnameApproved === true) entry.cnameApproved = true;
+    if (['learned', 'unblocked'].includes(state) && approvedAt > 0) {
+      entry.learnedAt = trackerDay(v.learnedAt || approvedAt);
+      if (v.unblockedAt) entry.unblockedAt = trackerDay(v.unblockedAt);
+      if (Number(src.version) === TRACKER_LEARNER_STORE_VERSION && v.fullBlock === true) entry.fullBlock = true;
+      if (Number(src.version) === TRACKER_LEARNER_STORE_VERSION && v.automatic === 'block') { entry.automatic = 'block'; entry.fullBlock = true; }
+      if (evidenceVersion && v.cnameApproved === true) entry.cnameApproved = true;
+    }
     // The sketch exists only while the tracker is still gathering its three sites.
     if (state === 'candidate' && siteCount < TRACKER_LEARN_MIN_SITES && marks) entry.marks = marks;
     out.domains[domain] = entry;
@@ -6846,7 +6860,7 @@ function trackerStoreShape(raw) {
     fill(c.allow, allow);
     fill(c.block, block);
     const cname = {};
-    if (Number(src.version) === TRACKER_LEARNER_STORE_VERSION) {
+    if (evidenceVersion) {
       fill(c.cname, cname);
       for (const domain of Object.keys(cname)) if (!(domain in allow) && !(domain in block)) delete cname[domain];
     }
@@ -7062,8 +7076,7 @@ function pruneTrackerLearnerStore() {
   Object.keys(domains).forEach((domain) => {
     const entry = domains[domain];
     if (!entry) { delete domains[domain]; return; }
-    // Observations expire. An approved rule and a per-site decision are the reader's and stay.
-    if (entry.state !== 'learned' && !controlled.has(domain) && Number(entry.lastSeen || 0) < cutoff) { delete domains[domain]; return; }
+    if (!['learned', 'unblocked'].includes(entry.state) && !controlled.has(domain) && Number(entry.lastSeen || 0) < cutoff) { delete domains[domain]; return; }
     // The sketch is for gathering three sites; once gathered or decided it has nothing to say.
     if (entry.state !== 'candidate' || trackerDistinctSiteCount(entry) >= TRACKER_LEARN_MIN_SITES) delete entry.marks;
   });
@@ -7071,7 +7084,9 @@ function pruneTrackerLearnerStore() {
     : WOLearner.summary(entry.evidence).confidence === 'corroborated' ? 1 : 0;
   const entries = Object.entries(domains)
     .sort((a, b) => rank(b[0], b[1]) - rank(a[0], a[1]) || Number(b[1].lastSeen || 0) - Number(a[1].lastSeen || 0));
-  TRACKER_LEARNER.domains = Object.fromEntries(entries.slice(0, TRACKER_LEARN_STORAGE_MAX));
+  const decisions = entries.filter(([domain, entry]) => ['learned', 'unblocked'].includes(entry.state) || controlled.has(domain));
+  const observations = entries.filter(([domain, entry]) => !['learned', 'unblocked'].includes(entry.state) && !controlled.has(domain));
+  TRACKER_LEARNER.domains = Object.fromEntries(decisions.concat(observations.slice(0, TRACKER_LEARN_STORAGE_MAX)));
   const known = new Set(Object.keys(TRACKER_LEARNER.domains));
   Object.keys(TRACKER_LEARNER.siteControls || {}).forEach((site) => {
     const c = TRACKER_LEARNER.siteControls[site] || {};
@@ -7122,9 +7137,9 @@ async function applyTrackerLearnerRules() {
       if (oldIds.length) await writeDynamicRules({ removeRuleIds: oldIds, addRules: [] });
       return;
     }
-    const rules = [];
+    const rules = [], blockedDomains = [], unblockedDomains = [];
     const controls = TRACKER_LEARNER.siteControls || {};
-    const approved = new Set(Object.entries(TRACKER_LEARNER.domains || {}).filter(([, entry]) => entry.state === 'learned' && entry.cnameApproved === true).map(([domain]) => domain));
+    const approved = new Set(Object.entries(TRACKER_LEARNER.domains || {}).filter(([, entry]) => ['learned', 'unblocked'].includes(entry.state) && entry.cnameApproved === true).map(([domain]) => domain));
     for (const entry of Object.values(controls)) for (const domain of Object.keys(entry.cname || {})) approved.add(domain);
     const aliases = new Map();
     if (WO_TRACKER_NETWORK_DATA.canonicalSites.some(domain => approved.has(domain))) {
@@ -7136,19 +7151,17 @@ async function applyTrackerLearnerRules() {
         aliases.get(service).set(host, target);
       }
     }
-    const addRule = (action, priority, domain, extraCondition) => {
+    const addRule = (action, priority, domain, extraCondition, fullBlock = false) => {
       if (rules.length >= TRACKER_RULE_MAX) throw new Error('Approved tracker rule budget exceeded');
       const d = normalizeTrackerDomain(domain);
       if (!d) return;
+      const condition = Object.assign({ requestDomains: [d], domainType: 'thirdParty', resourceTypes: TRACKER_RESOURCE_TYPES }, extraCondition || {});
+      if (fullBlock) { delete condition.resourceTypes; condition.excludedResourceTypes = ['main_frame']; }
       rules.push({
         id: TRACKER_RULE_BASE + rules.length,
         priority,
         action: { type: action },
-        condition: Object.assign({
-          requestDomains: [d],
-          domainType: 'thirdParty',
-          resourceTypes: TRACKER_RESOURCE_TYPES,
-        }, extraCondition || {}),
+        condition,
       });
     };
     const addAliases = (action, priority, domain, extraCondition) => {
@@ -7163,13 +7176,39 @@ async function applyTrackerLearnerRules() {
       const initiator = normalizeTrackerDomain(site);
       if (!initiator) return;
       const c = controls[site] || {};
-      Object.keys(c.allow || {}).sort().forEach((domain) => { addRule('allow', 2600, domain, { initiatorDomains: [initiator] }); if (c.cname?.[domain]) addAliases('allow', 2600, domain, { initiatorDomains: [initiator] }); });
-      Object.keys(c.block || {}).sort().forEach((domain) => { addRule('block', 2500, domain, { initiatorDomains: [initiator] }); if (c.cname?.[domain]) addAliases('block', 2500, domain, { initiatorDomains: [initiator] }); });
+      Object.keys(c.allow || {}).sort().forEach((domain) => { addRule('allow', 2600, domain, { initiatorDomains: [initiator] }, TRACKER_LEARNER.domains[domain]?.fullBlock === true); if (c.cname?.[domain]) addAliases('allow', 2600, domain, { initiatorDomains: [initiator] }); });
+      Object.keys(c.block || {}).sort().forEach((domain) => { addRule('block', 2500, domain, { initiatorDomains: [initiator] }, TRACKER_LEARNER.domains[domain]?.fullBlock === true); if (c.cname?.[domain]) addAliases('block', 2500, domain, { initiatorDomains: [initiator] }); });
+    });
+    Object.entries(TRACKER_LEARNER.domains || {}).forEach(([domain, entry]) => {
+      if (entry.state !== 'unblocked') return;
+      unblockedDomains.push(domain);
+      if (entry.cnameApproved) addAliases('allow', 1900, domain);
     });
     Object.keys(TRACKER_LEARNER.domains || {})
       .filter((domain) => TRACKER_LEARNER.domains[domain] && TRACKER_LEARNER.domains[domain].state === 'learned')
       .sort((a, b) => Number((TRACKER_LEARNER.domains[b] && TRACKER_LEARNER.domains[b].hits) || 0) - Number((TRACKER_LEARNER.domains[a] && TRACKER_LEARNER.domains[a].hits) || 0))
-      .forEach((domain) => { addRule('block', 1800, domain); if (TRACKER_LEARNER.domains[domain].cnameApproved) addAliases('block', 1800, domain); });
+      .forEach((domain) => {
+        if (TRACKER_LEARNER.domains[domain].fullBlock === true) { if (!isProtectedTrackerDomain(domain) && !isMediaCompatDomain(domain)) blockedDomains.push(domain); return; }
+        addRule('block', 1800, domain); if (TRACKER_LEARNER.domains[domain].cnameApproved) addAliases('block', 1800, domain);
+      });
+    const paused = new Set(activeAllowlist(cfg));
+    for (const [pattern, entry] of Object.entries(cfg.siteOverrides || {})) {
+      if (entry?.trackerLearner !== false) continue;
+      const host = normalizeAllowlistHost(pattern); if (host) paused.add(host);
+    }
+    if (paused.size > 2000) throw new Error('Tracker exception budget exceeded');
+    const grouped = (domains, type, priority) => {
+      domains.sort();
+      for (let start = 0; start < domains.length; start += TRACKER_DOMAIN_BATCH_SIZE) {
+        if (rules.length >= TRACKER_RULE_MAX) throw new Error('Approved tracker rule budget exceeded');
+        rules.push({ id: TRACKER_RULE_BASE + rules.length, priority, action: { type },
+          condition: { requestDomains: domains.slice(start, start + TRACKER_DOMAIN_BATCH_SIZE), domainType: 'thirdParty', excludedResourceTypes: ['main_frame'],
+            ...(paused.size ? { excludedInitiatorDomains: [...paused].sort() } : {}) } });
+      }
+    };
+    grouped(blockedDomains, 'block', 1800);
+    /* Unblocking a tracker must not override malware rules or an explicit site block. */
+    grouped(unblockedDomains, 'allow', 1900);
     if (dnrBandUnchanged(mine, rules)) return;
     await writeDynamicRules({ removeRuleIds: oldIds, addRules: rules });
   } catch (e) {
@@ -7236,7 +7275,7 @@ async function noteTrackerPageObservation(sender, detail) {
   } catch (_) {}
   finally { __trackerPagePending--; }
 }
-async function noteTrackerNetworkRequest(details) {
+async function noteTrackerNetworkRequest(details, verifiedSignal) {
   const privacyEpoch = __trackerObservationEpoch;
   if (__trackerNetworkPending >= 64 || !details || !TRACKER_NETWORK_TYPES.includes(details.type)
       || typeof details.url !== 'string' || details.url.length > 8192 || typeof details.documentId !== 'string') return;
@@ -7254,10 +7293,12 @@ async function noteTrackerNetworkRequest(details) {
     if (cfg.enabled === false || cfg.trackerLearner === false) return;
     const top = await trackerRequestTopFrame(details);
     if (!top) return;
-    let domain = host, signal = '';
+    let domain = host, signal = verifiedSignal === 'tracking-cookie' ? verifiedSignal : '';
     const matches = scopes => scopes.some(scope => host === scope || host.endsWith('.' + scope));
     const aliasHosts = (__trackerNetworkAliasHosts ||= new Set(WO_TRACKER_NETWORK_DATA.cnameHosts));
-    if (aliasHosts.has(host)) {
+    if (signal) {
+      if (cfg.trackerLearnerAuto !== true) return;
+    } else if (aliasHosts.has(host)) {
       await loadKnownAliases();
       const alias = resolveKnownAlias(host);
       if (!alias) return;
@@ -7276,6 +7317,62 @@ async function noteTrackerNetworkRequest(details) {
   finally { if (owned) { TRACKER_NETWORK_IN_FLIGHT.delete(key); __trackerNetworkPending--; } }
 }
 
+/* Automatic mode only. Whether a third-party site holds an identifying cross-site cookie is read
+   from the browser's own jar; values are judged in memory, never stored, and the verdict lasts
+   only for this worker. */
+const TRACKER_COOKIE_SITES = new Map();
+const TRACKER_COOKIE_SEEN = new Set();
+let __trackerCookiePending = 0;
+async function trackerSiteHasIdentifyingCookie(site) {
+  if (TRACKER_COOKIE_SITES.has(site)) return TRACKER_COOKIE_SITES.get(site);
+  if (__trackerCookiePending >= 8 || !chrome.cookies || !chrome.cookies.getAll) return false;
+  __trackerCookiePending++;
+  let verdict;
+  try {
+    const now = Date.now();
+    verdict = (await chrome.cookies.getAll({ domain: site })).some(cookie => WOLearner.identifyingCookie(cookie, now));
+  } catch (_) { return false; }
+  finally { __trackerCookiePending--; }
+  if (TRACKER_COOKIE_SITES.size >= TRACKER_COOKIE_SITE_CACHE_MAX) TRACKER_COOKIE_SITES.delete(TRACKER_COOKIE_SITES.keys().next().value);
+  TRACKER_COOKIE_SITES.set(site, verdict);
+  return verdict;
+}
+async function noteTrackerCookieRequest(details) {
+  if (INCOGNITO_CONTEXT || !details || typeof details.url !== 'string' || typeof details.initiator !== 'string'
+      || typeof details.documentId !== 'string' || details.tabId < 0) return;
+  let site, from;
+  try { site = normalizeTrackerDomain(new URL(details.url).hostname); from = normalizeTrackerDomain(new URL(details.initiator).hostname); }
+  catch (_) { return; }
+  if (!site || !from || site === from || isProtectedTrackerDomain(site) || isMediaCompatDomain(site)) return;
+  const seen = details.documentId + '|' + site;
+  if (TRACKER_COOKIE_SEEN.has(seen) || !await trackerSiteHasIdentifyingCookie(site)) return;
+  if (TRACKER_COOKIE_SEEN.size >= 512) TRACKER_COOKIE_SEEN.delete(TRACKER_COOKIE_SEEN.values().next().value);
+  TRACKER_COOKIE_SEEN.add(seen);
+  await noteTrackerNetworkRequest(details, 'tracking-cookie');
+}
+function trackerCookieListener(details) { void noteTrackerCookieRequest(details); }
+function reconcileTrackerCookieObserver(enabled) {
+  try {
+    const event = chrome.webRequest.onBeforeRequest;
+    if (enabled && !event.hasListener(trackerCookieListener)) event.addListener(trackerCookieListener, { urls: ['https://*/*'], types: TRACKER_NETWORK_TYPES });
+    if (!enabled) {
+      if (event.hasListener(trackerCookieListener)) event.removeListener(trackerCookieListener);
+      TRACKER_COOKIE_SITES.clear(); TRACKER_COOKIE_SEEN.clear();
+    }
+  } catch (error) { console.warn('[WardenOne] tracker cookie observations unavailable', error); return false; }
+}
+
+/* Automatic blocking requires browser-held cookie evidence; page reports alone never qualify. */
+function trackerAutoEligible(cfg, domain, entry) {
+  const evidence = entry.evidence || {};
+  if (cfg.trackerLearnerAuto !== true || Number(evidence['tracking-cookie'] || 0) < TRACKER_LEARN_MIN_SITES
+      || Number(evidence.network || 0) < TRACKER_LEARN_MIN_HITS) return false;
+  if (Object.values(TRACKER_LEARNER.domains || {}).filter((e) => e && ['learned', 'unblocked'].includes(e.state)).length >= TRACKER_LEARN_DECISIONS_MAX) return false;
+  if (Object.values(TRACKER_LEARNER.siteControls || {}).some((c) => c && c.allow && c.allow[domain])) return false;
+  const today = trackerDay(Date.now());
+  return Object.values(TRACKER_LEARNER.domains || {}).filter((e) => e && e.automatic && e.approvedAt === today).length < TRACKER_AUTO_DAILY_MAX;
+}
+
 async function noteTrackerObservation(tabUrl, detail, token, privacyEpoch = __trackerObservationEpoch) {
   const release = await trackerLearnerLock(true);
   if (!release) return;
@@ -7290,7 +7387,7 @@ async function noteTrackerObservation(tabUrl, detail, token, privacyEpoch = __tr
       // Web pages only. chrome://, file:// and extension pages are not sites the learner should know.
       if (/^https?:$/.test(top.protocol)) { firstHost = top.hostname; first = normalizeTrackerDomain(firstHost); }
     } catch (_) {}
-    const evidence = token === TRACKER_NETWORK_TOKEN && ['curated-feed', 'curated-cname', 'fingerprint-feed'].includes(detail?.signal)
+    const evidence = token === TRACKER_NETWORK_TOKEN && ['curated-feed', 'curated-cname', 'fingerprint-feed', 'tracking-cookie'].includes(detail?.signal)
       ? { signal: detail.signal, source: detail.signal } : WOLearner.pageEvidence(detail);
     if (!evidence || !first || hostMatchesAllowlist(firstHost, activeAllowlist(cfg))) return;
     if (Object.entries(cfg.siteOverrides || {}).some(([host, value]) => value?.trackerLearner === false && hostMatchesSite(firstHost, host))) return;
@@ -7303,7 +7400,7 @@ async function noteTrackerObservation(tabUrl, detail, token, privacyEpoch = __tr
     const now = Date.now();
     const day = trackerDay(now);
     const domains = TRACKER_LEARNER.domains || (TRACKER_LEARNER.domains = {});
-    if (!domains[third] && Object.keys(domains).length >= TRACKER_LEARN_STORAGE_MAX) {
+    if (!domains[third] && Object.values(domains).filter((entry) => !['learned', 'unblocked'].includes(entry.state)).length >= TRACKER_LEARN_STORAGE_MAX) {
       if (token !== TRACKER_NETWORK_TOKEN) return;
       const controlled = trackerControlledDomains();
       const replace = Object.entries(domains).filter(([domain, value]) => !controlled.has(domain) && value.state === 'candidate'
@@ -7353,12 +7450,28 @@ async function noteTrackerObservation(tabUrl, detail, token, privacyEpoch = __tr
     // can add a reason but cannot lower thresholds: the hostname arrives from a page claim.
     const strongHost = looksLikeKnownTrackerHost(third);
     const distinctSessions = trackerDistinctSessionCount(entry);
-    // Thresholds create a proposal, never a block (SEC-04). Page-supplied observations remain untrusted
-    // across sites and sessions; only the user’s explicit approval authorizes enforcement.
-    if (wasCandidate
-      && entry.hits >= TRACKER_LEARN_MIN_HITS
+    const ready = entry.hits >= TRACKER_LEARN_MIN_HITS
       && trackerDistinctSiteCount(entry) >= TRACKER_LEARN_MIN_SITES
-      && distinctSessions >= TRACKER_LEARN_MIN_SESSIONS) {
+      && distinctSessions >= TRACKER_LEARN_MIN_SESSIONS;
+    /* The opt-in authorizes durable blocks from browser evidence; page reports never qualify. */
+    if (ready && cfg.trackerLearnerAuto === true && (wasCandidate || entry.state === 'proposed') && trackerAutoEligible(cfg, third, entry)) {
+      const previous = JSON.parse(JSON.stringify(TRACKER_LEARNER));
+      Object.assign(entry, { state: 'learned', automatic: 'block', fullBlock: true, approvedAt: day, learnedAt: day, proposedAt: entry.proposedAt || day, legacy: false,
+        reason: 'keeps a cross-site identifying cookie; seen on ' + trackerDistinctSiteCount(entry) + ' sites across ' + distinctSessions + ' sessions' });
+      delete entry.marks;
+      if (await commitTrackerLearnerDecision(previous, true)) {
+        queueHistory({
+          type: 'auto_blocked_tracker_domain',
+          detail: { domain: third, sites: trackerDistinctSiteCount(entry), hits: entry.hits, why: 'Automatic tracker protection learned this domain from browser-held cross-site cookie evidence. Its third-party resources stay blocked until you unblock it in Learned trackers.' },
+          url: '',
+          at: day,
+        });
+      }
+      return;
+    }
+    // Otherwise thresholds create a proposal, never a block (SEC-04). Page-supplied observations remain
+    // untrusted across sites and sessions; only the user’s explicit approval authorizes enforcement.
+    if (wasCandidate && ready) {
       entry.state = 'proposed';
       entry.proposedAt = day;
       delete entry.marks;   // the sketch has done its one job
@@ -7378,13 +7491,13 @@ async function noteTrackerObservation(tabUrl, detail, token, privacyEpoch = __tr
   finally { release(); }
 }
 
-// The reader's side of the learner. A proposal becomes a rule only through decideTrackerProposal,
-// which stamps the approval the store shape requires of every 'learned' entry.
+/* Suggestions and automatic blocks remain open to review; history exposes the complete decision ledger. */
 function trackerLearnerProposals() {
   return Object.keys(TRACKER_LEARNER.domains || {})
     .map((domain) => {
       const entry = TRACKER_LEARNER.domains[domain] || {};
-      if (entry.state !== 'proposed') return null;
+      const automatic = entry.state === 'learned' && entry.automatic === 'block';
+      if (entry.state !== 'proposed' && !automatic) return null;
       return {
         domain,
         sites: trackerDistinctSiteCount(entry),
@@ -7394,12 +7507,56 @@ function trackerLearnerProposals() {
         proposedAt: Number(entry.proposedAt || 0),
         legacy: entry.legacy === true,
         knownAliases: WO_TRACKER_NETWORK_DATA.canonicalSites.includes(domain),
+        ...(automatic ? { automatic: 'block', decidedAt: Number(entry.approvedAt || 0) } : {}),
         ...WOLearner.summary(entry.evidence),
       };
     })
     .filter(Boolean)
     .sort((a, b) => (b.proposedAt - a.proposedAt) || (b.hits - a.hits))
     .slice(0, 60);
+}
+
+async function trackerLearnerHistory(options = {}) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)) return { ok: false, error: 'Invalid learned tracker search.' };
+  const filters = ['all', 'blocked', 'unblocked', 'suggestions'];
+  const filter = options.filter === undefined ? 'all' : options.filter;
+  const query = options.query === undefined ? '' : options.query;
+  const requestedPage = options.page === undefined ? 0 : options.page;
+  const pageSize = options.pageSize === undefined ? 25 : options.pageSize;
+  if (!filters.includes(filter) || typeof query !== 'string' || query.length > 200
+      || !Number.isSafeInteger(requestedPage) || requestedPage < 0 || requestedPage > 100000 || ![5, 25, 50].includes(pageSize)) {
+    return { ok: false, error: 'Invalid learned tracker search.' };
+  }
+  const release = await trackerLearnerLock(false);
+  try {
+    await loadTrackerLearner();
+    const stored = await localGet('wardenone_config');
+    const cfg = Object.assign({}, DEFAULT_CONFIG, stored?.wardenone_config || {});
+    const rows = Object.entries(TRACKER_LEARNER.domains || {}).filter(([, entry]) => ['learned', 'unblocked', 'proposed'].includes(entry.state));
+    const counts = { blocked: 0, unblocked: 0, suggestions: 0, automatic: 0 };
+    for (const [, entry] of rows) {
+      counts[entry.state === 'learned' ? 'blocked' : entry.state === 'unblocked' ? 'unblocked' : 'suggestions']++;
+      if (entry.state === 'learned' && entry.automatic === 'block') counts.automatic++;
+    }
+    const search = query.trim().toLowerCase();
+    const matches = rows.filter(([domain, entry]) => domain.includes(search) && (filter === 'all' && entry.state !== 'proposed'
+      || entry.state === ({ blocked: 'learned', unblocked: 'unblocked', suggestions: 'proposed' })[filter]))
+      .sort((a, b) => Math.max(b[1].approvedAt || 0, b[1].unblockedAt || 0, b[1].proposedAt || 0)
+        - Math.max(a[1].approvedAt || 0, a[1].unblockedAt || 0, a[1].proposedAt || 0) || a[0].localeCompare(b[0]));
+    const page = Math.min(requestedPage, Math.max(0, Math.ceil(matches.length / pageSize) - 1));
+    const items = matches.slice(page * pageSize, (page + 1) * pageSize).map(([domain, entry]) => ({
+      domain, state: entry.state, automatic: entry.automatic || '', fullBlock: entry.fullBlock === true,
+      learnedAt: Number(entry.learnedAt || entry.approvedAt || 0), approvedAt: Number(entry.approvedAt || 0),
+      unblockedAt: Number(entry.unblockedAt || 0), proposedAt: Number(entry.proposedAt || 0),
+      reason: String(entry.reason || ''), sites: trackerDistinctSiteCount(entry), sessions: trackerDistinctSessionCount(entry),
+      legacy: entry.legacy === true,
+      ...WOLearner.summary(entry.evidence),
+    }));
+    return { ok: true, items, counts, page, pageSize, total: matches.length,
+      enabled: cfg.enabled !== false && cfg.trackerLearner !== false,
+      automatic: cfg.trackerLearnerAuto === true, decisionLimit: TRACKER_LEARN_DECISIONS_MAX,
+      capacityReached: counts.blocked + counts.unblocked >= TRACKER_LEARN_DECISIONS_MAX };
+  } finally { release(); }
 }
 
 async function decideTrackerProposal(domain, decision) {
@@ -7409,12 +7566,19 @@ async function decideTrackerProposal(domain, decision) {
   const d = normalizeTrackerDomain(domain);
   const entry = d && TRACKER_LEARNER.domains ? TRACKER_LEARNER.domains[d] : null;
   if (!entry) return { ok: false, error: 'That domain is not in the learner.' };
-  if (entry.state !== 'proposed') return { ok: false, error: 'That domain is not waiting for a decision.' };
+  /* An explicit unblock prevents the same evidence from reapplying the decision. */
+  if (!['proposed', 'unblocked'].includes(entry.state) && !(entry.state === 'learned' && ['unblock', 'undo'].includes(decision))) {
+    return { ok: false, error: 'That domain is not waiting for that decision.' };
+  }
   const now = Date.now();
   if (decision === 'block') {
+    if (entry.state !== 'unblocked' && Object.values(TRACKER_LEARNER.domains || {}).filter((e) => ['learned', 'unblocked'].includes(e.state)).length >= TRACKER_LEARN_DECISIONS_MAX) {
+      return { ok: false, error: 'Learned tracker storage is full. Existing blocks remain protected.' };
+    }
     const previous = JSON.parse(JSON.stringify(TRACKER_LEARNER));
     entry.state = 'learned';
     entry.approvedAt = trackerDay(now);
+    entry.learnedAt ||= entry.approvedAt;
     entry.legacy = false;
     if (WO_TRACKER_NETWORK_DATA.canonicalSites.includes(d)) entry.cnameApproved = true;
     delete entry.marks;
@@ -7429,7 +7593,17 @@ async function decideTrackerProposal(domain, decision) {
     });
     return { ok: true, domain: d, state: 'learned' };
   }
-  if (decision === 'ignore') {
+  if (entry.state === 'learned' && (decision === 'unblock' || decision === 'undo')) {
+    const previous = JSON.parse(JSON.stringify(TRACKER_LEARNER));
+    entry.state = 'unblocked';
+    entry.unblockedAt = trackerDay(now);
+    entry.learnedAt ||= entry.approvedAt;
+    delete entry.marks;
+    if (!await commitTrackerLearnerDecision(previous, true)) return { ok: false, error: 'Could not unblock that tracker.' };
+    queueHistory({ type: 'unblocked_tracker_domain', detail: { domain: d, why: 'You unblocked this learned tracker. Automatic learning will not block it again.' }, url: '', at: now });
+    return { ok: true, domain: d, state: 'unblocked' };
+  }
+  if (decision === 'ignore' && entry.state === 'proposed') {
     const previous = JSON.parse(JSON.stringify(TRACKER_LEARNER));
     entry.state = 'dismissed';
     entry.dismissedAt = trackerDay(now);
@@ -7443,7 +7617,20 @@ async function decideTrackerProposal(domain, decision) {
 
 async function decideAllTrackerProposals(decision) {
   await loadTrackerLearner();
-  const domains = trackerLearnerProposals().map((p) => p.domain);
+  // Undo every automatic decision in one native update.
+  if (decision === 'undo') {
+    const release = await trackerLearnerLock(false);
+    try {
+      const previous = JSON.parse(JSON.stringify(TRACKER_LEARNER));
+      const day = trackerDay(Date.now());
+      const undone = Object.values(TRACKER_LEARNER.domains || {}).filter((e) => e && e.state === 'learned' && e.automatic === 'block');
+      for (const entry of undone) { entry.state = 'unblocked'; entry.unblockedAt = day; entry.learnedAt ||= entry.approvedAt; }
+      if (undone.length && !await commitTrackerLearnerDecision(previous, true)) return { ok: false, error: 'Could not undo the automatic decisions.' };
+      if (undone.length) queueHistory({ type: 'unblocked_tracker_domains', detail: { count: undone.length, why: 'You unblocked all automatically learned trackers.' }, url: '', at: Date.now() });
+      return { ok: true, decided: undone.length, state: 'unblocked' };
+    } finally { release(); }
+  }
+  const domains = trackerLearnerProposals().filter((p) => !p.automatic).map((p) => p.domain);
   let done = 0;
   for (const domain of domains) {
     const r = await decideTrackerProposal(domain, decision);
@@ -7477,6 +7664,8 @@ async function trackerLearnerStatus(url) {
       return {
         domain,
         state: entry.state || 'candidate',
+        automatic: entry.automatic === 'block' ? 'block' : '',
+        fullBlock: entry.fullBlock === true,
         mode: siteMode,
         hits: Number(entry.hits || 0),
         siteHits: siteHit,
@@ -7518,7 +7707,7 @@ async function clearTrackerLearnerObservations() {
   let removed = 0;
   Object.keys(domains).forEach((domain) => {
     const entry = domains[domain];
-    const decided = entry && (entry.state === 'learned' || entry.state === 'dismissed' || controlled.has(domain));
+    const decided = entry && (['learned', 'dismissed', 'unblocked'].includes(entry.state) || controlled.has(domain));
     if (!decided) { delete domains[domain]; removed++; return; }
     delete entry.marks;
     entry.sites = 0;
@@ -11225,8 +11414,9 @@ async function refreshBlocklistRuleset(cfgOverride) {
     // the EasyList static pack follows BOTH the master switch and the AdShield toggle
     const adshieldOn = on && cfg.adShield !== false;
     const trackersOn = on && cfg.blockTrackers !== false;
+    const cnameOn = on && cfg.blockCnameTrackers !== false;
     const stateKey = [on, grabberResourcesOn, grabberWarningsOn, grabberSitesOn,
-      adshieldOn, trackersOn, cfg.trackerLearner !== false].map(Number).join('|');
+      adshieldOn, trackersOn, cnameOn, cfg.trackerLearner !== false, cfg.trackerLearnerAuto === true].map(Number).join('|');
     if (stateKey === __blocklistRulesetStateKey) return;
     const enableRulesetIds = [];
     const disableRulesetIds = [];
@@ -11238,6 +11428,7 @@ async function refreshBlocklistRuleset(cfgOverride) {
     (adshieldOn ? enableRulesetIds : disableRulesetIds).push(SPOTIFY_MEDIA_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(TRACKERS_STATIC_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(EASYPRIVACY_STATIC_RULESET_ID);
+    (cnameOn ? enableRulesetIds : disableRulesetIds).push(CNAME_STATIC_RULESET_ID);
     await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds, disableRulesetIds });
     ADSHIELD_STATIC_ACTIVE = adshieldOn;
     // The master switch must also suspend the DYNAMIC rules, not just the static
@@ -11844,6 +12035,7 @@ function refreshExtensionState() {
         cfg.blockTrackers !== false ? 1 : 0,
         cfg.blockCnameTrackers !== false ? 1 : 0,
         cfg.trackerLearner !== false ? 1 : 0,
+        cfg.trackerLearnerAuto === true ? 1 : 0,
         JSON.stringify(cfg.siteOverrides || {}),
         cfg.blockGrabberResources !== false ? 1 : 0,
         cfg.warnGrabberDomains !== false ? 1 : 0,
@@ -11931,6 +12123,8 @@ function refreshExtensionState() {
       run('thirdPartyCookies', () => applyThirdPartyCookieRule(on && cfg.blockThirdPartyCookies !== false, cfg));
       run('trackerCookies', (submitRules) => applyTrackerCookieRule(on && cfg.blockThirdPartyCookies !== false, cfg, submitRules), undefined, sessionBatch);
       run('trackerObserver', () => reconcileTrackerObserver(on && cfg.trackerLearner !== false), String(on && cfg.trackerLearner !== false));
+      run('trackerCookieObserver', () => reconcileTrackerCookieObserver(on && cfg.trackerLearner !== false && cfg.trackerLearnerAuto === true),
+        String(on && cfg.trackerLearner !== false && cfg.trackerLearnerAuto === true));
       run('cnameTrackers', (submitRules) => applyCnameRules(cfg, submitRules), undefined, dynamicBatch);
       run('allowlist', (submitRules) => applyAllowlistRules(on ? activeAllowlist(cfg) : [], sharedSessionRules, submitRules), JSON.stringify(on ? activeAllowlist(cfg) : []), sessionBatch);
       run('mediaCompatibility', (submitRules) => applyMediaCompatibilityRules(on, sharedSessionRules, submitRules), String(on), sessionBatch);
@@ -14207,6 +14401,9 @@ const SCRIPT_SHIELD_FIRST_PARTY_APP_HOSTS = [
   // because the same wall would otherwise appear one click later, on a host that is just as
   // unambiguously Microsoft's.
   'officeapps.live.com',                          // Word/Excel/PowerPoint editors
+  // ChatGPT renders replies through a runner in an opaque-origin sandbox. The browser calls every
+  // request from such a frame third-party, so Smart refused the runner's own code and replies never came.
+  'cdn.platform.openai.com',                      // ChatGPT reply runner (measured)
 ];
 
 // route-blocked/page-blocked need worker-observed script blocks in the exact frame, not DOM claims alone.
@@ -15061,10 +15258,34 @@ async function smartScriptSiteExplainable(sender) {
   return hosts.length ? { host, hosts } : null;
 }
 
+// The error observer hears every refused third-party script, whoever refused it: ad and tracker
+// lists, Brave Shields, another extension. Trusting the site undoes only Smart's own block rules.
+function smartScriptHostListedElsewhere(host) {
+  const trackers = typeof WO_TRACKER_NETWORK_DATA !== 'undefined' ? new Set(WO_TRACKER_NETWORK_DATA.trackerHosts) : null;
+  return smartScriptKnownSecurityHost(host) || smartScriptDomainSetContains(trackers, host);
+}
+
+// Blocks the browser attributes to Smart's block rules on this navigation, or null when the
+// feedback cannot be read (quota, no permission) and the caller has to judge without it.
+async function smartScriptShieldBlocksOnTab(tabId) {
+  const navigation = SMART_SCRIPT_NAVIGATION_EPOCHS.get(Number(tabId));
+  const evidence = await readMatchedRuleEvidence({ tabId: Number(tabId),
+    minTimeStamp: Number((navigation && navigation.at) || 0) }, 'notice');
+  if (!evidence || !evidence.ok) return null;
+  return evidence.matches.filter((info) => {
+    const rule = info && info.rule;
+    const id = Number(rule && rule.ruleId);
+    return !!rule && rule.rulesetId === '_session' && id >= SCRIPT_SHIELD_RULE_BASE
+      && id < SCRIPT_SHIELD_RULE_BASE + SMART_SCRIPT_STAGE_TWO_RULE_OFFSET;
+  }).length;
+}
+
 async function handleSmartScriptPageStatus(sender) {
   const explain = await smartScriptSiteExplainable(sender);
   if (!explain) return { ok: true, refused: 0 };
-  return { ok: true, refused: explain.hosts.length, hosts: explain.hosts.slice(0, 3), host: explain.host };
+  const hosts = explain.hosts.filter((host) => !smartScriptHostListedElsewhere(host));
+  if (!hosts.length || await smartScriptShieldBlocksOnTab(sender.tab.id) === 0) return { ok: true, refused: 0 };
+  return { ok: true, refused: hosts.length, hosts: hosts.slice(0, 3), host: explain.host };
 }
 
 // Derive trust from the sender tab, never a message host. Require an actual script refusal on the current navigation before
@@ -15601,6 +15822,7 @@ function storeTransaction(key, task) {
 const SERIALIZED_STATE_APPLIERS = [
   'reconcilePrivacySignalsInjection',
   'reconcileTrackerObserver',
+  'reconcileTrackerCookieObserver',
   'applyLearnedRules',
   'applyUserFilterRules',
   /* The candidate-taking variants are what the write handlers call, so the lane that
@@ -17947,6 +18169,8 @@ const WATCH_ONLY_GUARDS = ['logThirdPartyBeacons', 'deviceAccessGuard', 'capabil
 const SECOND_LEVEL_OF = {
   // A mode of the IP-privacy guard, not a new protection (FEAT-03): the count does not move for it.
   blockSuspiciousWebRTC: 'blockWebRTCLeak',
+  // Turns the learner's verified cross-site-cookie findings into rules without a prompt.
+  trackerLearnerAuto: 'trackerLearner',
 };
 const CONTROL_KINDS = {
   presentation: ['showBadge', 'showToasts', 'silentMode'],
@@ -21295,7 +21519,7 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   { owner: 'Site Dashboard counts', sensitivity: 'browsing records', area: 'local', maxAgeDays: 7, maxItems: 300, retention: '7 days by the hour; up to 300 sites; never from a private window', siteErase: 'prune', keys: [
     'wardenone_site_tally',
   ] },
-  { owner: 'Tracker learning', sensitivity: 'derived browsing evidence', area: 'local', maxAgeDays: null, maxItems: null, retention: 'Candidates expire after 30 days without a new sighting; user decisions stay until erased', siteErase: 'reset', keys: [
+  { owner: 'Tracker learning', sensitivity: 'derived browsing evidence', area: 'local', maxAgeDays: null, maxItems: 10600, retention: 'Up to 600 observations expire after 30 days; up to 10000 learned block/unblock decisions stay until reset, with new decisions paused at capacity', siteErase: 'reset', keys: [
     'wardenone_tracker_learner',
   ] },
   { owner: 'Script Drift', sensitivity: 'derived script evidence', area: 'local', maxAgeDays: null, maxItems: 700, retention: 'Baselines unseen for 30 days are pruned; active baselines can persist', siteErase: 'reset', keys: [
@@ -21332,7 +21556,7 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   { owner: 'Temporary operation state', sensitivity: 'session state', area: 'session', maxAgeDays: null, maxItems: null, retention: 'Browser or extension session', siteErase: 'prune', keys: [
     '__wardenone_badge_counts', '__wardenone_ext_scan_done', '__wardenone_hist_buffer',
     '__wardenone_menu_built', '__wardenone_sb_bypass', '__wardenone_sb_navigation_grants', '__wardenone_tally_state',
-    'wardenone_block_offer', 'wardenone_blocklist_session', 'wardenone_download_handled',
+    'wardenone_block_offer', 'wardenone_blocklist_session', 'wardenone_cname_exception_cache', 'wardenone_download_handled',
     'wardenone_erase_rebuild', 'wardenone_manual_check_jobs', 'wardenone_palette_grant', 'wardenone_build_update_v1',
     'wardenone_rebind_session', 'wardenone_tracker_session', 'wardenone_sw_registered',
     'wardenone_session_started_at',
@@ -21346,7 +21570,7 @@ const PRIVACY_STORE_POLICY = Object.freeze([
     'wardenone_onboarding_done_at', 'wardenone_onboarding_maxprivacy_at',
     'wardenone_onboarding_recommended_at', 'wardenone_popup_scroll_memory',
     'wardenone_popup_search_memory', 'wardenone_script_shield_mode', 'wardenone_site_card_layout', 'wardenone_site_card_folded', 'wardenone_popup_section_order',
-    'wardenone_settings_density', 'wardenone_settings_favorites', 'wardenone_settings_last_page', 'wardenone_theme',
+    'wardenone_settings_density', 'wardenone_settings_favorites', 'wardenone_settings_last_page', 'wardenone_settings_nav', 'wardenone_settings_rail', 'wardenone_theme',
   ] },
   { owner: 'Settings change list', sensitivity: 'settings', area: 'local', maxAgeDays: 30, maxItems: 40, retention: '30 days; latest 40 switch changes', siteErase: 'keep', keys: [
     'wardenone_settings_recent',
@@ -23644,8 +23868,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   // The reader's decisions on what the learner noticed (SEC-04). Popup-only: these kinds are
   // not in the tab allowlist, so a page cannot approve its own proposal.
-  if (msg && msg.kind === 'tracker-learner-proposals') {
-    respond(loadTrackerLearner().then(() => ({ ok: true, items: trackerLearnerProposals() })), sendResponse);
+  if (msg && msg.kind === 'tracker-learner-history') {
+    respond(trackerLearnerHistory(msg), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'tracker-learner-decide') {

@@ -27,6 +27,8 @@
     --body: "Nunito", -apple-system, "Segoe UI", system-ui, sans-serif;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  #tracker-learning-mode { width:100%; padding:8px; border:1px solid var(--line-2); border-radius:8px; background:var(--card); color:var(--ink); font:inherit; }
+  #tracker-learning-mode:disabled { opacity:.6; }
   body {
     width: 348px;
     background:
@@ -1468,25 +1470,35 @@
       <label class="tg"><input type="checkbox" data-key="blockFirstPartyTrackers"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block CNAME-cloaked trackers</div><div class="desc">On by default. Block confirmed tracking aliases from a local list; turn off for any site that needs an exception.</div></div>
+      <div><div class="name">Block CNAME-cloaked trackers</div><div class="desc">On by default. Blocks over 100,000 known disguised tracker addresses from a packaged list; fraud-check and tag-manager addresses only lose cookies. Turn off for any site that needs an exception.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockCnameTrackers"><span class="track"></span><span class="knob"></span></label>
     </div>
+    <div id="tracker-learner-controls">
     <div class="row">
-      <div><div class="name">Local tracker learner</div><div class="desc">Suggests repeated tracker domains and flags suspected URL identifiers in Activity. Identifier detection leaves URLs intact. Domain blocks need your approval; observations stay local.</div></div>
+      <div><div class="name">Local tracker learner</div><div class="desc">Finds tracker candidates across your sites. Learning stays on this device; known tracker blocking works independently.</div></div>
       <label class="tg"><input type="checkbox" data-key="trackerLearner"><span class="track"></span><span class="knob"></span></label>
     </div>
-    <!-- What the learner noticed is a proposal until the reader decides (SEC-04): a page can
-         supply every input the learner sees, so it may suggest a block but never make one. -->
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:6px;">
+      <div><div class="name" id="tracker-learning-mode-label">Learning mode</div><div class="desc" id="tracker-learning-mode-desc">Automatic tracker protection learns from browser evidence and blocks learned trackers until you unblock them. Review history whenever you want. Switching to review stops new automatic decisions; saved blocks stay.</div></div>
+      <select id="tracker-learning-mode" data-key="trackerLearnerAuto" data-config-bool aria-labelledby="tracker-learning-mode-label" aria-describedby="tracker-learning-mode-desc">
+        <option value="false">Review suggestions</option>
+        <option value="true">Automatic tracker protection</option>
+      </select>
+    </div>
+    <!-- SEC-04: page reports alone cannot authorize automatic blocks. -->
     <div class="row" id="tracker-proposals-row" style="display:none;flex-direction:column;align-items:stretch;gap:6px;">
       <div>
-        <div class="name" style="font-size:12px;">Trackers noticed across your sites</div>
-        <div class="desc" id="tracker-proposals-desc">Nothing is blocked until you say so. Block stops that domain&rsquo;s tracking requests on every site; Ignore forgets the suggestion.</div>
+        <div class="name" style="font-size:12px;">Learned trackers</div>
+        <div class="desc" id="tracker-proposals-desc">Learned blocks stay until you unblock them. Your tracker blocklists work independently.</div>
       </div>
       <div class="perm-list" id="tracker-learner-proposals"></div>
       <div class="tracker-mode-buttons" id="tracker-proposals-all" style="max-width:none;justify-content:flex-start;display:none;">
-        <button type="button" class="btn tracker-mode-btn" id="tracker-proposals-block-all" title="Block every domain listed, everywhere">Block all</button>
-        <button type="button" class="btn tracker-mode-btn" id="tracker-proposals-ignore-all" title="Forget every suggestion listed">Ignore all</button>
+        <button type="button" class="btn tracker-mode-btn" id="tracker-proposals-block-all" title="Block third-party tracking requests for every suggestion listed">Block suggested requests</button>
+        <button type="button" class="btn tracker-mode-btn" id="tracker-proposals-ignore-all" title="Dismiss every suggestion listed">Ignore all</button>
+        <button type="button" class="btn tracker-mode-btn" id="tracker-proposals-undo-all" title="Unblock every automatically learned tracker">Unblock all automatic</button>
       </div>
+      <button type="button" class="btn" id="tracker-history-open">View learned tracker history</button>
+    </div>
     </div>
     <div class="row">
       <div><div class="name">Block tracker cache validators</div><div class="desc">Removes If-None-Match and ETag only on passive requests to WardenOne's known tracker hosts, preventing cache-tag respawning without disabling normal browser caching. Opt-in because repeated tracker responses can use more bandwidth.</div></div>

@@ -107,7 +107,9 @@
       if(el)rows.push(buildKeywords(el));
     });
     document.querySelectorAll('.wo-search-chip').forEach(function(el){rows.push(buildKeywords(el));});
-    ['ss-scan','ss-sitebreach','ss-domage','ss-clear','ss-panic','cl-run','ext-review','ext-review-open','verify-repair','startup-run','mem-free','mem-dupes','mem-tab-usage','mem-zombies','perm-scan','perm-reset','ug-btn'].forEach(function(id){
+    // The footer under the list (Allowlist, Verify & repair, the Activity / Notification / Network
+    // tiles) is not indexed: it stays whole while searching, as it is without a search.
+    ['ss-scan','ss-sitebreach','ss-domage','ss-clear','ss-panic','cl-run','ext-review','ext-review-open','startup-run','mem-free','mem-dupes','mem-tab-usage','mem-zombies','perm-scan','perm-reset','ug-btn'].forEach(function(id){
       var el=$(id);
       if(el)rows.push(buildKeywords(el));
     });
@@ -118,15 +120,9 @@
     });
     var dtBtn=$('download-trust-add-current');
     if(dtBtn)rows.push(buildKeywords(dtBtn));
-    var alBtn=$('allowlist');
-    if(alBtn)rows.push(buildKeywords(alBtn));
     document.querySelectorAll('.group>h2, .eyeshield-panel+h2, #js-shield+h2').forEach(function(h3){
       if(h3.id==='eyeshield-title'||h3.id==='site-controls-title')return;
       rows.push(buildKeywords(h3));
-    });
-    ['open-activity','open-notifications','open-network'].forEach(function(id){
-      var el=$(id);
-      if(el)rows.push(buildKeywords(el));
     });
 
     var seenSearchEls=[];

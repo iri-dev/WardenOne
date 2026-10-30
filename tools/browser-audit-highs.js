@@ -47,10 +47,16 @@ async function run() {
       }
       throw new Error('Timed out: ' + expression);
     };
+    /* An erase restarts the extension, and until it has re-indexed its rulesets its pages open as the
+       browser's blocked placeholder. Reopen Settings until it really loads instead of guessing a delay. */
     const settings = async (contextId) => {
-      const session = await open(`chrome-extension://${extension.id}/settings.html`, contextId);
-      await until(session, "typeof loaded !== 'undefined' && loaded === true");
-      return session;
+      for (let attempt = 1; ; attempt++) {
+        const session = await open(`chrome-extension://${extension.id}/settings.html`, contextId);
+        await until(session, "location.protocol === 'chrome-error:' || (typeof loaded !== 'undefined' && loaded === true)");
+        if (await evaluate(session, "location.protocol !== 'chrome-error:'")) return session;
+        if (attempt >= 10) throw new Error('Settings stayed blocked after the extension restarted');
+        await sleep(1000);
+      }
     };
     const send = (session, message) => evaluate(session, `chrome.runtime.sendMessage(${JSON.stringify(message)})`);
     let page = await settings();

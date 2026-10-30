@@ -109,8 +109,8 @@ check('and not offered as a separate per-site override', !!overrideScope
    could name a number nothing checked. Now every checkbox in the popup has to be exactly one
    thing: a counted shield, a second level of one, or a control of a named non-protection
    kind -- and every entry in the registry has to be a switch that exists. */
-const SWITCHES = [...POPUP_HTML.matchAll(/<input\b[^>]*>/g)].map((m) => m[0])
-  .filter((tag) => /type="checkbox"/.test(tag) && /data-key="/.test(tag))
+const SWITCHES = [...POPUP_HTML.matchAll(/<(?:input|select)\b[^>]*>/g)].map((m) => m[0])
+  .filter((tag) => (/type="checkbox"/.test(tag) || /^<select\b[^>]*\bdata-config-bool\b/.test(tag)) && /data-key="/.test(tag))
   .map((tag) => tag.match(/data-key="([A-Za-z0-9_]+)"/)[1]);
 const SWITCH_SET = new Set(SWITCHES);
 const CLASSIFIED = new Map();   // key -> kind
@@ -123,7 +123,7 @@ for (const k of Object.keys(SECOND_LEVEL)) CLASSIFIED.set(k, 'second level of ' 
   const both = [...CLASSIFIED.keys()].filter((k) => SHIELDS.includes(k));
   check('nothing is both counted and classified as a non-protection', both.length === 0, both.join(', '));
   const dead = [...CLASSIFIED.keys()].filter((k) => !SWITCH_SET.has(k));
-  check('every classified control is a switch that exists in the popup', dead.length === 0, dead.join(', '));
+  check('every classified control exists in the popup', dead.length === 0, dead.join(', '));
   const dupes = Object.values(KINDS).flat().concat(Object.keys(SECOND_LEVEL)).filter((k, i, a) => a.indexOf(k) !== i);
   check('no control is classified twice', dupes.length === 0, dupes.join(', '));
   const orphanLevels = Object.keys(SECOND_LEVEL).filter((k) => !SHIELDS.includes(SECOND_LEVEL[k]));

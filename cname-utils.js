@@ -1,7 +1,7 @@
 /* WardenOne — Copyright (C) 2026 iri; GPL-3.0-or-later. See LICENSE. */
 'use strict';
 const WOCname = (() => {
-  const maxAliases = 2000, maxRules = 300;
+  const maxAliases = 2000, maxRules = 300, rulePriority = 900;
   const resourceTypes = ['script', 'image', 'xmlhttprequest', 'ping', 'websocket', 'webtransport'];
   const trackerTargets = ['eulerian.net', 'ca-eulerian.net', 'etracker.com', 'at-o.net', 'wt-eu02.net', 'webtrekk.net'];
   const sites = new Map();
@@ -60,7 +60,24 @@ const WOCname = (() => {
         || !/^\d{4}-\d{2}-\d{2}T/.test(data.updatedAt || '') || !Number.isFinite(Date.parse(data.updatedAt))) {
       throw new Error('Invalid CNAME source metadata');
     }
+    validateCatalog(data.catalog);
     return validateEntries(data.entries);
+  }
+
+  /* requestDomains includes descendants; the label count keeps a listed alias exact, and lets a
+     wildcard family match its children but not the parent itself. */
+  function exactHostRegex(depth) {
+    return '^(?:https?|wss?)://(?:[^/@]*@)?(?:[a-z0-9-]+\\.){' + (depth - 1) + '}[a-z0-9-]+\\.?(?::[0-9]+)?/';
+  }
+
+  function descendantRegex(depth) {
+    return '^(?:https?|wss?)://(?:[^/@]*@)?(?:[a-z0-9-]+\\.){' + depth + ',}[a-z0-9-]+\\.?(?::[0-9]+)?/';
+  }
+
+  function validateCatalog(catalog) {
+    const counts = ['rules', 'blockedHosts', 'cookieHosts', 'families'];
+    if (!catalog || !/^[0-9a-f]{64}$/.test(catalog.sha256 || '') || Object.keys(catalog).length !== counts.length + 1
+        || counts.some(key => !Number.isSafeInteger(catalog[key]) || catalog[key] < 0)) throw new Error('Invalid CNAME catalog summary');
   }
 
   function resolve(mapping, host, source) {
@@ -89,15 +106,42 @@ const WOCname = (() => {
       for (let i = 0; i < hosts.length; i += 100) groups.push({ depth, hosts: hosts.slice(i, i + 100) });
     }
     if (groups.length > maxRules) throw new Error('CNAME rule budget exceeded');
-    /* requestDomains includes descendants. Equal label depth makes that suffix
-       match exact without a large hostname-alternation regex. */
-    return groups.map(({ depth, hosts }, index) => ({ id: base + index, priority: 900, action: { type: 'block' },
-      condition: { requestDomains: hosts,
-        regexFilter: '^(?:https?|wss?)://(?:[^/@]*@)?(?:[a-z0-9-]+\\.){' + (depth - 1) + '}[a-z0-9-]+\\.?(?::[0-9]+)?/',
-        isUrlFilterCaseSensitive: false, resourceTypes,
+    return groups.map(({ depth, hosts }, index) => ({ id: base + index, priority: rulePriority, action: { type: 'block' },
+      condition: { requestDomains: hosts, regexFilter: exactHostRegex(depth), isUrlFilterCaseSensitive: false, resourceTypes,
         ...(excludedInitiatorDomains.length ? { excludedInitiatorDomains } : {}) } }));
   }
 
-  return Object.freeze({ maxAliases, maxRules, resourceTypes, normalizeHost, validateEntries, validateData, resolve, compile });
+  /* Site exceptions for the packaged catalog: one allow rule per excepted site covering only the
+     catalog hosts under that site, at the catalog's priority so no other protection is lifted. */
+  function exceptionRules(catalogRules, sites, { base, budget }) {
+    const initiators = new Map();
+    for (const host of sites) {
+      const site = knownSite(host);
+      if (!site) continue;
+      if (!initiators.has(site)) initiators.set(site, []);
+      initiators.get(site).push(host);
+    }
+    const found = new Map();
+    for (const rule of catalogRules) {
+      for (const host of rule.condition.requestDomains) {
+        for (let h = host.slice(host.indexOf('.') + 1); h.includes('.'); h = h.slice(h.indexOf('.') + 1)) {
+          if (!initiators.has(h)) continue;
+          if (!found.has(h)) found.set(h, new Set());
+          found.get(h).add(host);
+          break;
+        }
+      }
+    }
+    const groups = [...found.keys()].sort().map(site => ({ initiators: initiators.get(site), hosts: found.get(site) }));
+    if (groups.length > budget) {
+      const merged = groups.splice(budget - 1);
+      groups.push({ initiators: merged.flatMap(group => group.initiators), hosts: new Set(merged.flatMap(group => [...group.hosts])) });
+    }
+    return groups.map((group, index) => ({ id: base + index, priority: rulePriority, action: { type: 'allow' },
+      condition: { initiatorDomains: [...new Set(group.initiators)].sort(), requestDomains: [...group.hosts].sort(), resourceTypes } }));
+  }
+
+  return Object.freeze({ maxAliases, maxRules, rulePriority, resourceTypes, normalizeHost, validateEntries, validateData, resolve, compile,
+    exactHostRegex, descendantRegex, exceptionRules });
 })();
 if (typeof module !== 'undefined') module.exports = WOCname;

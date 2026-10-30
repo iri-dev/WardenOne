@@ -1706,11 +1706,11 @@
       "license": {
         "type": "published-license",
         "id": "MIT",
-        "url": "https://github.com/AdguardTeam/cname-trackers/blob/d519e17ee10e2d1c5b2762a78a8e11ec2b38ce5a/LICENSE"
+        "url": "https://github.com/AdguardTeam/cname-trackers/blob/3a7f5b0cdf8f28b2f5b88db0e55d940869fe1473/LICENSE"
       },
       "permission": {
         "status": "not-required",
-        "scope": "Published MIT terms cover the selected, redistributed CNAME mapping."
+        "scope": "Published MIT terms cover the redistributed CNAME mapping and the packaged CNAME tracker catalog."
       },
       "attribution": "Copyright 2021 Adguard Software Ltd.",
       "compliance": {
@@ -1719,7 +1719,7 @@
           "Preserve the upstream copyright and complete MIT permission notice."
         ],
         "implementation": [
-          "Select four pinned tracker-provider JSON mappings, normalize exact hosts, resolve bounded chains and omit registrable-site apex aliases.",
+          "Pin every tracker-provider JSON mapping, normalize exact hosts, omit registrable-site apex, same-site and compatibility-protected aliases, collapse reviewed wildcard families and assign each provider a reviewed block or cookie-only treatment.",
           "Preserve source bytes, revision and hashes in docs/cname-source-snapshot.json.gz and the MIT text in licenses/AdGuard-CNAME-MIT.txt and packaged notices."
         ],
         "noticeFiles": [
@@ -1731,11 +1731,11 @@
       },
       "evidence": [
         {
-          "url": "https://github.com/AdguardTeam/cname-trackers/blob/d519e17ee10e2d1c5b2762a78a8e11ec2b38ce5a/LICENSE",
+          "url": "https://github.com/AdguardTeam/cname-trackers/blob/3a7f5b0cdf8f28b2f5b88db0e55d940869fe1473/LICENSE",
           "finding": "The pinned repository includes an MIT copyright and permission notice for its software and accompanying material."
         }
       ],
-      "checkedAt": "2026-10-26"
+      "checkedAt": "2026-10-30"
     },
     "adguard-tracker-catalog": {
       "name": "AdGuard Companies DB tracker attribution",
@@ -1814,7 +1814,7 @@
       "builtBy": "tools/build-cname-data.js",
       "constant": "CNAME_SOURCE_URL",
       "artifact": "cname-trackers.json",
-      "purpose": "Four pinned provider CNAME mappings; exact input paths and hashes retained in the source snapshot"
+      "purpose": "Every pinned tracker-provider CNAME mapping; exact input paths and hashes retained in the source snapshot"
     },
     {
       "builtBy": "tools/build-tracker-catalog.js",
@@ -2218,9 +2218,29 @@
     {
       "file": "cname-trackers.json",
       "license": "MIT",
-      "provenance": "AdguardTeam/cname-trackers, selected Eulerian, Etracker, Webtrekk and AT Internet mappings",
+      "provenance": "AdguardTeam/cname-trackers, Eulerian, Etracker, Webtrekk and AT Internet mappings",
       "builtBy": "tools/build-cname-data.js",
       "modifications": "Host normalization, exact aliases, bounded chain resolution and registrable-site apex omission.",
+      "sourceFiles": [
+        "docs/cname-source-snapshot.json.gz",
+        "tools/build-cname-data.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/AdGuard-CNAME-MIT.txt"
+        ],
+        "issueIds": []
+      }
+    },
+    {
+      "file": "rules-cname.json",
+      "license": "MIT",
+      "provenance": "AdguardTeam/cname-trackers, every tracker-provider mapping",
+      "builtBy": "tools/build-cname-data.js",
+      "modifications": "Host normalization; apex, same-site and compatibility-protected aliases omitted; wildcard families collapsed; reviewed per-provider block or cookie-only rules.",
       "sourceFiles": [
         "docs/cname-source-snapshot.json.gz",
         "tools/build-cname-data.js"

@@ -28,7 +28,13 @@ unclear, contact us (see **Contact** below).
   memory, for at most 30 minutes or until the worker restarts. Raw values, parameter
   names and visited-site lists are not stored. Activity records only the destination
   hostname and a suspected-identifier summary, subject to your history controls.
-  Detection leaves requests intact, makes no external lookup, and is disabled in private windows.
+- The learner's **Automatic tracker protection** mode (opt-in under **Learning mode**) reads the browser's own cookie jar for
+  a third-party site it sees on a page, to check whether that site keeps a cross-site,
+  month-long, ID-shaped cookie. The values are judged in worker memory and never stored or
+  sent anywhere; only a yes or no per site is kept, until the worker restarts. The learner
+  then records the same counts described below.
+  Qualifying domains receive durable third-party resource blocks. The check makes no external
+  lookup and automatic learning is disabled in private windows.
 - Consent verification reads only the recognized consent manager's saved cookie
   after an opt-out action. Cookie values stay out of Activity; it records the
   manager, action, outcome and evidence type. Pending verification is canceled
@@ -119,8 +125,8 @@ account by WardenOne, and is **not** uploaded to us:
   faster and work offline.
 - **Two records that touch where you have been, kept as small as their job allows.**
   The tracker learner notices a third-party domain following you around, and to decide
-  whether to *suggest* blocking it — it never blocks one on its own; you approve each
-  suggestion in the popup — it needs to know that the domain appeared on three different
+  whether to suggest a block, or automatically block it when the opt-in mode has browser-held
+  cookie evidence, it needs to know that the domain appeared on three different
   sites of yours in two different browser sessions. That is all it keeps: per tracker
   domain, a count of sites (never their names) and a 128-bit sketch keyed to your install
   that can only answer "was this site already counted?" — held while the domain is still
@@ -129,12 +135,15 @@ account by WardenOne, and is **not** uploaded to us:
   to the day. Valid older 32-bit sketches finish or expire in their original format so migration
   does not count the same sites again. A wider sketch reduces missed counts and also makes
   guessed membership more precise for someone who has the profile and its key. Observations
-  expire after 30 days unseen, including ignored suggestions. Approved blocks and per-site
-  settings stay. Which trackers appeared on the site you are looking at, with
+  expire after 30 days unseen, including ignored suggestions. Learned blocks, explicit
+  unblock choices and per-site settings stay. Which trackers appeared on the site you are looking at, with
   a count, is kept only for the current browser session and goes when the browser closes,
   bounded to 40 sites and 12 tracker domains per site. Repeated source signals are coalesced
-  within each day and browser session. The learner keeps at most 600 domain entries and no
-  raw request URLs; proposal history has no visited-site URL. Browser-observed hosts are
+  within each day and browser session. The learner keeps up to 600 observations and 10,000
+  durable decisions, with domain names, first learning dates and the latest block/unblock
+  status available in searchable, paginated history. It keeps no raw request URLs or
+  visited-site URL in that history. Existing decisions are retained when capacity is full;
+  new decisions pause. Browser-observed hosts are
   checked only against packaged data, with no external DNS lookup or hostname submission.
   An earlier build kept up to 80 named sites per tracker with hit counts and exact times;
   the first start of this build folds that into the counts above and the names are gone.

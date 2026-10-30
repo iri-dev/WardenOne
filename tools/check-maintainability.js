@@ -348,6 +348,8 @@ function checkContentBuild() {
   'tools/test-page-notice-carry.js',
   'tools/test-site-compatibility.js',
   'tools/test-streaming-compatibility.js',
+  'tools/test-honeytoken.js',
+  'tools/test-prefetch-guard.js',
   'tools/test-token-exfil-trust.js',
   'tools/test-token-exfil-issued-links.js',
   'tools/test-oauth-guard.js',
@@ -421,6 +423,7 @@ function checkContentBuild() {
   'tools/test-filter-compilation.js',
   'tools/test-privacy-baseline.js',
   'tools/test-cname-protection.js',
+  'tools/test-cname-catalog.js',
   'tools/test-history-retention.js',
   'tools/test-listener-registration.js',
   'tools/test-logger-batch-reset.js',
@@ -436,6 +439,7 @@ function checkContentBuild() {
   'tools/test-blocker-durability.js',
   'tools/test-warning-ownership.js',
   'tools/test-tracker-learner-trust.js',
+  'tools/test-tracker-learner-auto.js',
   'tools/test-tracker-evidence.js',
   'tools/test-tracker-evidence-corpus.js',
   'tools/test-tracker-sketch.js',
@@ -443,6 +447,7 @@ function checkContentBuild() {
   'tools/bench-tracker-evidence.js',
   'tools/bench-tracker-sketch.js',
   'tools/browser-tracker-learning.js',
+  'tools/browser-tracker-auto-learning.js',
   'tools/lib/tracker-learner-harness.js',
   'tracker-learner-utils.js',
   'tracker-network-data.js',
@@ -496,6 +501,7 @@ function checkContentBuild() {
   'tools/test-onboarding-motion.js',
   'tools/test-settings-change-log.js',
   'tools/test-settings-page.js',
+  'tools/test-settings-rail-fold.js',
   'tools/test-security-scan-coverage.js',
   'tools/test-config-write-lock.js',
   'tools/test-browser-test-finish.js',
@@ -597,6 +603,7 @@ function checkContentBuild() {
   'rules-grabber-compat.json',
   'rules-trackers.json',
   'rules-easyprivacy.json',
+  'rules-cname.json',
   'rules-adshield.json',
   'rules-spotify-media.json',
   'malware-hashes.json',
@@ -806,10 +813,12 @@ if (process.env.WARDENONE_RELEASE_REPORT) {
 checkCommand('CNAME protection tests', ['tools/test-cname-protection.js']);
 checkCommand('tracker cookie isolation tests', ['tools/test-tracker-cookie-isolation.js']);
 checkCommand('CNAME mapping source parity', ['tools/build-cname-data.js', '--check']);
+checkCommand('CNAME catalog tests', ['tools/test-cname-catalog.js']);
 checkCommand('site-compatibility host scope tests', ['tools/test-compat-host-scope.js']);
 checkCommand('blocker durability tests', ['tools/test-blocker-durability.js']);
 checkCommand('warning ownership tests', ['tools/test-warning-ownership.js']);
 checkCommand('tracker learner trust tests', ['tools/test-tracker-learner-trust.js']);
+checkCommand('automatic tracker learning tests', ['tools/test-tracker-learner-auto.js']);
 checkCommand('tracker network data parity', ['tools/build-tracker-network-data.js', '--check']);
 checkCommand('tracker evidence tests', ['tools/test-tracker-evidence.js']);
 checkCommand('fingerprint consistency tests', ['tools/test-fingerprint-consistency.js']);
@@ -891,6 +900,7 @@ checkCommand('onboarding motion cost tests', ['tools/test-onboarding-motion.js']
 checkCommand('settings change log tests', ['tools/test-settings-change-log.js']);
 checkCommand('settings-data.js is current with the popup and the worker', ['tools/build-settings-data.js', '--check']);
 checkCommand('Settings page tests', ['tools/test-settings-page.js']);
+checkCommand('Settings side-card fold tests', ['tools/test-settings-rail-fold.js']);
 checkCommand('security scan coverage tests', ['tools/test-security-scan-coverage.js']);
 checkCommand('config write lock tests', ['tools/test-config-write-lock.js']);
 checkCommand('browser test finish guard tests', ['tools/test-browser-test-finish.js']);
@@ -917,6 +927,8 @@ checkCommand('google cleanup tests', ['tools/test-google-cleanup.js']);
 checkCommand('payment card guard tests', ['tools/test-payment-card-guard.js']);
 checkCommand('clean copy tests', ['tools/test-clean-copy.js']);
 checkCommand('IP privacy tests', ['tools/test-ip-privacy.js']);
+checkCommand('honeytoken tests', ['tools/test-honeytoken.js']);
+checkCommand('prefetch guard tests', ['tools/test-prefetch-guard.js']);
 checkCommand('location guard tests', ['tools/test-location-guard.js']);
 checkCommand('supplemental list tests', ['tools/test-supplemental-lists.js']);
 checkCommand('shared domain index tests', ['tools/test-domain-index.js']);

@@ -6,7 +6,12 @@
   },
   {
     "file": "settings.js",
-    "source": "$('#nav').innerHTML = PAGES.filter((p) => !p.hidden).map((p) => {",
+    "source": "$('#nav').innerHTML = NAV_LABELS.map((label, n) => {",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
+    "source": "slot.innerHTML = n ? '<span aria-hidden=\"true\">' + n + '</span><span class=\"sr\">, ' + esc(plural(n, 'thing') + (n === 1 ? ' needs' : ' need')) + ' attention inside</span>' : '';",
     "count": 1
   },
   {
@@ -41,6 +46,11 @@
   },
   {
     "file": "settings.js",
+    "source": "box.innerHTML = trackerHistoryResultsHTML();",
+    "count": 1
+  },
+  {
+    "file": "settings.js",
     "source": "$('#pane').innerHTML = headHTML('Results for “' + raw + '”', summary) + chips +",
     "count": 1
   },
@@ -56,7 +66,7 @@
   },
   {
     "file": "settings.js",
-    "source": "$('#ov-facts').innerHTML = !loaded ? '' : [",
+    "source": "list.innerHTML = summary + (!loaded ? '' : [",
     "count": 1
   },
   {

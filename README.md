@@ -983,19 +983,24 @@ explains each lookup.
 
 ## CNAME Tracker Protection
 
-**Block CNAME-cloaked trackers** is on by default in Tracking. It blocks exact
-aliases from a curated local mapping only when they point to reviewed, dedicated
-tracking domains from four providers. Ordinary CNAMEs, unknown aliases, and shared
-or unrecognized targets do not qualify. An explicit off choice survives updates,
-presets, and ‘enable everything’.
+**Block CNAME-cloaked trackers** is on by default in Tracking. A site can point one
+of its own subdomains at a tracking company so the tracker looks first-party.
+WardenOne carries every tracker provider in AdGuard's CNAME catalog as a packaged
+ruleset: about 119,000 exact disguised addresses are blocked, and wildcard families
+seen with many listed children are matched by those children. Each provider is reviewed. Aliases of
+fraud checks used at sign-in and of tag managers WardenOne does not block elsewhere
+lose their cookies instead of being blocked. Unlisted hosts, a listed host's own
+subdomains and ordinary CNAMEs are not affected. An explicit off choice survives
+updates, presets, and ‘enable everything’.
 
 Turn it off for one site in the popup or Settings if a listed address serves
-something the site needs. Exceptions and site pauses apply to subsequent requests
-without reloading. Login, payment and media compatibility domains are exempt;
-page navigation and media requests are outside this policy. Network Log shows the
-mapped target separately from the request outcome. Unknown aliases retain existing protections. Mapping updates
-arrive with reviewed extension builds; visited hostnames are never sent for DNS
-lookups solely for this feature.
+something the site needs; the exception covers that site's own listed addresses and
+applies to subsequent requests without reloading. Pausing a site lifts it too. Login,
+payment, government, education and media compatibility domains are exempt;
+page navigation, frames and media requests are outside this policy. Network Log shows
+the mapped target for the four providers it classifies and labels catalog blocks.
+The list arrives with reviewed extension builds; visited hostnames are never sent for
+DNS lookups.
 
 ## First-party Tracker Protection
 
@@ -1003,13 +1008,46 @@ Analytics can be routed through the site's own domain, where a list of third-par
 see it. WardenOne detects those first-party routes. It also has a local tracker learner that builds
 up evidence on your device over time.
 
-The learner only ever **suggests**. When a third-party domain has acted like a tracker on three of
-your sites across two browser sessions it shows up in the popup under *Trackers noticed across your
-sites*. Nothing gets blocked by the learner until you press **Block**. Each proposal shows its
+**Block trackers & ad analytics** blocks known trackers by default, independently of learning.
+The **Local tracker learner** has one on/off switch and a **Learning mode** selector.
+The default, **Review suggestions**, collects repeated third-party activity. After three of
+your sites across two browser sessions it shows a suggestion under *Learned trackers*.
+These suggestions need your approval before the learner blocks their requests. Each shows its
 source, confidence and age. Browser observations matched to packaged tracker lists or the local
 CNAME mapping are marked **corroborated**; page API/path observations remain **inferred**, and
 page claims remain **unverified**. A page can influence a suggestion, including a mistaken one,
 but cannot turn it into a blocking rule.
+
+**Automatic tracker protection** is an opt-in learning mode. It checks the browser's cookie
+jar for an unpartitioned third-party cookie with `SameSite=None`, at least a month remaining
+and an ID-shaped value. Page reports cannot supply this browser-held evidence. Cookie shape
+is a tracking heuristic, not proof of malicious intent; load-balancer, bot-check and consent
+cookies are excluded. After three sites and two browser sessions, qualifying domains get
+durable blocks for their third-party resources, including scripts, frames, images and data
+requests. Direct visits remain available, and known sign-in, payment and media hosts are
+excluded from automatic learning. A domain allowed on any site is not learned automatically.
+
+Once learned, a block stays until you unblock the tracker or reset WardenOne, even if it has
+not appeared for a year. Switching to **Review suggestions** stops new automatic decisions
+and keeps saved blocks. Turning off the learner or WardenOne pauses its rules; resuming
+restores them. At most 20 new automatic decisions are made per day.
+
+**View learned tracker history** opens **Settings → Learned trackers**. Search domain names,
+filter blocked, unblocked or suggested trackers, review the evidence, and choose **Unblock**
+or **Block again**. Unblock choices are durable too: automatic learning will respect them.
+Unblocking a domain also lets it through WardenOne's packaged tracker and ad lists, so the
+site that needed it works. It does not override malware protection or an explicit per-site block.
+The popup shows at most five entries; history uses pages of 25. It retains each domain's
+first learning date and latest block/unblock status, rather than every request or a list of
+sites you visited. Up to 10,000 decisions are kept, separately from 600 expiring observations.
+At capacity, existing decisions are retained and new decisions pause instead of evicting
+old blocks. Cookie values are checked only in memory and never stored. Earlier cookie-only
+decisions require fresh browser evidence before becoming full resource blocks.
+
+In review mode, **Block requests** blocks the learned domain's third-party image, beacon, XHR/fetch and
+WebTransport requests across sites. It does not block every script, frame or direct visit.
+Page claims and API/path observations still need review in either learning mode: repeated
+appearances alone cannot safely authorize a domain-wide block.
 
 With the same control enabled, Activity can also flag a **Suspected identifier ·
 detection only** when an unfamiliar random-looking URL value repeats twice on

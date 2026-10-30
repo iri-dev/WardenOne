@@ -10,7 +10,7 @@ const sources = ['src/content.js', 'content.min.js'];
 let checks = 0;
 
 function load(source, options = {}) {
-  const start = source.indexOf('if(WO.blockAutoplay&&!trustedMediaHost)try{');
+  const start = source.lastIndexOf('if(!trustedMediaHost){', source.indexOf('let autoplayGuardInstalled'));
   const end = source.indexOf('if(WO.lazyLoadMedia)try{', start);
   assert(start >= 0 && end > start, 'autoplay guard markers');
   let now = 0;
@@ -56,6 +56,7 @@ function load(source, options = {}) {
   };
   const sandbox = {
     WO: config, trustedMediaHost: !!options.trusted, document,
+    __woConfigStore: { __configReady: options.configReady !== false },
     window: {}, HTMLMediaElement: Media, Promise, DOMException,
     Date: { now: () => now },
     playerShellFor(target) {
@@ -80,6 +81,8 @@ function load(source, options = {}) {
       }
     },
     mutate(media) { for (const callback of observers) callback([], [media], []); },
+    configChange() { listeners.get('wo-config-change')?.(); },
+    hasConfigListener: () => listeners.has('wo-config-change'),
     get queries() { return queries; },
   };
 }
@@ -206,6 +209,33 @@ async function run(source) {
     assert.equal(w.queries, queries, 'disabled guard does not traverse media');
     w.config.blockAutoplay = true;
     await blocked(fresh);
+    checks++;
+  }
+  {
+    /* The runtime started on its fallback before config arrived: the guard is there, dormant. */
+    const w = load(source, { enabled: false, configReady: false });
+    assert.notEqual(w.Media.prototype.play, w.nativePlay, 'a start without config installs the guard');
+    assert.equal(await new w.Media().play(), 'playing', 'dormant until config says otherwise');
+    assert.equal(w.existing.paused, false, 'a dormant guard leaves playing media alone');
+    assert.equal(w.queries, 0, 'a dormant guard does not traverse media');
+    w.config.blockAutoplay = true;
+    w.configChange();
+    assert.equal(w.existing.paused, true, 'late config stops media that started during the gap');
+    await blocked(new w.Media());
+    checks++;
+  }
+  {
+    const w = load(source, { enabled: false });
+    assert.equal(w.Media.prototype.play, w.nativePlay);
+    w.config.blockAutoplay = true;
+    w.configChange();
+    await blocked(new w.Media());
+    assert.equal(w.existing.paused, true, 'switching on later installs the guard and sweeps');
+    checks++;
+  }
+  {
+    const w = load(source, { trusted: true, configReady: false });
+    assert.equal(w.hasConfigListener(), false, 'trusted media hosts are never guarded');
     checks++;
   }
   for (const options of [{ enabled: false }, { trusted: true }]) {

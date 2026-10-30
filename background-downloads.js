@@ -178,7 +178,8 @@ async function forcedDownloadContext(item) {
     const done = value => { if (!finished) { finished = true; clearTimeout(timer); resolve(value); } };
     const timer = setTimeout(() => done(null), 800);
     try {
-      chrome.tabs.sendMessage(owner.tabId, { kind: 'download-intent-query', filename: downloadNameFromItemish(item.filename || item.finalUrl || item.url) },
+      chrome.tabs.sendMessage(owner.tabId, { kind: 'download-intent-query', filename: downloadNameFromItemish(item.filename || item.finalUrl || item.url),
+        downloadId: String(item.id), urls: [item.url, item.finalUrl].filter(Boolean) },
         { frameId: owner.frameId }, response => {
           if (chrome.runtime.lastError || !response || response.ok !== true || response.enabled !== true) return done(null);
           try {
@@ -193,17 +194,28 @@ async function forcedDownloadContext(item) {
     } catch (_) { done(null); }
   });
 }
+/* Mirrors bridge.js: a control whose address names a file asked for that file only. */
+const FORCED_DOWNLOAD_NAMED_FILE = /\.(?:exe|msi|msix|scr|bat|cmd|ps1|vbs|js|jar|apk|dmg|pkg|zip|7z|rar|pdf|docx?|xlsx?|csv|png|jpe?g|mp[34]|webm)(?:$|[?#])/i;
+function forcedDownloadFromAddress(item, href) {
+  const strip = (value) => { try { return new URL(value).href.split('#')[0]; } catch (_) { return ''; } };
+  const wanted = strip(href);
+  /* url is where Chrome started the download and finalUrl where its server redirects ended. */
+  return !!wanted && [item.url, item.finalUrl].some((value) => strip(value) === wanted);
+}
 function unexpectedDownloadReason(item, context) {
   if (!context) return '';
   const gesture = context.gesture;
   const now = Date.parse(item.startTime || '') || Date.now();
-  const recent = gesture && Number.isFinite(gesture.at) && now - gesture.at >= -1000 && now - gesture.at <= FORCED_DOWNLOAD_WINDOW_MS;
-  if (!recent) return context.hadGesture ? '' : 'No download request was observed in the page that started this file.';
   const filename = downloadNameFromItemish(item.filename || item.finalUrl || item.url);
   const active = DANGEROUS_EXT.test(filename) || CONTAINER_EXT.test(filename) || MACRO_DOC_EXT.test(filename);
+  if (context.spent === true) return active ? 'The download request on this page was already used by a different file.' : '';
+  const recent = gesture && Number.isFinite(gesture.at) && now - gesture.at >= -1000 && now - gesture.at <= FORCED_DOWNLOAD_WINDOW_MS;
+  if (!recent) return context.hadGesture ? '' : 'No download request was observed in the page that started this file.';
   if (gesture.requested === true) {
-    if (gesture.label === 'Download once') return [item.url, item.finalUrl].includes(gesture.href)
+    if (gesture.label === 'Download once') return forcedDownloadFromAddress(item, gesture.href)
       ? '' : 'A different file address used the one-time download choice.';
+    if (active && (/^(?:blob|data):/i.test(gesture.href || '') || FORCED_DOWNLOAD_NAMED_FILE.test(gesture.href || ''))
+      && !forcedDownloadFromAddress(item, gesture.href)) return 'This file did not come from the address the download control named.';
     if (context.productMismatch === true && active) return 'The installer filename differs from the product heading on the download page.';
     const claimed = String(gesture.claimed || gesture.label || '').match(/[^\s/\\]+\.(?:pdf|docx?|xlsx?|png|jpe?g|mp[34]|zip|exe|msi)\b/i);
     if (active && claimed && claimed[0].split('.').pop().toLowerCase() !== filename.split('.').pop().toLowerCase()) {

@@ -268,7 +268,7 @@ const rulesFor = (r, domain) => r.state.dnr.filter((x) => x.condition && (x.cond
   }
 
   /* ---- 6. the wiring: handlers, popup, labels ------------------------------------- */
-  check('the worker answers the popup\'s three questions', ["msg.kind === 'tracker-learner-proposals'", "msg.kind === 'tracker-learner-decide'", "msg.kind === 'tracker-learner-decide-all'"].every((k) => BG.indexOf(k) !== -1));
+  check('the worker answers the popup\'s three questions', ["msg.kind === 'tracker-learner-history'", "msg.kind === 'tracker-learner-decide'", "msg.kind === 'tracker-learner-decide-all'"].every((k) => BG.indexOf(k) !== -1));
   const tabAllowed = BG.slice(BG.indexOf('const TAB_CONTEXT_ALLOWED_MESSAGES = new Set(['), BG.indexOf(']);', BG.indexOf('const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([')));
   check('none of them can be sent by a page', !/tracker-learner/.test(tabAllowed));
   check('the learner no longer promotes to learned on its own', !/entry\.state = 'learned';\s*entry\.reason = strongHost/.test(BG) && /entry\.state = 'proposed';\s*entry\.proposedAt = day;/.test(BG));
@@ -276,9 +276,9 @@ const rulesFor = (r, domain) => r.state.dnr.filter((x) => x.condition && (x.cond
   check('the rule builder still keys on learned alone', /\.filter\(\(domain\) => TRACKER_LEARNER\.domains\[domain\] && TRACKER_LEARNER\.domains\[domain\]\.state === 'learned'\)/.test(BG));
   check('the popup shows the proposals with a decision beside each',
     /id="tracker-learner-proposals"/.test(POPUP_HTML) && /id="tracker-proposals-row"/.test(POPUP_HTML)
-    && /kind: 'tracker-learner-proposals'/.test(POPUP_JS) && /kind: 'tracker-learner-decide', domain, decision/.test(POPUP_JS) && /kind: 'tracker-learner-decide-all', decision/.test(POPUP_JS));
-  check('the popup says nothing is blocked until the reader says so', /Nothing is blocked until you say so/.test(POPUP_HTML));
-  check('the popup names a legacy proposal for what it is', /Learned automatically by an earlier version; approve it to keep blocking it\./.test(POPUP_JS));
+    && /kind: 'tracker-learner-history'/.test(POPUP_JS) && /kind: 'tracker-learner-decide', domain, decision/.test(POPUP_JS) && /kind: 'tracker-learner-decide-all', decision/.test(POPUP_JS));
+  check('the popup requires review for suggestions and distinguishes independent tracker blocklists', /Suggestions need review/.test(POPUP_JS) && /Your tracker blocklists work independently/.test(POPUP_HTML));
+  check('the popup names a legacy proposal for what it is', /Earlier unapproved rule; review before blocking\./.test(POPUP_JS));
   check('the Activity Centre labels both moments', /proposed_tracker_domain: 'Tracker noticed, waiting for your decision'/.test(HISTORY) && /learned_tracker_domain: 'Tracker blocked everywhere, on your approval'/.test(HISTORY));
 
   console.log('');

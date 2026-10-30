@@ -119,21 +119,11 @@ async function run() {
     const autoplayReady = async (blocking = true) => until(page, 'window.__wardenOneReadyVersion'
       + (blocking ? '&&!!window.__WO_CONFIG__&&window.__WO_CONFIG__.blockAutoplay===true' : '')
       + '&&document.readyState==="complete"&&document.querySelector("video").readyState>=2');
-    /* Config that lands after the engine's start fallback misses the start-only guard; reload until the
-       page starts configured, as the WebRTC audit does. A guard that never installs still fails. */
-    const blockedOnFreshDocument = async (label) => {
-      let result = await evaluate(page, playResult);
-      for (let reloads = 0; result !== autoplayDenied && reloads < 3; reloads++) {
-        await cdp.send('Page.reload', {}, page);
-        await autoplayReady();
-        result = await evaluate(page, playResult);
-      }
-      assert.equal(result, autoplayDenied, label);
-    };
+    /* No reloads: the guard must already hold on the first document, however late its config lands. */
     await configured({ blockAutoplay: true });
     await cdp.send('Page.navigate', { url: autoplayUrl }, page);
     await autoplayReady();
-    await blockedOnFreshDocument('unattended autoplay remains blocked');
+    assert.equal(await evaluate(page, playResult), autoplayDenied, 'unattended autoplay is blocked on the first navigation');
     await evaluate(page, 'window.dispatchEvent(new MouseEvent("click"));true');
     assert.equal(await evaluate(page, playResult), autoplayDenied, 'synthetic clicks cannot grant playback');
     const clickAutoplayControl = async (id) => {
@@ -155,7 +145,7 @@ async function run() {
     console.log('[ok] player-scoped trusted playback and retries play; unattended, synthetic and unrelated autoplay remain blocked');
     await cdp.send('Page.reload', {}, page);
     await autoplayReady();
-    await blockedOnFreshDocument('a new document requires its own interaction');
+    assert.equal(await evaluate(page, playResult), autoplayDenied, 'a new document requires its own interaction');
     await configured({ blockAutoplay: false });
     await until(page, '(' + playResult + ').then(result=>result==="playing")');
     await evaluate(page, 'document.querySelector("video").hidden=true;true');
@@ -170,7 +160,7 @@ async function run() {
     await configured({ blockAutoplay: true });
     await cdp.send('Page.reload', {}, page);
     await autoplayReady();
-    await blockedOnFreshDocument('re-enabled Block autoplay applies to the reloaded page');
+    assert.equal(await evaluate(page, playResult), autoplayDenied, 're-enabled Block autoplay applies to the reloaded page');
     const beforeMasterOff = await evaluate(page, 'performance.timeOrigin');
     const { targetId: popupId } = await cdp.send('Target.createTarget', { url: 'chrome-extension://' + extension.id + '/popup.html' });
     const { sessionId: popupSession } = await cdp.send('Target.attachToTarget', { targetId: popupId, flatten: true });

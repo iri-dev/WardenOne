@@ -48,7 +48,7 @@ const LEAK_SDP = [
   '',
 ].join('\r\n');
 
-function makeSandbox() {
+function makeSandbox(opts) {
   const logs = [];
   const fetchCalls = [];
   const beacons = [];
@@ -126,8 +126,9 @@ function makeSandbox() {
   });
 
   const sandbox = {
-    WO: { blockWebRTCLeak: true },
+    WO: Object.assign({ blockWebRTCLeak: true }, opts && opts.WO),
     trustedMediaHost: false,
+    webrtcCompatHost: !!(opts && opts.webrtcCompatHost),
     log(type, detail) { logs.push({ type, detail }); },
     location: { hostname: 'example.test', href: 'https://example.test/' },
     navigator: {
@@ -158,6 +159,53 @@ function makeSandbox() {
   installEngineAmbient(sandbox);
   vm.runInContext(SLICE, sandbox);
   return sandbox;
+}
+
+/* Which hosts WebRTC hardening skips, decided by the shipped declarations rather than a copy. */
+function hostDeclarator(name) {
+  const tail = '.test(location.hostname)';
+  const from = MIN.indexOf(name + '=/');
+  const to = MIN.indexOf(tail, from);
+  if (from < 0 || to < 0) throw new Error(name + ' declaration missing from content.min.js');
+  return MIN.slice(from, to + tail.length);
+}
+const COMPAT_FROM = MIN.indexOf('webrtcCompatHost=');
+if (COMPAT_FROM < 0) throw new Error('webrtcCompatHost declaration missing from content.min.js');
+const COMPAT_DECL = MIN.slice(COMPAT_FROM, MIN.indexOf(',', COMPAT_FROM));
+function webrtcCompatHost(hostname) {
+  const box = { location: { hostname } };
+  vm.createContext(box);
+  vm.runInContext('const ' + hostDeclarator('trustedMediaHost') + ',' + hostDeclarator('conversationHost') + ','
+    + COMPAT_DECL + ';this.__compat=webrtcCompatHost;', box);
+  return box.__compat;
+}
+
+/* The Media Shield half of the hardening: a peer connection made with no recent input is refused. */
+const RTC_GUARD_START = MIN.indexOf('if(!0===WO.blockSuspiciousWebRTC&&!webrtcCompatHost){');
+const RTC_GUARD_END = MIN.indexOf('log("media_shield_active"', RTC_GUARD_START);
+if (RTC_GUARD_START < 0 || RTC_GUARD_END <= RTC_GUARD_START) {
+  console.error('FATAL: WebRTC hardening gate not found in content.min.js');
+  process.exit(1);
+}
+function runUnpromptedPeerConnection(hostname) {
+  const notes = [];
+  function NativeRTC(config) { this.config = config; }
+  const box = {
+    WO: { blockSuspiciousWebRTC: true },
+    webrtcCompatHost: webrtcCompatHost(hostname),
+    window: { RTCPeerConnection: NativeRTC },
+    recentMediaGesture: () => false,
+    noteMedia(type) { notes.push(type); },
+    mediaRisk: { webrtc: 'High' },
+    DOMException,
+    Object,
+  };
+  vm.createContext(box);
+  installEngineAmbient(box);
+  vm.runInContext(MIN.slice(RTC_GUARD_START, RTC_GUARD_END), box);
+  let error = null;
+  try { new box.window.RTCPeerConnection({}); } catch (e) { error = e; }
+  return { error, notes, native: box.window.RTCPeerConnection === NativeRTC };
 }
 
 (async () => {
@@ -221,7 +269,32 @@ function makeSandbox() {
   check('the popup binds it', /'blockWebRTCLeak', 'blockSuspiciousWebRTC', 'certificateGuard'/.test(POPUP_JS));
   check('"Turn everything on" leaves it alone', /MANUAL_ONLY_TOGGLES = new Set\(\[[^\]]*'blockSuspiciousWebRTC'/.test(POPUP_JS));
   check('it is a mode of the guard, not a second counted shield', !/'blockSuspiciousWebRTC'/.test(BG.slice(BG.indexOf('const HEALTH_SHIELD_KEYS = ['), BG.indexOf('];', BG.indexOf('const HEALTH_SHIELD_KEYS = [')))));
-  check('the engine still gates the native patch on both switches', /if\(WO\.blockWebRTCLeak&&!trustedMediaHost&&WO\.blockSuspiciousWebRTC\)try\{/.test(MIN));
+  check('the engine still gates the native patch on both switches', /if\(WO\.blockWebRTCLeak&&!webrtcCompatHost&&WO\.blockSuspiciousWebRTC\)try\{/.test(MIN));
+
+  /* Signed-in ChatGPT opens a peer connection as a message is sent. Hardening refused it for want of
+     a click, and the reply never came. ChatGPT and the media hosts keep native WebRTC; nothing else
+     does, other assistants included, since none was measured needing it. */
+  const ordinary = runUnpromptedPeerConnection('example.test');
+  check('hardening still refuses an unprompted peer connection on an ordinary site',
+    ordinary.error && ordinary.error.name === 'SecurityError' && ordinary.notes.includes('blocked_suspicious_webrtc'),
+    { error: ordinary.error && String(ordinary.error), notes: ordinary.notes });
+  for (const hostname of ['chatgpt.com', 'www.youtube.com']) {
+    const run = runUnpromptedPeerConnection(hostname);
+    check('hardening leaves native WebRTC alone on ' + hostname, !run.error && run.native && !run.notes.length,
+      { error: run.error && String(run.error), notes: run.notes });
+  }
+  for (const hostname of ['claude.ai', 'gemini.google.com', 'chat.openai.com', 'chatgpt.com.evil.test', 'notchatgpt.com']) {
+    const run = runUnpromptedPeerConnection(hostname);
+    check('hardening still applies on ' + hostname, run.error && run.error.name === 'SecurityError',
+      { error: run.error && String(run.error) });
+  }
+  const hardened = new (makeSandbox({ WO: { blockSuspiciousWebRTC: true } }).window.RTCPeerConnection)({ iceServers: [{ urls: 'stun:stun.example' }] });
+  check('hardening strips ICE servers on an ordinary site', Array.isArray(hardened.config.iceServers) && hardened.config.iceServers.length === 0,
+    hardened.config);
+  const assistantBox = makeSandbox({ WO: { blockSuspiciousWebRTC: true }, webrtcCompatHost: webrtcCompatHost('chatgpt.com') });
+  const assistantPc = new assistantBox.window.RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.example' }] });
+  check('hardening keeps ICE servers on chatgpt.com', assistantPc.config.iceServers.length === 1
+    && !assistantBox.__state.logs.some((l) => l.type === 'webrtc_leak_guard_installed'), assistantPc.config);
   const from = MIN.indexOf('function buildConfig(overrides){');
   const to = MIN.indexOf('Object.assign(__woConfigStore,buildConfig(null))', from);
   if (from < 0 || to <= from) throw new Error('buildConfig markers missing');

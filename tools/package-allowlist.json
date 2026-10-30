@@ -114,6 +114,7 @@
   "redirect-warning.js",
   "resource-saver.js",
   "rules-adshield.json",
+  "rules-cname.json",
   "rules-easyprivacy.json",
   "rules-grabber-compat.json",
   "rules-grabber-malware-navigation.json",

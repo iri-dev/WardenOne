@@ -3,7 +3,7 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const vm = require('vm');
-const { helpers, build } = require('./build-cname-data.js');
+const { helpers, build, readSnapshot, sha256 } = require('./build-cname-data.js');
 const { WOCname } = helpers();
 function shippedFunction(file, name) {
   const source = fs.readFileSync(file, 'utf8');
@@ -87,56 +87,74 @@ for (const target of ['cdn.example.net', 'smoxycdn.net', 'emailretargeting.com',
   assert.equal(WOCname.resolve(unknownTarget, 'metrics.example.org', 'fixture'), null);
   assert.equal(WOCname.compile(unknownTarget, { base: 730000, excludedInitiatorDomains: [], protectedHost: () => false }).length, 0);
 }
-const source = JSON.parse(require('zlib').gunzipSync(fs.readFileSync('docs/cname-source-snapshot.json.gz')));
+/* Output parity with the snapshot is the gate's build-cname-data.js --check. */
+const source = readSnapshot();
 assert.throws(() => build({ ...source, license: 'different terms' }), /snapshot/);
 assert.throws(() => build({ ...source, files: source.files.map((file, i) => i ? file : { ...file, text: '{}' }) }), /hash mismatch/);
-assert.deepEqual(JSON.parse(JSON.stringify(build(source))), JSON.parse(fs.readFileSync('cname-trackers.json')));
+assert.throws(() => build({ ...source, files: source.files.filter(file => !file.path.endsWith('/stape.json')) }), /missing upstream: stape/);
+const extra = { path: 'data/trackers/zz-new-provider.json', text: '{}' };
+assert.throws(() => build({ ...source, files: source.files.concat({ ...extra, sha256: sha256(extra.text) }) }), /Unreviewed CNAME provider: zz-new-provider/);
 
 async function policyTests() {
   const data = JSON.parse(fs.readFileSync('cname-trackers.json'));
-  let installed = [], writes = 0, fetches = 0, fail = false, unavailable = false, invalid = false;
+  const catalogText = fs.readFileSync('rules-cname.json', 'utf8');
+  let installed = [], writes = 0, fetches = [], fail = false, unavailable = false, invalid = false, session = {};
   const context = vm.createContext({ console: { warn() {} }, WOCname, CNAME_RULE_BASE: 730000, CNAME_RULES_BUDGET: 300,
-    LOGIN_COMPAT_NEVER_BLOCK_DOMAINS: ['accounts.google.com'], MEDIA_COMPAT_DOMAINS: new Set(['googlevideo.com']),
-    activeAllowlist: cfg => cfg.allowlist || [], normalizeAllowlistHost: WOCname.normalizeHost, isProtectedTrackerDomain: () => false, isMediaCompatDomain: () => false,
-    chrome: { runtime: { getURL: name => 'chrome-extension://fixture/' + name } },
-    fetch: async url => { fetches++; assert.equal(url, 'chrome-extension://fixture/cname-trackers.json'); return { ok: !unavailable, text: async () => JSON.stringify(invalid ? { ...data, entries: [['example.org', 'tracker.example.net']] } : data) }; },
+    activeAllowlist: cfg => cfg.allowlist || [], normalizeAllowlistHost: WOCname.normalizeHost,
+    chrome: { runtime: { getURL: name => 'chrome-extension://fixture/' + name },
+      storage: { session: { get: async key => ({ [key]: session[key] }), set: async patch => { Object.assign(session, JSON.parse(JSON.stringify(patch))); } } } },
+    fetch: async url => {
+      const name = url.replace('chrome-extension://fixture/', '');
+      fetches.push(name);
+      assert(['cname-trackers.json', 'rules-cname.json'].includes(name));
+      const text = name === 'rules-cname.json' ? (invalid ? '[]' : catalogText) : JSON.stringify(data);
+      return { ok: !unavailable, text: async () => text };
+    },
     getDynamicRulesInBand: async () => installed, dnrBandUnchanged: (a, b) => JSON.stringify(a) === JSON.stringify(b),
     writeDynamicRules: async change => { writes++; if (fail) throw new Error('native write rejected'); installed = change.addRules; },
   });
   vm.runInContext(fs.readFileSync('background-cname.js', 'utf8') + '\nthis.api={apply:applyCnameRules,resolve:resolveKnownAlias,load:loadKnownAliases};', context);
-  await context.api.apply({ blockCnameTrackers: false }); assert.equal(writes, 0, 'explicit off does not write or fetch data');
-  assert.equal(fetches, 0);
-  unavailable = true;
-  assert.equal(await context.api.apply({}), false);
-  assert.equal(installed.length, 0, 'failed initial classification invents no enforcement');
-  assert.equal(writes, 0);
-  unavailable = false; fetches = 0;
+  const same = (actual, expected, message) => assert.equal(JSON.stringify(actual), JSON.stringify(expected), message);
+  const except = site => ({ siteOverrides: { [site]: { blockCnameTrackers: false } } });
   installed = JSON.parse(JSON.stringify(rules));
-  const priorDataRules = JSON.stringify(installed);
-  await context.api.apply({ blockCnameTrackers: false, blockFirstPartyTrackers: true }); assert.equal(fetches, 0, 'legacy first-party choice never opts into CNAME');
-  assert.equal(installed.length, 0, 'explicit off clears old CNAME enforcement');
-  installed = JSON.parse(priorDataRules); writes = 0;
-  unavailable = true; assert.equal(await context.api.apply({ blockCnameTrackers: true }), false); assert.equal(writes, 0);
-  assert.equal(JSON.stringify(installed), priorDataRules, 'unavailable data preserves previously installed protection');
-  unavailable = false; invalid = true; assert.equal(await context.api.apply({ blockCnameTrackers: true }), false); assert.equal(writes, 0);
-  assert.equal(JSON.stringify(installed), priorDataRules, 'invalid data preserves previously installed protection');
-  invalid = false;
-  await context.api.apply({ blockFirstPartyTrackers: false, blockTrackers: false }); assert(installed.length > 0); const previous = JSON.stringify(installed);
-  await context.api.apply({ blockCnameTrackers: true }); assert.equal(writes, 1, 'unchanged policy skips native rewrite');
-  fail = true; assert.equal(await context.api.apply({ blockCnameTrackers: true, siteOverrides: { 'shop.example.org': { blockCnameTrackers: false } } }), false);
-  assert.equal(JSON.stringify(installed), previous, 'rejected replacement preserves installed rules');
-  fail = false; await context.api.apply({ blockCnameTrackers: true, siteOverrides: { 'shop.example.org': { blockCnameTrackers: false } } });
-  assert(installed.every(rule => rule.condition.excludedInitiatorDomains.includes('shop.example.org')), 'failed policy remains eligible for retry');
+  await context.api.apply({});
+  same(installed, [], 'upgrading removes the old dynamic block band; the packaged ruleset enforces');
+  same(fetches, [], 'no exception reads neither the mapping nor the catalog');
   await context.api.apply({ allowlist: ['paused.example.org'] });
-  assert(installed.every(rule => rule.condition.excludedInitiatorDomains.includes('paused.example.org')), 'site pause excludes subsequent requests without a navigation');
-  assert(installed.every(rule => rule.condition.excludedInitiatorDomains.includes('accounts.google.com')), 'authentication stays exempt');
-  const aliases = installed.flatMap(rule => Array.from(rule.condition.requestDomains));
-  assert.equal(aliases.length, 1663, 'only aliases ending at reviewed dedicated tracker domains qualify');
-  await context.api.apply({ allowlist: Array.from({ length: 1000 }, (_, i) => 'paused' + i + '.example.org'),
-    siteOverrides: Object.fromEntries(Array.from({ length: 500 }, (_, i) => ['except' + i + '.example.org', { blockCnameTrackers: false }])) });
-  assert(installed.every(rule => rule.condition.excludedInitiatorDomains.length === 1502), 'supported pause and site-exception limits coexist');
-  await context.api.apply({ enabled: false, blockCnameTrackers: true }); assert.equal(installed.length, 0);
-  await context.api.apply({ blockCnameTrackers: false, blockFirstPartyTrackers: true }); assert.equal(installed.length, 0);
+  same(installed, [], 'a site with no listed aliases needs no exception rule');
+  await context.api.apply(except('shop.trowow.de'));
+  assert.equal(installed.length, 1);
+  const [rule] = installed;
+  same([rule.action.type, rule.priority, rule.condition.initiatorDomains], ['allow', 900, ['shop.trowow.de']]);
+  assert(rule.condition.requestDomains.includes('a.trowow.de') && rule.condition.requestDomains.every(host => host.endsWith('.trowow.de')),
+    'an exception allows only that site\'s own catalog hosts');
+  assert(!('domainType' in rule.condition) && !rule.condition.resourceTypes.includes('main_frame'));
+  const reads = fetches.filter(name => name === 'rules-cname.json').length, written = writes;
+  await context.api.apply(except('shop.trowow.de'));
+  assert.equal(fetches.filter(name => name === 'rules-cname.json').length, reads, 'a worker wake reuses the session cache instead of re-reading the catalog');
+  assert.equal(writes, written, 'unchanged exceptions skip the native rewrite');
+  installed = [];
+  await context.api.apply(except('shop.trowow.de'));
+  assert.equal(installed.length, 1, 'externally lost exception rules are restored from the cache');
+  const previous = JSON.stringify(installed);
+  unavailable = true;
+  assert.equal(await context.api.apply(except('www.trowow.de')), false);
+  assert.equal(JSON.stringify(installed), previous, 'unavailable data preserves installed exceptions');
+  unavailable = false; invalid = true;
+  assert.equal(await context.api.apply(except('www.trowow.de')), false);
+  assert.equal(JSON.stringify(installed), previous, 'a catalog that does not match its summary is refused');
+  invalid = false; fail = true;
+  assert.equal(await context.api.apply(except('www.trowow.de')), false);
+  assert.equal(JSON.stringify(installed), previous, 'rejected replacement preserves installed rules');
+  fail = false;
+  await context.api.apply(except('www.trowow.de'));
+  same(installed[0].condition.initiatorDomains, ['www.trowow.de'], 'failed policy remains eligible for retry');
+  await context.api.apply({ blockCnameTrackers: false, ...except('www.trowow.de') });
+  same(installed, [], 'explicit off clears exceptions; the ruleset itself is disabled separately');
+  await context.api.apply({ enabled: false, ...except('www.trowow.de') }); same(installed, []);
+  const many = { allowlist: Array.from({ length: 1000 }, (_, i) => 'paused' + i + '.example.org'),
+    siteOverrides: Object.fromEntries(Array.from({ length: 500 }, (_, i) => ['except' + i + '.example.org', { blockCnameTrackers: false }])) };
+  assert.notEqual(await context.api.apply(many), false, 'supported pause and site-exception limits coexist');
   assert.equal(context.api.resolve('unknown.shop.example.org'), null);
 }
 Promise.all([policyTests(), explicitChoiceTests()]).then(() => console.log('[ok] exact CNAME scope, default-on policy, presets, exceptions and atomic retry'))

@@ -1613,6 +1613,9 @@
     /* Assistant conversations can quote scam instructions, so skip page-text heuristics on exact hosts.
        Clipboard actions remain checked. */
     conversationHost=/(^|\.)(chatgpt\.com|openai\.com|claude\.ai|anthropic\.com|gemini\.google\.com|bard\.google\.com|aistudio\.google\.com|perplexity\.ai|copilot\.microsoft\.com|poe\.com|grok\.com|deepseek\.com|mistral\.ai|huggingface\.co)$/i.test(location.hostname),
+    /* Signed-in ChatGPT opens a peer connection for voice as a message is sent, without a click of its
+       own; refusing it left the reply waiting forever. Only that measured host joins the media hosts. */
+    webrtcCompatHost=trustedMediaHost||/(^|\.)chatgpt\.com$/i.test(location.hostname),
     /* Search snippets can quote scam instructions, so skip page-text heuristics on exact search hosts.
        Clipboard actions remain checked. User-content hosts such as sites.google.com are not exempt. */
     searchResultsHost=/^(?:www\.)?(?:google\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})|bing\.com|(?:html\.|lite\.)?duckduckgo\.com|search\.brave\.com|(?:[a-z]{2}\.)?search\.yahoo\.(?:com|co\.jp)|ecosia\.org|startpage\.com|mojeek\.com|qwant\.com|kagi\.com|yandex\.(?:com|[a-z]{2}|com\.[a-z]{2})|baidu\.com|search\.marginalia\.nu)$/i.test(location.hostname),
@@ -7547,10 +7550,12 @@
             }
             return v
           },
+          /* The cleanup reads through the original getter. Through the hook it reported itself as a
+             page reading the bait, on every site, every time a tab navigated away. */
           woOn(window,"pagehide",
           ()=>{
             try{
-              ss.getItem(decoyKey)===bait&&ss.removeItem(decoyKey)
+              realGet.call(ss,decoyKey)===bait&&ss.removeItem(decoyKey)
             }
             catch(_){
 
@@ -12464,7 +12469,16 @@
         error:String(e)
       })
     }
-    if(WO.blockAutoplay&&!trustedMediaHost)try{
+    /* Config that lands after the start fallback would miss a start-only install, so a start without
+       config installs the guard dormant; every check reads WO.blockAutoplay when it runs. */
+    if(!trustedMediaHost){
+      let autoplayGuardInstalled=!1,
+      autoplayGuardOn=!!WO.blockAutoplay,
+      autoplaySweep=null;
+      const installAutoplayGuard=()=>{
+      if(autoplayGuardInstalled)return;
+      autoplayGuardInstalled=!0;
+      try{
       /* Keep intent on the selected media. An empty player gets one bounded first-play grant. */
       const autoplayApprovedMedia=new WeakSet,
       autoplayPendingPlayers=new WeakMap,
@@ -12561,6 +12575,7 @@
         }
 
       };
+      autoplaySweep=sweepMedia;
       document.documentElement&&sweepMedia(document);
       try{
         woObserve((muts,added,roots)=>{
@@ -12579,13 +12594,27 @@
       catch(_){
 
       }
-      log("resource_autoplay_on",
+      WO.blockAutoplay&&log("resource_autoplay_on",
       {
 
       })
     }
     catch(_){
 
+    }
+      };
+      (autoplayGuardOn||!__woConfigStore.__configReady)&&installAutoplayGuard();
+      /* Switched on later: install, or wake the dormant guard and stop media that started meanwhile. */
+      try{
+        woOn(document,"wo-config-change",()=>{
+          const on=!!WO.blockAutoplay;
+          if(on&&!autoplayGuardOn)autoplayGuardInstalled?document.documentElement&&autoplaySweep&&autoplaySweep(document):installAutoplayGuard();
+          autoplayGuardOn=on
+        })
+      }
+      catch(_){
+
+      }
     }
     if(WO.lazyLoadMedia)try{
       let io=null;
@@ -12871,13 +12900,26 @@
     }
     if(WO.killPrefetch)try{
       const SPEC_REL=/^(prefetch|prerender|preload|dns-prefetch|preconnect|modulepreload)$/i,
+      /* React 19 removes the links it rendered with an unguarded parentNode.removeChild, so taking one
+         out first crashed the page (ChatGPT stopped replying). Its own nodes are switched off in place. */
+      reactOwned=el=>{
+        try{
+          return Object.keys(el).some(k=>0===k.indexOf("__react"))
+        }
+        catch(_){
+          return!1
+        }
+
+      },
       killLink=el=>{
         try{
           if(el&&"LINK"===el.tagName){
             const rel=(el.getAttribute("rel")||"").trim();
-            if(SPEC_REL.test(rel))return void(el.parentNode&&el.parentNode.removeChild(el))
+            if(!SPEC_REL.test(rel))return;
+            if(reactOwned(el))return void el.setAttribute("rel","wo-off-"+rel.toLowerCase());
+            return void(el.parentNode&&el.parentNode.removeChild(el))
           }
-          el&&"SCRIPT"===el.tagName&&/speculationrules/i.test(el.type||"")&&el.parentNode&&el.parentNode.removeChild(el)
+          el&&"SCRIPT"===el.tagName&&/speculationrules/i.test(el.type||"")&&!reactOwned(el)&&el.parentNode&&el.parentNode.removeChild(el)
         }
         catch(_){
 
@@ -17543,7 +17585,7 @@
         error:String(e)
       })
     }
-    if(WO.blockWebRTCLeak&&!trustedMediaHost&&WO.blockSuspiciousWebRTC)try{
+    if(WO.blockWebRTCLeak&&!webrtcCompatHost&&WO.blockSuspiciousWebRTC)try{
       const RTC=window.RTCPeerConnection||window.webkitRTCPeerConnection||window.mozRTCPeerConnection;
       if(RTC){
         const Patched=function(cfg,
@@ -18387,7 +18429,7 @@
 
         }
       }
-      if(!0===WO.blockSuspiciousWebRTC&&!trustedMediaHost){
+      if(!0===WO.blockSuspiciousWebRTC&&!webrtcCompatHost){
         const patchRTC=name=>{
           try{
             const RTC=window[name];
