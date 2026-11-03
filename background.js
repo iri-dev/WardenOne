@@ -16936,9 +16936,12 @@ function parseList(text) {
         const u = new URL('http://' + line);
         if (u.pathname !== '/' || u.search || u.hash || u.port || u.username || u.password) return;
         line = u.hostname.replace(/\.$/, '');
-        // URL implementations can leave malformed ACE labels unchanged.
-        if (line.split('.').some(label => label.startsWith('xn--')
-          && !/[^\x00-\x7F]/.test(wardenOnePunycodeDecode(label)))) return;
+        // URL implementations can leave malformed or control-bearing ACE labels unchanged.
+        for (const label of line.split('.')) {
+          if (!label.startsWith('xn--')) continue;
+          const decoded = wardenOnePunycodeDecode(label);
+          if (!/[^\x00-\x7F]/.test(decoded) || /\p{Cc}/u.test(decoded)) return;
+        }
       } catch (_) { return; } // unconvertible -> skip
     }
 

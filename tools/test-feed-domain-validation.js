@@ -80,7 +80,9 @@ async function run() {
   context.URL = class {
     constructor(value) { this.hostname = value.slice('http://'.length); this.pathname = '/'; }
   };
-  assert.equal(context.parseList('xn--zz.net').length, 0, 'reject malformed ACE even when URL leaves the hostname unchanged');
+  for (const host of ['xn--zz.net', 'xn--a.net']) {
+    assert.equal(context.parseList(host).length, 0, 'reject invalid ACE even when URL leaves ' + host + ' unchanged');
+  }
   console.log('[ok] feed domains: test/local/reverse-DNS names, alternate IP spellings, DNS bounds, IDNA, host formats, JSON authority, slice parity and ASCII fast path');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
