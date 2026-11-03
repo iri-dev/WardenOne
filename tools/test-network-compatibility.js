@@ -71,7 +71,8 @@ function loadNetworkParsers(realMedia = false) {
       + '\nthis.__media = { domains: Array.from(MEDIA_COMPAT_DOMAINS), isMediaCompatDomain, isMediaCompatDomainLowercase };', sandbox);
   }
   vm.runInContext(
-    sourceBetween('const UBO_TYPE_MAP', '\nfunction getListMeta')
+    fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8') + '\n'
+      + sourceBetween('const UBO_TYPE_MAP', '\nfunction getListMeta')
       + '\nthis.__api = { parseList, parseListInSlices, parseNetworkRules, remoteListBlockAllowed };',
     sandbox,
   );

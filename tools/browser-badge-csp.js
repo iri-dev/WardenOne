@@ -78,13 +78,16 @@ async function run() {
     await cdp.send('Page.bringToFront', {}, page);
     const state = `(() => {
       const host=document.getElementById('rg-badge-host'),root=host?.shadowRoot;
-      const badge=root?.getElementById('rg-b'),panel=root?.getElementById('rg-p');
+      const badge=root?.getElementById('rg-b'),legacy=root?.getElementById('rg-p');
+      const panel=document.getElementById('wo-badge-controls'),rect=panel?.getBoundingClientRect();
       return {count:document.querySelectorAll('#rg-badge-host').length,
         sheets:root?.adoptedStyleSheets.length,inline:root?.querySelectorAll('style').length,
         host:host&&{position:getComputedStyle(host).position,width:getComputedStyle(host).width,
           height:getComputedStyle(host).height,pointer:getComputedStyle(host).pointerEvents,
           transform:getComputedStyle(host).transform,contain:getComputedStyle(host).contain},
-        badge:badge&&getComputedStyle(badge).position,panel:panel&&getComputedStyle(panel).display,
+        badge:badge&&getComputedStyle(badge).position,legacy:legacy&&getComputedStyle(legacy).display,
+        panel:panel&&{closed:panel.shadowRoot===null,position:getComputedStyle(panel).position,
+          width:rect.width,height:rect.height},
         bodyWidth:document.body.getBoundingClientRect().width,scrollWidth:document.documentElement.scrollWidth,
         pagePanel:getComputedStyle(document.querySelector('main .panel')).display};
     })()`;
@@ -100,7 +103,8 @@ async function run() {
       await until(page, 'window.fixtureReady&&document.getElementById("rg-badge-host")?.shadowRoot?.getElementById("rg-b")');
       const before = await evaluate(page, state);
       assert.equal(before.badge, 'fixed', name);
-      assert.equal(before.panel, 'none', name);
+      assert.equal(before.panel, null, name);
+      assert.equal(before.legacy, 'none', name);
       assert.equal(before.sheets, 1, name);
       assert.equal(before.inline, 0, name);
       assert.equal(before.count, 1, name);
@@ -109,9 +113,15 @@ async function run() {
       assert.equal(before.pagePanel, 'block', 'badge styles must not hide the page panel');
       assert.equal(await evaluate(page, 'document.adoptedStyleSheets.length'), 0);
       await click('document.getElementById("rg-badge-host").shadowRoot.getElementById("rg-b")');
-      assert.equal((await evaluate(page, state)).panel, 'block', name + ' opens');
+      await until(page, 'document.getElementById("wo-badge-controls")?.getBoundingClientRect().height>0');
+      const opened = await evaluate(page, state);
+      assert.equal(opened.legacy, 'none', name + ' keeps the fallback hidden');
+      assert.equal(opened.panel.closed, true, name + ' keeps controls isolated');
+      assert.equal(opened.panel.position, 'fixed', name + ' fixes panel position');
+      assert(opened.panel.width > 0 && opened.panel.height > 0, name + ' paints the panel');
       await click('document.getElementById("rg-badge-host").shadowRoot.getElementById("rg-b")');
-      assert.equal((await evaluate(page, state)).panel, 'none', name + ' closes');
+      await until(page, '!document.getElementById("wo-badge-controls")');
+      assert.equal((await evaluate(page, state)).legacy, 'none', name + ' closes');
       const dimensions = await evaluate(page, state);
       assert.equal(dimensions.bodyWidth, before.bodyWidth);
       assert.equal(dimensions.scrollWidth, before.scrollWidth);

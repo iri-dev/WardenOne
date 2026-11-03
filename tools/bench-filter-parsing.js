@@ -54,6 +54,7 @@ function loadNetworkParser(background, timer = setTimeout) {
   }
   vm.runInContext([
     fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'),
+    fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8'),
     region('const NEVER_BLOCK_PUBLIC_SUFFIXES', 'function isNeverBlockDomain('),
     region('const UBO_TYPE_MAP', '\nfunction getListMeta('),
     'this.api = { parseList, parseListInSlices, parseNetworkRules, compileRemoteNetworkSource };',

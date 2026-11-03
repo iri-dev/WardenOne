@@ -71,12 +71,16 @@ async function run() {
   let urlParses = 0;
   class CountingURL extends URL { constructor(value) { super(value); urlParses++; } }
   const context = vm.createContext({ URL: CountingURL, isUnsafeFeedBlockTarget: () => false, isFeedFalsePositiveDomain: () => false });
-  vm.runInContext(source.slice(from, to + 3), context);
+  vm.runInContext(fs.readFileSync('idn-utils.js', 'utf8') + '\n' + source.slice(from, to + 3), context);
   const ascii = Array.from({ length: 10000 }, (_, i) => 'host-' + i + '.feed-fixture.net');
   assert.equal(context.parseList(ascii.join('\n')).length, ascii.length);
   assert.equal(urlParses, 0, 'large ordinary ASCII feeds must not construct a URL for every host');
   assert.equal(context.parseList('xn--bcher-kva.de').length, 1);
   assert.equal(urlParses, 1, 'punycode still passes browser validation');
+  context.URL = class {
+    constructor(value) { this.hostname = value.slice('http://'.length); this.pathname = '/'; }
+  };
+  assert.equal(context.parseList('xn--zz.net').length, 0, 'reject malformed ACE even when URL leaves the hostname unchanged');
   console.log('[ok] feed domains: test/local/reverse-DNS names, alternate IP spellings, DNS bounds, IDNA, host formats, JSON authority, slice parity and ASCII fast path');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
