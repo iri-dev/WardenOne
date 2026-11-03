@@ -99,13 +99,71 @@
   let started = false;
   let openSettingsUntil = 0;
   let lastLogAt = 0;
-  let scanFinished = false;
   let needsTimedScan = true;
+  let firstChoiceMade = false;
   let outcomeGeneration = 0;
 
   const clicked = new WeakSet();
   const opened = new WeakSet();
   const changedChoices = new WeakSet();
+  const handledSurfaces = new Map();
+  let surfaceObserver = null;
+  let lastChoiceAt = 0;
+  let choiceRetry = null;
+
+  function consentSurfaceVisible(container, control) {
+    if (!isVisible(container) || !isVisible(control)) return false;
+    let node = control.parentElement;
+    for (let depth = 0; node && depth < 14; depth++, node = node.parentElement || node.getRootNode?.().host) {
+      /* A parent's opacity is not reflected in the button's computed opacity. */
+      const style = getComputedStyle(node);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+    }
+    return true;
+  }
+
+  function refreshHandledSurfaces() {
+    let returned = false;
+    for (const [container, state] of handledSurfaces) {
+      if (!consentSurfaceVisible(container, state.control)) {
+        state.hidden = true;
+      } else if (state.hidden) {
+        state.hidden = false;
+        clicked.delete(state.control);
+        for (const control of getControls(container, true)) clicked.delete(control);
+        opened.delete(container);
+        changedChoices.delete(container);
+        returned = true;
+      }
+    }
+    return returned;
+  }
+
+  function observeHandledSurfaces() {
+    if (!active || woAbort.signal.aborted || !handledSurfaces.size) return;
+    if (!surfaceObserver) surfaceObserver = woObserver(() => {
+      if (active && refreshHandledSurfaces()) queueScan(true);
+    });
+    surfaceObserver.disconnect();
+    for (const state of handledSurfaces.values()) {
+      let node = state.control;
+      for (let depth = 0; node && depth < 14; depth++, node = node.parentElement || node.getRootNode?.().host) {
+        try { surfaceObserver.observe(node, { attributes: true, attributeFilter: ['style', 'class', 'hidden', 'aria-hidden', 'inert', 'open', 'disabled', 'aria-disabled'] }); } catch (_) {}
+      }
+    }
+  }
+
+  function rememberConsentSurface(container, control) {
+    if (!container) return;
+    if (!handledSurfaces.has(container) && handledSurfaces.size >= 8) handledSurfaces.delete(handledSurfaces.keys().next().value);
+    handledSurfaces.set(container, { control, hidden: false });
+    observeHandledSurfaces();
+  }
+
+  function stopConsentObservers() {
+    try { observer?.disconnect(); surfaceObserver?.disconnect(); } catch (_) {}
+    observer = null;
+  }
 
   // Broad substrings cover cookieyes/cookielaw/cookiehub, qc-cmp and privacy-manager.
   const CONTAINER_SELECTOR = [
@@ -231,6 +289,7 @@
       void chrome.runtime.lastError;
       if (chrome.runtime.lastError || !res || res.ok !== true || !validConsentConfig(res.overrides)) {
         active = false; outcomeGeneration++;
+        stopConsentObservers();
         if (typeof done === 'function') done();
         return;
       }
@@ -696,9 +755,16 @@
   }
   function performChoice(el, container, profile) {
     if (!el || clicked.has(el)) return false;
+    const delay = lastChoiceAt ? 1000 - (Date.now() - lastChoiceAt) : 0;
+    if (delay > 0) {
+      if (!choiceRetry) choiceRetry = woTimeout(() => { choiceRetry = null; queueScan(true); }, delay);
+      return false;
+    }
     profile ||= profileFor(container);
-    const before = consentCookie(profile), generation = outcomeGeneration;
+    const before = consentCookie(profile), generation = ++outcomeGeneration;
+    rememberConsentSurface(container, el);
     if (!clickControl(el)) { reportOutcome('failed', 'reject', profile); return false; }
+    lastChoiceAt = Date.now();
     finishConsentWork();
     const check = final => {
       if (!active || generation !== outcomeGeneration) return;
@@ -732,7 +798,9 @@
         if (save && choicesReadyToSave(container, changed) && (selectionSave || saveChoicesCandidate(save, container, true))
           && performChoice(save, container, profile)) return true;
         const settings = find(profile.settings);
-        if (!opened.has(container) && settings && settingsCandidate(settings, container) && clickControl(settings)) {
+        if (!opened.has(container) && settings && settingsCandidate(settings, container)) {
+          rememberConsentSurface(container, settings);
+          if (!clickControl(settings)) continue;
           opened.add(container); openSettingsUntil = Date.now() + 900;
           reportOutcome('dispatched', 'settings', profile);
           for (const ms of [180, 700, 1600]) woTimeout(queueScan, ms);
@@ -848,7 +916,8 @@
 
   function scan() {
     scanQueued = false;
-    if (scanFinished || !active || !document.documentElement) return;
+    if (!active || !document.documentElement) return;
+    refreshHandledSurfaces();
 
     // Stop mutation-driven scans after the no-banner deadline. Keep timed passes for late banners
     // and continue unfinished settings flows until their final save.
@@ -876,7 +945,7 @@
     const noteCandidate = () => { possibleSurface = true; };
     const roots = collectRoots(document);
     if (observer) for (const root of roots) if (root !== document) {
-      try { observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-hidden', 'inert', 'open'] }); } catch (_) {}
+      try { observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden', 'aria-hidden', 'inert', 'open', 'disabled', 'aria-disabled'] }); } catch (_) {}
     }
     if (tryKnownCmp(roots)) return;
     const containers = getContainers(roots, noteCandidate);
@@ -908,7 +977,9 @@
     for (const container of containers) {
       if (opened.has(container)) continue;
       const settings = getControls(container).find((el) => settingsCandidate(el, container));
-      if (settings && clickControl(settings)) {
+      if (settings) {
+        rememberConsentSurface(container, settings);
+        if (!clickControl(settings)) continue;
         opened.add(container);
         openSettingsUntil = Date.now() + 900;
         logAction('settings', elementText(settings));
@@ -935,20 +1006,19 @@
   let everActed = false;
   let slowTimer = null;
 
-  /* Stop observing after rejection or saving disabled choices. Opening Settings is nonterminal and must keep scanning for
-     Save. */
+  /* Timed discovery stops after a choice; filtered mutations still catch returning banners. */
   function finishConsentWork() {
-    scanFinished = true;
+    firstChoiceMade = true;
+    everActed = true;
+    needsTimedScan = false;
     scanQueued = false;
     if (scanDeferred) {
       try { clearTimeout(scanDeferred); } catch (_) {}
       woPending.delete(scanDeferred);
       scanDeferred = null;
     }
-    if (observer) {
-      try { observer.disconnect(); } catch (_) {}
-      observer = null;
-    }
+    refreshHandledSurfaces();
+    startObserver();
     if (slowTimer) {
       try { clearInterval(slowTimer); } catch (_) {}
       slowTimer = null;
@@ -969,7 +1039,7 @@
   }
 
   function queueScan(throttled) {
-    if (scanFinished || scanQueued || !active) return;
+    if (scanQueued || !active || woAbort.signal.aborted) return;
     if (throttled !== true && !needsTimedScan) return;
     if (throttled === true) {
       const since = Date.now() - lastScanAt;
@@ -1100,23 +1170,31 @@
   }
 
   function startObserver() {
-    if (scanFinished || observer || !document.documentElement) return;
+    if (observer || woAbort.signal.aborted || !document.documentElement) return;
     // Explicitly flagged as mutation-driven: a MutationObserver hands its callback
     // (records, observer), and a records array is truthy, so the throttle has to be
     // asked for by identity rather than inferred from the argument.
     observer = woObserver((records) => {
-      if (scanFinished || scanQueued || scanDeferred || !active) return;
-      if (mutationsMayAffectConsent(records)) queueScan(true);
+      if (!active) return;
+      for (const [container, state] of handledSurfaces) {
+        if (container.isConnected === false || state.control.isConnected === false) state.hidden = true;
+      }
+      if (scanQueued || scanDeferred) return;
+      const relevant = mutationsMayAffectConsent(records);
+      if (!relevant) return;
+      refreshHandledSurfaces();
+      queueScan(true);
     });
     try {
-      // Do not watch style: animations and sliders rewrite it every frame.
-      // Timed passes cover style-only/CSS fade-ins; class, aria-hidden, inert and open cover other reveals.
-      observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-hidden', 'inert', 'open'] });
+      /* Watch style only along handled banner paths; animations elsewhere must not wake the scanner. */
+      observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden', 'aria-hidden', 'inert', 'open', 'disabled', 'aria-disabled'] });
     } catch (_) {}
+    const current = observer;
     woTimeout(() => {
-      try { observer.disconnect(); } catch (_) {}
+      if (observer !== current || everActed) return;
+      try { current.disconnect(); } catch (_) {}
       observer = null;
-    }, 120000);
+    }, OBSERVER_LIFETIME_MS);
   }
 
   function start() {
@@ -1132,7 +1210,7 @@
       woTimeout(() => queueScan(true), 800);
       let fastPolls = 0;
       const fastTimer = woInterval(() => {
-        if (!active || scanFinished || fastPolls++ >= 24) { clearInterval(fastTimer); return; }
+        if (!active || firstChoiceMade || fastPolls++ >= 24) { clearInterval(fastTimer); return; }
         queueScan();
       }, 95);
       [3000, 4500, 7000, 11000].forEach((ms) => woTimeout(() => queueScan(ms === 4500), ms));
@@ -1140,23 +1218,22 @@
   }
 
   const refreshConfigState = (overrides) => {
-      if (!validConsentConfig(overrides)) { active = false; outcomeGeneration++; return; }
+      if (!validConsentConfig(overrides)) { active = false; outcomeGeneration++; stopConsentObservers(); return; }
       config = Object.assign({}, DEFAULTS, overrides || {});
       const wasActive = active;
       updateActive();
       if (!active) outcomeGeneration++;
       if (active) {
         if (!wasActive) {
-          scanFinished = false;
           everActed = false;
           firstScanAt = 0;
         }
         needsTimedScan = true;
         startObserver();
+        observeHandledSurfaces();
         queueScan();
-      } else if (wasActive && observer) {
-        try { observer.disconnect(); } catch (_) {}
-        observer = null;
+      } else if (wasActive) {
+        stopConsentObservers();
       }
   };
 
@@ -1169,10 +1246,10 @@
         if (active) {
           needsTimedScan = true;
           startObserver();
+          observeHandledSurfaces();
           queueScan();
-        } else if (observer) {
-          try { observer.disconnect(); } catch (_) {}
-          observer = null;
+        } else {
+          stopConsentObservers();
         }
       });
     });

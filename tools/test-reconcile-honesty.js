@@ -101,7 +101,7 @@ function worker({ session, config, configUnreadable, behaviour, grabberFeedReady
     eyeShieldUsesBootstrap: () => false,
     eyeShieldActiveProfileHosts: () => [],
     consentRejectActive: () => false,
-    searchSponsoredCleanupActive: () => false,
+    searchSponsoredCleanupActive: () => false, youtubeAdCompatibilityInitiators: () => [],
     /* The worker's shared band read, which the reconcile hands to its dynamic-rule owners;
        they are stubs here, so it is never called. */
     getDynamicRulesInBand: async () => [],

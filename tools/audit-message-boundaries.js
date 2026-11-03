@@ -49,17 +49,19 @@ function generate() {
         if (operation === 'runtime-connect' || operation === 'port-message') policy = 'logger-worker';
       }
       if (file === 'bridge.js') policy = operation === 'dom-event' || operation === 'message-event' ? 'bridge-untrusted' : 'isolated-content';
+      if (file === 'tracking-redirect-page.js') policy = 'public-redirect-document';
       endpoints.push({ file, line, operation, policy, sourceFile }); count++;
     }
     if (count) files.push({ file, sha256: hash(text), world: worlds.get(file) || (workerFiles.has(file) ? 'WORKER' : 'DOCUMENT'), endpoints: count });
   }
   const capability = kind => {
+    if (kind === 'tracking-redirect-resolve') return 'local destination decoding or temporary tab-scoped original navigation';
     if (/download|file-scan/.test(kind)) return 'download review, trust or explicit file lookup';
     if (/firewall|blocklist|user-rules|custom-list|learned|tracker-learner|script-trust|script-shield/.test(kind)) return 'persistent user policy or rule ownership';
     if (/cookie|site-data|browser|logout|exposed|privacy-data|forget-site/.test(kind)) return 'browser data, permissions or local erasure';
     if (/extension|startup/.test(kind)) return 'extension inventory, management or reputation';
     if (/permission|javascript|site-settings/.test(kind)) return 'site permission or browser setting';
-    if (/safe-browsing-allow|palette-run|trust-site/.test(kind)) return 'single-use grant or scoped compatibility escape';
+    if (/safe-browsing-allow|palette-run|trust-site|download-navigation-intent/.test(kind)) return 'single-use grant or scoped compatibility escape';
     if (/memory/.test(kind)) return 'tab inventory or tab action';
     return allowed.has(kind) ? 'bounded observation, scoped lookup or page UI' : 'private extension control or diagnostic';
   };
@@ -70,11 +72,13 @@ function generate() {
     return { kind, line: worker.slice(0, at).split('\n').length,
       sender: allowed.has(kind) ? 'own isolated tab; handler scope and grants apply' : kind === 'set-site-permission' ?
         'private UI; top isolated same-origin tab only for cookies=allow' : kind === 'grabber-navigation-status' ?
-        'own exact top-level IP-logger warning page and browser warning record' : 'own private extension origin; WAR denied',
+        'own exact top-level IP-logger warning page and browser warning record' : kind === 'tracking-redirect-resolve' ?
+        'own exact current top-level tracking redirect document; browser-owned tab and document identity' : 'own private extension origin; WAR denied',
       schema: { envelope: 'own kind string; control keys rejected', observedFields: [...new Set([...branch.matchAll(/\bmsg\.([A-Za-z_$][\w$]*)/g)].map(m => m[1]))].filter(k => k !== 'kind').sort(),
         validation: 'handler normalizers and limits; tab/WAR payload additionally <=512 nodes, depth 8, string 8192, total characters 65536' },
       capability: capability(kind), rate: rates[kind] || 'trusted UI operation; handler-specific concurrency/state limits',
-      provenance: allowed.has(kind) ? 'browser sender metadata; message body remains untrusted page data' : 'packaged extension UI code and browser-owned state',
+      provenance: allowed.has(kind) ? 'browser sender metadata; message body remains untrusted page data' : kind === 'tracking-redirect-resolve' ?
+        'browser sender document; fragment URL is untrusted and validated against reviewed host/path profiles' : 'packaged extension UI code and browser-owned state',
       failure: 'reject without capability; observations do not grant persistent blocks' };
   });
   return { schemaVersion: 1, sources: files, endpoints, messages,

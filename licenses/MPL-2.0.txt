@@ -1,4 +1,5 @@
 Source: https://raw.githubusercontent.com/TMAFE/anti-grabify/master/LICENSE
+Source: https://raw.githubusercontent.com/badmojr/1Hosts/master/LICENSE
 
 Mozilla Public License Version 2.0
 ==================================

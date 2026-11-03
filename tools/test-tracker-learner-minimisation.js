@@ -47,7 +47,7 @@ const PIECES = ['normalizeTrackerDomain', 'siteIdentityBg', 'trackerStoreShape',
   'trackerDistinctSessionCount', 'trackerDay', 'trackerNewSalt', 'trackerSaltShape', 'trackerLearnerSalt',
   'trackerMarkPositions', 'trackerMarkHas', 'trackerMarkAdd', 'trackerSessionState', 'noteTrackerSessionSeen',
   'noteTrackerSiteView', 'noteTrackerEvidenceSeen', 'trackerLearnerLock', 'commitTrackerLearnerDecision', 'trackerSiteViewFor', 'resetTrackerSessionState', 'isProtectedTrackerDomain',
-  'looksLikeKnownTrackerHost', 'ownProviderDomains', 'loadTrackerLearner', 'noteTrackerObservation',
+  'looksLikeKnownTrackerHost', 'ownProviderDomains', 'loadTrackerLearner', 'noteTrackerObservation', 'trackerAutoEvidence',
   'trackerControlledDomains', 'pruneTrackerLearnerStore', 'saveTrackerLearner', 'trackerLearnerProposals',
   'decideTrackerProposal', 'trackerLearnerStatus', 'setTrackerLearnerSiteMode', 'clearTrackerLearnerObservations'];
 /* Present on the pre-fix worker only; lifted when found so a control run exercises the old code. */

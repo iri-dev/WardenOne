@@ -352,6 +352,16 @@ function check(name, cond) {
 // 10. A read that fails is not an empty config: nothing is written, the caller hears of it, and
 //     the change stays pending. Every save, whatever happens, lets the config lock go.
 // ---------------------------------------------------------------------------
+{
+  const h = makeHarness({ scriptletEngine: false, siteOverrides: { 'youtube.com': { scriptletEngine: false } }, obsoleteField: 'old' });
+  h.run('config.adShield = !config.adShield; adoptExternalConfigChange({scriptletEngine:true});');
+  check('external removal clears the popup site exception', !h.config.siteOverrides || !h.config.siteOverrides['youtube.com']);
+  check('external removal forgets unknown fields', !('obsoleteField' in h.config));
+  check('external removal keeps pending edits', h.run('popupChangedKeys().includes("adShield")'));
+  check('external changes adopt the global YouTube preference', h.config.scriptletEngine === true);
+  check('the removed exception is no longer a pending edit', !h.run('popupChangedKeys().includes("siteOverrides")'));
+}
+
 const lockChecks = (async () => {
   const harnesses = [];
   {

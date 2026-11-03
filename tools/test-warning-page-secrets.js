@@ -197,6 +197,7 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
   /* ---- 2. each page renders from the record and never paints a secret ------------- */
   const PAGES = [
     ['redirect-warning.js', 'redirect', { targetUrl: TARGET, sourceUrl: SOURCE, kind: 'forced-redirect', why: 'why-text' }, 'to-url', 'continue'],
+    ['redirect-warning.js', 'redirect', { targetUrl: TARGET, sourceUrl: SOURCE, kind: 'download-destination', why: 'The requested site is not verified.' }, 'to-url', 'continue'],
     ['safe-browsing-block.js', 'safe-browsing', { url: TARGET, provider: 'Google Safe Browsing', threats: 'MALWARE' }, 'site', 'proceed'],
     ['cert-error.js', 'trust', null, 'site', 'retry'],
   ];
@@ -214,6 +215,12 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
     check(file + ' paints no secret anywhere in the DOM', leaks(painted).length === 0, leaks(painted).join(', '));
     check(file + ' shows the display form of the address', page.els[shownId].textContent.indexOf('login.example.test/reset/*/*?') !== -1,
       page.els[shownId].textContent);
+    if (info && info.kind === 'download-destination') {
+      check('a hidden-download review is named explicitly', /Review this download destination/.test(page.el('warning-title').textContent));
+      check('an unverified destination is marked with a question rather than a check', page.el('warning-mark').textContent === '?');
+      check('it states that both the destination and file remain unverified', /has not verified this destination or any file/.test(page.el('warning-note').textContent));
+      check('the continue action names a one-time destination visit', page.el('continue').textContent === 'Open this destination once');
+    }
 
     /* continue: the record is consumed and the EXACT address is navigated to */
     const go = page.el(goId);

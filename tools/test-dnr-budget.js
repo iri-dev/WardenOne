@@ -231,6 +231,9 @@ function runBands() {
     ["TRACKER_RULE_BASE", "TRACKER_RULES_BUDGET", "tracker learner"],
     ["CNAME_RULE_BASE", "CNAME_RULES_BUDGET", "CNAME blocking"],
     ["TRACKER_COOKIE_ALIAS_RULE_BASE", "TRACKER_COOKIE_ALIAS_RULES_BUDGET", "CNAME cookie isolation"],
+    ["LINK_CLEAN_RULE_BASE", "LINK_CLEAN_RULES_BUDGET", "link cleaning"],
+    ["TRACKING_REDIRECT_RULE_BASE", "TRACKING_REDIRECT_RULES_BUDGET", "tracking redirect skipping"],
+    ["TRACKING_REDIRECT_FALLBACK_BASE", "TRACKING_REDIRECT_FALLBACK_BUDGET", "tracking redirect continuation"],
   ];
   // Single ids reserved outside the families. A band must never grow far enough to reach them.
   const RESERVED = ["PRIVACY_HEADER_RULE_ID", "PRIVACY_HEADER_NAV_RULE_ID", "THIRD_PARTY_COOKIE_RULE_ID",

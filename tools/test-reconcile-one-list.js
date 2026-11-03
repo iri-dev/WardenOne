@@ -101,7 +101,7 @@ function worker({ session, config, fault }) {
     eyeShieldUsesBootstrap: () => false,
     eyeShieldActiveProfileHosts: () => [],
     consentRejectActive: () => false,
-    searchSponsoredCleanupActive: () => false,
+    searchSponsoredCleanupActive: () => false, youtubeAdCompatibilityInitiators: () => [],
   };
   for (const fn of LEGACY_FALLBACK_FNS) ctx[fn] = (...args) => { calls.push({ name: 'LEGACY:' + fn, args }); };
   for (const { name, fn } of RUN_CALLS) {

@@ -162,7 +162,9 @@ async function runUpdate(initial) {
   return { stored, writes };
 }
 /* A config every earlier migration has already touched, so the only reason to write is ours. */
-const settled = { __locationPrivacyV344Enabled: true, googleSearchResultCleanup: false, phishTank: true, phishTankKey: 'keep-me', openPhish: true };
+const settled = { __locationPrivacyV344Enabled: true, __forcedDownloadOptInV1: true,
+  forcedDownloadProtection: false, googleSearchResultCleanup: false,
+  phishTank: true, phishTankKey: 'keep-me', openPhish: true };
 (async () => {
 {
   const r = await runUpdate(Object.assign({}, settled, { openPhishKey: 'pasted-once-never-read' }));

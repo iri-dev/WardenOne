@@ -237,13 +237,16 @@ function realm(opts) {
   ctx.DOMException = class DOMException extends Error { constructor(m, n) { super(m); this.name = n; } };
   const pixels = o.pixels || FIXTURE_PIXELS;
   class CanvasRenderingContext2D {
+    fillText() {}
+    strokeText() {}
     getImageData() { return { data: new Uint8ClampedArray(pixels) }; }
     putImageData(img) { this.__put = img; }
     drawImage() {}
     measureText(t) { return { width: 100 + String(t).length }; }
   }
   class HTMLCanvasElement {
-    getContext(kind) { if (kind !== '2d') return { kind }; this.__ctx = this.__ctx || new CanvasRenderingContext2D(); return this.__ctx; }
+    getContext(kind) { if (kind !== '2d') return { kind }; this.__ctx = this.__ctx || new CanvasRenderingContext2D(); this.__ctx.canvas = this; return this.__ctx; }
+    getBoundingClientRect() { return this.visible ? { width: 100, height: 100 } : { width: 0, height: 0 }; }
     toDataURL() { return 'data:clean:' + (this.__ctx && this.__ctx.__put ? Array.from(this.__ctx.__put.data).join(',') : 'none'); }
     toBlob(cb) { cb('blob'); }
   }
@@ -316,6 +319,40 @@ const globalOf = (ctx) => vm.runInContext('this', ctx);
 const post = (ctx, msg, source) => ctx.__win.dispatchEvent({ type: 'message', source: source === undefined ? globalOf(ctx) : source, data: msg });
 const giveKey = (ctx, token, key) => ctx.document.dispatchEvent({ type: 'wo-key', detail: { token, key } });
 
+section('authenticated canvas learning', () => {
+  const setup = (enabled = true) => {
+    const c = run(realm({ top: crossOrigin(), parent: crossOrigin() }));
+    c.findings = [];
+    c.document.addEventListener('wo-event', e => c.findings.push(e.detail));
+    giveKey(c, TOKEN, KEY);
+    post(c, configMsg(KEY, TOKEN, 1, { enabled: true, frameNoise: false, frameTrackerLearning: enabled }));
+    return c;
+  };
+  const probe = (c, options = {}) => {
+    const canvas = c.document.createElement('canvas'); canvas.width = options.small ? 8 : 200; canvas.height = 40;
+    canvas.visible = options.visible === true; canvas.isConnected = canvas.visible;
+    const ctx = canvas.getContext('2d');
+    if (!options.noText) ctx.fillText('Canvas fingerprint fixture', 0, 20);
+    const before = c.__native.toDataURL.call(canvas), after = canvas.toDataURL();
+    check('canvas learning preserves export bytes', before === after);
+    return canvas;
+  };
+  const c = setup();
+  probe(c, { noText: true }); probe(c, { small: true }); probe(c, { visible: true });
+  check('ordinary visible, small and non-text canvas use is excluded', c.findings.length === 0);
+  probe(c); probe(c);
+  check('hidden text draw and successful export emits once', c.findings.length === 1);
+  const finding = c.findings[0];
+  check('the finding carries no page-selected domain or identifier', finding && finding.type === 'detected_canvas_fingerprint' && JSON.stringify(finding.detail) === '{}');
+  check('the finding is authenticated by the private realm key', finding && finding.src === 'realm' && finding.eseq === 1 && /^[a-f0-9]{64}$/.test(finding.emac));
+  const off = setup(false); probe(off);
+  check('disabled learning emits nothing', off.findings.length === 0);
+  const gesture = setup(); gesture.document.dispatchEvent({ type: 'pointerdown', isTrusted: true }); probe(gesture);
+  check('canvas used after a real gesture is excluded', gesture.findings.length === 0);
+  const fakeGesture = setup(); fakeGesture.document.dispatchEvent({ type: 'pointerdown', isTrusted: false }); probe(fakeGesture);
+  check('synthetic gestures cannot hide a canvas probe', fakeGesture.findings.length === 1);
+});
+
 section('same-origin child adopts synchronously', () => {
   const parent = ancestor(Object.freeze({ v: 1, noise: true, seed: 0xABCDEF01 }));
   const c = run(realm({ parent, top: parent }));
@@ -326,8 +363,8 @@ section('same-origin child adopts synchronously', () => {
     JSON.stringify(c.__wardenOneRealm));
   check('and the record is frozen', Object.isFrozen(c.__wardenOneRealm));
   check('Maximum Privacy runs before the page can borrow APIs', wrapped(c));
-  check('toDataURL stays native', c.HTMLCanvasElement.prototype.toDataURL === c.__native.toDataURL);
-  check('getImageData stays native', c.CanvasRenderingContext2D.prototype.getImageData === c.__native.getImageData);
+  check('canvas export retains its native result', c.HTMLCanvasElement.prototype.toDataURL.call({}) === c.__native.toDataURL.call({}));
+  check('canvas readback retains its native result', JSON.stringify(c.CanvasRenderingContext2D.prototype.getImageData.call({})) === JSON.stringify(c.__native.getImageData.call({})));
   const rects = new c.Element().getClientRects();
   check('getClientRects retains its native collection contract', Array.isArray(rects) && rects.length === 0
     && Object.getPrototypeOf(rects) === Object.getPrototypeOf(c.__native.getClientRects.call(new c.Element())) && rects.item === undefined);

@@ -179,15 +179,23 @@ function buildChecks(data) {
     return { verdict: 'exposed', why: 'The ping attribute survived on a page where link cleaning is on.' };
   })(), { 'ping attribute survived': String(!!(s.linkPing && s.linkPing.pingSurvived)) });
 
+  /* The link on the page is left as written; WardenOne cleans it as it is followed. `nav` is what
+     the browser's installed rules do to the same probe address. */
+  const nav = data && data.linkCleaning;
   add('Tracking parameters on links', (function () {
     const r = s.linkParams;
     if (!r) return { verdict: 'untested', why: 'The probe link could not be created on this page.' };
     if (!r.idKept) return { verdict: 'exposed', why: 'The site’s own parameter was removed along with the tracking ones. That is a broken link, not stronger protection.' };
-    if (r.utmGone && r.fbclidGone) return { verdict: 'protected', why: 'utm_source and fbclid were removed and the link’s own parameter was left alone.' };
-    if (r.utmGone || r.fbclidGone) return { verdict: 'partial', why: 'Some tracking parameters were removed and some survived.' };
+    const sent = nav && typeof nav.url === 'string' ? nav.url : null;
+    if (sent !== null) {
+      const has = (name) => new RegExp('[?&]' + name + '=').test(sent);
+      if (!has('id')) return { verdict: 'exposed', why: 'Following the link would also drop its own parameter. That is a broken link, not stronger protection.' };
+      if (!has('utm_source') && !has('fbclid')) return { verdict: 'protected', why: 'The link is left as the page wrote it. When it is followed, WardenOne removes utm_source and fbclid before the request leaves the browser, and keeps the link’s own parameter.' };
+      if (!has('utm_source') || !has('fbclid')) return { verdict: 'partial', why: 'Following the link removes some tracking parameters and sends others.' };
+    }
     if (!set.stripTrackingParams) return { verdict: 'design', why: 'Parameter stripping is switched off.' };
-    return { verdict: 'exposed', why: 'Both tracking parameters survived on a page where stripping is on.' };
-  })(), { 'link after cleaning': s.linkParams && s.linkParams.href });
+    return { verdict: 'exposed', why: 'Following this link would send both tracking parameters to the site, with stripping on.' };
+  })(), { 'sent when followed': nav && nav.url ? nav.url : 'unknown' });
 
   add('Tracking parameters added by the site (pushState)', (function () {
     const r = s.historyParams;

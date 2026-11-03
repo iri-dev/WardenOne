@@ -263,7 +263,7 @@ WardenOne uses independently maintained protection lists. Their maintainers reta
 Published licenses and written permissions are separate permission grants; no personal reply is needed when the applicable license covers the use.
 The inventory records exact addresses, local processing, evidence and any specific scope exception.
 
-[41 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)
+[43 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)
 
 | Source | Runtime feeds | License or permission |
 | --- | --- | --- |
@@ -278,12 +278,13 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [Phishing Army](https://phishing.army/) | 1 | Written permission (2026-10); Specific upstream/use-scope exception — see source review |
 | [AdAway hosts](https://github.com/AdAway/adaway.github.io) | 1 | CC-BY-3.0 |
 | [AdGuard Base, Tracking Protection and Mobile Ads filters](https://github.com/AdguardTeam/AdguardFilters) | 3 | GPL-3.0 |
+| [1Hosts Lite](https://github.com/badmojr/1Hosts) | 1 | MPL-2.0 |
 | [Block List Project scam and tracking lists](https://github.com/blocklistproject/Lists) | 2 | Unlicense |
 | [Dandelion Sprout Anti-Malware domains](https://github.com/DandelionSprout/adfilt) | 1 | LicenseRef-Dandelicence-1.4 |
 | [Discord-AntiScam / DSP Project scam-links](https://github.com/Discord-AntiScam/scam-links) | 1 | Written permission (2026-10-15) |
 | [Scam Blocklist](https://github.com/durablenapkin/scamblocklist) | 1 | MIT |
 | [dnss-blocklists malicious domains](https://github.com/flinteger/dnss-blocklists) | 1 | Written permission (2026-10-16); Specific upstream/use-scope exception — see source review |
-| [HaGeZi Light, Pro and Threat Intelligence Feed Medium](https://github.com/hagezi/dns-blocklists) | 3 | GPL-3.0; Written permission (2026-10-20) |
+| [HaGeZi Light, Pro and Threat Intelligence Feed](https://github.com/hagezi/dns-blocklists) | 3 | GPL-3.0; Written permission (2026-10-20) |
 | [Emerging Malicious Domain Blocklist](https://github.com/manic-code/Emerging-Malicious-Domain-Blocklist) | 1 | MIT |
 | [MetaMask eth-phishing-detect](https://github.com/MetaMask/eth-phishing-detect) | 1 | LicenseRef-DBAD-1.2 |
 | [Phishing.Database](https://github.com/mitchellkrogza/Phishing.Database) | 1 | MIT |
@@ -294,6 +295,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [StevenBlack porn-only hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND CC-BY-4.0 |
 | [StevenBlack unified hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND upstream terms |
 | [Anti-Grabify](https://github.com/TMAFE/anti-grabify) | 1 | MPL-2.0 |
+| [ThreatView malicious domains](https://threatview.io/) | 1 | Written permission (2026-11-02) |
 | [uBlock Origin uAssets](https://github.com/uBlockOrigin/uAssets) | 5 | GPL-3.0 |
 
 Build-only inputs (not daily runtime downloads):
@@ -306,6 +308,7 @@ Build-only inputs (not daily runtime downloads):
 - [Unicode confusables](https://www.unicode.org/Public/security/latest/confusables.txt) → `idn-utils.js` (Unicode-3.0).
 - [uBlock Origin silent media](https://raw.githubusercontent.com/gorhill/uBlock/master/src/web_accessible_resources/noop-1s.mp4) → `spotify-silent-1s.mp4` (GPL-3.0).
 - [AdGuard CNAME trackers](https://github.com/AdguardTeam/cname-trackers) → `cname-trackers.json` (MIT).
+- [Privacy Badger pre-trained tracker list](https://github.com/EFForg/privacybadger) → `rules-badger.json` (GPL-3.0-or-later).
 - [AdGuard Companies DB tracker attribution](https://raw.githubusercontent.com/AdguardTeam/companiesdb/8d845040224a0e3ea9cbba5df68ceb6a988235d2/dist/trackers.json) → `tracker-catalog.json` (CC-BY-SA-4.0).
 - [AdGuard Companies DB tracker attribution](https://raw.githubusercontent.com/AdguardTeam/companiesdb/8d845040224a0e3ea9cbba5df68ceb6a988235d2/dist/companies.json) → `tracker-catalog.json` (CC-BY-SA-4.0).
 
@@ -321,6 +324,7 @@ Bundled and derived material:
 | `domain-utils-isolated.js` | Byte-identical copy of domain-utils.js for the isolated execution world | GPL-3.0-or-later; MPL-2.0 covers the marked PSL data |
 | `spotify-silent-1s.mp4` | uBlock Origin noop-1s.mp4 | GPL-3.0 |
 | `rules.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
+| `rules-download-landings.json` | Owner-reported deceptive download landing family; evidence in docs/redirect-chain-stop-audit.md | GPL-3.0-or-later (WardenOne curation) |
 | `rules-trackers.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
 | `grabber-extra.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
 | `malware-hashes.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
@@ -335,6 +339,8 @@ Bundled and derived material:
 | `rules-spotify-media.json` | uAssets Spotify media rules with WardenOne request-type compatibility changes | GPL-3.0 |
 | `cname-trackers.json` | AdguardTeam/cname-trackers, Eulerian, Etracker, Webtrekk and AT Internet mappings | MIT |
 | `rules-cname.json` | AdguardTeam/cname-trackers, every tracker-provider mapping | MIT |
+| `rules-badger.json` | EFForg/privacybadger, the pre-trained tracker list | GPL-3.0-or-later |
+| `first-party-sites.json` | EFForg/privacybadger, multiDomainFirstParties.js (sites one owner runs) | GPL-3.0-or-later |
 | `tracker-network-data.js` | Observation scopes derived from the licensed CNAME mapping, packaged tracker conditions and WardenOne fingerprint-library inventory. | See contributing input licences; generator GPL-3.0-or-later |
 | `tracker-catalog.json` | AdGuard Companies DB at 8d845040224a0e3ea9cbba5df68ceb6a988235d2; Companies DB contributors and WhoTracks.Me team. | CC-BY-SA-4.0 |
 

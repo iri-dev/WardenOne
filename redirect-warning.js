@@ -64,6 +64,15 @@
       const cont = document.getElementById('continue');
       if (cont) cont.hidden = true;
     } else {
+      if (rec.redirectKind === 'download-destination') {
+        document.title = 'WardenOne - Download Destination Review';
+        text('warning-mark', '?');
+        text('warning-eyebrow', 'Download destination review');
+        text('warning-title', 'Review this download destination.');
+        text('warning-lead', 'This download button hides where it goes. Review the destination before opening it.');
+        text('warning-note', 'WardenOne has not verified this destination or any file it offers. Go back if you cannot verify its source.');
+        text('continue', 'Open this destination once');
+      }
       // What is painted is the display form the worker built: host and path, no query.
       text('to-host', target ? target.hostname.replace(/^www\./, '') : 'Unknown destination');
       text('to-url', rec.shown || '');

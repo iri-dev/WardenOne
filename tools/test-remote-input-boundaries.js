@@ -13,8 +13,8 @@ async function run() {
     '{"__proto__":{"domains":["first.example"]}}', '{"domains":[' + '0,'.repeat(500000) + '0]}']) {
     assert.throws(() => parser.parseList(text), /Integrity guard rejected source:/, 'invalid JSON shape must reject the whole source, not return a partial/empty list');
   }
-  assert.deepEqual(Array.from(parser.parseList('[Adblock Plus 2.0]\n||valid.example^\n')), ['valid.example']);
-  assert.deepEqual(Array.from(parser.parseList('{"domains":["valid.example"],"allowlist":["allowed.example"]}')), ['valid.example']);
+  assert.deepEqual(Array.from(parser.parseList('[Adblock Plus 2.0]\n||valid.feed-fixture.net^\n')), ['valid.feed-fixture.net']);
+  assert.deepEqual(Array.from(parser.parseList('{"domains":["valid.feed-fixture.net"],"allowlist":["allowed.example"]}')), ['valid.feed-fixture.net']);
   const h = loadBackground();
   await new Promise(resolve => setTimeout(resolve, 80));
   for (const url of ['https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt',

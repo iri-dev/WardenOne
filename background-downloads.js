@@ -131,7 +131,79 @@ const FORCED_DOWNLOAD_REQUESTS = new Map();
 const FORCED_DOWNLOAD_CONTEXT = new Map();
 const FORCED_DOWNLOAD_CHECKS = new Map();
 const FORCED_DOWNLOAD_REASONS = new Map();
+const FORCED_DOWNLOAD_NAVIGATIONS = new Map();
 const FORCED_DOWNLOAD_WINDOW_MS = 30000;
+
+function downloadNavigationFrame(sender) {
+  if (!sender || !sender.tab || !Number.isInteger(sender.tab.id) || sender.tab.id < 0
+    || !Number.isInteger(sender.frameId) || sender.frameId < 0
+    || typeof sender.documentId !== 'string' || !sender.documentId || sender.documentId.length > 128
+    || typeof sender.url !== 'string' || sender.url.length > 8192) return null;
+  try {
+    const url = new URL(sender.url);
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password) return null;
+    url.hash = '';
+    return { key: sender.tab.id + ':' + sender.frameId, documentId: sender.documentId, url };
+  } catch (_) { return null; }
+}
+function pruneDownloadNavigations(now) {
+  for (const [key, entry] of FORCED_DOWNLOAD_NAVIGATIONS) {
+    if (now - entry.at > FORCED_DOWNLOAD_WINDOW_MS) FORCED_DOWNLOAD_NAVIGATIONS.delete(key);
+  }
+  while (FORCED_DOWNLOAD_NAVIGATIONS.size > 128) {
+    const oldest = FORCED_DOWNLOAD_NAVIGATIONS.values().next().value;
+    for (const [key, entry] of FORCED_DOWNLOAD_NAVIGATIONS) {
+      if (entry === oldest) FORCED_DOWNLOAD_NAVIGATIONS.delete(key);
+    }
+  }
+}
+/* The isolated bridge reports trusted download controls; each handoff belongs to one frame and landing document. */
+function rememberDownloadNavigationIntent(sender, href) {
+  const frame = downloadNavigationFrame(sender);
+  if (!frame || typeof href !== 'string' || href.length > 8192) return { ok: false };
+  if (!href) {
+    const previous = FORCED_DOWNLOAD_NAVIGATIONS.get(frame.key);
+    if (previous && (previous.sourceDocumentId === frame.documentId || previous.documentId === frame.documentId)) {
+      FORCED_DOWNLOAD_NAVIGATIONS.delete(frame.key);
+    }
+    return { ok: true };
+  }
+  let target;
+  try { target = new URL(href); } catch (_) { return { ok: false }; }
+  target.hash = '';
+  if (target.origin !== frame.url.origin || target.username || target.password || target.href === frame.url.href) return { ok: false };
+  const now = Date.now();
+  FORCED_DOWNLOAD_NAVIGATIONS.delete(frame.key);
+  FORCED_DOWNLOAD_NAVIGATIONS.set(frame.key, { at: now, source: frame.url.href, target: target.href,
+    sourceDocumentId: frame.documentId, documentId: '' });
+  pruneDownloadNavigations(now);
+  return { ok: true };
+}
+function forwardDownloadNavigationIntent(details) {
+  if (!details || !Number.isInteger(details.sourceTabId) || details.sourceTabId < 0
+    || !Number.isInteger(details.sourceFrameId) || details.sourceFrameId < 0
+    || !Number.isInteger(details.tabId) || details.tabId < 0 || details.tabId === details.sourceTabId) return;
+  const entry = FORCED_DOWNLOAD_NAVIGATIONS.get(details.sourceTabId + ':' + details.sourceFrameId);
+  if (!entry || entry.forwarded || entry.claimedBy || Date.now() - entry.at > FORCED_DOWNLOAD_WINDOW_MS) return;
+  let target;
+  try { target = new URL(details.url); target.hash = ''; } catch (_) { return; }
+  if (target.href !== entry.target) return;
+  entry.forwarded = true;
+  FORCED_DOWNLOAD_NAVIGATIONS.set(details.tabId + ':0', entry);
+  pruneDownloadNavigations(Date.now());
+}
+try { chrome.webNavigation?.onCreatedNavigationTarget?.addListener(forwardDownloadNavigationIntent); } catch (_) {}
+function downloadNavigationIntentFor(sender, cfg) {
+  const frame = downloadNavigationFrame(sender);
+  if (!frame || !forcedDownloadSettingApplies(cfg, frame.url.hostname)) return null;
+  const entry = FORCED_DOWNLOAD_NAVIGATIONS.get(frame.key);
+  if (!entry) return null;
+  if (Date.now() - entry.at > FORCED_DOWNLOAD_WINDOW_MS) { FORCED_DOWNLOAD_NAVIGATIONS.delete(frame.key); return null; }
+  if (entry.claimedBy || entry.target !== frame.url.href || entry.sourceDocumentId === frame.documentId
+    || (entry.documentId && entry.documentId !== frame.documentId)) return null;
+  entry.documentId = frame.documentId;
+  return { at: entry.at, requested: true, href: '', claimed: '', label: 'Download', navigation: true };
+}
 
 function observeForcedDownloadRequest(details) {
   if (!details || details.tabId < 0 || !/^https?:/i.test(details.url)) return;
@@ -143,7 +215,7 @@ function observeForcedDownloadRequest(details) {
   const ambiguous = previous && (previous.ambiguous || previous.tabId !== details.tabId || previous.frameId !== (details.frameId || 0));
   FORCED_DOWNLOAD_REQUESTS.delete(details.url);
   FORCED_DOWNLOAD_REQUESTS.set(details.url, { tabId: details.tabId, frameId: details.frameId || 0,
-    initiator: details.initiator || '', at: now, ambiguous: !!ambiguous });
+    initiator: details.initiator || '', documentId: details.documentId || '', at: now, ambiguous: !!ambiguous });
   while (FORCED_DOWNLOAD_REQUESTS.size > 128) FORCED_DOWNLOAD_REQUESTS.delete(FORCED_DOWNLOAD_REQUESTS.keys().next().value);
 }
 try {
@@ -152,7 +224,7 @@ try {
 } catch (_) {}
 
 function forcedDownloadSettingApplies(cfg, host) {
-  if (cfg.enabled === false || cfg.forcedDownloadProtection === false) return false;
+  if (cfg.enabled === false || cfg.forcedDownloadProtection !== true) return false;
   if (typeof activeAllowlist === 'function' && hostMatchesAllowlist(host, activeAllowlist(cfg))) return false;
   for (const [pattern, off] of Object.entries(cfg.siteOverrides || {})) {
     if (typeof hostMatchesSite === 'function' && hostMatchesSite(host, pattern)
@@ -188,7 +260,23 @@ async function forcedDownloadContext(item) {
               || (!item.referrer && source.origin !== owner.initiator)) return done(null);
             const started = Date.parse(item.startTime || '') || Date.now();
             if (!Number.isFinite(response.startedAt) || response.startedAt > started + 100 || Date.now() - started > 60000) return done(null);
-            done({ ...response, host: source.hostname });
+            const navigationKey = owner.tabId + ':' + (owner.frameId || 0);
+            const navigation = FORCED_DOWNLOAD_NAVIGATIONS.get(navigationKey);
+            let spent = response.spent === true;
+            if (navigation && Date.now() - navigation.at <= FORCED_DOWNLOAD_WINDOW_MS
+              && (source.href === navigation.source || source.href === navigation.target)) {
+              const sourceDocument = source.href === navigation.source;
+              const documentId = sourceDocument ? navigation.sourceDocumentId : navigation.documentId;
+              if (!owner.documentId || owner.documentId === documentId) {
+                if (sourceDocument && navigation.forwarded) spent = true;
+                else if (!spent && response.gesture && response.gesture.requested === true) {
+                  if (!navigation.claimedBy) navigation.claimedBy = String(item.id);
+                  spent = navigation.claimedBy !== String(item.id);
+                  if (sourceDocument) FORCED_DOWNLOAD_NAVIGATIONS.delete(navigationKey);
+                }
+              }
+            }
+            done({ ...response, spent, host: source.hostname });
           } catch (_) { done(null); }
         });
     } catch (_) { done(null); }

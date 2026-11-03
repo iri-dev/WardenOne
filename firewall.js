@@ -13,6 +13,7 @@ const $ = (id) => document.getElementById(id);
 const COLUMNS = [
   ['script', 'Script'],
   ['xhr', 'XHR'],
+  ['beacon', 'Beacon'],
   ['frame', 'Frame'],
   ['media', 'Media'],
   ['cookie', 'Cookie'],
@@ -23,6 +24,7 @@ const COLUMNS = [
 const TYPE_COLUMN = {
   script: 'script',
   xmlhttprequest: 'xhr', websocket: 'xhr', webtransport: 'xhr',
+  ping: 'beacon',
   sub_frame: 'frame', main_frame: 'frame',
   media: 'media', image: 'media', font: 'media',
 };

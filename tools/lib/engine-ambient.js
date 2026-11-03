@@ -110,6 +110,8 @@ SHIMS.__woRealmSettled = 'var __woRealmSettled=function(){};';
 // Lifted config projections only need to accept the signed verdict. Prototype behaviour has its
 // own focused suite, so this inert control keeps unrelated engine fragments scoped to their job.
 SHIMS.__woWebGLControl = 'var __woWebGLControl={set:function(){}};';
+SHIMS.__woClientHintsControl = 'var __woClientHintsControl={set:function(){}};';
+SHIMS.__woRedirectChainControl = 'var __woRedirectChainControl={configure:function(){},arm:function(){return false},release:function(){},blocked:function(){return false}};';
 // The opener captured at document_start, and the seed a same-origin opener with noise on lends
 // this page. A lifted fragment has no opener, which is what a fresh tab has too.
 SHIMS.__woOpenerAtStart = 'var __woOpenerAtStart=null;';

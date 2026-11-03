@@ -53,7 +53,8 @@ function harness(initialLocal, initialSession, options = {}) {
         async getSessionRules() { return sessionRules.slice(); },
         async updateDynamicRules({ removeRuleIds }) {
           if (options.failDynamicRules) throw new Error('DNR update failed');
-          for (const id of removeRuleIds) dynamic.splice(dynamic.findIndex((r) => r.id === id), 1);
+          /* Chrome ignores ids that are not installed; the erase removes the list band by id range. */
+          for (const id of removeRuleIds) { const i = dynamic.findIndex((r) => r.id === id); if (i >= 0) dynamic.splice(i, 1); }
         },
         async updateSessionRules({ removeRuleIds }) {
           for (const id of removeRuleIds) sessionRules.splice(sessionRules.findIndex((r) => r.id === id), 1);
@@ -80,7 +81,10 @@ function harness(initialLocal, initialSession, options = {}) {
     + 'const DEFAULT_CONFIG = { enabled: true, downloadSafeBrowsingKey: "", siteOverrides: {}, allowlist: [] };'
     + 'const PRIVACY_ERASE_REBUILD_KEY = "wardenone_erase_rebuild";'
     + 'const PRIVACY_ERASE_CONFIG_WRITE = Symbol("privacy erase config write");'
-    + 'let __privacyEraseInProgress = false;' + bg.slice(start, end)
+    + 'let __privacyEraseInProgress = false;'
+    + ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX'].map((name) => bg.match(new RegExp('\\nconst ' + name + ' = [^;]+;'))[0]).join('')
+    + bg.slice(bg.indexOf('\nfunction remoteListRuleIds('), bg.indexOf('\n}\n', bg.indexOf('\nfunction remoteListRuleIds(')) + 3)
+    + bg.slice(start, end)
     + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, eraseWardenOneSite, repairConfigAfterReset, repairOverwrittenConfig, stampConfigWrite, updateStoredConfig, preservedPrivacyConfig, policy: PRIVACY_STORE_POLICY };', sandbox);
   return { api: sandbox.__api, local, session, dynamic, sessionRules, timers, historyStore: sandbox.WO_HISTORY, reloaded: () => reloaded };
 }

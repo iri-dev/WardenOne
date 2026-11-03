@@ -159,6 +159,7 @@ function bridgeHarness(merged) {
   const sandbox = {
     JSON, Object, Array, String, console,
     bridgeConfig: Object.assign({}, merged || {}), bridgeConfigReady: false, bridgeFrameSite: '',
+    badgeControlsPanel: null,
     sanitizeBridgeHostList: (list) => (Array.isArray(list) ? list : []),
     bridgeSyncGoogleCleanupCss() {},
     bridgeActiveAllowlist: (cfg) => (Array.isArray(cfg.allowlist) ? cfg.allowlist : []),
@@ -167,6 +168,8 @@ function bridgeHarness(merged) {
        tools/test-fingerprint-realm.js. Silent mode has nothing to do with it. */
     bridgeFrameNoiseAllowed: () => false,
     bridgeFrameWebGLDisabled: () => false,
+    bridgeFrameClientHintsAllowed: () => false,
+    bridgeFrameLearningAllowed: () => false,
     mainWorldConfigForHost: (clean) => clean,
     mergeNormalizedHostLists: () => [],
     learnedGrabberDomains: [], supplementalLists: {},

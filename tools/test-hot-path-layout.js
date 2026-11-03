@@ -90,8 +90,18 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
 {
   const queueScan = code(consent.slice(consent.indexOf('function queueScan('),
     consent.indexOf('function startObserver')));
-  assert(/scanFinished/.test(queueScan),
-    'a completed reject/save must make later startup timers and mutation callbacks cheap no-ops');
+  assert(/throttled\s*!==\s*true\s*&&\s*!needsTimedScan/.test(queueScan),
+    'a completed choice must quiet timed discovery while allowing filtered returning-banner mutations');
+  const queueFunction = code(consent.slice(consent.indexOf('function queueScan('),
+    consent.indexOf('function mutationNodeMayAffectConsent(')));
+  let frames = 0;
+  const quiet = vm.createContext({ Date, woAbort: { signal: { aborted: false } },
+    requestAnimationFrame() { frames++; }, woTimeout() {}, scan() {} });
+  vm.runInContext('let scanQueued=false,active=true,needsTimedScan=false,lastScanAt=0,scanDeferred=null;const SCAN_MIN_GAP_MS=250;'
+    + queueFunction + '\nqueueScan();', quiet);
+  assert.strictEqual(frames, 0, 'startup timers must do no scanning after a completed choice');
+  vm.runInContext('queueScan(true);', quiet);
+  assert.strictEqual(frames, 1, 'a filtered returning banner must still schedule a throttled scan');
   /* Mentioning the constant is not enough -- a disabled gate still mentions it. The
      gate itself has to be there and has to compare against it. */
   assert(/throttled\s*===\s*true/.test(queueScan),
@@ -124,26 +134,39 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   let onMutation;
   let filterCalls = 0;
   let scanCalls = 0;
+  let visibilityChecks = 0;
   const sandbox = {
     document: { documentElement: {} },
     woObserver(callback) { onMutation = callback; return { observe() {}, disconnect() {} }; },
     woTimeout() {},
     mutationsMayAffectConsent() { filterCalls++; return true; },
     queueScan() { scanCalls++; },
+    woAbort: { signal: { aborted: false } }, OBSERVER_LIFETIME_MS: 120000,
+    handledSurfaces: new Map(), everActed: true,
+    refreshHandledSurfaces() { visibilityChecks++; },
   };
   vm.createContext(sandbox);
-  vm.runInContext('let scanFinished = false, scanQueued = false, scanDeferred = null, active = true, observer = null;\n'
+  vm.runInContext('let scanQueued = false, scanDeferred = null, active = true, observer = null;\n'
     + observerSource + '\nstartObserver();', sandbox);
   assert.strictEqual(typeof onMutation, 'function');
-  for (const state of ['scanQueued', 'scanDeferred', 'scanFinished', 'active']) {
+  for (const state of ['scanQueued', 'scanDeferred', 'active']) {
     vm.runInContext(state + ' = ' + (state === 'active' ? 'false' : 'true'), sandbox);
     onMutation([{ type: 'childList', addedNodes: [] }]);
     assert.strictEqual(filterCalls, 0, 'a pending or inactive scan must skip the mutation filter: ' + state);
+    assert.strictEqual(visibilityChecks, 0, 'a pending or inactive scan must not measure banner visibility: ' + state);
     vm.runInContext(state + ' = ' + (state === 'active' ? 'true' : 'false'), sandbox);
   }
   onMutation([{ type: 'childList', addedNodes: [] }]);
   assert.strictEqual(filterCalls, 1, 'an idle observer still filters new mutations');
   assert.strictEqual(scanCalls, 1, 'a matching mutation still schedules a scan');
+  assert.strictEqual(visibilityChecks, 1, 'only a matching mutation measures handled banners');
+  const detached = { isConnected: false }, remembered = { control: { isConnected: false }, hidden: false };
+  sandbox.handledSurfaces.set(detached, remembered);
+  vm.runInContext('scanQueued=true;', sandbox);
+  onMutation([{ type: 'childList', addedNodes: [], removedNodes: [detached] }]);
+  assert.strictEqual(remembered.hidden, true, 'a detached banner is remembered even while another scan is pending');
+  assert.strictEqual(filterCalls, 1, 'remembering detachment does not run the expensive mutation filter');
+  assert.strictEqual(visibilityChecks, 1, 'remembering detachment does not force layout');
 }
 {
   /* The 250ms throttle only caps how often a scan can happen; it does not make an
@@ -542,16 +565,23 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
     + 'page that DOES have a banner looking like one that never found anything');
 }
 {
-  /* Rejecting or saving is terminal. Spotify removes its OneTrust banner immediately,
-     but then keeps changing classes as its player renders. Leaving the observer alive
-     converted that harmless churn into another full-document scan every 250ms for two
-     minutes, even though there was no consent UI left to find. */
+  /* Completed choices stop polling; the filtered observer remains available for returning banners. */
   const finish = code(consent.slice(consent.indexOf('function finishConsentWork()'),
     consent.indexOf('function idleScan()')));
-  assert(/scanFinished\s*=\s*true/.test(finish),
-    'finishing consent work must gate every later scan source');
-  assert(/observer\.disconnect/.test(finish),
-    'finishing consent work must disconnect the document-wide observer');
+  assert(/needsTimedScan\s*=\s*false/.test(finish),
+    'finishing consent work must stop timed discovery');
+  let watchers = 0;
+  const cleared = [];
+  const completed = vm.createContext({ woPending: new Set([12]), refreshHandledSurfaces() {},
+    startObserver() { watchers++; }, clearTimeout(id) { cleared.push(id); }, clearInterval(id) { cleared.push(id); } });
+  vm.runInContext('let firstChoiceMade=false,everActed=false,needsTimedScan=true,scanQueued=true,scanDeferred=12,slowTimer=13;'
+    + finish + ';finishConsentWork();this.result={everActed,needsTimedScan,scanQueued,scanDeferred,slowTimer};', completed);
+  assert.strictEqual(completed.result.needsTimedScan, false);
+  assert.strictEqual(completed.result.scanQueued, false);
+  assert.strictEqual(completed.result.everActed, true, 'a handled banner keeps its watcher available past discovery deadlines');
+  assert.strictEqual(watchers, 1, 'finishing retains a filtered watcher for another appearance');
+  assert.deepStrictEqual(cleared, [12, 13], 'pending scans and slow polling are canceled');
+  assert.strictEqual(completed.woPending.size, 0);
   assert(/clearTimeout\(scanDeferred\)/.test(finish),
     'finishing consent work must cancel a mutation scan already waiting to run');
   assert(/clearInterval\(slowTimer\)/.test(finish),
@@ -566,7 +596,7 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   }
   const start = code(consent.slice(consent.indexOf('function start()'),
     consent.indexOf('const refreshConfigState')));
-  assert(/scanFinished/.test(start),
+  assert(/firstChoiceMade/.test(start),
     'the 95ms startup poll must stop after a successful choice instead of running all 24 passes');
 }
 

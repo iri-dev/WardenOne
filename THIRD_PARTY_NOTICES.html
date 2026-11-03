@@ -2,8 +2,8 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WardenOne — Third-party notices</title><style>body{max-width:70rem;margin:3rem auto;padding:0 1.5rem;font:16px/1.65 system-ui;color:#172033;background:#fafbff}a{color:#1548a5}section{border-top:1px solid #ccc;padding:1rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 monospace}h1,h2{line-height:1.2}</style></head><body>
 <h1>Third-party protection sources</h1>
 <p>WardenOne uses independently maintained filtering and threat-intelligence lists to identify advertisements, trackers, phishing sites, scams and malicious domains. These sources remain the work of their respective maintainers; WardenOne does not claim ownership of their data.</p>
-<p>Published licenses and separate written permissions provide the bases described below. Specific scope exceptions remain for OpenPhish and aggregators that include it; the <a href="https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md">source review</a> explains them. Those feeds remain configured. This notice does not describe them as cleared for redistribution.</p>
-<p>Runtime lists are downloaded directly by your browser and parsed, normalized, deduplicated and capped into local domain, URL or selector rules. They are not bundled as raw feeds. Packaged rules are selected, converted and supplemented by WardenOne. Attribution does not imply endorsement. Review date: 2026-10-25.</p>
+<p>Published licenses, separate written permissions and unresolved usage questions are recorded below. The <a href="https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md">source review</a> identifies the specific exceptions. Those feeds remain configured; they are not described as cleared for redistribution.</p>
+<p>Runtime lists are downloaded directly by your browser and parsed, normalized, deduplicated and capped into local domain, URL or selector rules. They are not bundled as raw feeds. Packaged rules are selected, converted and supplemented by WardenOne. Attribution does not imply endorsement. Review date: 2026-11-02.</p>
 <p><a href="CREDITS.md">Additional code, media and data credits</a> · <a href="LICENSE">WardenOne GPL license</a> · <a href="https://github.com/iri-dev/WardenOne">Source, build scripts and filter-source snapshots</a></p>
 <section><h2>EasyList China</h2><p><a href="https://github.com/easylist/easylistchina">EasyList China contributors</a> — GPL-3.0-or-later OR CC-BY-SA-3.0-or-later</p>
 <p>EasyList China contributors and The EasyList authors.</p>
@@ -53,6 +53,10 @@
 <p>AdGuard Team and AdGuard filter contributors. These three filter headers identify AdguardFilters GPL terms; FiltersRegistry’s LGPL infrastructure license is not substituted for them.</p>
 <p>Terms: <a href="https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/LICENSE">GPL-3.0</a>. GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives. Private local use does not require publishing a user’s local rules or licensing the browser.</p>
 </section>
+<section><h2>1Hosts Lite</h2><p><a href="https://github.com/badmojr/1Hosts">badmojr and 1Hosts contributors</a> — MPL-2.0</p>
+<p>1Hosts Lite by badmojr and contributors; upstream curators are credited in https://github.com/badmojr/1Hosts/blob/master/-data/lists/assets.txt.</p>
+<p>Terms: <a href="https://github.com/badmojr/1Hosts/blob/master/LICENSE">MPL-2.0</a>. Retain MPL-2.0 and applicable notices; identify normalization and rule conversion. If covered derived data is distributed, comply with its source-availability obligations. Attribution does not imply endorsement.</p>
+</section>
 <section><h2>Block List Project scam and tracking lists</h2><p><a href="https://github.com/blocklistproject/Lists">Block List Project</a> — Unlicense</p>
 <p>The Block List Project contributors.</p>
 <p>Terms: <a href="https://raw.githubusercontent.com/blocklistproject/Lists/master/LICENSE">Unlicense</a>. Public-domain dedication with fallback permission and warranty disclaimer.</p>
@@ -75,7 +79,7 @@
 <p>Terms: <a href="https://github.com/flinteger/dnss-blocklists">Publisher permission</a>. Written permission is conditional on honoring project and upstream licenses; no repository LICENSE was found on master/release. This is not itself an absence of permission from flinteger.</p>
 <p>Upstream contributions: <a href="https://phishing.army/">Phishing Army</a> (Publisher permission plus upstream terms); <a href="https://openphish.com/terms.html">OpenPhish</a> (Scope clarification pending); <a href="https://github.com/mitchellkrogza/Badd-Boyz-Hosts">Mitchell Krog Badd-Boyz-Hosts</a> (MIT); <a href="https://github.com/mitchellkrogza/The-Big-List-of-Hacked-Malware-Web-Sites">Mitchell Krog hacked-malware sites</a> (MIT); <a href="https://dsi.ut-capitole.fr/blacklists/">UT1 / Université Toulouse Capitole</a> (CC-BY-SA-4.0); <a href="https://github.com/hoshsadiq/adblock-nocoin-list">Hosh / adblock-nocoin-list</a> (MIT); <a href="https://bitbucket.org/ethanr/dns-blacklists/">Mandiant APT1 Appendix D via ethanr</a> (No reuse grant identified for Appendix D).</p>
 </section>
-<section><h2>HaGeZi Light, Pro and Threat Intelligence Feed Medium</h2><p><a href="https://github.com/hagezi/dns-blocklists">HaGeZi</a> — GPL-3.0; Written permission (2026-10-20)</p>
+<section><h2>HaGeZi Light, Pro and Threat Intelligence Feed</h2><p><a href="https://github.com/hagezi/dns-blocklists">HaGeZi</a> — GPL-3.0; Written permission (2026-10-20)</p>
 <p>HaGeZi and dns-blocklists contributors.</p>
 <p>Terms: <a href="https://raw.githubusercontent.com/hagezi/dns-blocklists/main/LICENSE">GPL-3.0</a>. GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives. Private local use does not require publishing a user’s local rules or licensing the browser.</p>
 </section>
@@ -115,12 +119,16 @@
 </section>
 <section><h2>StevenBlack unified hosts</h2><p><a href="https://github.com/StevenBlack/hosts">Steven Black and upstream maintainers</a> — MIT AND upstream terms</p>
 <p>Copyright © 2026 Steven Black. Upstream names and original source links follow; noncommercial/share-alike conditions stay with the relevant material.</p>
-<p>Terms: <a href="https://raw.githubusercontent.com/StevenBlack/hosts/master/license.txt">MIT AND upstream terms</a>. Keep copyright and permission notices with redistributed material. Credit the authors, link the license and source, identify modifications, and do not imply endorsement. MVPS retained material is CC BY-NC-SA 4.0; Dan Pollock permits noncommercial copying/distribution with attribution and original URL. WardenOne is free and noncommercial and uses direct runtime downloads only. Do not bundle/relicense the aggregate as MIT-only or use it commercially on the strength of this record.</p>
-<p>Upstream contributions: <a href="https://raw.githubusercontent.com/StevenBlack/hosts/master/data/StevenBlack/hosts">Steven Black&#39;s ad-hoc list</a> (MIT); <a href="https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt">AdAway</a> (CC BY 3.0); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.2o7Net/hosts">add.2o7Net</a> (MIT); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Dead/hosts">add.Dead</a> (MIT); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Risk/hosts">add.Risk</a> (MIT); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Spam/hosts">add.Spam</a> (MIT); <a href="https://raw.githubusercontent.com/mitchellkrogza/Badd-Boyz-Hosts/master/hosts">Mitchell Krog&#39;s - Badd Boyz Hosts</a> (MIT); <a href="https://raw.githubusercontent.com/bigdargon/hostsVN/master/option/hosts-VN">hostsVN</a> (MIT); <a href="https://raw.githubusercontent.com/FiltersHeroes/KADhosts/master/KADhosts.txt">KADhosts</a> (CC BY-SA 4.0); <a href="https://raw.githubusercontent.com/jamiemansfield/minecraft-hosts/master/lists/tracking.txt">minecraft-hosts</a> (CC0-1.0); <a href="https://winhelp2002.mvps.org/hosts.txt">MVPS hosts file</a> (CC BY-NC-SA 4.0); <a href="https://someonewhocares.org/hosts/zero/hosts">Dan Pollock – [someonewhocares](https://someonewhocares.org/)</a> (non-commercial with attribution); <a href="https://raw.githubusercontent.com/tiuxo/hosts/master/ads">Tiuxo hostlist - ads</a> (CC BY 4.0); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/UncheckyAds/hosts">UncheckyAds</a> (MIT); <a href="https://urlhaus.abuse.ch/downloads/hostfile/">URLHaus</a> (CC0); <a href="https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&amp;mimetype=plaintext&amp;useip=0.0.0.0">yoyo.org</a> (Publisher terms).</p>
+<p>Terms: <a href="https://raw.githubusercontent.com/StevenBlack/hosts/master/license.txt">MIT AND upstream terms</a>. Keep copyright and permission notices with redistributed material. Credit the authors, link the license and source, identify modifications, and do not imply endorsement. MVPS retained material is CC BY-NC-SA 4.0; Dan Pollock permits noncommercial copying/distribution with attribution and original URL, and confirmed in writing on 30 October 2026 that WardenOne may use his file so long as it does not charge for use. WardenOne is free and noncommercial and uses direct runtime downloads only. Do not bundle/relicense the aggregate as MIT-only or use it commercially on the strength of this record.</p>
+<p>Upstream contributions: <a href="https://raw.githubusercontent.com/StevenBlack/hosts/master/data/StevenBlack/hosts">Steven Black&#39;s ad-hoc list</a> (MIT); <a href="https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt">AdAway</a> (CC BY 3.0); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.2o7Net/hosts">add.2o7Net</a> (MIT); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Dead/hosts">add.Dead</a> (MIT); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Risk/hosts">add.Risk</a> (MIT); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/add.Spam/hosts">add.Spam</a> (MIT); <a href="https://raw.githubusercontent.com/mitchellkrogza/Badd-Boyz-Hosts/master/hosts">Mitchell Krog&#39;s - Badd Boyz Hosts</a> (MIT); <a href="https://raw.githubusercontent.com/bigdargon/hostsVN/master/option/hosts-VN">hostsVN</a> (MIT); <a href="https://raw.githubusercontent.com/FiltersHeroes/KADhosts/master/KADhosts.txt">KADhosts</a> (CC BY-SA 4.0); <a href="https://raw.githubusercontent.com/jamiemansfield/minecraft-hosts/master/lists/tracking.txt">minecraft-hosts</a> (CC0-1.0); <a href="https://winhelp2002.mvps.org/hosts.txt">MVPS hosts file</a> (CC BY-NC-SA 4.0); <a href="https://someonewhocares.org/hosts/zero/hosts">Dan Pollock – [someonewhocares](https://someonewhocares.org/)</a> (non-commercial with attribution; WardenOne-specific permission while free of charge); <a href="https://raw.githubusercontent.com/tiuxo/hosts/master/ads">Tiuxo hostlist - ads</a> (CC BY 4.0); <a href="https://raw.githubusercontent.com/FadeMind/hosts.extras/master/UncheckyAds/hosts">UncheckyAds</a> (MIT); <a href="https://urlhaus.abuse.ch/downloads/hostfile/">URLHaus</a> (CC0); <a href="https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&amp;mimetype=plaintext&amp;useip=0.0.0.0">yoyo.org</a> (Publisher terms).</p>
 </section>
 <section><h2>Anti-Grabify</h2><p><a href="https://github.com/TMAFE/anti-grabify">TMAFE and contributors</a> — MPL-2.0</p>
 <p>TMAFE / Anti-Grabify contributors.</p>
 <p>Terms: <a href="https://raw.githubusercontent.com/TMAFE/anti-grabify/master/LICENSE">MPL-2.0</a>. Keep MPL notices and source availability for distributed covered files. Runtime local conversion does not require publishing a user’s private cache. Larger-work terms do not replace MPL rights in covered source.</p>
+</section>
+<section><h2>ThreatView malicious domains</h2><p><a href="https://threatview.io/">ThreatView.io</a> — Written permission (2026-11-02)</p>
+<p>ThreatView.io Domain High Confidence feed. Source data remains the work of its maintainers; attribution does not imply endorsement.</p>
+<p>Terms: <a href="https://threatview.io/">Publisher permission</a>. Credit ThreatView as the feed source. This scoped permission records the current direct-download/local-processing use; it does not establish an open licence or access to the separate commercial API/platform.</p>
 </section>
 <section><h2>uBlock Origin uAssets</h2><p><a href="https://github.com/uBlockOrigin/uAssets">uBlock Origin contributors</a> — GPL-3.0</p>
 <p>uBlock Origin / uAssets contributors. Packaged cosmetic rules are selected and converted; exact compiler inputs and scripts accompany the repository source.</p>
@@ -142,19 +150,24 @@
 <p>Copyright 2021 Adguard Software Ltd.</p>
 <p>Terms: <a href="https://github.com/AdguardTeam/cname-trackers/blob/3a7f5b0cdf8f28b2f5b88db0e55d940869fe1473/LICENSE">MIT</a>. Preserve the upstream copyright and complete MIT permission notice.</p>
 </section>
+<section><h2>Privacy Badger pre-trained tracker list</h2><p><a href="https://github.com/EFForg/privacybadger">Electronic Frontier Foundation</a> — GPL-3.0-or-later</p>
+<p>Copyright © 2015 Electronic Frontier Foundation and other contributors.</p>
+<p>Terms: <a href="https://github.com/EFForg/privacybadger/blob/cf67bb9da012b240c6f8babcdeb45a81417f6ca8/LICENSE">GPL-3.0-or-later</a>. Distribute the derived ruleset under GPL v3 or later with the copyright notice and its corresponding source.</p>
+</section>
 <section><h2>AdGuard Companies DB tracker attribution</h2><p><a href="https://github.com/AdguardTeam/companiesdb">Companies DB contributors and WhoTracks.Me team</a> — CC-BY-SA-4.0</p>
 <p>Companies DB contributors; incorporates WhoTracks.Me contributions acknowledged upstream. Attribution does not imply endorsement.</p>
 <p>Terms: <a href="https://github.com/AdguardTeam/companiesdb/blob/8d845040224a0e3ea9cbba5df68ceb6a988235d2/LICENSE">CC-BY-SA-4.0</a>. Attribute the dataset and upstream contributors, link source and license, identify modifications, and distribute the adapted metadata under CC BY-SA 4.0.</p>
 </section>
 <section><h2>Bundled data and modifications</h2>
 <p><strong>rules-adshield.json</strong>: The EasyList authors; selected network rules plus WardenOne compatibility edits. CC-BY-SA-3.0. Converted to Chrome DNR, selected and supplemented; adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.</p>
-<p><strong>rules-easyprivacy.json</strong>: The EasyList authors; EasyPrivacy plus WardenOne tracker rules. CC-BY-SA-3.0. Hosts normalized, batched and capped; curated tracker additions. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.</p>
+<p><strong>rules-easyprivacy.json</strong>: The EasyList authors; EasyPrivacy plus WardenOne tracker rules. CC-BY-SA-3.0. Hosts normalized and batched, every host rule shipped; curated tracker additions. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.</p>
 <p><strong>cosmetic-rules.json</strong>: EasyList, EasyPrivacy, uAssets, AdGuard and Fanboy Social. GPL-3.0; Fanboy CC-BY-3.0 attribution retained. Selected scriptlet and procedural rules compiled on 2026-08-13. Corresponding cosmetic source records/comments were extracted from ten hash-matched full inputs; unused network records omitted. No rule changes made by this review.</p>
 <p><strong>psl-private.js</strong>: Public Suffix List private and ICANN sections. MPL-2.0. Private and ICANN entries selected and converted into JavaScript; source version recorded in the file. MPL covers list material.</p>
 <p><strong>domain-utils.js</strong>: WardenOne code with compact Public Suffix List ICANN data. GPL-3.0-or-later; MPL-2.0 covers the marked PSL data. ICANN entries grouped by TLD on 2026-10-20; single-label rules use the PSL default wildcard. Source version and MPL notice retained in the generated region.</p>
 <p><strong>domain-utils-isolated.js</strong>: Byte-identical copy of domain-utils.js for the isolated execution world. GPL-3.0-or-later; MPL-2.0 covers the marked PSL data. Generated from the canonical domain helper, preserving its PSL notice and source version.</p>
 <p><strong>spotify-silent-1s.mp4</strong>: uBlock Origin noop-1s.mp4. GPL-3.0. Unmodified; SHA-256 pinned by builder. Identical bytes embedded in spotify-adblock.js.</p>
 <p><strong>rules.json</strong>: WardenOne-maintained seed/curation; source is the shipped JSON. GPL-3.0-or-later (WardenOne curation; upstream notices retained). Maintained as editable source data; no new upstream dataset introduced by this review.</p>
+<p><strong>rules-download-landings.json</strong>: Owner-reported deceptive download landing family; evidence in docs/redirect-chain-stop-audit.md. GPL-3.0-or-later (WardenOne curation). Locally maintained host-boundary rules; no third-party dataset imported.</p>
 <p><strong>rules-trackers.json</strong>: WardenOne-maintained seed/curation; source is the shipped JSON. GPL-3.0-or-later (WardenOne curation; upstream notices retained). Maintained as editable source data; no new upstream dataset introduced by this review.</p>
 <p><strong>grabber-extra.json</strong>: WardenOne-maintained seed/curation; source is the shipped JSON. GPL-3.0-or-later (WardenOne curation; upstream notices retained). Maintained as editable source data; no new upstream dataset introduced by this review.</p>
 <p><strong>malware-hashes.json</strong>: WardenOne-maintained seed/curation; source is the shipped JSON. GPL-3.0-or-later (WardenOne curation; upstream notices retained). Maintained as editable source data; no new upstream dataset introduced by this review.</p>
@@ -169,6 +182,8 @@
 <p><strong>rules-spotify-media.json</strong>: uAssets Spotify media rules with WardenOne request-type compatibility changes. GPL-3.0. Dedicated ad-media redirects and shared-media compatibility allowances; editable JSON source. Original uAssets attribution in CREDITS.md.</p>
 <p><strong>cname-trackers.json</strong>: AdguardTeam/cname-trackers, Eulerian, Etracker, Webtrekk and AT Internet mappings. MIT. Host normalization, exact aliases, bounded chain resolution and registrable-site apex omission.</p>
 <p><strong>rules-cname.json</strong>: AdguardTeam/cname-trackers, every tracker-provider mapping. MIT. Host normalization; apex, same-site and compatibility-protected aliases omitted; wildcard families collapsed; reviewed per-provider block or cookie-only rules.</p>
+<p><strong>rules-badger.json</strong>: EFForg/privacybadger, the pre-trained tracker list. GPL-3.0-or-later. Trained blocks converted to third-party block rules; cookie-only, DNT-policy, yellowlisted, surrogate, widget and compatibility-protected hosts left loading; site fixes and owner groups kept as initiator exemptions.</p>
+<p><strong>first-party-sites.json</strong>: EFForg/privacybadger, multiDomainFirstParties.js (sites one owner runs). GPL-3.0-or-later. Hostnames normalized; owner groups of one site dropped; used only to keep a site&#39;s own domains out of Smart Script Shield&#39;s third-party heuristic.</p>
 <p><strong>tracker-network-data.js</strong>: Observation scopes derived from the licensed CNAME mapping, packaged tracker conditions and WardenOne fingerprint-library inventory.. See contributing input licences; generator GPL-3.0-or-later. Exact CNAME hosts and full supported tracker request/initiator/type conditions, with no per-site DNS lookup.</p>
 <p><strong>tracker-catalog.json</strong>: AdGuard Companies DB at 8d845040224a0e3ea9cbba5df68ceb6a988235d2; Companies DB contributors and WhoTracks.Me team.. CC-BY-SA-4.0. Selected 41 products and 60 domain boundaries from existing WardenOne observation families; compact schema and display labels. Attribution only; no generated blocking rules.</p>
 <p>Have I Been Pwned breach information: <a href="https://haveibeenpwned.com">Troy Hunt / Have I Been Pwned</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>. Optional breach responses are selected and formatted for local display; no breach database is packaged.</p></section>
@@ -512,6 +527,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre></section>
 <section><h2>licenses/MPL-2.0.txt</h2><pre>Source: https://raw.githubusercontent.com/TMAFE/anti-grabify/master/LICENSE
+Source: https://raw.githubusercontent.com/badmojr/1Hosts/master/LICENSE
 
 Mozilla Public License Version 2.0
 ==================================
@@ -1491,4 +1507,16 @@ the avoidance of doubt, this paragraph does not form part of the public
 licenses.
 
 Creative Commons may be contacted at creativecommons.org.</pre></section>
+<section><h2>licenses/PrivacyBadger-NOTICE.txt</h2><pre>Privacy Badger
+Copyright © 2015 Electronic Frontier Foundation and other contributors
+
+Privacy Badger as a whole is presently Licensed GPL v3 or later, though many portions
+of the code are dual-licensed under other free/open source licenses.
+
+WardenOne&#39;s rules-badger.json and first-party-sites.json are derived from Privacy Badger&#39;s data
+(src/data/seed.json, src/data/pbconfig.json, src/data/socialwidgets.json,
+src/data/surrogates.js and src/js/multiDomainFirstParties.js) at revision
+cf67bb9da012b240c6f8babcdeb45a81417f6ca8 of https://github.com/EFForg/privacybadger,
+and are distributed under the GNU General Public License v3 or later (see LICENSE).
+</pre></section>
 </body></html>

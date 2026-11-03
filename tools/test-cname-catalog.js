@@ -2,8 +2,8 @@
 'use strict';
 const assert = require('assert/strict');
 const fs = require('fs');
-const vm = require('vm');
 const { helpers, readSnapshot, sha256, PROVIDERS } = require('./build-cname-data.js');
+const { shippedTrackerCompat } = require('./lib/tracker-compat.js');
 const { WOCname, siteIdentity } = helpers();
 const text = fs.readFileSync('rules-cname.json', 'utf8');
 const rules = JSON.parse(text);
@@ -16,29 +16,7 @@ assert(manifest.declarative_net_request.rule_resources.some(r => r.id === 'cname
 assert(rules.length <= 120 && rules.filter(rule => rule.condition.regexFilter).length < 1000, 'static regex and rule limits');
 
 /* The shipped compatibility functions, not the builder's mirror of them. */
-function shipped() {
-  const source = fs.readFileSync('background.js', 'utf8');
-  const take = (pattern, name) => { const match = source.match(pattern); assert(match, name); return match[0]; };
-  const fn = name => {
-    const start = source.indexOf('\nfunction ' + name + '(');
-    assert(start >= 0, name);
-    return source.slice(start, source.indexOf('\n}\n', start) + 3);
-  };
-  const script = [
-    'function registrableDomainBg(host) { return registrableDomain(host); }',
-    take(/const LOGIN_COMPAT_NEVER_BLOCK_DOMAINS = \[[\s\S]*?\];/, 'login hosts'),
-    take(/const TRACKER_PROTECTED_DOMAINS = new Set\(\[[\s\S]*?\]\);\nLOGIN_COMPAT_NEVER_BLOCK_DOMAINS\.forEach[^\n]*/, 'protected sites'),
-    take(/const MEDIA_COMPAT_DOMAINS = new Set\(\[[\s\S]*?\]\);\nconst MEDIA_COMPAT_SUFFIXES[^\n]*/, 'media hosts'),
-    'let __ownProviderDomains = null;',
-    ...['ownProviderDomains', 'normalizeTrackerDomain', 'isProtectedTrackerDomain', 'isMediaCompatDomainLowercase', 'isMediaCompatDomain'].map(fn),
-    'this.api = { isProtectedTrackerDomain, isMediaCompatDomain, login: LOGIN_COMPAT_NEVER_BLOCK_DOMAINS, media: [...MEDIA_COMPAT_DOMAINS] };',
-  ].join('\n');
-  const context = vm.createContext({ URL, console });
-  for (const file of ['domain-utils.js', 'psl-private.js']) vm.runInContext(fs.readFileSync(file, 'utf8'), context);
-  vm.runInContext(script, context);
-  return context.api;
-}
-const runtime = shipped();
+const runtime = shippedTrackerCompat();
 
 const seen = new Set(), sites = new Set();
 let blocked = 0, cookies = 0;

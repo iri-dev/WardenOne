@@ -60,6 +60,7 @@ const ctx = { console: { warn() {} }, Object, Array, String, Number };
 vm.createContext(ctx);
 vm.runInContext([
   lift('FINGERPRINT_SCRIPT_RESOURCE_TYPES'),
+  lift('CHATGPT_COMPAT_DOMAINS'),
   lift('FINGERPRINT_LIBRARY_DOMAIN_FILTERS'),
   lift('FRAUD_VENDOR_DOMAIN_FILTERS'),
   lift('FINGERPRINT_LIBRARY_URL_FILTERS'),

@@ -1252,5 +1252,27 @@
         "sub_frame"
       ]
     }
+  },
+  {
+    "id": 50,
+    "priority": 1000,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "regexFilter": "^https?://[^/?#]+/(?:[^?#]*/)?g/collect\\?(?:[^#]*&)?tid=G-[A-Za-z0-9]+(?:&|$)",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "firstParty",
+      "requestMethods": [
+        "get",
+        "post"
+      ],
+      "resourceTypes": [
+        "xmlhttprequest",
+        "ping",
+        "image",
+        "other"
+      ]
+    }
   }
 ]

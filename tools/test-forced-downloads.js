@@ -13,7 +13,7 @@ function page() {
   const box = {
     Date, URL, WeakSet, decodeURIComponent,
     window: {}, location: new URL('https://shop.example/download/game'),
-    bridgeConfigReady: true, bridgeConfig: { enabled: true },
+    bridgeConfigReady: true, bridgeConfig: { enabled: true, forcedDownloadProtection: true },
     bridgeHostAllowedByUser: () => false,
     bridgeOwnHost: () => 'shop.example', bridgeTopHost: () => 'shop.example',
     bridgeSiteOverridesFor: (cfg, host) => cfg.siteOverrides && cfg.siteOverrides[host] || {},
@@ -25,7 +25,8 @@ function page() {
         appendChild(child) { this.children.push(child); }, click() { box.allowedHref = this.href; }, remove() {} }),
       body: { appendChild() {} },
     },
-    chrome: { runtime: { id: 'wardenone' } },
+    chrome: { runtime: { id: 'wardenone', sendMessage: message => { box.sent.push(message); } } },
+    sent: [],
     woOn: (target, type, fn) => {
       if (target === box.window) events.set(type, fn);
       else target[type] = fn;
@@ -95,7 +96,8 @@ async function run() {
     assert.equal(p.snapshot({ id: 'wardenone', tab: { id: 1 } }), undefined);
     assert.equal(p.snapshot().gesture.requested, true);
   }
-  for (const config of [ { enabled: false }, { forcedDownloadProtection: false },
+  for (const config of [ { enabled: true }, { enabled: false }, { forcedDownloadProtection: false },
+    { forcedDownloadProtection: 'true' },
     { siteOverrides: { 'shop.example': { forcedDownloadProtection: false } } } ]) {
     const p = page(); p.box.bridgeConfig = config;
     assert(!p.click(p.control('Play', 'https://cdn.example/setup.exe')).stopped);
@@ -120,10 +122,116 @@ async function run() {
   const context = { ok: true, enabled: true, url: item.referrer, startedAt: now - 10000, hadGesture: false, gesture: null };
   function worker() {
     const h = loadDownloadGuard();
+    h.sandbox.store.wardenone_config.forcedDownloadProtection = true;
     h.sandbox.messageSenderIsTab = () => false;
     h.sandbox.tabsQuery = async () => [{ id: 7, url: item.referrer }];
     h.sandbox.chrome.tabs.sendMessage = (_id, _message, _options, callback) => callback(context);
     return h;
+  }
+  for (const [sourceUrl, targetUrl, fileUrl] of [
+    ['https://www.opera.com/gx', 'https://www.opera.com/computer/thanks?ni=eapgx&os=windows', 'https://download.opera.com/OperaGXSetup.exe'],
+    ['https://www.curseforge.com/minecraft/modpacks/ciscos-adventure-rpg-ultimate/files/8178142',
+      'https://www.curseforge.com/minecraft/modpacks/ciscos-adventure-rpg-ultimate/download/8178142', 'https://mediafilez.forgecdn.net/files/8178/142/modpack.zip'],
+  ]) {
+    const h = worker();
+    const remember = vm.runInContext('rememberDownloadNavigationIntent', h.sandbox);
+    const inherit = vm.runInContext('downloadNavigationIntentFor', h.sandbox);
+    const sender = { tab: { id: 7 }, frameId: 0, documentId: 'source', url: sourceUrl };
+    const p = page(); p.box.location = new URL(sourceUrl);
+    p.click(p.control('Download', targetUrl));
+    assert.equal(p.box.sent[0].kind, 'download-navigation-intent');
+    assert.equal(remember(sender, p.box.sent[0].href).ok, true);
+    const receiver = { ...sender, documentId: 'landing', url: targetUrl };
+    const intent = inherit(receiver, h.sandbox.store.wardenone_config);
+    assert.equal(intent.requested, true);
+    const landing = page(); landing.box.location = new URL(targetUrl);
+    vm.runInContext('adoptDownloadNavigationIntent', landing.box)(intent);
+    assert(!landing.click(landing.control('', fileUrl, { hidden: true }), false).stopped, 'a requested download survives the new document');
+    const query = id => landing.ask({ kind: 'download-intent-query', downloadId: id, urls: [fileUrl] });
+    assert.equal(query('1').spent, false);
+    vm.runInContext('adoptDownloadNavigationIntent', landing.box)(intent);
+    assert.equal(query('2').spent, true, 'a config refresh cannot renew a spent request');
+    assert(landing.click(landing.control('', 'https://evil.example/second.exe', { hidden: true }), false).stopped);
+    assert.equal(inherit({ ...receiver, documentId: 'reload' }, h.sandbox.store.wardenone_config), null, 'a reload cannot replay the request');
+  }
+  {
+    const h = worker();
+    const remember = vm.runInContext('rememberDownloadNavigationIntent', h.sandbox);
+    const inherit = vm.runInContext('downloadNavigationIntentFor', h.sandbox);
+    const sender = { tab: { id: 7 }, frameId: 0, documentId: 'source', url: 'https://shop.example/product' };
+    const target = 'https://shop.example/download';
+    for (const href of ['https://evil.example/download', 'https://shop.example.evil.test/download', 'javascript:alert(1)',
+      'https://user:pass@shop.example/download', 'https://shop.example/product', 'https://shop.example/' + 'a'.repeat(8192)]) {
+      assert.equal(remember(sender, href).ok, false, href.slice(0, 80));
+    }
+    for (const invalid of [{ ...sender, tab: undefined }, { ...sender, frameId: -1 }, { ...sender, documentId: '' },
+      { ...sender, url: 'chrome-extension://wardenone/popup.html' }]) assert.equal(remember(invalid, target).ok, false);
+    assert.equal(remember(sender, target).ok, true);
+    const receiver = { ...sender, documentId: 'landing', url: target };
+    for (const wrong of [{ ...receiver, tab: { id: 8 } }, { ...receiver, frameId: 1 },
+      { ...receiver, url: target + '?other=1' }, { ...receiver, documentId: 'source' }]) {
+      assert.equal(inherit(wrong, h.sandbox.store.wardenone_config), null);
+    }
+    for (const cfg of [{ enabled: true }, { forcedDownloadProtection: false }, { forcedDownloadProtection: 'true' },
+      { enabled: false, forcedDownloadProtection: true }, { forcedDownloadProtection: true, siteOverrides: { 'shop.example': { forcedDownloadProtection: false } } }]) {
+      assert.equal(inherit(receiver, cfg), null, 'an unselected or paused protection grants no handoff');
+    }
+    remember(sender, '');
+    assert.equal(inherit(receiver, h.sandbox.store.wardenone_config), null, 'the sending document can revoke its request');
+    remember(sender, target);
+    h.sandbox.Date = { now: () => Date.now() + 31000 };
+    assert.equal(inherit(receiver, h.sandbox.store.wardenone_config), null, 'handoffs expire');
+  }
+  {
+    const h = worker();
+    const remember = vm.runInContext('rememberDownloadNavigationIntent', h.sandbox);
+    const forward = vm.runInContext('forwardDownloadNavigationIntent', h.sandbox);
+    const inherit = vm.runInContext('downloadNavigationIntentFor', h.sandbox);
+    const sourceUrl = 'https://shop.example/product', target = 'https://shop.example/download';
+    const sender = { tab: { id: 7 }, frameId: 0, documentId: 'source', url: sourceUrl };
+    const receiver = { tab: { id: 8 }, frameId: 0, documentId: 'landing', url: target };
+    remember(sender, target);
+    forward({ sourceTabId: 7, sourceFrameId: 1, tabId: 8, url: target });
+    forward({ sourceTabId: 7, sourceFrameId: 0, tabId: 8, url: target + '?different' });
+    assert.equal(inherit(receiver, h.sandbox.store.wardenone_config), null);
+    forward({ sourceTabId: 7, sourceFrameId: 0, tabId: 8, url: target });
+    assert.equal(inherit(receiver, h.sandbox.store.wardenone_config).requested, true);
+    forward({ sourceTabId: 7, sourceFrameId: 0, tabId: 9, url: target });
+    assert.equal(inherit({ ...receiver, tab: { id: 9 } }, h.sandbox.store.wardenone_config), null, 'one request cannot be copied to several new tabs');
+    h.sandbox.tabsQuery = async () => [{ id: 7, url: sourceUrl }, { id: 8, url: target }];
+    h.sandbox.chrome.tabs.sendMessage = (tabId, _msg, _opts, callback) => callback({ ...context,
+      url: tabId === 8 ? target : sourceUrl, gesture: { at: now, requested: true } });
+    const fromLanding = { ...item, id: 601, referrer: target };
+    const landing = await vm.runInContext('forcedDownloadContext', h.sandbox)(fromLanding);
+    assert.equal(landing.spent, false);
+    const source = await vm.runInContext('forcedDownloadContext', h.sandbox)({ ...item, id: 602, referrer: sourceUrl });
+    assert.equal(source.spent, true, 'the original tab cannot reuse a request forwarded to its child');
+    const second = await vm.runInContext('forcedDownloadContext', h.sandbox)({ ...fromLanding, id: 603 });
+    assert.equal(second.spent, true, 'the worker also enforces a single file in the child');
+    assert.equal(inherit(receiver, h.sandbox.store.wardenone_config), null, 'a spent worker grant is not reissued');
+  }
+  {
+    const h = worker();
+    const remember = vm.runInContext('rememberDownloadNavigationIntent', h.sandbox);
+    const inherit = vm.runInContext('downloadNavigationIntentFor', h.sandbox);
+    remember({ tab: { id: 7 }, frameId: 0, documentId: 'source', url: item.referrer }, 'https://shop.example/download');
+    h.sandbox.chrome.tabs.sendMessage = (_tab, _msg, _opts, callback) => callback({ ...context, gesture: { at: now, requested: true } });
+    await vm.runInContext('forcedDownloadContext', h.sandbox)(item);
+    assert.equal(inherit({ tab: { id: 7 }, frameId: 0, documentId: 'landing', url: 'https://shop.example/download' },
+      h.sandbox.store.wardenone_config), null, 'a completed request in the source document cannot also authorize a landing page');
+  }
+  {
+    const h = worker();
+    const remember = vm.runInContext('rememberDownloadNavigationIntent', h.sandbox);
+    for (let id = 0; id < 180; id++) remember({ tab: { id }, frameId: 0, documentId: 'source', url: 'https://shop.example/' }, 'https://shop.example/download');
+    assert.equal(vm.runInContext('FORCED_DOWNLOAD_NAVIGATIONS.size', h.sandbox), 128);
+    for (const [label, trusted, hidden] of [['Download', false, false], ['Play', true, false], ['Download', true, true]]) {
+      const p = page(); p.click(p.control(label, 'https://shop.example/landing', { hidden }), trusted);
+      assert.equal(p.box.sent.length, 0, 'untrusted, unrelated and hidden controls cannot authorize a handoff');
+    }
+    const p = page(); p.click(p.control('Download', 'https://shop.example/landing'));
+    p.click(p.control('Read more', 'https://shop.example/article'));
+    assert.equal(p.box.sent[1].href, '', 'a later unrelated click revokes the unspent navigation request');
   }
   {
     const { guard, sandbox } = worker();
@@ -163,6 +271,8 @@ async function run() {
     assert(sandbox.store.wardenone_pending_downloads['501'].reviewEvidence.unexpectedDownload);
   }
   for (const [name, change] of [
+    ['no opt-in', h => { delete h.sandbox.store.wardenone_config.forcedDownloadProtection; }],
+    ['invalid opt-in', h => { h.sandbox.store.wardenone_config.forcedDownloadProtection = 'true'; }],
     ['toggle off', h => { h.sandbox.store.wardenone_config.forcedDownloadProtection = false; }],
     ['master off', h => { h.sandbox.store.wardenone_config.enabled = false; }],
     ['another extension', h => { h.sandbox.chrome.tabs.sendMessage = () => { throw new Error('must not query'); }; }],

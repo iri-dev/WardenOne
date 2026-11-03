@@ -33,8 +33,9 @@ function pinned(name) {
 }
 
 const filterCache = new Map();
-function filterRegex(filter) {
-  if (filterCache.has(filter)) return filterCache.get(filter);
+function filterRegex(filter, sensitive) {
+  const key = JSON.stringify([filter, sensitive === true]);
+  if (filterCache.has(key)) return filterCache.get(key);
   let f = filter;
   let prefix = '';
   let suffix = '';
@@ -43,14 +44,15 @@ function filterRegex(filter) {
   if (f.endsWith('|')) { suffix = '$'; f = f.slice(0, -1); }
   const body = [...f].map((ch) => (ch === '*' ? '.*' : ch === '^' ? '(?:[^a-z0-9_.%-]|$)'
     : ch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'))).join('');
-  const re = new RegExp(prefix + body + suffix, 'i');
-  filterCache.set(filter, re);
+  const re = new RegExp(prefix + body + suffix, sensitive ? '' : 'i');
+  filterCache.set(key, re);
   return re;
 }
 
 const underDomain = (host, list) => list.some((d) => host === d || host.endsWith('.' + d));
-const KNOWN_KEYS = new Set(['urlFilter', 'regexFilter', 'requestDomains', 'initiatorDomains',
-  'excludedInitiatorDomains', 'resourceTypes', 'excludedResourceTypes', 'domainType']);
+const KNOWN_KEYS = new Set(['urlFilter', 'regexFilter', 'requestDomains', 'excludedRequestDomains', 'initiatorDomains',
+  'excludedInitiatorDomains', 'resourceTypes', 'excludedResourceTypes', 'domainType', 'isUrlFilterCaseSensitive',
+  'requestMethods', 'excludedRequestMethods']);
 
 function matches(rule, req) {
   const c = rule.condition;
@@ -58,17 +60,21 @@ function matches(rule, req) {
   const url = new URL(req.url);
   const host = url.hostname.toLowerCase();
   const initiator = req.initiator || '';
+  const method = (req.method || 'get').toLowerCase();
+  if (c.requestMethods && !c.requestMethods.includes(method)) return false;
+  if ((c.excludedRequestMethods || []).includes(method)) return false;
   if (c.resourceTypes ? !c.resourceTypes.includes(req.type) : req.type === 'main_frame') return false;
   if ((c.excludedResourceTypes || []).includes(req.type)) return false;
   if (c.requestDomains && !underDomain(host, c.requestDomains)) return false;
+  if (c.excludedRequestDomains && underDomain(host, c.excludedRequestDomains)) return false;
   if (c.initiatorDomains && !(initiator && underDomain(initiator, c.initiatorDomains))) return false;
   if (c.excludedInitiatorDomains && initiator && underDomain(initiator, c.excludedInitiatorDomains)) return false;
   if (c.domainType) {
     const third = !!initiator && registrable(initiator) !== registrable(host);
     if ((c.domainType === 'thirdParty') !== third) return false;
   }
-  if (c.urlFilter && !filterRegex(c.urlFilter).test(url.href)) return false;
-  if (c.regexFilter && !new RegExp(c.regexFilter, 'i').test(url.href)) return false;
+  if (c.urlFilter && !filterRegex(c.urlFilter, c.isUrlFilterCaseSensitive).test(url.href)) return false;
+  if (c.regexFilter && !new RegExp(c.regexFilter, c.isUrlFilterCaseSensitive ? '' : 'i').test(url.href)) return false;
   return true;
 }
 
@@ -138,6 +144,17 @@ test('the exception and the feed block stay narrow', () => {
     'the feed block reached an ordinary site search');
   assert.equal(outcome(req('https://wardenone.com/d/search/p/godaddy/xml/', 'script')), 'none',
     'the feed block applies beyond the lander’s fetch');
+});
+
+test('first-party GA4 conditions retain path, method and party boundaries', () => {
+  const hit = req('https://wardenone.com/g/collect?v=2&tid=G-TEST123', 'xmlhttprequest');
+  assert.deepEqual(winner(hit), { priority: 1000, action: 'block', pack: 'trackers', id: 50 });
+  assert.equal(outcome({ ...hit, method: 'post' }), 'block');
+  assert.equal(outcome({ ...hit, method: 'head' }), 'none');
+  assert.equal(outcome({ ...hit, initiator: 'unrelated.example.net' }), 'none');
+  assert.equal(outcome({ ...hit, url: hit.url.replace('/g/', '/G/') }), 'none');
+  assert.equal(outcome({ ...hit, url: hit.url.replace('tid=', 'not_tid=') }), 'none');
+  assert.equal(outcome({ ...hit, type: 'main_frame' }), 'none');
 });
 
 let failures = 0;

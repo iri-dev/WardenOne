@@ -61,6 +61,43 @@
   }
   /* WEBGL-SAVER-END */
   const __woWebGLControl=__woWebGLSaver();
+  /* CLIENT-HINTS-BEGIN */
+  function __woClientHints(){
+    let enabled=false;
+    try{
+      const data=navigator.userAgentData,
+      proto=data&&Object.getPrototypeOf(data),
+      descriptor=proto&&Object.getOwnPropertyDescriptor(proto,"getHighEntropyValues"),
+      real=descriptor&&descriptor.value;
+      if(typeof real!=="function")return{set(){}};
+      const reduced=version=>typeof version==="string"&&/^\d+(?:\.\d+){1,3}$/.test(version)?version.split(".")[0]+".0.0.0":version;
+      const wrapped={getHighEntropyValues(hints){
+        const result=Reflect.apply(real,this,arguments);
+        return result.then(info=>{
+          if(!enabled||!info||typeof info!=="object")return info;
+          try{
+            const out=Object.assign({},info);
+            if(typeof out.model==="string")out.model="";
+            if(typeof out.platformVersion==="string")out.platformVersion="";
+            if("uaFullVersion"in out)out.uaFullVersion=reduced(out.uaFullVersion);
+            if(Array.isArray(out.fullVersionList))out.fullVersionList=out.fullVersionList.map(entry=>entry&&typeof entry==="object"?Object.assign({},entry,{version:reduced(entry.version)}):entry);
+            return out
+          }catch(_){return info}
+        })
+      }}.getHighEntropyValues;
+      const install=()=>{
+        if(Object.getOwnPropertyDescriptor(proto,"getHighEntropyValues")?.value===real)Object.defineProperty(proto,"getHighEntropyValues",Object.assign({},descriptor,{value:wrapped}))
+      };
+      install();
+      return{set(on){
+        enabled=on===true;
+        if(enabled)install();
+        else if(Object.getOwnPropertyDescriptor(proto,"getHighEntropyValues")?.value===wrapped)Object.defineProperty(proto,"getHighEntropyValues",descriptor)
+      }}
+    }catch(_){return{set(){}}}
+  }
+  /* CLIENT-HINTS-END */
+  const __woClientHintsControl=__woClientHints();
   /* Capture the replaceable opener before page scripts run. Same-origin popups share its noise seed, while retaining their
      own protection verdict. */
   let __woOpenerAtStart=null;
@@ -157,6 +194,34 @@
     }
 
   };
+  const __woRedirectChainControl=(()=>{
+    let armed=!1,enabled=!1,available=!1;
+    try{
+      const nav=window.navigation,apply=Reflect.apply,
+      add=EventTarget.prototype.addEventListener,
+      prevent=Event.prototype.preventDefault,
+      getter=(proto,name)=>Object.getOwnPropertyDescriptor(proto,name).get,
+      cancelable=getter(Event.prototype,"cancelable"),
+      initiated=getter(NavigateEvent.prototype,"userInitiated"),
+      destination=getter(NavigateEvent.prototype,"destination"),
+      sameDocument=getter(NavigationDestination.prototype,"sameDocument");
+      /* Keep the stop outside overlay teardown and capture navigation APIs before page scripts. */
+      apply(add,nav,["navigate",event=>{
+        if(!armed||!enabled)return;
+        try{
+          if(apply(initiated,event,[])||apply(sameDocument,apply(destination,event,[]),[]))return;
+          if(apply(cancelable,event,[]))apply(prevent,event,[])
+        }catch(_){}
+      },{capture:!0,signal:__woAbort.signal}]);
+      available=!0
+    }catch(_){}
+    return{
+      configure(value){enabled=value},
+      arm(){armed=!0;return available},
+      release(){armed=!1},
+      blocked(){return armed&&enabled}
+    }
+  })();
   /* abort() before send() emits no events because XHR’s send flag is unset.
      Fail blocked requests asynchronously with status 0, DONE, then readystatechange/error/loadend.
      Shadow the read-only prototype accessors so callers receive a terminal state. */
@@ -578,6 +643,7 @@
     lazyLoadMedia:!1,
     webglDisabled:!1,
     deAmp:!1,
+    clientHintProtection:!0,
     capReferrer:!1,
     autoRejectConsent:!0,
     sendPrivacySignals:!0,
@@ -745,6 +811,7 @@
       lazyLoadMedia:gate(cfg.lazyLoadMedia),
       webglDisabled:gate(!0===cfg.webglDisabled),
       deAmp:gate(cfg.deAmp),
+      clientHintProtection:gate(!1!==cfg.clientHintProtection),
       capReferrer:gate(cfg.capReferrer),
       autoRejectConsent:gate(cfg.autoRejectConsent),
       sendPrivacySignals:gate(cfg.sendPrivacySignals),
@@ -824,6 +891,205 @@
   Object.assign(__woConfigStore,buildConfig(null)),
   __woConfigStore.__configReady=!1,
   window.__WO_CONFIG__=Object.assign({},__woConfigStore);
+  /* Domain evidence for the adult gate: an adult TLD scores 3, an explicit term 4, a suggestive one 1. */
+  const __woAdultHostScore=(host,reasons)=>{
+    const STRONG_LONG=/(xvideos|xnxx|xhamster|hentai|camgirl|camsex|sexcam|cumshot|creampie|gangbang|deepthroat|bukkake|onlyfans|rule34|pornhub|brazzers|shemale|blowjob|handjob|cumming)/i,
+    STRONG_SHORT=/(^|[-_.0-9])(milf|bdsm|nsfw|xxx|jizz|fap)([-_.0-9]|$)/i,
+    STRONG_COMPOUND=/(livecam|webcamsex|camwhore|camslut|sexcams?|adultcams?|livesex|freesex|xxxcam|nudecam|sexchat|adultchat|fuckbook|shagbook|milfcam)/i,
+    PORN_SUBSTR=/porn/i,
+    SFW_PORN=/(food|earth|nature|space|sky|cloud|weather|city|room|interior|home|history|design|architect|car|auto|gun|book|word|data|tech|plant|animal|cabin|mountain|abandoned|machine|monster|map|retro|train|aviation|military|gaming|hardware|kitchen|garden|coffee|watch)[-_]?porn/i,
+    STRONG_HOST={
+      test:h=>STRONG_LONG.test(h)||STRONG_SHORT.test(h)||STRONG_COMPOUND.test(h)||PORN_SUBSTR.test(h)&&!SFW_PORN.test(h)
+    },
+    SOFT_HOST=/(^|[-_.])(sex|adult|nude|naked|erotic|lust|kink|babe|escort|fetish|cam|girl)(s|sex|cam|girl|videos?)?([-_.0-9]|$)/i;
+    let score=0;
+    /\.(xxx|porn|sex|adult|sexy|cam|tube|webcam|porno)$/i.test(host)&&(score+=3,
+    reasons.push("adult TLD")),
+    STRONG_HOST.test(host)?(score+=4,
+    reasons.push("explicit term in domain")):SOFT_HOST.test(host)&&(score+=1,
+    reasons.push("suggestive term in domain"));
+    return score
+  };
+  /* Set while this tab has an unanswered adult card on this origin. A site that moves to another of its own pages
+     behind the card arrives with a same-site referrer, which on its own reads as browsing an accepted site. */
+  const __WO_ADULT_PENDING_KEY="__wo_adult_pending",
+  __WO_ADULT_RESUME_KEY="__wo_adult_resume",
+  __WO_ADULT_SEEN_KEY="__wo_adult_seen",
+  __WO_ADULT_OK_KEY="__wo_adult_ok",
+  /* The reader answered "continue" for this site in this tab. A site whose own reloads keep bringing the card
+     back would otherwise ask again every few seconds, so the answer lasts as long as the tab's session. */
+  __woAdultAccepted=()=>{
+    try{
+      return!!sessionStorage.getItem(__WO_ADULT_OK_KEY)
+    }
+    catch(_){
+      return!1
+    }
+
+  },
+  __woAdultPending=()=>{
+    try{
+      return!!sessionStorage.getItem(__WO_ADULT_PENDING_KEY)
+    }
+    catch(_){
+      return!1
+    }
+
+  },
+  __woAdultSetPending=on=>{
+    try{
+      on?sessionStorage.setItem(__WO_ADULT_PENDING_KEY,
+      "1"):sessionStorage.removeItem(__WO_ADULT_PENDING_KEY)
+    }
+    catch(_){
+
+    }
+
+  },
+  /* One-shot, read once at document_start: this load is the reload the reader asked for by continuing past
+     the card, so it is theirs and the gate stands aside. */
+  __woAdultResumed=(()=>{
+    try{
+      const on=!!sessionStorage.getItem(__WO_ADULT_RESUME_KEY);
+      return on&&sessionStorage.removeItem(__WO_ADULT_RESUME_KEY),
+      on
+    }
+    catch(_){
+      return!1
+    }
+
+  })();
+  /* Explicit on its domain alone, before any of the page has been seen. */
+  const __woAdultHost=hostname=>{
+    const host=String(hostname||"").replace(/^www\./,"").toLowerCase();
+    return!!host&&(ADULT_DOMAINS.some(d=>host===d||host.endsWith("."+d))||__woAdultHostScore(host,[])>=4)
+  },
+  /* The reader did not come from the same site after accepting it. A site reloading itself hands its own
+     address in as the referrer, which is why a rapid reload does not count as having accepted anything. */
+  __woAdultVeilWanted=(hostname,referrer,pending,rapidReload)=>{
+    const host=String(hostname||"").replace(/^www\./,"").toLowerCase();
+    let ref="";
+    try{
+      ref=referrer?new URL(referrer).hostname.replace(/^www\./,"").toLowerCase():""
+    }
+    catch(_){
+
+    }
+    const sameSite=!!ref&&(ref===host||host.endsWith("."+ref)||ref.endsWith("."+host));
+    return __woAdultHost(hostname)&&(!sameSite||!!pending||!!rapidReload)
+  };
+  /* Settings reach the page asynchronously, after an explicit site can already paint. Hide the page from
+     document_start until the adult gate decides; its own blocker then covers the page, or the page shows. */
+  const __woAdultVeil=(()=>{
+    let el=null,
+    timer=0,
+    stopped=!1,
+    stopping=!1,
+    timedOut=!1;
+    const isReload=()=>{
+      try{
+        const nav=performance&&performance.getEntriesByType&&performance.getEntriesByType("navigation")[0];
+        return!!nav&&"reload"===nav.type
+      }
+      catch(_){
+        return!1
+      }
+
+    },
+    /* This adult page loading again within seconds of the last one: a loop the reader cannot answer over. */
+    rapid=(()=>{
+      try{
+        if(!__woAdultHost(location.hostname))return!1;
+        const prev=Number(sessionStorage.getItem(__WO_ADULT_SEEN_KEY)||0),
+        now=Date.now();
+        return sessionStorage.setItem(__WO_ADULT_SEEN_KEY,
+        String(now)),
+        isReload()&&prev>0&&now-prev<3000
+      }
+      catch(_){
+        return!1
+      }
+
+    })(),
+    /* Let Chromium paint a real body before interrupting its parser; otherwise even the warning stays blank. */
+    stopLoad=()=>{
+      if(stopped||stopping)return;
+      stopping=!0;
+      let observer=null;
+      const afterBody=()=>{
+        observer&&observer.disconnect();
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          stopping=!1;
+          if(timedOut||__woAdultAccepted()||__woConfigStore.__configReady&&(__woConfigStore.enabled===!1||__woConfigStore.gateAdultSites===!1))return;
+          try{window.stop();stopped=!0}catch(_){}
+        }))
+      };
+      if(document.body)afterBody();
+      else if(document.documentElement){
+        observer=__woObserver(()=>{if(document.body)afterBody()}),
+        observer.observe(document.documentElement,{childList:!0})
+      }
+      else stopping=!1
+    },
+    release=()=>{
+      timer&&(clearTimeout(timer),
+      timer=0);
+      if(el){
+        try{
+          el.remove()
+        }
+        catch(_){
+
+        }
+        el=null
+      }
+
+    };
+    try{
+      if(!__woAdultResumed&&!__woAdultAccepted()&&__woAdultVeilWanted(location.hostname,document.referrer,__woAdultPending(),rapid)&&document.documentElement){
+        el=document.createElement("style"),
+        el.textContent="html{background:#0a0a0f!important}html>:not(head):not(#rg-adult-gate){opacity:0!important;pointer-events:none!important}",
+        document.documentElement.appendChild(el),
+        /* Nothing arrived to decide with. Fail open: start the page the veil stopped, without veiling it again. */
+        timer=setTimeout(()=>{
+          timedOut=!0;
+          if(stopped){
+            try{
+              sessionStorage.setItem(__WO_ADULT_RESUME_KEY,
+              "1")
+            }
+            catch(_){
+
+            }
+            release();
+            try{
+              location.reload()
+            }
+            catch(_){
+
+            }
+            return
+          }
+          release()
+        },
+        5000),
+        /* A reload of a site the reader has not accepted is the site reloading itself. Stopping it before its
+           scripts parse ends a reload loop in one load and gives the card time to arrive and be read. */
+        isReload()&&stopLoad()
+      }
+
+    }
+    catch(_){
+
+    }
+    return{
+      release:release,
+      stopLoad:stopLoad,
+      stopped:()=>stopped,
+      rapid:()=>rapid
+    }
+
+  })();
   let __woToken=null;
   /* SEC-01: the routing nonce is public. The bridge hands off the private HMAC key once at document_start.
      Authenticate config, verdicts, replies, frame relays and disposal with a sequence and payload;
@@ -1080,6 +1346,12 @@
       return!1
     }
   }
+  let __woBadgeThemeDark=!1,__woBadgeThemeReady=!1,__woBadgeThemeChanged=()=>{};
+  woOn(document,"wo-badge-activity",event=>{
+    const d=event&&event.detail,detail=d&&d.detail;
+    if(!d||d.type!=="badge_theme"||d.src!=="bridge"||!detail||typeof detail.dark!=="boolean"||!__woEventTrusted(d,event))return;
+    __woBadgeThemeDark=detail.dark,__woBadgeThemeReady=!0,__woBadgeThemeChanged()
+  });
   let __woToastReady=!1;
   const __woToastPending=[];
   /* Worker notices can arrive before the full config starts the toast UI. */
@@ -1360,7 +1632,8 @@
   const __woStartRuntime=()=>{
     if(__woRuntimeStarted)return;
     __woRuntimeStarted=!0;
-    if(window.__wardenOneInstalled===__WO_RUNTIME_VERSION&&window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return;
+    /* Another copy already ran this page's adult gate. */
+    if(window.__wardenOneInstalled===__WO_RUNTIME_VERSION&&window.__wardenOneReadyVersion===__WO_RUNTIME_VERSION)return void __woAdultVeil.release();
     window.__wardenOneInstalled=__WO_RUNTIME_VERSION;
     const __woMoConsumers=[],
     __woMoSourceConsumers=[];
@@ -1520,7 +1793,7 @@
     /* Hosted editors and identity portals keep their controls and browser signals native.
        Page-level security checks remain active outside the manifest's login routes. */
     HOSTED_APP_COMPAT_HOST=/^(?:(?:docs|drive)\.google\.com|(?:[a-z0-9-]+\.)*(?:okta|auth0|onelogin|duosecurity|pingone|b2clogin|ciamlogin|amazoncognito|shopify)\.com)$/i,
-    HOSTED_APP_COMPAT_PAUSED=["removeOverlays","autoRejectConsent","antiFingerprintNoise","antiFingerprint"],
+    HOSTED_APP_COMPAT_PAUSED=["removeOverlays","autoRejectConsent","antiFingerprintNoise","antiFingerprint","clientHintProtection"],
     /* Pause these guards on education sites for login, exam and proctoring flows; keep the rest running.
        Fingerprint realms remain excluded in the manifest to avoid identity-provider challenges.
        Keep this list aligned with SITE_DASH_EDU_PAUSED via test-education-compat.js. */
@@ -1585,8 +1858,11 @@
       for(const k of Object.keys(WO))k in next||delete WO[k];
       Object.assign(WO,next),
       __woWebGLControl.set(!0===next.webglDisabled);
+      __woClientHintsControl.set(!0===next.clientHintProtection);
+      __woRedirectChainControl.configure(next.enabled!==!1&&next.detectRedirectChains===!0);
+      if(__woRedirectChainControl.blocked())WO.__frozen=!0;
       if(__woRealmRecord){
-        __woRealmRecord=Object.freeze(Object.assign({},__woRealmRecord,{webglBlocked:!0===next.webglDisabled})),
+        __woRealmRecord=Object.freeze(Object.assign({},__woRealmRecord,{webglBlocked:!0===next.webglDisabled,clientHints:!0===next.clientHintProtection})),
         __woRealmSettled()
       }
       /* The public ready version means the script ran, including on paused sites.
@@ -2949,22 +3225,8 @@
       let heuristicHit=!1,
       heuristicReasons=[];
       if(WO.adultHeuristics&&!onList){
-        const host=here,
-        STRONG_LONG=/(xvideos|xnxx|xhamster|hentai|camgirl|camsex|sexcam|cumshot|creampie|gangbang|deepthroat|bukkake|onlyfans|rule34|pornhub|brazzers|shemale|blowjob|handjob|cumming)/i,
-        STRONG_SHORT=/(^|[-_.0-9])(milf|bdsm|nsfw|xxx|jizz|fap)([-_.0-9]|$)/i,
-        STRONG_COMPOUND=/(livecam|webcamsex|camwhore|camslut|sexcams?|adultcams?|livesex|freesex|xxxcam|nudecam|sexchat|adultchat|fuckbook|shagbook|milfcam)/i,
-        PORN_SUBSTR=/porn/i,
-        SFW_PORN=/(food|earth|nature|space|sky|cloud|weather|city|room|interior|home|history|design|architect|car|auto|gun|book|word|data|tech|plant|animal|cabin|mountain|abandoned|machine|monster|map|retro|train|aviation|military|gaming|hardware|kitchen|garden|coffee|watch)[-_]?porn/i,
-        STRONG_HOST={
-          test:h=>STRONG_LONG.test(h)||STRONG_SHORT.test(h)||STRONG_COMPOUND.test(h)||PORN_SUBSTR.test(h)&&!SFW_PORN.test(h)
-        },
-        SOFT_HOST=/(^|[-_.])(sex|adult|nude|naked|erotic|lust|kink|babe|escort|fetish|cam|girl)(s|sex|cam|girl|videos?)?([-_.0-9]|$)/i;
-        let score=0;
-        /\.(xxx|porn|sex|adult|sexy|cam|tube|webcam|porno)$/i.test(host)&&(score+=3,
-        heuristicReasons.push("adult TLD")),
-        STRONG_HOST.test(host)?(score+=4,
-        heuristicReasons.push("explicit term in domain")):SOFT_HOST.test(host)&&(score+=1,
-        heuristicReasons.push("suggestive term in domain"));
+        let score=__woAdultHostScore(here,
+        heuristicReasons);
         const checkTitle=()=>{
           try{
             const t=(document.title||"").toLowerCase();
@@ -3019,7 +3281,7 @@
 
         }
         const cameFromElsewhere=refHost&&refHost!==here&&!here.endsWith("."+refHost)&&!refHost.endsWith("."+here);
-        if(!0!==WO.__adultGateAllowedThisPage&&(cameFromElsewhere||!refHost)){
+        if(!0!==WO.__adultGateAllowedThisPage&&!__woAdultResumed&&!__woAdultAccepted()&&(cameFromElsewhere||!refHost||__woAdultPending()||__woAdultVeil.rapid())){
           armAdultGateReask(forceHeuristic,
           reasonsIn),
           WO.__frozen=!0;
@@ -3051,12 +3313,11 @@
             const msg=oDiv(card,
             SUB,
             "WardenOne paused this adult (18+) site before it loaded.");
+            let fine=null;
             cameFromElsewhere&&(appendText(msg,
-            " You were redirected here"),
-            refHost&&(appendText(msg,
-            " from "),
+            " You came here from "),
             appendBold(msg,
-            refHost)),
+            refHost),
             appendText(msg,
             ".")),
             oTextDiv(card,
@@ -3079,11 +3340,65 @@
             "I'm sure, continue",
             ()=>{
               WO.__adultGateAllowedThisPage=!0,
-              teardown&&teardown()
+              __woAdultSetPending(!1),
+              teardown&&teardown(),
+              resumeMedia();
+              try{
+                sessionStorage.setItem(__WO_ADULT_OK_KEY,
+                "1")
+              }
+              catch(_){
+
+              }
+              /* The card stopped this page loading, so the reader's yes is what starts it. */
+              if(__woAdultVeil.stopped()){
+                try{
+                  REAL.reload()
+                }
+                catch(_){
+
+                }
+
+              }
+
             }),
-            oDiv(card,
+            fine=oDiv(card,
             FINE,
-            "Shown because you arrived via a redirect or external link, not by browsing here directly."),
+            "WardenOne asks before every adult site, so nothing explicit opens by surprise.");
+            /* The worker saw how this tab arrived: a redirect is named as one, a visit the reader chose is not. */
+            __woBackgroundRequest({
+              kind:"adult-arrival"
+            },
+            res=>{
+              try{
+                if(!res||!res.ok||!msg.isConnected)return;
+                if("redirect"===res.how){
+                  msg.textContent="WardenOne paused this adult (18+) site before it loaded. A redirect brought you here",
+                  /* A reload of this same site is not somewhere the reader came "from". */
+                  cameFromElsewhere&&(appendText(msg,
+                  " from "),
+                  appendBold(msg,
+                  refHost)),
+                  appendText(msg,
+                  ", not a page you opened yourself."),
+                  fine.textContent="Shown because a redirect brought you here."
+                }
+                else if("chosen"===res.how){
+                  msg.textContent="You are opening an adult (18+) site",
+                  cameFromElsewhere&&(appendText(msg,
+                  " from a link on "),
+                  appendBold(msg,
+                  refHost)),
+                  appendText(msg,
+                  "."),
+                  fine.textContent="WardenOne asks before every adult site. Turn this off with Warn before adult sites in Settings."
+                }
+              }
+              catch(_){
+
+              }
+            },
+            2000);
             document.documentElement.appendChild(host),
             release=woDialog(host,
             card,
@@ -3092,6 +3407,41 @@
               description:"This adult site was paused before it loaded. Go back, or continue if you meant to come here."
             })
           };
+          /* Nothing plays behind the card: media that starts is paused, and resumes when the reader continues. */
+          let holdingMedia=!0;
+          const heldMedia=new Set,
+          holdMedia=m=>{
+            try{
+              holdingMedia&&m&&/^(VIDEO|AUDIO)$/.test(m.tagName)&&!m.paused&&(m.pause(),
+              heldMedia.add(m))
+            }
+            catch(_){
+
+            }
+
+          },
+          resumeMedia=()=>{
+            holdingMedia=!1,
+            heldMedia.forEach(m=>{
+              try{
+                const p=m.isConnected&&m.paused?m.play():null;
+                p&&p.catch&&p.catch(()=>{})
+              }
+              catch(_){
+
+              }
+
+            }),
+            heldMedia.clear()
+          };
+          woOn(document,"play",e=>holdMedia(e.target),!0),
+          woOn(document,"playing",e=>holdMedia(e.target),!0);
+          try{
+            document.querySelectorAll("video,audio").forEach(holdMedia)
+          }
+          catch(_){
+
+          }
           const stopAdultGate=mountBlocker("rg-adult-gate",
           paint);
           teardown=()=>{
@@ -3100,6 +3450,8 @@
             stopAdultGate()
           },
           WO.__adultGateShown=!0,
+          __woAdultSetPending(!0),
+          __woAdultVeil.stopLoad(),
           log("gated_adult_site",
           {
             host:here,
@@ -3113,41 +3465,8 @@
       (onList||heuristicHit)&&maybeGateAdult(!1,
       heuristicReasons)
     }
-    let unshimLogCount=0;
-    function stripTracking(href){
-      if(href=function(href){
-        if(!WO.unshimLinks)return href;
-        const u=toURL(href);
-        if(!u||!/^https?:$/i.test(u.protocol))return href;
-        const host=u.hostname.replace(/^www\./,
-        "").toLowerCase(),
-        path=u.pathname.toLowerCase();
-        let raw="";
-        if((/^(.+\.)?google\.[a-z.]+$/i.test(host)||/(^|\.)googleusercontent\.com$/i.test(host))&&/^\/(url|imgres|aclk)$/i.test(path)?raw=u.searchParams.get("url")||u.searchParams.get("q")||u.searchParams.get("adurl")||"":(/(^|\.)(facebook|messenger)\.com$/i.test(host)||/(^|\.)instagram\.com$/i.test(host))&&(/\/l\.php$/i.test(path)||/\/flx\/warn\//i.test(path))&&(raw=u.searchParams.get("u")||""),
-        !raw)return href;
-        const dest=toURL(raw,
-        location.href);
-        return dest&&/^https?:$/i.test(dest.protocol)&&dest.hostname.toLowerCase()!==u.hostname.toLowerCase()?(++unshimLogCount<=20&&log("unshimmed_link",
-        {
-          from:u.hostname,
-          to:dest.hostname
-        }),
-        dest.toString()):href
-      }
-      (href),
-      !WO.stripTrackingParams)return href;
-      const u=toURL(href);
-      if(!u)return href;
-      let changed=!1;
-      for(const key of[...u.searchParams.keys()])TRACKING_PARAMS.some(re=>re.test(key))&&(u.searchParams.delete(key),
-      changed=!0);
-      let out=changed?u.toString():href;
-      if(!0===WO.cleanCopyLinks){
-        const c2=cleanCopyUrl(out);
-        c2!==out&&(out=c2)
-      }
-      return out
-    }
+    /* The gate has decided: its blocker now hides the page, or nothing needs hiding. */
+    __woAdultVeil.release();
     /* ---- hyperlink auditing --------------------------------------------------
        Remove ping independently of destination lists: href drives navigation and ping only sends a beacon. */
     let pingStripCount=0;
@@ -3577,6 +3896,7 @@
       }
       const sig=chainSignal();
       if(sig){
+        const navigationStopped=__woRedirectChainControl.arm();
         WO.__frozen=!0,
         document.querySelectorAll('meta[http-equiv="refresh" i]').forEach(m=>{
           m.setAttribute("data-wo-disabled",
@@ -3604,10 +3924,10 @@
           "check"),
           oDiv(titleRow,
           "font-size:19px!important;font-weight:700!important;color:#2d1b40!important;font-family:Quicksand,system-ui,sans-serif!important;",
-          "Redirect chain blocked"),
+          navigationStopped?"Redirect chain blocked":"Suspicious redirect chain detected"),
           oDiv(card,
           "color:#7a5f93!important;margin:0 0 18px 0!important;font-size:13.5px!important;line-height:1.55!important;font-family:Nunito,system-ui,sans-serif!important;",
-          "This page is a relay in a redirect chain  -  the kind used by fake-download and ad-spam sites. It was about to send you onward automatically. WardenOne stopped it.");
+          navigationStopped?"WardenOne is blocking this page's automatic navigation. Dismissing this warning keeps the stop active. This does not verify any download.":"This page looks like a redirect relay. This browser cannot fully stop its automatic navigation. Go back to leave the page.");
           const ROW="background:rgba(176,106,212,.08)!important;border:1px solid rgba(176,106,212,.2)!important;border-radius:10px!important;padding:10px 12px!important;margin:6px 0!important;word-break:break-all!important;font-family:ui-monospace,monospace!important;font-size:12px!important;color:#5a4570!important;",
           LBL="color:#a98fc0!important;font-size:11px!important;font-weight:700!important;text-transform:uppercase!important;letter-spacing:.05em!important;margin:10px 0 3px 0!important;font-family:Nunito,system-ui,sans-serif!important;";
           oDiv(card,
@@ -3629,14 +3949,28 @@
           oBtn(btns,
           "background:linear-gradient(135deg,#b06ad4,#e07ab0)!important;color:#fff!important;border-radius:11px!important;padding:11px 18px!important;font-size:13.5px!important;font-weight:700!important;font-family:Quicksand,system-ui,sans-serif!important;box-shadow:0 6px 16px rgba(176,106,212,.35)!important;",
           "<- Go back to safety",
-          ()=>{
+          event=>{
+            if(!event||event.isTrusted!==!0)return;
+            __woRedirectChainControl.release(),
+            log("allowed_redirect_chain",{action:"back"}),
             teardown&&teardown(),
             realGoBack()
           }),
           oBtn(btns,
           "background:rgba(176,106,212,.12)!important;color:#7a5f93!important;border:1px solid rgba(176,106,212,.25)!important;border-radius:11px!important;padding:11px 18px!important;font-size:13.5px!important;font-weight:700!important;font-family:Quicksand,system-ui,sans-serif!important;",
           "Dismiss & stay here",
-          ()=>{
+          event=>{
+            if(!event||event.isTrusted!==!0)return;
+            teardown&&teardown(),
+            WO.__frozen=__woRedirectChainControl.blocked()
+          }),
+          oBtn(btns,
+          "background:transparent!important;color:#7a5f93!important;border:1px solid rgba(176,106,212,.25)!important;border-radius:11px!important;padding:11px 18px!important;font-size:13.5px!important;font-family:Quicksand,system-ui,sans-serif!important;",
+          "Resume page redirects",
+          event=>{
+            if(!event||event.isTrusted!==!0)return;
+            __woRedirectChainControl.release(),
+            log("allowed_redirect_chain",{action:"resume"}),
             teardown&&teardown()
           }),
           oTextDiv(card,
@@ -3647,7 +3981,7 @@
           card,
           {
             label:"WardenOne redirect-chain warning",
-            description:"This page was about to send you onward automatically. Go back, or dismiss to stay here."
+            description:"Go back, or dismiss to keep automatic navigation stopped. Resume page redirects allows this page to navigate again."
           })
         };
         const stopChain=mountBlocker("rg-interstitial",
@@ -5276,7 +5610,10 @@
            tokens returning to their issuer rather than requiring an exception for each app. */
         "spotify.com",
         "scdn.co",
-        "spotifycdn.com"],
+        "spotifycdn.com",
+        /* DRM licence services receive a player's playback licence token by design. Vimeo uses
+           ExpressPlay's PlayReady licence path whenever Edge cannot use Widevine. */
+        "expressplay.com"],
         families=[{
           pages:["spotify.com",
           "scdn.co",
@@ -9678,6 +10015,7 @@
         error:String(e)
       })
     }
+    const youtubeAdUiPaused=()=>trustedMediaHost&&WO.__youtubeCompatibilityMode&&(!__woConfigStore.__configReady||WO.scriptletEngine===!1);
     if(WO.adShield)try{
       function userCosmeticCss(selectors){
         if(!Array.isArray(selectors)||!selectors.length)return"";
@@ -9747,7 +10085,7 @@
       },
       collapseLeftovers=root=>{
         try{
-          if(!allowGoogleSearchCosmetics())return;
+          if(!allowGoogleSearchCosmetics()||youtubeAdUiPaused())return;
           const selector=adShieldVideoPlatform?SAFE_VIDEO_AD_SELECTORS.join(","):'ins.adsbygoogle, iframe[id^="google_ads"], iframe[src*="doubleclick"], iframe[src*="googlesyndication"], [data-ad-slot], [data-ad-client]';
           (root||document).querySelectorAll(selector).forEach(el=>{
             try{
@@ -10720,6 +11058,7 @@
       },
       requestAndApply=()=>{
         try{
+          if(youtubeAdUiPaused())return;
           if(!allowGoogleSearchCosmetics()){
             log("adshield_skipped",
             {
@@ -10908,7 +11247,7 @@
       };
       let adshieldCosmeticsStarted=!1;
       const maybeStartAdshieldCosmetics=()=>{
-        if(adshieldCosmeticsStarted||!allowGoogleSearchCosmetics())return;
+        if(adshieldCosmeticsStarted||!allowGoogleSearchCosmetics()||youtubeAdUiPaused())return;
         adshieldCosmeticsStarted=!0,
         document.documentElement?requestAndApply():woOn(document,"DOMContentLoaded",
         requestAndApply,
@@ -10916,7 +11255,8 @@
           once:!0
         })
       };
-      maybeStartAdshieldCosmetics()
+      maybeStartAdshieldCosmetics(),
+      woOn(document,"wo-config-change",maybeStartAdshieldCosmetics)
     }
     catch(e){
       log("adshield_failed",
@@ -11154,7 +11494,6 @@
         }
 
       },
-      searchSponsoredDestinations=new Set,
       searchBaseUrl=()=>{
         try{
           return location.href||location.origin||"https://"+location.hostname+"/"
@@ -11189,10 +11528,6 @@
 
         }
         return Array.from(new Set(out))
-      },
-      searchIgnoredSponsorHost=h=>{
-        h=searchCleanHost(h);
-        return!h||/(^|\.)google(?:adservices|apis|usercontent|syndication)?\./i.test(h)||/(^|\.)gstatic\./i.test(h)||/(^|\.)doubleclick\.net$/i.test(h)||"search.brave.com"===h||"brave.com"===h
       },
       searchIsAdClickUrl=url=>{
         try{
@@ -11229,18 +11564,11 @@
         }
 
       },
-      searchRememberSponsoredLinks=root=>{
+      searchMarkSponsoredModule=root=>{
         try{
-          if(!SEARCH_ADS_ON||!root||!root.querySelectorAll)return;
+          if(!SEARCH_ADS_ON||!root)return;
           root.setAttribute&&root.setAttribute("data-wo-sponsored-search-result",
-          "1");
-          root.querySelectorAll("a[href],area[href]").forEach(a=>{
-            const raw=a.getAttribute&&a.getAttribute("href")||a.href||"",
-            unwrapped=searchUnwrapSponsoredUrl(raw);
-            searchHostKeys(unwrapped).forEach(h=>{
-              !searchIgnoredSponsorHost(h)&&searchSponsoredDestinations.add(h)
-            })
-          })
+          "1")
         }
         catch(_){
 
@@ -11249,11 +11577,7 @@
       },
       searchIsSponsoredUrl=url=>{
         try{
-          if(!SEARCH_ADS_ON||!url)return!1;
-          if(searchIsAdClickUrl(url))return!0;
-          const unwrapped=searchUnwrapSponsoredUrl(url);
-          if(searchIsAdClickUrl(unwrapped))return!0;
-          return searchHostKeys(unwrapped).some(h=>searchSponsoredDestinations.has(h))
+          return!!(SEARCH_ADS_ON&&url&&searchIsAdClickUrl(url))
         }
         catch(_){
           return!1
@@ -11297,7 +11621,7 @@
               log("blocked_sponsored_search_click",
               {
                 host:searchHostKeys(searchUnwrapSponsoredUrl(href))[0]||"",
-                reason:searchInSponsoredModule(start)?"sponsored_result":"sponsored_site"
+                reason:searchInSponsoredModule(start)?"sponsored_result":"ad_click_url"
               })
             }
             catch(_){
@@ -11378,7 +11702,7 @@
           SEARCH_AI_ON&&directSelectors.push(...searchAiSelectors());
           directSelectors.length&&(root||document).querySelectorAll(directSelectors.join(",")).forEach(el=>{
             if(inPaa(el)||containsResults(el))return;
-            sponsoredSel&&el.matches&&el.matches(sponsoredSel)&&searchRememberSponsoredLinks(el);
+            sponsoredSel&&el.matches&&el.matches(sponsoredSel)&&searchMarkSponsoredModule(el);
             googleHide(el)&&hidden++;
             collapseShell(el)
           });
@@ -11396,7 +11720,7 @@
             if(!labelVisible&&!hiddenByUs)return;
             const mod=googleModuleFor(el,
             isAi?"ai":"ad");
-            isAd&&searchRememberSponsoredLinks(mod);
+            isAd&&searchMarkSponsoredModule(mod);
             googleHide(mod)&&hidden++;
             collapseShell(mod)
           })
@@ -16664,7 +16988,7 @@
       noise:!1,
       webglBlocked:!1
     })),
-    __woRealmRecord=Object.freeze(Object.assign({},__woRealmRecord,{webglBlocked:!0===WO.webglDisabled})),
+    __woRealmRecord=Object.freeze(Object.assign({},__woRealmRecord,{webglBlocked:!0===WO.webglDisabled,clientHints:!0===WO.clientHintProtection})),
     __woWebGLControl.set(!0===WO.webglDisabled),
     __woRealmSettled();
     /* FINGERPRINT-NOISE-BEGIN
@@ -21873,6 +22197,10 @@
     {
       const counts=Object.create(null);
       let total=0,
+      activityTotal=null,
+      activityPageBase=0,
+      activityComplete=!1,
+      badgeMenuOpen=!1,
       badgeHost=null,
       badgeButton=null,
       badgePanel=null,
@@ -21895,7 +22223,13 @@
       settleBadge=()=>{
 
       };
-      const removeBadge=()=>{
+      const closeBadgeMenu=()=>{
+        if(!badgeMenuOpen)return;
+        badgeMenuOpen=!1,
+        __woBackgroundRequest(__woSignedRequest({kind:"badge-rule-menu-close"}),()=>{},1000)
+      },
+      removeBadge=()=>{
+        closeBadgeMenu();
         try{
           clearTimeout(fadeT),
           fadeT=null;
@@ -21928,8 +22262,9 @@
         clearNode(root);
         const css=':host{all:initial}@keyframes rg-pop{0%{transform:scale(1)}30%{transform:scale(1.14)}60%{transform:scale(.97)}100%{transform:scale(1)}}@keyframes rg-ring{0%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,.45)}70%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 12px rgba(216,104,162,0)}100%{box-shadow:0 4px 16px rgba(157,84,201,.22),0 0 0 0 rgba(216,104,162,0)}}.b.inert{pointer-events:none}.b.away{visibility:hidden;opacity:0;pointer-events:none}.b.away+.panel{display:none}.b{position:fixed;bottom:calc(16px + var(--rg-lift,0px));right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;font:600 12px/1.3 "Quicksand","Nunito",ui-sans-serif,system-ui,sans-serif;background:rgba(250,245,254,.62);border:1px solid rgba(176,106,212,.16);color:#8b73a4;border-radius:999px;padding:7px 13px 7px 11px;cursor:pointer;user-select:none;box-shadow:0 4px 18px rgba(130,70,170,.12);transition:opacity .6s ease,transform .15s;display:flex;align-items:center;gap:7px;opacity:.28}.b:hover{opacity:1;background:rgba(250,245,254,.82);transform:translateY(-1px);box-shadow:0 6px 22px rgba(130,70,170,.24)}.b.show{opacity:.92;background:rgba(250,245,254,.7)}.b.hot{opacity:1;color:#8b3fb0;background:rgba(245,228,251,.78)}.b.pop{animation:rg-pop .45s cubic-bezier(.34,1.56,.64,1),rg-ring .6s ease-out}.b.damaged{opacity:1;color:#a8502f;background:rgba(251,233,224,.85)}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:linear-gradient(135deg,#b06fd6,#e07aae);vertical-align:middle;flex:none}.b.hot .dot{box-shadow:0 0 8px rgba(176,111,214,.7)}.b.damaged .dot{background:linear-gradient(135deg,#e0894a,#d6604a)}.panel{position:fixed;bottom:calc(52px + var(--rg-lift,0px));right:calc(16px + var(--rg-gutter,0px));pointer-events:auto;z-index:2147483646;display:none;background:rgba(250,242,254,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);color:#5a4670;border-radius:16px;padding:14px 16px;min-width:230px;font:12.5px/1.5 "Nunito",ui-sans-serif,sans-serif;box-shadow:0 12px 34px rgba(120,55,160,.24)}.panel.open{display:block}.panel h3{margin:0 0 10px;font:700 13px "Quicksand","Nunito",sans-serif;color:#3d2a52;display:flex;align-items:center;gap:7px}.panel .r{display:flex;justify-content:space-between;gap:16px;padding:3px 0;color:#7a5f93}.panel .r b{color:#8b3fb0;font-weight:700}.empty{color:#a98fc0}.panel .warn{color:#a8502f;font-weight:600;margin-top:8px;line-height:1.4}';
         /* Constructed sheets keep shadow UI styled when page CSP rejects inline style elements. */
+        const darkCss='.b.dark{color:#dcc9e5;background:rgba(37,22,47,.72);border-color:#51325f;box-shadow:0 8px 28px rgba(0,0,0,.3)}.b.dark:hover,.b.dark.show{background:rgba(48,32,58,.9)}.b.dark.hot{color:#e1b0f3;background:#352040}.b.dark.damaged{color:#ffd08a;background:#3b2b1b}.b.dark+.panel{background:#25162f;color:#dcc9e5}.b.dark+.panel h3{color:#fbf6fe}.b.dark+.panel .r,.b.dark+.panel .rule-id{color:#dcc9e5}.b.dark+.panel .r b{color:#e1b0f3}.b.dark+.panel .warn{color:#ffd08a}';
         const sheet=new CSSStyleSheet();
-        sheet.replaceSync(css),
+        sheet.replaceSync(css+".panel{max-width:min(420px,calc(100vw - 32px));max-height:60vh;overflow:auto}.panel .rule-name{min-width:0;flex:1}.panel .rule-id{display:block;font:11px/1.4 ui-monospace,monospace;overflow-wrap:anywhere;color:#72568e;margin-top:3px}"+darkCss+".b.pending-theme,.b.pending-theme:hover,.b.pending-theme.show{background:rgba(100,70,115,.14);border-color:rgba(169,128,187,.45);color:#a980bb;box-shadow:none}"),
         root.adoptedStyleSheets=[sheet];
         const badge=document.createElement("div"),
         dot=document.createElement("span"),
@@ -21937,7 +22272,7 @@
         panel=document.createElement("div"),
         title=document.createElement("h3"),
         list=document.createElement("div");
-        badge.className="b show",
+        badge.className="b show"+(__woBadgeThemeDark?" dark":"")+(__woBadgeThemeReady?"":" pending-theme"),
         badge.id="rg-b",
         dot.className="dot",
         label.id="rg-n",
@@ -21949,7 +22284,7 @@
         title.textContent="WardenOne",
         list.id="rg-list",
         list.className="empty",
-        list.textContent="No blocks shown here yet. Open WardenOne for network activity.",
+        list.textContent="Open WardenOne to see page and network activity.",
         panel.appendChild(title),
         panel.appendChild(list),
         root.appendChild(badge),
@@ -22064,8 +22399,7 @@
         }
         return null
       },
-      /* Judge topmost page elements, skipping the badge’s retargeted shadow host.
-         Players require hiding; anchored controls return their own and anchor rects for repositioning. */
+      /* Skip the badge's shadow host and return obstruction bounds for repositioning. */
       badgeProbe=rect=>{
         const out={
           kind:"",
@@ -22089,9 +22423,10 @@
               if(!el||el===badgeHost||badgeHost.contains&&badgeHost.contains(el))continue;
               if(el===document.documentElement||el===document.body)break;
               if(el.closest){
-                if(el.closest(PLAYER_SHELL_SELECTOR))return{
+                const player=el.closest(PLAYER_SHELL_SELECTOR);
+                if(player)return{
                   kind:"player",
-                  control:null,
+                  control:player.getBoundingClientRect(),
                   anchor:null
                 };
                 const control=out.kind?null:el.closest(controls);
@@ -22138,7 +22473,7 @@
             if(!b||b.width<=0||b.height<=0)continue;
             if(!(b.left<right&&b.right>left&&b.top<bottom&&b.bottom>top))continue;
             const shell=!!(nodes[i].matches&&nodes[i].matches(PLAYER_SHELL_SELECTOR));
-            if(shell||badgeAnchorOf(nodes[i]))return!0
+            if(shell||badgeAnchorOf(nodes[i]))return{player:shell,box:b}
           }
           return!1
         }
@@ -22239,8 +22574,8 @@
           inert=!1,
           lift=0;
           if(hide||!home)away=inert=!0;
-          else if("player"===under.kind||near)away=inert=!0;
-          else if("control"===under.kind){
+          else if(near&&!near.player)away=inert=!0;
+          else if(under.kind||near){
             /* Try bounded positions above each anchored obstruction, including stacked controls.
                If none fits, keep the badge visible but stop taking pointer input. */
             const limit=(window.innerHeight||0)*BADGE_LIFT_MAX_RATIO,
@@ -22254,8 +22589,9 @@
             /* Keep the current clear position during forced checks to avoid jumps under the pointer.
                Return home only when the home position itself is clear. */
             badgeLift>0&&ups.push(badgeLift),
-            propose(under.control&&under.control.top),
+            propose(under.control&&under.control.top-("player"===under.kind?72:0)),
             propose(under.anchor&&under.anchor.top),
+            near&&propose(near.box.top-72),
             inert=!0;
             for(let i=0;i<ups.length;i++){
               const up=ups[i];
@@ -22265,10 +22601,11 @@
               blocking=there.top<0?null:badgeProbe(there);
               if(!blocking)continue;
               if(blocking.kind){
-                "control"===blocking.kind&&blocking.control&&propose(blocking.control.top);
+                blocking.control&&propose(blocking.control.top-("player"===blocking.kind?72:0));
                 continue
               }
-              if(badgeNearMediaControl(there))continue;
+              const media=badgeNearMediaControl(there);
+              if(media){media.player&&propose(media.box.top-72);continue}
               lift=up,
               inert=!1;
               break
@@ -22282,14 +22619,13 @@
           badgeYieldState.liftApplied=!0,
           badgeHost.style.setProperty("--rg-lift",
           lift+"px")),
-          /* Hide over player controls so sliders remain visible. Over ordinary controls, move up or yield input if movement
-             is exhausted. */
+          /* Native volume sliders keep their clearance; inline players move or yield input without hiding the badge. */
           badgeButton.classList.toggle("away",
           away),
           badgeButton.classList.toggle("inert",
           inert),
           /* Close the panel when its badge stops accepting input, since the badge can no longer dismiss it. */
-          (away||inert)&&badgePanel&&badgePanel.classList.remove("open")
+          (away||inert)&&(closeBadgeMenu(),badgePanel&&badgePanel.classList.remove("open"))
         }
         catch(_){
 
@@ -22331,16 +22667,33 @@
             host.id="rg-badge-host",
             /* Reset and zero-size the fixed host so page CSS cannot make it a containing block or affect layout.
                Shadow DOM protects descendants, not the host’s transform/filter/contain properties. */
-            host.style.cssText="all:initial!important;position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;z-index:2147483646!important;pointer-events:none!important;",
-            host.attachShadow({
+            host.style.cssText="all:initial!important;position:fixed!important;top:0!important;left:0!important;width:0!important;height:0!important;margin:0!important;padding:0!important;border:0!important;z-index:2147483646!important;pointer-events:none!important;";
+            const root=host.attachShadow({
               mode:"open"
-            }),
-            buildBadgeShadow(host.shadowRoot),
+            });
+            buildBadgeShadow(root),
             (document.body||document.documentElement).appendChild(host);
-            const bEl=badgeButton=host.shadowRoot.getElementById("rg-b"),
-            pEl=badgePanel=host.shadowRoot.getElementById("rg-p");
+            const bEl=badgeButton=root.getElementById("rg-b"),
+            pEl=badgePanel=root.getElementById("rg-p");
+            bEl.setAttribute("role","button"),
+            bEl.setAttribute("tabindex","0"),
+            bEl.setAttribute("aria-label","WardenOne protection activity"),
+            bEl.setAttribute("aria-haspopup","dialog");
+            const togglePanel=event=>{
+              if(!event||event.isTrusted!==!0)return;
+              __woBackgroundRequest(__woSignedRequest({kind:"badge-rule-menu"}),result=>{
+                if(result&&result.ok===!0)badgeMenuOpen=result.open===!0;
+                else pEl.classList.toggle("open")
+              },1500)
+            };
             bEl.addEventListener("click",
-            ()=>pEl.classList.toggle("open")),
+            togglePanel),
+            woOn(bEl,"keydown",event=>{
+              if(event.key==="Enter"||event.key===" ")event.preventDefault(),event.stopPropagation(),togglePanel(event)
+            }),
+            woOn(pEl,"keydown",event=>{
+              if(event.key==="Escape")pEl.classList.remove("open"),bEl.setAttribute("aria-expanded","false"),bEl.focus()
+            }),
             alignBadge(),
             /* Decay the transient hot highlight with the shared settle timer. Keep damaged sticky until reload. */
             settleBadge=()=>{
@@ -22350,7 +22703,7 @@
             fadeT=setTimeout(settleBadge,
             BADGE_FADE_MS),
             brightenBadge=()=>{
-              bEl.classList.add("show"),
+              bEl.classList.add("show","hot"),
               clearTimeout(fadeT),
               fadeT=setTimeout(settleBadge,
               BADGE_FADE_MS)
@@ -22387,9 +22740,9 @@
               blocked_config_spoof:"Blocked tamper attempts"
             };
             if(renderBadge=()=>{
-              if(!badgeHost||!badgeHost.shadowRoot)return;
-              const nEl=host.shadowRoot.getElementById("rg-n"),
-              listEl=host.shadowRoot.getElementById("rg-list");
+              if(badgeHost!==host)return;
+              const nEl=root.getElementById("rg-n"),
+              listEl=root.getElementById("rg-list");
               if(WO.__damaged){
                 bEl.classList.add("damaged"),
                 nEl.textContent="Guard damaged",
@@ -22400,18 +22753,24 @@
                 warn.textContent="A component hit an error on this page. Try reloading; if it keeps happening, toggle WardenOne off and on in the popup.",
                 void listEl.appendChild(warn)
               }
-              total>0&&(bEl.classList.add("hot"),
-              nEl.textContent=total+" blocked");
+              const shown=activityTotal===null?total:activityTotal+Math.max(0,total-activityPageBase);
+              const beacons=counts.detected_beacon||0;
+              nEl.textContent=shown>0?shown+(activityTotal!==null&&!activityComplete?"+ blocked":" blocked"):beacons?beacons+(beacons===1?" beacon":" beacons"):"Guard active";
               const keys=Object.keys(counts);
               if(!keys.length)return listEl.className="empty",
-              void(listEl.textContent="No blocks shown here yet. Open WardenOne for network activity.");
+              void(listEl.textContent="Open WardenOne to see page and network activity.");
               listEl.className="",
               listEl.textContent="",
               keys.forEach(k=>{
                 const row=document.createElement("div");
                 row.className="r";
                 const label=document.createElement("span");
+                label.className="rule-name";
                 label.textContent=LABELS[k]||k;
+                const id=document.createElement("code");
+                id.className="rule-id",
+                id.textContent=k,
+                label.appendChild(id);
                 const count=document.createElement("b");
                 count.textContent=String(counts[k]),
                 row.appendChild(label),
@@ -22542,12 +22901,15 @@
                 const d=e.detail;
                 if(!__woEventTrusted(d,e))return;
                 const t=d&&d.type||"";
-                if("detected_download_gate"!==t&&!NO_BADGE_TYPES.has(t))return t&&/_failed$/.test(t)?(WO.__damaged=!0,
-                void renderBadge()):void(/^blocked_|^detected_|^gated_/.test(t)&&(counts[t]=(counts[t]||0)+1,
-                total++,
-                renderBadge(),
-                pulseBadge(),
-                brightenBadge()))
+                if("detected_download_gate"===t)return;
+                if(t&&/_failed$/.test(t))return WO.__damaged=!0,void renderBadge();
+                if(/^blocked_|^detected_|^gated_/.test(t)||t==="youtube_ads_removed"){
+                  const amount=t==="youtube_ads_removed"?Math.max(1,Math.min(20,Math.floor(Number(d.detail&&d.detail.count)||1))):1;
+                  counts[t]=(counts[t]||0)+amount;
+                  if(!NO_BADGE_TYPES.has(t)&&!/^(detected_|gated_)/.test(t))total+=amount,renderBadge(),pulseBadge(),brightenBadge();
+                  else if(t==="detected_beacon")renderBadge(),pulseBadge(),brightenBadge();
+                  else if(badgePanel&&badgePanel.classList.contains("open"))renderBadge()
+                }
               })
             }
             WO.__damaged&&renderBadge(),
@@ -22566,6 +22928,12 @@
       syncBadgeVisibility=()=>{
         !1===WO.showBadge?removeBadge():mount()
       };
+      __woBadgeThemeChanged=()=>{if(badgeButton){badgeButton.classList.toggle("dark",__woBadgeThemeDark);badgeButton.classList.toggle("pending-theme",!__woBadgeThemeReady)}};
+      woOn(document,"wo-badge-activity",event=>{
+        const d=event&&event.detail,detail=d&&d.detail;
+        if(!d||d.type!=="badge_activity"||!__woEventTrusted(d,event)||!detail||!Number.isInteger(detail.total)||detail.total<0||detail.total>1000000000)return;
+        activityTotal=detail.total,activityPageBase=total,activityComplete=detail.networkAvailable===!0,renderBadge()
+      });
       woOn(document,"wo-config-change",
       syncBadgeVisibility),
       document.body?syncBadgeVisibility():woOn(document,"DOMContentLoaded",
@@ -22574,7 +22942,7 @@
       try{
         let __woAdCollapseStarted=!1;
         const __woMaybeAdCollapse=()=>{
-          if(__woAdCollapseStarted||!WO.adShield||!(!isGoogleSearchResults()||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup))return;
+          if(__woAdCollapseStarted||!WO.adShield||youtubeAdUiPaused()||!(!isGoogleSearchResults()||WO.blockSponsoredSearchResults||WO.googleSearchResultCleanup))return;
         __woAdCollapseStarted=!0;
         try{
           var __woAS=document.createElement("style");

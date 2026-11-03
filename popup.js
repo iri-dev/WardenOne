@@ -52,7 +52,7 @@ const DEFAULTS = {
   enabled: true,
   blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true, backTrapGuard: true, clearCookiesOnLeave: false, clearServiceWorkersOnLeave: false, blockMetaRefresh: true,
   detectRedirectChains: true, warnGrabberDomains: true, blockGrabberResources: true,
-  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchSteadyPlayback: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, blockCnameTrackers: true, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, forcedDownloadProtection: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
+  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchSteadyPlayback: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, blockCnameTrackers: true, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, forcedDownloadProtection: false, __forcedDownloadOptInV1: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
   mediaShield: true, fullscreenGuard: true, fakeWindowGuard: true, notificationAbuseGuard: true, blockCameraMic: true, blockScreenCapture: true, blockGeolocation: true, blockAutoplayMedia: true, blockSuspiciousWebRTC: false,
   eyeShield: false, eyeShieldMode: 'off', eyeShieldBrightness: 100, eyeShieldBrightnessByHost: {},
   eyeShieldContrast: 100, eyeShieldContrastByHost: {}, eyeShieldSaturation: 100, eyeShieldSaturationByHost: {},
@@ -111,7 +111,7 @@ const SITE_OVERRIDE_SCOPE = {
     'blockPopupTricks', 'clearCookiesOnLeave', 'detectRedirectChains', 'blockGrabberResources', 'warnGrabberDomains',
     'blockWebRTCLeak', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers',
     'blockSponsoredSearchResults', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine',
-    'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts',
+    'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'clientHintProtection',
     'blockAllCookies', 'detectSkimmers', 'paymentCardGuard', 'forceHttps', 'loginAgeCheck', 'downloadReputation',
     'downloadSafeBrowsing', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation',
     'whoisXmlThreatIntel', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'intranetProtection',
@@ -1049,6 +1049,7 @@ function repaintExternalConfigKeys(keys) {
   reflectSilentMode();
   syncBreachVisibility();
   paintTrackerLearningMode();
+  if ((keys || []).some(key => key === 'siteOverrides' || key === 'scriptletEngine')) paintSiteControls();
   if ((keys || []).some((key) => key === 'eyeShieldSites' || key === 'eyeShieldMode' || key.startsWith('eyeShield'))) paintEyeShield();
   if ((keys || []).some((key) => key.startsWith('webglSaver'))) paintWebGLSaver();
 }
@@ -1066,11 +1067,12 @@ function adoptExternalConfigChange(newValue) {
     textFieldKeys.add(el.getAttribute('data-config-text'));
   });
   const adopted = [];
-  Object.keys(incoming).forEach((key) => {
+  new Set([...Object.keys(savedConfigSnapshot), ...Object.keys(incoming)]).forEach((key) => {
     if (mine.indexOf(key) >= 0 || textFieldKeys.has(key)) return;
-    if (!configValuesDiffer(incoming[key], config[key])) return;
-    config[key] = configClone(incoming[key]);
-    savedConfigSnapshot[key] = configClone(incoming[key]);
+    const value = Object.prototype.hasOwnProperty.call(incoming, key) ? incoming[key] : DEFAULTS[key];
+    if (!configValuesDiffer(value, config[key])) return;
+    if (value === undefined) { delete config[key]; delete savedConfigSnapshot[key]; }
+    else { config[key] = configClone(value); savedConfigSnapshot[key] = configClone(value); }
     adopted.push(key);
   });
   if (adopted.length) repaintExternalConfigKeys(adopted);
@@ -1388,8 +1390,64 @@ function pruneUnsupportedSiteOverrides(host) {
 }
 
 function siteOverridesFor(host) {
-  const entry = (config.siteOverrides || {})[host];
-  return entry && typeof entry === 'object' ? entry : null;
+  const entry = {};
+  for (const [pattern, flags] of Object.entries(config.siteOverrides || {})) {
+    if (!hostMatchesSite(host, pattern) || !flags || typeof flags !== 'object' || Array.isArray(flags)) continue;
+    for (const key of Object.keys(flags)) if (flags[key] === false) entry[key] = false;
+  }
+  return Object.keys(entry).length ? entry : null;
+}
+
+function paintSiteOverrideIndicators(host) {
+  document.querySelectorAll('.site-override-state').forEach(node => node.remove());
+  const entry = siteOverridesFor(host);
+  const youtube = /(^|\.)youtube(-nocookie)?\.com$/i.test(host || '');
+  const keys = new Set(Object.keys(entry || {}));
+  if (youtube) keys.add('scriptletEngine');
+  for (const key of keys) {
+    if ((!entry || entry[key] !== false) && !(youtube && key === 'scriptletEngine') || !SITE_OVERRIDE_KEYS.has(key)) continue;
+    document.querySelectorAll('input[data-key="' + key + '"]').forEach(input => {
+      const row = input.closest('.row');
+      const content = row && row.querySelector('.name')?.parentElement;
+      if (!content) return;
+      const line = document.createElement('div'); line.className = 'site-override-state desc';
+      const yt = youtube && key === 'scriptletEngine';
+      const off = config[key] === false || entry?.[key] === false;
+      line.appendChild(document.createTextNode(yt ? (off ? 'Off for ' : 'On for ') + host + '. ' : 'Off on ' + host + '. '));
+      const restore = document.createElement('button'); restore.type = 'button'; restore.className = 'btn';
+      restore.style.cssText = 'padding:2px 6px;font-size:10px;margin-left:3px;';
+      restore.textContent = yt ? (off ? 'Turn on & reload' : 'Apply & reload') : 'Restore here';
+      restore.addEventListener('click', () => { restore.disabled = true; if (yt) enableYoutubeFromPopup(); else setSiteOverride(host, key, true); });
+      line.appendChild(restore); content.appendChild(line);
+    });
+  }
+}
+
+function enableYoutubeFromPopup() {
+  chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+    const tab = tabs && tabs[0];
+    if (!tab || !Number.isInteger(tab.id)) { setSavedTick('Open the YouTube tab first', true); paintSiteControls(); return; }
+    chrome.runtime.sendMessage({ kind: 'enable-youtube-for-site', tabId: tab.id }, result => {
+      const error = chrome.runtime.lastError;
+      if (error || !result || result.ok !== true) {
+        chrome.storage.local.get('wardenone_config', saved => {
+          if (!chrome.runtime.lastError) {
+            config.scriptletEngine = saved.wardenone_config?.scriptletEngine ?? DEFAULTS.scriptletEngine;
+            savedConfigSnapshot.scriptletEngine = config.scriptletEngine;
+            adoptExternalConfigChange(saved.wardenone_config || {});
+          }
+          setSavedTick(result?.error || 'Could not turn YouTube protection on', true); applyToUI(); paintSiteControls();
+        });
+        return;
+      }
+      config.scriptletEngine = true; savedConfigSnapshot.scriptletEngine = true;
+      chrome.storage.local.get('wardenone_config', saved => {
+        if (!chrome.runtime.lastError) adoptExternalConfigChange(saved.wardenone_config || {});
+        repaintExternalConfigKeys(['scriptletEngine', 'siteOverrides']);
+        setSavedTick(result.reloaded ? 'YouTube protection on; page reloaded' : 'YouTube protection on; refresh the page', false);
+      });
+    });
+  });
 }
 
 function describeRemaining(ms) {
@@ -1805,6 +1863,7 @@ function wireMyFilters() {
 
 function paintSiteControls() {
   activeTabHost((host) => {
+    paintSiteOverrideIndicators(host);
     const panel = $('site-controls');
     if (!panel) return;
     const section = $('site-controls-group') || panel;
@@ -1927,6 +1986,11 @@ function resumeSite() {
 // ever turn a protection OFF, never switch one on that is off globally.
 function setSiteOverride(host, key, on) {
   if (!host || !key) return;
+  if (on && Object.entries(config.siteOverrides || {}).some(([pattern, flags]) => pattern !== host
+      && hostMatchesSite(host, pattern) && flags && flags[key] === false)) {
+    setNote($('note'), [{ t: 'A wider site exception pauses this protection. Restore that exception in Settings.' }]);
+    paintSiteControls(); return;
+  }
   if (!on && !SITE_OVERRIDE_KEYS.has(key)) {
     setNote($('note'), [{ t: protectionLabel(key) + ' runs outside the page and cannot be turned off for one site.' }]);
     return;
@@ -2941,6 +3005,13 @@ document.querySelectorAll('input[data-key]').forEach((el) => {
   el.addEventListener('change', () => {
     const key = el.getAttribute('data-key');
     syncConfigCheckboxes(key, el.checked);
+    if (key === 'scriptletEngine' && el.checked) {
+      activeTabHost(host => {
+        if (/(^|\.)youtube(-nocookie)?\.com$/i.test(host || '')) enableYoutubeFromPopup();
+        else save(reloadActiveHttpTab);
+      });
+      return;
+    }
     save(ACTIVE_TAB_RELOAD_TOGGLES.has(key) ? reloadActiveHttpTab : undefined);
     syncBreachVisibility();
     if (key === 'trackerLearner') { renderTrackerLearner(); renderTrackerProposals(); }
@@ -2986,6 +3057,7 @@ $('update-now').addEventListener('click', () => {
     const meta = result && (result.meta || (result.count ? result : null));
     const count = listMetaCount(meta);
     const activeCount = listMetaActiveCount(meta);
+    renderListSources(meta);
     const blocking = (activeCount && activeCount < count) ? activeCount : count;
     if (count) $('list-status').textContent = 'Blocking ' + fmtCount(blocking) + ' domains';
     if (result && result.ok && count) {
@@ -3388,14 +3460,25 @@ async function guardianFetchText(url, limit) {
 
 function parseBraveRelease(versionText, notes) {
   const product = guardianVersion(versionText.trim());
+  if (!product) throw new Error('Brave release unavailable');
   const desktop = notes.indexOf('<h2 id="desktop">');
   const next = desktop < 0 ? -1 : notes.indexOf('<h3 id="desktop-release-notes-', desktop);
   const following = next < 0 ? -1 : notes.indexOf('<h3 id="desktop-release-notes-', next + 4);
   const section = next < 0 ? '' : notes.slice(next, following < 0 ? next + 12000 : following);
   const notesVersion = /Release Notes\s*<strong>v([\d.]+)<\/strong>/.exec(section);
   const chromium = /Upgraded Chromium to (\d+\.\d+\.\d+\.\d+)/.exec(section);
-  if (!product || !notesVersion || notesVersion[1] !== product) throw new Error('Brave sources disagree');
-  return { version: product, engine: guardianVersion(chromium && chromium[1]) };
+  return { version: product,
+    engine: notesVersion && notesVersion[1] === product ? guardianVersion(chromium && chromium[1]) : '' };
+}
+
+function parseBraveReleaseMetadata(text, version) {
+  const release = JSON.parse(text);
+  const name = typeof release?.name === 'string'
+    ? /^Release v([\d.]+) \(Chromium ([\d.]+)\)$/.exec(release.name.trim()) : null;
+  const engine = guardianVersion(name && name[2]);
+  if (release?.tag_name !== 'v' + version || release.draft !== false || release.prerelease !== false
+    || !name || name[1] !== version || !engine) throw new Error('Brave release metadata unavailable');
+  return { version, engine };
 }
 
 function parseChromeRelease(text) {
@@ -3430,10 +3513,16 @@ async function guardianLatest(browser, force = false) {
         && cached.at <= Date.now() && guardianVersion(cached.release?.version)) return cached.release;
     } catch (_) {}
   }
-  const release = browser.name === 'Brave'
-    ? parseBraveRelease(...await Promise.all([guardianFetchText(urls[0], 100), guardianFetchText(urls[1], 150000)]))
+  let release = browser.name === 'Brave'
+    ? parseBraveRelease(...await Promise.all([guardianFetchText(urls[0], 100), guardianFetchText(urls[1], 150000).catch(() => '')]))
     : browser.name === 'Google Chrome' ? parseChromeRelease(await guardianFetchText(urls[0], 20000))
       : parseEdgeRelease(await guardianFetchText(urls[0], 100000), browser.os);
+  if (browser.name === 'Brave' && !release.engine && !browser.fullVersion) {
+    try {
+      release = parseBraveReleaseMetadata(await guardianFetchText(
+        'https://api.github.com/repos/brave/brave-browser/releases/latest', 600000), release.version);
+    } catch (_) {}
+  }
   try { await chrome.storage?.session?.set({ [key]: { at: Date.now(), release } }); } catch (_) {}
   return release;
 }
@@ -5819,7 +5908,7 @@ const SITE_DASH_EDU_PAUSED = new Set([
   'fullscreenGuard', 'gateAdultSites', 'adultHeuristics', 'antiClickjacking',
 ]);
 const SITE_DASH_EDU_PARTLY = new Set(['blockTokenExfil']);
-const SITE_DASH_HOSTED_APP_PAUSED = new Set(['removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint']);
+const SITE_DASH_HOSTED_APP_PAUSED = new Set(['removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint', 'clientHintProtection']);
 const SITE_DASH_PROTECTIONS = [
   { key: 'adShield', label: 'AdShield' },
   { key: 'blockTrackers', label: 'Tracker blocking' },
@@ -6243,15 +6332,7 @@ function renderSiteDashRecent(summary) {
   const box = $('site-dash-recent');
   if (!box) return;
   box.textContent = '';
-  const bucket = (counts) => {
-    const out = {};
-    for (const key of Object.keys(counts || {})) {
-      const kind = key.indexOf('net:') === 0 ? key.slice(4) : wardenSiteDashEventKind(key);
-      if (!kind) continue;
-      out[kind] = (out[kind] || 0) + (Number(counts[key]) || 0);
-    }
-    return out;
-  };
+  const bucket = wardenSiteDashBuckets;
   const day = bucket(summary.recent && summary.recent.day);
   const week = bucket(summary.recent && summary.recent.week);
   const kinds = SITE_DASH_CATEGORIES.filter((c) => week[c.id] > 0);

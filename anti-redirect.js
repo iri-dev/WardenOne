@@ -227,6 +227,20 @@
   };
 
   let queuedEvents = [];
+  let redirectChainStopped = false;
+  let redirectChainEventSeq = 0;
+  woOn(document, 'wo-event', event => {
+    try {
+      const d = event && event.detail;
+      if (!woKey || !d || d.token !== token || d.src !== 'engine') return;
+      const type = d.type, seq = d.eseq, detail = d.detail, mac = d.emac;
+      if (type !== 'blocked_redirect_chain' && type !== 'allowed_redirect_chain') return;
+      if (!Number.isSafeInteger(seq) || seq <= redirectChainEventSeq
+          || !__woAuth.same(mac, __woAuth.hmac(woKey, __woAuth.eventText('engine', seq, type, detail)))) return;
+      redirectChainEventSeq = seq;
+      redirectChainStopped = type === 'blocked_redirect_chain';
+    } catch (_) {}
+  }, true);
   let guardConfig = {
     __configReady: false,
     enabled: true,
@@ -255,6 +269,7 @@
   // ...and is temporarily revoked after a hijack attempt. A short TTL stops
   // retry bursts without permanently breaking a site's later legitimate UI.
   let pageHostileUntil = 0;
+  let downloadPageNeedsReview = false;
   // Sticky, unlike pageHostileUntil: this document has tried to spend a press on its
   // video player for an advert (an ad layer was confirmed, or a popup or redirect
   // that followed a press on the player was stopped). Read by the empty-trap sweep
@@ -272,11 +287,15 @@
   let siteControlClickActive = false;
   // Snapshot the pressed link before a page can retarget the click; the worker
   // also uses a signed same-site link press to judge browser-native popups.
-  let pressAnchor = null;
-  let pressAnchorHost = '';
-  let pressAnchorHref = '';
-  let pressAnchorAt = 0;
+  let pressedControl = null;
+  let pressedControlHost = '';
+  let pressedControlUrl = '';
+  let pressedControlAt = 0;
   let recoverableDownloadPress = false;
+  let pressedDownloadOpened = false;
+  let unresolvedDownloadPress = null;
+  let pointerSnapshotPending = false;
+  let nativeWindowOpen = null;
   let lastLinkPressBeaconHost = '';
   let lastLinkPressBeaconUrl = '';
   let lastLinkPressBeaconAt = 0;
@@ -356,6 +375,10 @@
 
   function navigationEnabled() {
     return TOP_FRAME && masterEnabled() && cfg().blockGesturelessNav !== false;
+  }
+
+  function redirectChainStopApplies() {
+    return redirectChainStopped && masterEnabled() && cfg().detectRedirectChains !== false;
   }
 
   // Cross-origin top navigation bypasses the top frame’s Location hooks. Send frame gesture and
@@ -833,6 +856,7 @@
 
   function markHostile() {
     pageHostileUntil = Date.now() + HOSTILE_TTL_MS;
+    downloadPageNeedsReview = true;
     if (!playerAdEvidence && lastGestureTainted && playerDocument()) notePlayerAdEvidence();
   }
 
@@ -1063,11 +1087,11 @@
   // Cross-site links may authorize their named host. Same-site links must name the pressed URL itself; ad auctions
   // routinely include the referring host.
   function popupCarriesPressedLink(rawTarget) {
-    if (!pressAnchorHref) return false;
-    if (redirectWrapperPointsAt(pressAnchorHref, rawTarget)) return true;
-    if (!sameParty(pressAnchorHost, location.hostname)) return redirectWrapperPointsAt(rawTarget, pressAnchorHref);
+    if (!pressedControlUrl) return false;
+    if (redirectWrapperPointsAt(pressedControlUrl, rawTarget)) return true;
+    if (!sameParty(pressedControlHost, location.hostname)) return redirectWrapperPointsAt(rawTarget, pressedControlUrl);
     try {
-      const pressed = new URL(pressAnchorHref, location.href);
+      const pressed = new URL(pressedControlUrl, location.href);
       const page = (pressed.host + pressed.pathname + pressed.search).toLowerCase().replace(/\/$/, '');
       if (page.length <= pressed.host.length + 1) return false;
       return decodedUrlishText(String(rawTarget || '')).toLowerCase().indexOf(page) >= 0;
@@ -1134,6 +1158,7 @@
   function suspiciousRedirectTarget(rawTarget) {
     const targetHost = hostOf(rawTarget);
     if (!targetHost) return false;
+    if (targetHost === 'whuw8g.site' || targetHost.endsWith('.whuw8g.site')) return true;
     const raw = String(rawTarget || '');
     if (/^xn--/i.test(targetHost) || /^\d{1,3}(\.\d{1,3}){3}$/.test(targetHost)) return true;
     // Abuse-prone TLD set -- kept a SUPERSET of the download-guard throwaway list (background.js)
@@ -1285,6 +1310,78 @@
     return false;
   }
 
+  function downloadLinkIntent(anchor) {
+    const label = String(anchor.textContent || '').slice(0, 120);
+    const downloadWords = /\b(?:download|torrent|get file|mirror)\b/i;
+    if (anchor.hasAttribute('download') || downloadWords.test(label)
+        || downloadWords.test(String(anchor.value || anchor.getAttribute('value') || '').slice(0, 120))
+        || downloadWords.test(String(anchor.getAttribute('aria-label') || '').slice(0, 120))
+        || downloadWords.test(String(anchor.getAttribute('title') || '').slice(0, 120))) return true;
+    try {
+      const next = anchor.nextSibling;
+      const filename = next && next.nodeType === 3 ? String(next.textContent || '').trim() : '';
+      if (filename.length <= 255 && /^[^\r\n<>/\\\x00-\x1f]+\.(?:zip|rar|7z|tar|gz|bz2|xz|iso|torrent)$/i.test(filename)
+          && new URL(label.trim()).href === new URL(anchor.href).href) return true;
+    } catch (_) {}
+    if (!/^\s*(?:click\s+here|here)\s*$/i.test(label)) return false;
+    for (let node = anchor, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
+      if (/^(?:BODY|HTML|MAIN|ARTICLE)$/.test(node.tagName)) break;
+      let previous = node.previousElementSibling;
+      for (let seen = 0; previous && seen < 8; previous = previous.previousElementSibling, seen++) {
+        const text = String(previous.textContent || '').trim();
+        if (/^download\s+(?:links?|mirrors?)\s*:?$/i.test(text)) return true;
+        if (/^H[1-6]$/.test(previous.tagName)) return false;
+      }
+    }
+    return false;
+  }
+
+  const DOWNLOAD_BUTTON = 'button,input[type="button"],input[type="submit"],[role="button"]';
+  const DOWNLOAD_DESTINATION_REVIEW_MS = 30000;
+  function downloadButtonOf(target) {
+    const control = target && target.closest ? target.closest(DOWNLOAD_BUTTON) : null;
+    if (!control || control.form || (control.closest && control.closest('form')) || !downloadLinkIntent(control)) return null;
+    return control;
+  }
+
+  function downloadControlUrl(control) {
+    if (!control) return '';
+    if (/^(?:A|AREA)$/.test(control.tagName)) {
+      const raw = String(control.getAttribute('href') || '').trim();
+      return raw && !/^(?:#|javascript:|data:)/i.test(raw) ? String(control.href || raw) : '';
+    }
+    let address = '';
+    for (const name of ['data-url', 'data-href', 'data-link', 'data-download-url']) {
+      const raw = control.getAttribute(name);
+      if (raw == null || !String(raw).trim()) continue;
+      if (String(raw).length > 2048 || /[\x00-\x20]/.test(String(raw).trim())) return '';
+      let url;
+      try { url = new URL(String(raw).trim(), location.href); } catch (_) { return ''; }
+      if (!/^https?:$/.test(url.protocol) || url.username || url.password) return '';
+      if (address && address !== url.href) return '';
+      address = url.href;
+    }
+    return address;
+  }
+
+  function downloadControlVisible(control, event, keyboard) {
+    if (!control || !control.isConnected || control.disabled) return false;
+    const rect = control.getBoundingClientRect();
+    if (rect.width < 16 || rect.height < 12) return false;
+    if (!keyboard) {
+      const point = coordsOf(event);
+      if (!point || point.x < rect.left || point.x >= rect.right || point.y < rect.top || point.y >= rect.bottom) return false;
+    }
+    let opacity = 1;
+    for (let node = control, depth = 0; node && node.nodeType === 1 && depth < 10; node = node.parentElement, depth++) {
+      const style = getComputedStyle(node);
+      if (style.visibility === 'hidden' || style.display === 'none') return false;
+      const own = Number(style.opacity);
+      if (own >= 0) opacity *= own;
+    }
+    return opacity >= 0.2;
+  }
+
   function markIntent(event) {
     if (event && event.isTrusted === false) return;
     // Plain typing keystrokes don't start navigations/popups — skip the expensive
@@ -1295,7 +1392,7 @@
       // Keyboard activation is a new, untainted gesture with a fresh popup allowance.
       lastGestureTainted = false;
       nonExplicitPopupSpent = false;
-      pressAnchorAt = 0;
+      pressedControlAt = 0;
       if (TOP_FRAME && lastLinkPressBeaconUrl) {
         signal('link-press', { host: lastLinkPressBeaconHost, url: '' });
         lastLinkPressBeaconUrl = '';
@@ -1314,64 +1411,74 @@
       gestureTarget = inner;
       gestureTargetAt = Date.now();
     }
-    if (isPress) {
+    const keyboard = !!event && event.type === 'keydown';
+    const innerTarget = gestureTarget || target;
+    const currentControl = innerTarget && innerTarget.closest
+      ? innerTarget.closest('a[href],area[href]') || innerTarget.closest(DOWNLOAD_BUTTON) : null;
+    /* Pointerdown and its compatibility mousedown are one press. Keep the destination captured before page handlers. */
+    const duplicateMousePress = event && event.type === 'mousedown' && pointerSnapshotPending
+      && pressedControl && currentControl === pressedControl
+      && Date.now() - (pressedControlAt || (unresolvedDownloadPress && unresolvedDownloadPress.at) || 0) < 1500;
+    if (event && event.type === 'pointerdown') pointerSnapshotPending = true;
+    else if (keyboard || (event && event.type === 'mousedown')) pointerSnapshotPending = false;
+    if ((isPress || keyboard) && !duplicateMousePress) {
       nonExplicitPopupSpent = false;
-      pressAnchor = target && target.closest ? target.closest('a[href],area[href]') : null;
-      pressAnchorHost = '';
-      pressAnchorHref = '';
-      pressAnchorAt = 0;
+      const inner = gestureTarget || target;
+      pressedControl = inner && inner.closest ? inner.closest('a[href],area[href]') || downloadButtonOf(inner) : null;
+      pressedControlHost = '';
+      pressedControlUrl = '';
+      pressedControlAt = 0;
       recoverableDownloadPress = false;
-      if (pressAnchor) {
+      pressedDownloadOpened = false;
+      unresolvedDownloadPress = null;
+      if (pressedControl) {
         try {
-          pressAnchorHref = String(pressAnchor.href || pressAnchor.getAttribute('href') || '');
-          pressAnchorHost = hostOf(pressAnchorHref);
-          if (pressAnchorHost) {
-            pressAnchorAt = Date.now();
-            const rawHref = String(pressAnchor.getAttribute('href') || '').trim();
-            const plainPress = TOP_FRAME && event.button === 0
-              && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
-              && pressAnchorHref.length <= 2048;
-            recoverableDownloadPress = TOP_FRAME && event.button === 0
-              && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
-              && String(pressAnchor.target || '').toLowerCase() === '_blank'
-              && pressAnchorHref.length <= 2048 && !sameParty(pressAnchorHost, location.hostname);
-            if (recoverableDownloadPress) {
-              const label = String(pressAnchor.textContent || '').slice(0, 120);
-              recoverableDownloadPress = pressAnchor.hasAttribute('download')
-                || /\b(?:download|torrent|get file|mirror)\b/i.test(label);
-            }
-            const parsed = new URL(pressAnchorHref);
+          pressedControlUrl = downloadControlUrl(pressedControl);
+          pressedControlHost = pressedControlUrl ? hostOf(pressedControlUrl) : '';
+          const primary = (keyboard && (event.key === 'Enter' || !/^(?:A|AREA)$/.test(pressedControl.tagName)))
+            || event.button === 0 || (event.type === 'touchstart' && event.touches && event.touches.length === 1);
+          const plainPress = TOP_FRAME && primary
+            && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey
+            && pressedControlUrl.length <= 2048;
+          if (pressedControlUrl && pressedControlHost) {
+            pressedControlAt = Date.now();
+            const rawHref = String(pressedControl.getAttribute('href') || pressedControlUrl).trim();
+            const targetName = String(pressedControl.target || '').toLowerCase();
+            recoverableDownloadPress = plainPress && /^(?:|_blank|_self|_top|_parent)$/.test(targetName)
+              && pressedControlUrl.split('#')[0] !== String(location.href).split('#')[0];
+            if (recoverableDownloadPress) recoverableDownloadPress = downloadLinkIntent(pressedControl);
+            const parsed = new URL(pressedControlUrl);
             let sameSiteLinkPress = plainPress && !!rawHref && /^https?:$/.test(parsed.protocol)
-              && sameParty(pressAnchorHost, location.hostname)
+              && sameParty(pressedControlHost, location.hostname)
               && !/^(?:#|javascript:|data:)/i.test(rawHref)
               && !/(?:^|\/)(?:log(?:in|out)|sign(?:in|up)|register|oauth|sso|auth|account|checkout|pay|billing)(?:\/|$)/i.test(parsed.pathname)
-              && !/\b(?:log[ -]?in|sign[ -]?in|sign[ -]?up|register|oauth|sso|account|checkout|pay|billing)\b/i.test(String(pressAnchor.textContent || '').slice(0, 120));
+              && !/\b(?:log[ -]?in|sign[ -]?in|sign[ -]?up|register|oauth|sso|account|checkout|pay|billing)\b/i.test(String(pressedControl.textContent || '').slice(0, 120));
             if (recoverableDownloadPress || sameSiteLinkPress) {
-              const pt = coordsOf(event);
-              const rect = pressAnchor.getBoundingClientRect();
-              const style = getComputedStyle(pressAnchor);
-              if (parsed.username || parsed.password || !pressAnchor.isConnected || !pt
-                  || rect.width < 16 || rect.height < 12 || pt.x < rect.left || pt.x >= rect.right
-                  || pt.y < rect.top || pt.y >= rect.bottom || Number(style.opacity) < 0.2
-                  || style.visibility === 'hidden' || style.display === 'none') {
+              if (parsed.username || parsed.password || !downloadControlVisible(pressedControl, event, keyboard)) {
                 recoverableDownloadPress = false;
                 sameSiteLinkPress = false;
               }
             }
-            const beaconUrl = recoverableDownloadPress || sameSiteLinkPress ? pressAnchorHref : '';
+            const beaconUrl = recoverableDownloadPress || sameSiteLinkPress ? pressedControlUrl : '';
             if (TOP_FRAME && (beaconUrl || lastLinkPressBeaconUrl) && popupEnabled()
-                && (lastLinkPressBeaconHost !== pressAnchorHost
+                && (lastLinkPressBeaconHost !== pressedControlHost
                 || lastLinkPressBeaconUrl !== beaconUrl
-                || pressAnchorAt - lastLinkPressBeaconAt > 200)) {
-              signal('link-press', { host: pressAnchorHost, url: beaconUrl });
-              lastLinkPressBeaconHost = pressAnchorHost;
+                || pressedControlAt - lastLinkPressBeaconAt > 200)) {
+              /* The bridge and worker match the URL's exact hostname; pressedControlHost is the site, so a
+                 www. or files. download link was dropped and could never be restored. */
+              signal('link-press', { host: beaconUrl ? parsed.hostname.toLowerCase() : pressedControlHost, url: beaconUrl });
+              lastLinkPressBeaconHost = pressedControlHost;
               lastLinkPressBeaconUrl = beaconUrl;
-              lastLinkPressBeaconAt = pressAnchorAt;
+              lastLinkPressBeaconAt = pressedControlAt;
             }
+          } else if (plainPress && downloadLinkIntent(pressedControl)
+              && downloadControlVisible(pressedControl, event, keyboard)) {
+            /* A countdown may replace the control; the validated press remains until superseded or expired. */
+            unresolvedDownloadPress = { at: Date.now(), reviewed: false };
           }
         } catch (_) {}
       }
-      if (TOP_FRAME && !pressAnchorHost && lastLinkPressBeaconUrl) {
+      if (TOP_FRAME && !pressedControlHost && lastLinkPressBeaconUrl) {
         signal('link-press', { host: lastLinkPressBeaconHost, url: '' });
         lastLinkPressBeaconUrl = '';
       }
@@ -1382,7 +1489,8 @@
       try { onPlayer = !!(target && target.closest && target.closest('video,audio')); } catch (_) {}
       lastGestureTainted = onPlayer || pointOnVideo(pt.x, pt.y);
     }
-    const explicitUrl = explicitUrlFromElement(target);
+    const explicitUrl = recoverableDownloadPress && pressedControlAt && Date.now() - pressedControlAt < 1500
+      ? pressedControlUrl : explicitUrlFromElement(target);
     intendedHost = explicitUrl ? hostOf(explicitUrl) : regHost(location.hostname);
     intentWasExplicit = !!(explicitUrl && intendedHost);
     if (isPress) {
@@ -1498,6 +1606,44 @@
     return !intentWasExplicit && !pageHostile() && intentTextAllows();
   }
 
+  function unresolvedDownloadNeedsReview(rawTarget) {
+    const press = unresolvedDownloadPress;
+    if (!press || Date.now() - press.at > DOWNLOAD_DESTINATION_REVIEW_MS
+        || !downloadPageNeedsReview || !popupEnabled() || !frameTopRedirectEnabled() || authIntentAllows()) return false;
+    let target;
+    try { target = new URL(String(rawTarget || ''), location.href); } catch (_) { return false; }
+    if (!/^https?:$/.test(target.protocol)) return false;
+    const host = hostOf(target.href);
+    return !!host && !sameParty(host, location.hostname)
+      && !federationUrlShape(target.href) && !suspiciousRedirectTarget(target.href) && !popupAuctionPayload(target.href);
+  }
+
+  function requestUnresolvedDownloadReview(rawTarget) {
+    if (redirectChainStopApplies()) return false;
+    if (!unresolvedDownloadNeedsReview(rawTarget)) return false;
+    const target = new URL(String(rawTarget), location.href);
+    if (target.href.length > 2048 || target.username || target.password) {
+      markHostile();
+      emit('blocked_gestureless_nav', {
+        kind: 'download-destination-invalid',
+        matched: target.hostname,
+        why: 'This hidden download destination could not be reviewed and was blocked without opening it.',
+        silent: true,
+      });
+      return true;
+    }
+    if (unresolvedDownloadPress.reviewed) return true;
+    unresolvedDownloadPress.reviewed = true;
+    emit('blocked_gestureless_nav', {
+      kind: 'download-destination',
+      url: target.href,
+      matched: hostOf(rawTarget),
+      why: 'An earlier popup or redirect was blocked on this page. This button\'s destination is not verified.',
+      silent: false,
+    });
+    return true;
+  }
+
   // SEC-15: sign interstitial destination, reason, kind and monotonic sequence under the bridge key.
   // A token-only event must not create a branded Continue page. With no key, withhold the offer;
   // silent blocks do not request an interstitial.
@@ -1550,6 +1696,7 @@
       return false;
     }
     if (sameSiteTarget(rawTarget)) return false;
+    if (requestUnresolvedDownloadReview(rawTarget)) return true;
     if (navigationTargetAllowed(rawTarget)) {
       signal('top-nav-authorized', { host: hostOf(rawTarget) });
       return false;
@@ -1622,6 +1769,7 @@
   }
 
   function corePopupPolicy(rawTarget, context) {
+    if (redirectChainStopApplies() && !(context && context.nativeAnchor && context.trustedActivation)) return 'stopped redirect chain';
     if (!popupPolicyApplies()) return false;
     if (blankPopupTarget(rawTarget)) {
       // Real OAuth/SSO SDKs reserve a blank WindowProxy synchronously from a
@@ -1632,14 +1780,15 @@
     const targetHost = hostOf(rawTarget);
     if (!freshGesture()) return 'no recent user gesture';
     if (!targetHost || sameParty(targetHost, location.hostname)) return false;
+    if (unresolvedDownloadNeedsReview(rawTarget)) return 'unverified download destination after a blocked redirect';
     if (suspiciousRedirectTarget(rawTarget)) return 'confirmed suspicious popup target';
     if (strictPopupPolicyApplies() && popupAuctionPayload(rawTarget)) return 'ad-auction popup';
     if (intentWasExplicit && intendedHost && sameParty(targetHost, intendedHost)) return false;
     if ((isTrustedHost(targetHost) || federationUrlShape(rawTarget)) && authIntentAllows()) return false;
     // The press can start on a real link before a page swaps the click target.
     // Its named destination still limits what popup this gesture may open.
-    if (pressAnchorAt && Date.now() - pressAnchorAt < 1500 && pressAnchorHost
-        && !sameParty(targetHost, pressAnchorHost) && !authIntentAllows()
+    if (pressedControlAt && Date.now() - pressedControlAt < 1500 && pressedControlHost
+        && !sameParty(targetHost, pressedControlHost) && !authIntentAllows()
         && !popupCarriesPressedLink(rawTarget)) {
       return 'popup did not match the link pressed';
     }
@@ -1691,15 +1840,40 @@
     return null;
   }
 
-  function noteBlockedPopup(rawTarget, match) {
-    markHostile();
-    const popupHost = hostOf(rawTarget);
-    if (match && match.id === 'core:popup-policy' && recoverableDownloadPress
-        && pressAnchorHost && popupHost && !sameParty(popupHost, pressAnchorHost)
-        && pressAnchorAt && Date.now() - pressAnchorAt < 1500
-        && pressAnchor && pressAnchor.isConnected && pressAnchor.href === pressAnchorHref) {
+  /* A refused popup elsewhere, right after a press on a visible download link, means the page took the
+     reader's click. Any matcher counts, and the click guard too: the worker reopens only the signed link
+     that was pressed, so a forged refusal cannot open anything else. */
+  /* The link the reader pressed, opened with the click's own permission. Never the href as it reads now:
+     a page that swapped it between press and click must not get a tab out of this. */
+  function openPressedDownloadHere() {
+    if (!recoverableDownloadPress || !pressedControlUrl || !nativeWindowOpen
+        || !pressedControlAt || Date.now() - pressedControlAt > 1500 || !pressedControl || !pressedControl.isConnected) return false;
+    try {
+      const parsed = new URL(pressedControlUrl);
+      if (!/^https?:$/.test(parsed.protocol)) return false;
+      if (pressedDownloadOpened) return true;
+      const opened = nativeWindowOpen.call(window, parsed.href, '_blank');
+      if (!opened) return false;
+      pressedDownloadOpened = true;
+      try { opened.opener = null; } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function noteHijackedDownload(popupHost) {
+    if (recoverableDownloadPress && pressedControlHost && popupHost && !sameParty(popupHost, pressedControlHost)
+        && pressedControlAt && Date.now() - pressedControlAt < 1500 && pressedControl && pressedControl.isConnected) {
       signal('download-hijack');
     }
+  }
+
+  function noteBlockedPopup(rawTarget, match) {
+    requestUnresolvedDownloadReview(rawTarget);
+    markHostile();
+    const popupHost = hostOf(rawTarget);
+    if (match) noteHijackedDownload(popupHost);
     emit('blocked_popup', {
       kind: 'open',
       url: String(rawTarget || '').slice(0, 500),
@@ -2256,11 +2430,23 @@
     try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
   }, true); } catch (_) {}
 
+  function pressedLinkTargetChanged(anchor, raw, host) {
+    return pressedControl && anchor === pressedControl && pressedControlHost && host !== pressedControlHost
+      && !sameParty(host, pressedControlHost)
+      && !sameParty(host, location.hostname) && !sameParty(pressedControlHost, location.hostname)
+      && !redirectWrapperPointsAt(pressedControlUrl, raw)
+      && !redirectWrapperPointsAt(raw, pressedControlUrl);
+  }
+
   // Click-layer guard: cancels hijack clicks whose default action navigates
   // natively (so the window.open/location hooks below never see them).
   function guardClick(event) {
     if (!masterEnabled() && !popupPolicyApplies()) return;
-    const el = event && event.target && event.target.nodeType === 1 ? event.target : null;
+    let el = event && event.target && event.target.nodeType === 1 ? event.target : null;
+    try {
+      const path = event && typeof event.composedPath === 'function' ? event.composedPath() : null;
+      if (path && path[0] && path[0].nodeType === 1) el = path[0];
+    } catch (_) {}
     const a = el && el.closest ? el.closest('a[href],area[href]') : null;
     if (!a) return;
     let raw = '';
@@ -2287,6 +2473,12 @@
       lastGestureTainted = true;
       intentWasExplicit = false;
       intendedHost = regHost(location.hostname);
+      /* The same link pointing somewhere else at click time than at press time was swapped by the page.
+         This click is cancelled, so nothing else will open what the reader pressed. Opening it here, inside
+         their click, is the one place the browser still counts it as theirs: the download arrives with the
+         referrer and Sec-Fetch-User of a click, in its own tab, and this page stays. Only if that is refused
+         does the worker reopen it. */
+      if ((popupClick || recoverableDownloadPress) && a === pressedControl && !openPressedDownloadHere()) noteHijackedDownload(host);
       emit(popupClick ? 'blocked_popup' : 'blocked_gestureless_nav', {
         kind: 'click',
         url: raw.slice(0, 500),
@@ -2295,6 +2487,11 @@
         silent: !!silent,
       });
     };
+
+    if (redirectChainStopApplies() && event.isTrusted !== true) {
+      try { event.preventDefault(); event.stopImmediatePropagation(); } catch (_) {}
+      return;
+    }
 
     // Native target=_blank anchors do not pass through window.open. Keep this
     // branch popup-only, and never consume the underlying media/iframe click.
@@ -2306,10 +2503,14 @@
       }
       if (!host || sameParty(host, location.hostname)) return;
       if ((isTrustedHost(host) || federationUrlShape(raw)) && authIntentAllows()) return;
+      if (popupPolicyApplies() && recoverableDownloadPress && pressedLinkTargetChanged(a, raw, host)) {
+        return cancel('link changed destination after you pressed it', false, true);
+      }
       const pt = coordsOf(event);
       const coversPlayer = !!(strictPopupPolicyApplies() && pt && pointOnVideo(pt.x, pt.y) && !popupAnchorOwnsPlayer(a));
       const matcherHit = popupMatcherApi.match(raw, {
         nativeAnchor: true,
+        trustedActivation: event.isTrusted === true,
         topFrame: TOP_FRAME,
         freshGesture: freshGesture(),
         strict: strictPopupEnabled(),
@@ -2374,11 +2575,7 @@
     }
     // Treat href swaps as hijacks only when both destinations are external.
     // Search/social sites legitimately wrap or unwrap same-party tracking redirectors on mousedown.
-    if (pressAnchor && a === pressAnchor && pressAnchorHost && host !== pressAnchorHost
-        && !sameParty(host, pressAnchorHost)
-        && !sameParty(host, location.hostname) && !sameParty(pressAnchorHost, location.hostname)
-        && !redirectWrapperPointsAt(pressAnchorHref, raw)
-        && !redirectWrapperPointsAt(raw, pressAnchorHref)) {
+    if (pressedLinkTargetChanged(a, raw, host)) {
       return cancel('link changed destination after you pressed it', false, false);
     }
     let rect = null;
@@ -2513,6 +2710,45 @@
     try { woOn(window, name, keepPressForPlayer, true); } catch (_) {}
   }
 
+  function guardPressedDownloadNavigation(event) {
+    try {
+      if (!navigationEnabled() || !frameTopRedirectEnabled() || (!recoverableDownloadPress && !unresolvedDownloadPress)) return;
+      if (recoverableDownloadPress && (!pressedControlAt || Date.now() - pressedControlAt > 1500)) return;
+      if (!event || event.defaultPrevented || !event.cancelable || event.userInitiated
+          || event.hashChange || event.downloadRequest || event.formData) return;
+      if (event.navigationType !== 'push' && event.navigationType !== 'replace') return;
+      const destination = event.destination;
+      if (!destination || destination.sameDocument) return;
+      const url = String(destination.url || '');
+      const host = hostOf(url);
+      if (!recoverableDownloadPress) {
+        if (unresolvedDownloadNeedsReview(url)) {
+          event.preventDefault();
+          requestUnresolvedDownloadReview(url);
+        }
+        return;
+      }
+      if (!host || sameParty(host, location.hostname) || sameParty(host, pressedControlHost)
+          || federationUrlShape(url) || (isTrustedHost(host) && authIntentAllows())) return;
+      event.preventDefault();
+      markHostile();
+      if (!openPressedDownloadHere()) noteHijackedDownload(host);
+      emit('blocked_gestureless_nav', {
+        kind: 'download-click',
+        url: url.slice(0, 500),
+        matched: host,
+        why: 'a script tried to send this tab somewhere other than the download link you pressed',
+        silent: true,
+      });
+    } catch (_) {}
+  }
+  if (TOP_FRAME && !MEDIA_APP_HOST) {
+    try {
+      const nav = window.navigation;
+      if (nav && typeof nav.addEventListener === 'function') woOn(nav, 'navigate', guardPressedDownloadNavigation);
+    } catch (_) {}
+  }
+
   // A player frame can replace itself with an ad through the Navigation API.
   // Cancel only cross-site, non-explicit navigation soon after a player press;
   // same-origin parents can report presses on overlays covering the frame.
@@ -2538,7 +2774,7 @@
       if (event.userInitiated) {
         // The reader pressed a link. It counts when it named this destination and
         // was something they could see -- not the invisible layer's link.
-        const source = event.sourceElement || pressAnchor;
+        const source = event.sourceElement || pressedControl;
         const hidden = !!(source && transparentClickLayer(source));
         if (!hidden && intentWasExplicit && intendedHost && sameParty(host, intendedHost)) return;
       }
@@ -2629,8 +2865,8 @@
       if (blankPopupTarget(rawTarget) || !sameSiteTarget(rawTarget)) return '';
       const opened = new URL(String(rawTarget), location.href).href.split('#')[0];
       if (opened === String(location.href).split('#')[0]) return 'page';
-      if (pressAnchorHref && pressAnchorAt && Date.now() - pressAnchorAt < TAB_UNDER_MS
-          && opened === new URL(pressAnchorHref, location.href).href.split('#')[0]) return 'pressed';
+      if (pressedControlUrl && pressedControlAt && Date.now() - pressedControlAt < TAB_UNDER_MS
+          && opened === new URL(pressedControlUrl, location.href).href.split('#')[0]) return 'pressed';
     } catch (_) {}
     return '';
   }
@@ -2646,7 +2882,7 @@
   }
   function guardTabUnder(event) {
     try {
-      if (!event || !event.cancelable || event.userInitiated || event.hashChange || event.downloadRequest || event.formData) return;
+      if (!event || event.defaultPrevented || !event.cancelable || event.userInitiated || event.hashChange || event.downloadRequest || event.formData) return;
       if (event.navigationType === 'reload' || event.navigationType === 'traverse') return;
       const destination = event.destination;
       if (!destination || destination.sameDocument) return;
@@ -2717,6 +2953,7 @@
   }
   try {
     const realOpen = window.open;
+    nativeWindowOpen = realOpen;
     window.open = function (url, name, features) {
       return guardedOpen(realOpen, this, arguments);
     };
@@ -2895,6 +3132,9 @@
     /* Spotify's services and audio CDN, as the top-frame engine trusts them. An embedded player
        sends signed song links there that arrive in binary responses, so they never look "handed out". */
     'spotify.com', 'scdn.co', 'spotifycdn.com', 'spotify.map.fastly.net',
+    /* A DRM licence service, as the top-frame engine trusts it: embedded players send their playback
+       licence token there. */
+    'expressplay.com',
   ]);
   const credentialFrameValues = new Map();
   const credentialFrameXhrs = new WeakMap();

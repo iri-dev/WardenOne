@@ -203,6 +203,18 @@ assert.strictEqual(
   true,
   'including the artwork CDN those apps render from',
 );
+/* Vimeo showed "Rights issue" and never played when Edge fell back to PlayReady: the guard
+   refused the playback licence token on its way to ExpressPlay's licence server. */
+assert.strictEqual(
+  isTrustedDestination('vimeo.com', 'pr.service.expressplay.com'),
+  true,
+  'a player may send its licence token to the DRM licence service',
+);
+assert.strictEqual(
+  isTrustedDestination('vimeo.com', 'expressplay.com.evil.example'),
+  false,
+  'a lookalike of the licence service gains no trust',
+);
 /* The trust is one-directional and does not spread. */
 assert.strictEqual(
   isTrustedDestination('open.spotify.com', 'discord.com'),
@@ -226,4 +238,4 @@ assert(!/\bsessionTrusted\b/.test(source), 'blanket sessionTrusted bypass has be
 assert(!/\btrustedFamilyRe\b/.test(source), 'legacy partial family map has been removed');
 assert(!/\bGOOD_DEST\s*=/.test(source), 'brand-prefix destination regex has been removed');
 
-console.log(`token-exfil destination trust tests passed (${officialDestinations.length + spoofedDestinations.length + familyDestinations.length + sessionPages.length + 17} assertions)`);
+console.log(`token-exfil destination trust tests passed (${officialDestinations.length + spoofedDestinations.length + familyDestinations.length + sessionPages.length + 19} assertions)`);

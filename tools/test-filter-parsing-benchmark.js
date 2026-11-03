@@ -54,8 +54,8 @@ assert.deepStrictEqual(rules, [
   { id: 101, priority: 2, action: { type: 'allow' }, condition: { urlFilter: '||cdn.example^', resourceTypes: ['xmlhttprequest'],
     initiatorDomains: ['site.example'], excludedInitiatorDomains: ['private.site.example'] } },
 ]);
-assert.deepStrictEqual(plain(network.parseList('github.io\nco.uk\ntenant.github.io\n0.0.0.0 malicious.example\n||path.example/a^$script')),
-  ['tenant.github.io', 'malicious.example']);
+assert.deepStrictEqual(plain(network.parseList('github.io\nco.uk\ntenant.github.io\n0.0.0.0 malicious.feed-fixture.net\n||path.example/a^$script')),
+  ['tenant.github.io', 'malicious.feed-fixture.net']);
 
 const trace = '[1:abc:0] 9 ms: gc=s start_object_size=999 end_object_size=900\n'
   + '[1:abc:0] 12 ms: gc=s start_object_size=500 end_object_size=300\n'

@@ -19,9 +19,9 @@ async function run() {
     const url = new URL(req.url, base);
     hits.push(url.pathname);
     if (url.pathname === '/start') { res.writeHead(302, { Location: cdn + '/file.exe' }); res.end(); return; }
-    if (/^\/(file\.exe|opaque|avast_secure_browser_setup\.exe)$/.test(url.pathname)) {
+    if (/^\/(file\.exe|file\.zip|opaque|avast_secure_browser_setup\.exe)$/.test(url.pathname)) {
       res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment; filename="' +
-        (url.pathname.includes('avast') ? 'avast_secure_browser_setup.exe' : 'file.exe') + '"', 'cache-control': 'no-store' });
+        (url.pathname.includes('avast') ? 'avast_secure_browser_setup.exe' : url.pathname.endsWith('.zip') ? 'file.zip' : 'file.exe') + '"', 'cache-control': 'no-store' });
       res.write('Harmless WardenOne download fixture.');
       setTimeout(() => res.end(' End.'), 4000);
       return;
@@ -36,6 +36,14 @@ async function run() {
     if (kind === 'second') body += '<a id="main" href="/file.exe" onclick="setTimeout(()=>location.assign(\'/opaque\'),1500)">Download installer</a>';
     if (kind === 'cdn') body += '<a id="main" href="/start">Download installer</a>';
     if (kind === 'export') body += '<button id="main" onclick="const a=document.createElement(\'a\');a.href=window.URL.createObjectURL(new Blob([\'a,b\\n1,2\'],{type:\'text/csv\'}));a.download=\'report.csv\';a.click()">Export report</button>';
+    if (kind && kind.startsWith('handoff-')) {
+      if (url.pathname === '/landing') {
+        const file = kind === 'handoff-zip' ? '/file.zip' : '/file.exe';
+        body = '<h1>Downloading...</h1><script>setTimeout(()=>{const a=document.createElement("a");a.href="' + file
+          + '";a.download="' + file.slice(1) + '";document.body.appendChild(a);a.click()},700);'
+          + (kind === 'handoff-second' ? 'setTimeout(()=>location.assign("/opaque?second=1"),1800);' : '') + '</script>';
+      } else body += '<a id="main" href="/landing?case=' + kind + '"' + (kind === 'handoff-popup' ? ' target="_blank"' : '') + '>Download installer</a>';
+    }
     if (kind === 'mismatch') body = '<h1>GTA VI Grand Theft Auto 6</h1><a id="main" href="' + cdn + '/avast_secure_browser_setup.exe">Download for Windows</a>';
     if (kind === 'hidden-offer' || kind === 'offer-continue') {
       body = '<h1>Game download fixture</h1><a id="main" href="/continuation" onclick="event.preventDefault();const m=document.getElementById(\'box-c2l-modal\');m.dataset.downloadUrl=this.href;m.style.display=\'block\'">Download for Windows</a>'
@@ -63,8 +71,8 @@ async function run() {
     };
     await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dir, eventsEnabled: true });
     await evaluate('updateStoredConfig(cfg=>{cfg.downloadReputation=false;cfg.forcedDownloadProtection=true;cfg.dnsRebindGuard=false;cfg.blockGesturelessNav=false;cfg.blockForcedPopups=false;cfg.blockMetaRefresh=false;})');
-    const until = async (fn, label) => {
-      for (let i = 0; i < 100; i++) { if (await fn()) return; await sleep(100); }
+    const until = async (fn, label, attempts = 100) => {
+      for (let i = 0; i < attempts; i++) { if (await fn()) return; await sleep(100); }
       throw new Error('Timed out: ' + label);
     };
     const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
@@ -103,6 +111,36 @@ async function run() {
       return latest;
     }
     const lastId = async () => Math.max(0, ...(await items()).map(item => item.id));
+    if (process.argv.includes('--live')) {
+      await evaluate('updateStoredConfig(cfg=>Object.assign(cfg,DEFAULT_CONFIG,{forcedDownloadProtection:true}))');
+      for (const [name, source, target] of [
+        ['opera', 'https://www.opera.com/gx', '/computer/thanks'],
+        ['curseforge', 'https://www.curseforge.com/minecraft/modpacks/ciscos-adventure-rpg-ultimate/files/8178142', '/minecraft/modpacks/ciscos-adventure-rpg-ultimate/download/8178142'],
+      ]) {
+        await cdp.send('Page.navigate', { url: source }, sessionId);
+        await until(() => evaluate('document.readyState === "complete"', sessionId).catch(() => false), name + ' page');
+        await sleep(2500);
+        const links = await evaluate(`Array.from(document.querySelectorAll('a[href]')).filter(a=>{try{return new URL(a.href).pathname===${JSON.stringify(target)}}catch{return false}}).map(a=>({text:a.innerText.trim(),label:a.getAttribute('aria-label'),href:a.href,target:a.target,visible:!!(a.getBoundingClientRect().width&&a.getBoundingClientRect().height)}))`, sessionId);
+        console.log(JSON.stringify({ name, title: await evaluate('document.title', sessionId), links }));
+        if (process.argv.includes('--inspect-only')) continue;
+        assert(links.some(link => link.visible), name + ' download control is visible');
+        const before = await lastId();
+        const point = await evaluate(`(()=>{const a=Array.from(document.querySelectorAll('a[href]')).find(a=>{try{return new URL(a.href).pathname===${JSON.stringify(target)}&&a.getBoundingClientRect().width&&a.getBoundingClientRect().height}catch{return false}});a.scrollIntoView({block:'center'});const r=a.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2}})()`, sessionId);
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point }, sessionId);
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point }, sessionId);
+        let item;
+        try {
+          item = await latestAfter(before);
+          await until(async () => (await items()).some(entry => entry.id === item.id && entry.state === 'complete'), name + ' real download completes', 600);
+        } catch (error) {
+          console.log(JSON.stringify({ name, diagnostic: await evaluate('(async()=>({items:(await downloadSearch({})).map(i=>({id:i.id,state:i.state,paused:i.paused,error:i.error,filename:i.filename})),reasons:[...FORCED_DOWNLOAD_REASONS],navigations:[...FORCED_DOWNLOAD_NAVIGATIONS]}))()') }));
+          throw error;
+        }
+        assert.equal(await evaluate(`getPendingDownload(${item.id}).then(Boolean)`), false, name + ' has no unexpected-download review');
+        console.log('[ok] live ' + name + ' download completes with forced-download protection enabled');
+      }
+      return;
+    }
     await open('hidden-offer'); await sleep(1500);
     assert(!hits.includes('/avast_secure_browser_setup.exe'), 'hidden sponsor markup cannot initiate an installer request');
     assert.equal(await lastId(), 0, 'entry to a download detail page creates no download');
@@ -177,13 +215,33 @@ async function run() {
       await evaluate(`handleDownloadDecision('${second.id}','cancel',{})`);
       console.log('[ok] a second, unrelated installer cannot reuse the first download click');
     }
-    for (const kind of ['direct', 'cdn', 'export']) {
+    for (const kind of ['direct', 'cdn', 'export', 'handoff-exe', 'handoff-zip', 'handoff-popup']) {
       const before = await lastId();
       await open(kind, true);
       const item = await latestAfter(before);
       await until(async () => (await items()).some(entry => entry.id === item.id && entry.state === 'complete'), kind + ' completes');
       assert.equal(await evaluate(`getPendingDownload(${item.id}).then(Boolean)`), false);
       console.log('[ok] intentional ' + kind + ' download completes quietly');
+    }
+    {
+      const before = await lastId();
+      await evaluate('location.assign("/opaque?from=source")', sessionId);
+      const extra = await latestAfter(before);
+      await until(() => evaluate(`getPendingDownload(${extra.id}).then(r=>!!(r&&r.reviewEvidence.unexpectedDownload))`), 'original tab cannot reuse a forwarded request');
+      await evaluate(`handleDownloadDecision('${extra.id}','cancel',{})`);
+      console.log('[ok] the original tab cannot reuse a request forwarded to a new tab');
+    }
+    {
+      const before = await lastId();
+      await open('handoff-second', true);
+      const first = await latestAfter(before);
+      let second;
+      await until(async () => { second = (await items()).find(entry => entry.id > first.id); return !!second; }, 'second file after a handoff');
+      await until(() => evaluate(`getPendingDownload(${second.id}).then(r=>!!(r&&r.reviewEvidence.unexpectedDownload))`), 'second handoff file held');
+      await until(async () => (await items()).some(entry => entry.id === first.id && entry.state === 'complete'), 'requested handoff file completes');
+      assert.equal(await evaluate(`getPendingDownload(${first.id}).then(Boolean)`), false);
+      await evaluate(`handleDownloadDecision('${second.id}','cancel',{})`);
+      console.log('[ok] navigation handoffs still authorize only one download');
     }
     await evaluate('updateStoredConfig(cfg=>{cfg.forcedDownloadProtection=false;})');
     const before = await lastId(); await open('automatic'); const offItem = await latestAfter(before);

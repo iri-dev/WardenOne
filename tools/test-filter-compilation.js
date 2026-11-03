@@ -78,12 +78,12 @@ async function run() {
   assert.deepStrictEqual(plain(commands), { scriptlets: packaged.scriptlets, procedural: packaged.procedural });
 
   const network = loadNetworkParser(background);
-  const input = ['plain.example', 'github.io', 'tenant.github.io', '||ads.example^$script,third-party',
+  const input = ['plain.feed-fixture.net', 'github.io', 'tenant.github.io', '||ads.example^$script,third-party',
     '@@||cdn.example^$xhr,domain=site.example', '@@||broad.example^$script',
     '||unsupported.example^$csp=script-src', '||overflow.example^$image',
     'site.example#^#script', 'site.example##+js(aopr, key)', 'site.example#?#.ad:remove()'].join('\n');
   const compiled = await network.compileRemoteNetworkSource(input, 2);
-  assert.deepStrictEqual(plain(compiled.domains), ['plain.example', 'tenant.github.io']);
+  assert.deepStrictEqual(plain(compiled.domains), ['plain.feed-fixture.net', 'tenant.github.io']);
   assert.deepStrictEqual(plain(compiled.optionRules), plain(network.parseNetworkRules(input, 0, 2)));
   assert.deepStrictEqual(plain(compiled.optionRules.map(rule => rule.action.type)), ['block', 'allow']);
   assert.deepStrictEqual(Object.keys(compiled).sort(), ['domains', 'optionRules']);

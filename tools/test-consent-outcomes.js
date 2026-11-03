@@ -72,4 +72,19 @@ for (const reply of [null, { ok: false }, { ok: true, overrides: {} }, { ok: tru
   const r = rig(); r.context.window.__wardenOneContentConfigRequest = (_need, callback) => callback(reply);
   r.api.loadConfig(); assert.equal(r.api.isActive(), false, 'unavailable or malformed effective settings never enable automatic interaction');
 }
+{
+  const r = rig(); let now = 10000, clicks = 0;
+  r.context.Date = { now: () => now };
+  assert(r.api.performChoice(button(() => clicks++), null, state.profiles[0]));
+  const next = button(() => clicks++);
+  now += 100;
+  assert.equal(r.api.performChoice(next, null, state.profiles[0]), false, 'rapid replacements wait rather than causing a click loop');
+  assert.equal(clicks, 1);
+  now += 1000;
+  assert(r.api.performChoice(next, null, state.profiles[0]), 'a later distinct appearance can still be rejected');
+  r.timers.filter(timer => timer.delay === 2500)[0].fn();
+  assert.equal(r.messages.length, 0, 'an older action cannot finish verification for the returning banner');
+  r.timers.filter(timer => timer.delay === 2500)[1].fn();
+  assert.equal(r.messages[0].detail.status, 'unverified');
+}
 console.log('[ok] failed/dispatched/unverified/saved consent outcomes, bounded CMP cookie parsing and revocation');

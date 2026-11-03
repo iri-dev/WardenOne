@@ -185,9 +185,9 @@ check('it rides the existing Link Cleanup gate',
   /if\(!WO\.unshimLinks\)return;\s*const t=e&&e\.target;/.test(SRC)
   || /stripPingOnClick=e=>\{[\s\S]{0,120}!WO\.unshimLinks/.test(SRC),
   'turning Link Cleanup off has to turn this off too, or the switch is lying');
-check('the popup copy says what it now also does', /ping<\/code> attributes/.test(POPUP_HTML));
-check('and says the destination is untouched',
-  /leaves the link destination untouched/.test(POPUP_HTML));
+check('the redirect switch still describes link click pings', /Also removes link click pings/.test(POPUP_HTML));
+check('and describes supported destination skipping',
+  /Opens the destination inside supported affiliate and click links/.test(POPUP_HTML));
 
 /* ---- the network half was already there and is still there ---------------- */
 check('ping is a filtered resource type for trackers',

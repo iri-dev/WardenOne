@@ -50,3 +50,13 @@ function wardenSiteDashSummarize(report) {
     total: WARDEN_SITE_DASH_CATEGORY_IDS.reduce((sum, id) => sum + cats[id], 0),
   };
 }
+
+function wardenSiteDashBuckets(counts) {
+  const out = {};
+  for (const key of Object.keys(counts || {})) {
+    const kind = key.indexOf('net:') === 0 ? key.slice(4) : wardenSiteDashEventKind(key);
+    if (kind !== 'noticed' && !WARDEN_SITE_DASH_CATEGORY_IDS.includes(kind)) continue;
+    out[kind] = (out[kind] || 0) + (Number(counts[key]) || 0);
+  }
+  return out;
+}

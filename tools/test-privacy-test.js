@@ -70,8 +70,8 @@ check('no verdict is derived from a setting alone',
   'reading a switch and printing a tick is the thing this page argues against');
 
 /* ---- whole reports, built from readings that disagree with the settings ----- */
-function report(shielded, bare, settings) {
-  return build({ shielded: shielded || {}, bare: bare || {}, settings: settings || {} });
+function report(shielded, bare, settings, extra) {
+  return build({ shielded: shielded || {}, bare: bare || {}, settings: settings || {}, ...(extra || {}) });
 }
 function verdictOf(rows, name) {
   const row = rows.find((r) => r.name === name);
@@ -114,25 +114,29 @@ function verdictOf(rows, name) {
     verdictOf(rows, 'Hyperlink auditing (a ping)') === 'exposed',
     'removing the beacon is the job; changing where the link goes is damage');
 }
+/* Links are cleaned as they are followed (installed rules), never on the page, so the page's link
+   stays intact and the verdict comes from what the rules would send. */
+const PAGE_LINK = { utmGone: false, fbclidGone: false, idKept: true, href: 'https://example.invalid/item?utm_source=probe&fbclid=probe&id=7' };
+const linkVerdict = (sent, settings) => verdictOf(report({ linkParams: PAGE_LINK }, {}, settings || { stripTrackingParams: true },
+  sent === undefined ? {} : { linkCleaning: { url: sent, rules: 7 } }), 'Tracking parameters on links');
+check('both tracking parameters removed on the way out, the link\'s own kept, reads protected',
+  linkVerdict('https://example.invalid/item?id=7') === 'protected');
+check('one of two removed reads partly protected, not protected',
+  linkVerdict('https://example.invalid/item?fbclid=probe&id=7') === 'partial');
+check("a cleaner that would drop the link's OWN parameter is reported as exposed",
+  linkVerdict('https://example.invalid/item') === 'exposed', 'a cleaner that breaks the link is not a stronger cleaner');
+check('missing cleaning rules with the switch on read exposed, whatever the setting says',
+  linkVerdict(undefined) === 'exposed' && linkVerdict('https://example.invalid/item?utm_source=probe&fbclid=probe&id=7') === 'exposed');
+check('switched off is by design, not a failure',
+  linkVerdict(undefined, { stripTrackingParams: false }) === 'design');
 {
-  const rows = report({ linkParams: { utmGone: true, fbclidGone: true, idKept: true, href: 'x' } },
-    {}, { stripTrackingParams: true });
-  check('both tracking parameters gone and the site\'s own kept reads protected',
-    verdictOf(rows, 'Tracking parameters on links') === 'protected');
+  const rows = report({ linkParams: { utmGone: false, fbclidGone: false, idKept: false, href: 'x' } },
+    {}, { stripTrackingParams: true }, { linkCleaning: { url: 'https://example.invalid/item?id=7', rules: 7 } });
+  check("editing the page's own link is a failure even when navigation cleaning works",
+    verdictOf(rows, 'Tracking parameters on links') === 'exposed');
 }
-{
-  const rows = report({ linkParams: { utmGone: true, fbclidGone: false, idKept: true, href: 'x' } },
-    {}, { stripTrackingParams: true });
-  check('one of two removed reads partly protected, not protected',
-    verdictOf(rows, 'Tracking parameters on links') === 'partial');
-}
-{
-  const rows = report({ linkParams: { utmGone: true, fbclidGone: true, idKept: false, href: 'x' } },
-    {}, { stripTrackingParams: true });
-  check("taking the site's OWN parameter is reported as exposed",
-    verdictOf(rows, 'Tracking parameters on links') === 'exposed',
-    'a cleaner that breaks the link is not a stronger cleaner');
-}
+check('the worker reports what its installed link rules send for the probe link',
+  /linkCleanApply\(await getDynamicRulesInBand\(LINK_CLEAN_RULE_BASE, LINK_CLEAN_RULES_BUDGET\)/.test(BG) && /\blinkCleaning,\n/.test(BG));
 {
   const rows = report({ historyParams: { utmGone: true, ownParamKept: false } }, {}, { stripTrackingParams: true });
   check('a history cleaner that eats the app\'s own parameter is a failure',

@@ -70,6 +70,7 @@ async function check(master, resources, warnings, malware) {
   const context = { chrome, console, Map, Set, Date, Number, Object, Array, String, Promise,
     ADSHIELD_STATIC_RULESET_ID: 'adshield_easylist', SPOTIFY_MEDIA_RULESET_ID: 'spotify_media',
     TRACKERS_STATIC_RULESET_ID: 'trackers', EASYPRIVACY_STATIC_RULESET_ID: 'easyprivacy', CNAME_STATIC_RULESET_ID: 'cname_trackers',
+    BADGER_STATIC_RULESET_ID: 'badger_trained',
     GRABBER_FEED_RULE_BASE: 740000, GRABBER_FEED_MAX: 1000,
     GRABBER_NAV_RULE_ID: 741000, GRABBER_MALWARE_NAV_RULE_ID: 741001,
     GRABBER_FEED_DOMAINS: new Set(['feedlogger.example']), GRABBER_FEED_RULE_HOSTS: hosts,
@@ -84,7 +85,7 @@ async function check(master, resources, warnings, malware) {
     removeWardenOneDynamicRules: async () => {}, applyLearnedRules() {}, applyTrackerLearnerRules() {},
   };
   vm.runInNewContext("let __blocklistRulesetStateKey = ''; let __blocklistRulesetError = '';"
-    + ' let ADSHIELD_STATIC_ACTIVE = true;\n' + lift('refreshBlocklistRuleset') + '\n'
+    + ' const STATIC_RULESET_ACTIVE = Object.create(null);\n' + lift('refreshBlocklistRuleset') + '\n'
     + lift('applyGrabberFeedRules')
     + '\nthis.api = { staticRules: refreshBlocklistRuleset, feedRules: applyGrabberFeedRules };', context);
 
@@ -100,7 +101,7 @@ async function check(master, resources, warnings, malware) {
   const siteOn = master && malware;
   const label = JSON.stringify([master, resources, warnings, malware]);
   for (const [id, expected] of Object.entries({ grabbers: resourceOn,
-    grabber_navigation: warningOn, grabber_malware_navigation: siteOn,
+    grabber_navigation: warningOn, grabber_malware_navigation: siteOn, download_landings: siteOn,
     grabber_compat: master })) {
     assert.equal(enabled.has(id), expected, label + ' static ' + id);
   }

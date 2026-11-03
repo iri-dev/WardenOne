@@ -10,12 +10,16 @@ const popup = fs.readFileSync('popup.js', 'utf8');
 const start = popup.indexOf('const UPDATE_GUARDIAN_CACHE_MS =');
 const end = popup.indexOf('// Remove a single exposed token', start);
 assert(start > 0 && end > start, 'Update Guardian implementation must be available');
-const code = popup.slice(start, end) + '\nglobalThis.guardian = { detectBrowser, renderUpdateGuardian, parseBraveRelease, parseChromeRelease, parseEdgeRelease };';
+const code = popup.slice(start, end) + '\nglobalThis.guardian = { detectBrowser, renderUpdateGuardian, parseBraveRelease, parseBraveReleaseMetadata, parseChromeRelease, parseEdgeRelease };';
 
 const braveNotes = (version = '1.96.60', engine = '154.0.8037.93') =>
   '<h2 id="desktop">Desktop</h2><h3 id="desktop-release-notes-v19660">Release Notes <strong>v'
   + version + '</strong></h3><ul><li>Upgraded Chromium to ' + engine + '.</li></ul>'
   + '<h3 id="desktop-release-notes-old">Old release</h3>';
+const braveMetadata = (extra = {}) => JSON.stringify({
+  tag_name: 'v1.96.60', name: 'Release v1.96.60 (Chromium 154.0.8037.93) \n\n',
+  draft: false, prerelease: false, ...extra,
+});
 const chromeRelease = (version = '154.0.8037.93', fraction = 1) => JSON.stringify({
   releases: [{ version, fraction, serving: { startTime: '2026-09-29T00:00:00Z' } }],
 });
@@ -110,8 +114,62 @@ async function main() {
     'versions.brave.com': '1.96.60', 'brave.com/latest/': braveNotes('1.96.59'),
   });
   await mismatch.guardian.renderUpdateGuardian();
-  assert.strictEqual(mismatch.elements['ug-status'].textContent, 'Could not check right now');
-  assert.strictEqual(mismatch.elements['ug-latest'].textContent, '');
+  assert.strictEqual(mismatch.elements['ug-status'].textContent, 'Check Brave updates');
+  assert.strictEqual(mismatch.elements['ug-status'].dataset.state, 'unknown');
+  assert.strictEqual(mismatch.elements['ug-latest'].textContent, 'Latest Brave release: 1.96.60');
+  assert.strictEqual(mismatch.guardian.parseBraveRelease('1.96.60', braveNotes('1.96.59')).engine, '',
+    'release notes for another build cannot establish the latest build\'s Chromium version');
+
+  for (const notes of [new Error('notes offline'), '<h2 id="desktop">Desktop</h2>']) {
+    const partial = run(chromiumNav(154, { brave: { isBrave: async () => true } }), {
+      'versions.brave.com': '1.96.60', 'brave.com/latest/': notes,
+    });
+    await partial.guardian.renderUpdateGuardian();
+    assert.strictEqual(partial.elements['ug-latest'].textContent, 'Latest Brave release: 1.96.60');
+    assert.strictEqual(partial.elements['ug-status'].dataset.state, 'unknown');
+    assert.match(partial.elements['ug-note'].textContent, /installed version/i);
+  }
+  for (const [installed, title] of [['1.96.59', 'Brave update available'], ['1.96.60', 'Brave is up to date']]) {
+    const full = run(chromiumNav(154, { brave: { isBrave: async () => true },
+      userAgentData: { platform: 'Windows', brands: [{ brand: 'Chromium', version: '154' }],
+        async getHighEntropyValues() { return { fullVersionList: [{ brand: 'Brave', version: installed }] }; } },
+    }), { 'versions.brave.com': '1.96.60', 'brave.com/latest/': new Error('notes offline') });
+    await full.guardian.renderUpdateGuardian();
+    assert.strictEqual(full.elements['ug-status'].textContent, title);
+  }
+  const versionOffline = run(chromiumNav(154, { brave: { isBrave: async () => true } }), {
+    'versions.brave.com': new Error('offline'), 'brave.com/latest/': braveNotes(),
+  });
+  await versionOffline.guardian.renderUpdateGuardian();
+  assert.strictEqual(versionOffline.elements['ug-status'].textContent, 'Could not check right now');
+  assert.strictEqual(versionOffline.elements['ug-latest'].textContent, '');
+  assert.throws(() => mismatch.guardian.parseBraveRelease('not a version', braveNotes()));
+
+  for (const [major, title] of [[153, 'Brave update available'], [154, 'Brave looks current']]) {
+    const fallback = run(chromiumNav(major, { brave: { isBrave: async () => true } }), {
+      'versions.brave.com': '1.96.60', 'brave.com/latest/': braveNotes('1.96.59'),
+      'api.github.com/repos/brave/brave-browser/releases/latest': braveMetadata(),
+    });
+    await fallback.guardian.renderUpdateGuardian();
+    assert.strictEqual(fallback.elements['ug-status'].textContent, title);
+    assert.strictEqual(fallback.elements['ug-latest'].textContent, 'Latest Brave release: 1.96.60');
+    assert.strictEqual(fallback.requests.length, 3);
+    assert(fallback.requests.every(({ options }) => options.credentials === 'omit'
+      && options.referrerPolicy === 'no-referrer'));
+  }
+  for (const extra of [
+    { tag_name: 'v1.96.59' }, { draft: true }, { prerelease: true },
+    { name: 'Release v1.96.59 (Chromium 154.0.8037.93)' },
+    { name: 'Release v1.96.60 (Chromium invalid)' }, { name: null },
+  ]) {
+    const invalid = run(chromiumNav(154, { brave: { isBrave: async () => true } }), {
+      'versions.brave.com': '1.96.60', 'brave.com/latest/': new Error('offline'),
+      'api.github.com': braveMetadata(extra),
+    });
+    await invalid.guardian.renderUpdateGuardian();
+    assert.strictEqual(invalid.elements['ug-status'].dataset.state, 'unknown', JSON.stringify(extra));
+    assert.strictEqual(invalid.elements['ug-latest'].textContent, 'Latest Brave release: 1.96.60');
+  }
 
   const chrome153 = run(chromiumNav(153), { 'versionhistory.googleapis.com': chromeRelease() });
   await chrome153.guardian.renderUpdateGuardian();

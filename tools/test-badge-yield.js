@@ -120,6 +120,7 @@ function run(options) {
     badgeHost,
     badgeButton,
     badgePanel,
+    closeBadgeMenu() {},
     /* Declared in the engine's `let` chain, outside the slice: the current lift in px. */
     badgeLift: 0,
     document: {
@@ -251,9 +252,9 @@ function run(options) {
 {
   const r = run({ build: (body) => [under(el('div', { attrs: { 'data-player': '' }, rect: rect(1500, 900, 1920, 1080) }), body)] });
   assert.strictEqual(r.kind(), 'player', 'a player shell under the badge is a player');
-  assert.strictEqual(r.toggled.away, true, 'and the badge gets out of the way entirely -- inert is not enough over a slider');
-  assert.strictEqual(r.toggled.inert, true, 'and takes no input on the way out');
-  assert.strictEqual(r.calls.query, 0, 'a player under the badge needs no second document-wide media query');
+  assert.strictEqual(r.toggled.away, false, 'an inline player does not hide the badge');
+  assert.strictEqual(r.toggled.inert, false, 'the badge is usable above the player');
+  assert(r.lift() >= 244, 'the lifted badge clears the player and its control margin');
 }
 
 /* ---- THE SECOND REPORT: ordinary content must not disable the badge ------------------------ */
@@ -553,7 +554,7 @@ function run(options) {
   assert.strictEqual(r.kind(), '', 'a collapsed badge tests nothing');
 }
 
-/* ---- sitting NEXT TO a control: hidden, but only for anchored sliders and any player -------- */
+/* ---- nearby sliders keep clearance; inline players allow a bounded lift ------------------- */
 {
   /* Spotify: the app does not scroll; the volume slider sits beside the badge's band. */
   const r = run({
@@ -576,9 +577,11 @@ function run(options) {
   assert.strictEqual(r.toggled.inert, false);
 }
 {
-  /* A player shell beside the badge counts wherever it is -- an inline player is still a player. */
+  /* An inline player also needs clearance when it sits beside the badge. */
   const r = run({ docHeight: 6000, build: (body) => [under(el('div', { attrs: { 'data-player': '' }, rect: rect(1300, 700, 1760, 1010) }), body)] });
-  assert.strictEqual(r.toggled.away, true, 'a player beside the badge hides it, anchored or not');
+  assert.strictEqual(r.toggled.away, false, 'a player beside the badge does not hide it');
+  assert.strictEqual(r.toggled.inert, false, 'the badge remains usable beside an inline player');
+  assert(r.lift() > 0, 'the badge moves clear of the nearby player');
 }
 {
   /* The reach is asymmetric on purpose: 72px vertically, 32px horizontally. */

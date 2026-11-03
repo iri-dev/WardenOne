@@ -194,6 +194,9 @@ context.chrome.runtime.onMessage = { addListener(fn) { messageListener = fn; } }
 context.chrome.runtime.onConnect = { addListener(fn) { loggerListener = fn; } };
 context.respond = (result, callback) => callback(result);
 context.grabberNavigationStatus = () => ({ route: 'warning-status' });
+context.resolveTrackingRedirect = () => ({ route: 'tracking-redirect' });
+context.returnFromDownloadSite = () => ({ route: 'download-return' });
+context.badgeRuleAction = () => ({ route: 'badge-action' });
 const listenerStart = source.indexOf('chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {',
   source.indexOf('function privacyTestSettings('));
 const gateEnd = source.indexOf("  if (msg && msg.kind === 'domain-age'", listenerStart);
@@ -206,13 +209,20 @@ function route(message, sender) {
   messageListener(message, sender, (value) => { result = value; });
   return result;
 }
-const deniedMessages = kinds.filter((kind) => kind !== 'grabber-navigation-status')
+const deniedMessages = kinds.filter((kind) => !['grabber-navigation-status', 'tracking-redirect-resolve', 'download-site-return'].includes(kind))
   .concat('future-privileged-kind').map((kind) => ({ kind })).concat(JUNK);
 check('every other message kind, including tab-allowed and future kinds, is denied from public pages',
   publicSenders.every((sender) => deniedMessages.every((message) =>
     route(message, sender)?.error === 'Not allowed from this context.')));
-check('public pages can only reach the warning-status handler', publicSenders.every((sender) =>
+check('public pages can reach the warning-status validation handler', publicSenders.every((sender) =>
   route({ kind: 'grabber-navigation-status' }, sender)?.route === 'warning-status'));
+check('redirect messages reach only the scoped redirect validation handler', publicSenders.every((sender) =>
+  route({ kind: 'tracking-redirect-resolve' }, sender)?.route === 'tracking-redirect'));
+check('download return messages reach only the scoped return validation handler', publicSenders.every((sender) =>
+  route({ kind: 'download-site-return' }, sender)?.route === 'download-return'));
+check('download return rejects caller-supplied destinations and tab identifiers', publicSenders.every((sender) =>
+  [{ url: 'https://attacker.example/' }, { tabId: 1 }].every(extra =>
+    route({ kind: 'download-site-return', ...extra }, sender)?.ok === false)));
 check('private extension pages retain their normal message route',
   route({ kind: 'get-config' }, extPage)?.route === 'private');
 

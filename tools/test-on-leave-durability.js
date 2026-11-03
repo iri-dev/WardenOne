@@ -80,8 +80,9 @@ function worker(session, options) {
     FORGET_TAB_HOSTS: Object.assign({}, o.forgetTabHosts || {}),
     FORGET_TAB_HOSTS_KEY: 'wardenone_forget_tab_hosts',
     FORGET_TAB_HOSTS_TTL_MS: DAY,
-    REDIRECT_CHAINS: {}, POPUP_OPENED_AT: {},
-    forgetNavSignals() {}, forgetRebindTab() {}, forgetWarningRecordsForTab() {}, clearSafeBrowsingBypass() {}, maybeBlockForcedTopRedirect() {},
+    REDIRECT_CHAINS: {}, POPUP_OPENED_AT: {}, TAB_ARRIVAL: {},
+    noteTabArrival() {},
+    forgetNavSignals() {}, forgetRebindTab() {}, forgetWarningRecordsForTab() {}, forgetDownloadSiteReturn() {}, clearSafeBrowsingBypass() {}, maybeBlockForcedTopRedirect() {},
     navigationIsFileDownload() { return false; }, frameDrivenRedirectContext() { return null; }, maybeFlagFrameDrivenRedirect() {},
     registerListener: (name, register) => register(),
     chrome: {

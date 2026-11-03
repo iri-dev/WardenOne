@@ -57,12 +57,26 @@
       ['search','query','filter','find','explore']
     ];
     function toks(s){return (String(s).toLowerCase().match(/[a-z0-9]+/g))||[];}
+    function eventKeysForQuery(raw){
+      var value=String(raw||'').trim().toLowerCase();
+      var keys=/^[a-z][a-z0-9_:-]{0,95}$/.test(value)&&typeof wardenEventProtectionKeys==='function'?wardenEventProtectionKeys(value):[];
+      if(keys.length)return keys;
+      return /^[a-z][a-z0-9_]*_[a-z0-9_]*$/.test(value)?[]:null;
+    }
 
     function buildKeywords(el){
       var base=el.textContent||'';
       var attrs='';
       var dk=el.getAttribute('data-key');
       if(dk)attrs+=' '+dk.replace(/([a-z0-9])([A-Z])/g,'$1 $2');
+      var keys=dk?[dk]:[];
+      if(el.querySelectorAll)el.querySelectorAll('[data-key]').forEach(function(control){
+        var key=control.getAttribute('data-key');
+        if(key&&keys.indexOf(key)<0)keys.push(key);
+      });
+      if(el.id==='master-state')keys.push('enabled');
+      if(el.id==='eyeshield-panel')keys.push('eyeShield','eyeShieldMode');
+      if(el.id==='js-global'||el.id==='js-smart')keys.push(el.id,'scriptMode');
       var em=el.getAttribute('data-eyeshield-mode');
       if(em)attrs+=' '+em;
       var dm=el.getAttribute('data-mode');
@@ -88,7 +102,9 @@
         if(hit){for(var k=0;k<g.length;k++)set[g[k]]=1;}
       }
       var words=Object.keys(set);
-      return {el:el,words:words,text:' '+words.join(' ')+' ',raw:rawLower,attrs:attrs,parentIds:parentIds};
+      var nameEl=el.querySelector?el.querySelector('.name'):null;
+      var name=(nameEl?nameEl.textContent:/^H[1-6]$/.test(el.tagName||'')?base:'')||'';
+      return {el:el,keys:keys,words:words,text:' '+words.join(' ')+' ',raw:rawLower,attrs:attrs,parentIds:parentIds,name:toks(name),score:0};
     }
 
     // Index controls and section headings once.
@@ -145,6 +161,7 @@
       owner.raw+=' '+row.raw;
       owner.attrs+=' '+row.attrs;
       owner.parentIds+=' '+row.parentIds;
+      row.keys.forEach(function(key){if(owner.keys.indexOf(key)<0)owner.keys.push(key);});
       row.words.forEach(function(word){if(owner.words.indexOf(word)<0)owner.words.push(word);});
       owner.text=' '+owner.words.join(' ')+' ';
       return false;
@@ -186,18 +203,73 @@
       return 0;
     }
 
+    // A query word that starts a word of the setting's own name ranks above one found in its description.
+    function nameBonus(qt,r){
+      for(var i=0;i<r.name.length;i++){if(r.name[i].indexOf(qt)===0)return 60;}
+      return 0;
+    }
+
+    function within(el,ancestor){
+      for(var p=el;p;p=p.parentElement){if(p===ancestor)return true;}
+      return false;
+    }
+
+    // Best match first, without moving any element: while searching, sections and the rows inside them get a
+    // CSS order by their best score, and clearing the search puts the normal order back.
+    var groupsEl=$('groups'),rankedEls=[];
+    function rankResults(active){
+      rankedEls.forEach(function(el){
+        if(el.style)el.style.order='';
+        if(el.classList)el.classList.remove('wo-ranked');
+      });
+      rankedEls=[];
+      if(!active||!groupsEl||!groupsEl.classList)return;
+      var scoreOf=function(el){
+        var best=0;
+        for(var i=0;i<rows.length;i++){if(rows[i].score>best&&within(rows[i].el,el))best=rows[i].score;}
+        return best;
+      };
+      var orderBy=function(parent,units){
+        units.sort(function(a,b){return b.score-a.score||a.index-b.index;});
+        units.forEach(function(u,rank){
+          u.members.forEach(function(m,i){if(m.style){m.style.order=String(rank*100+i);rankedEls.push(m);}});
+        });
+        parent.classList.add('wo-ranked');
+        rankedEls.push(parent);
+      };
+      var sections=[],cur=null,kids=Array.prototype.slice.call(groupsEl.children||[]);
+      kids.forEach(function(k){
+        if(!cur||k.tagName==='H2'){cur={members:[],score:0,index:sections.length};sections.push(cur);}
+        cur.members.push(k);
+      });
+      sections.forEach(function(s){s.members.forEach(function(m){s.score=Math.max(s.score,scoreOf(m));});});
+      orderBy(groupsEl,sections);
+      kids.forEach(function(k){
+        if(!k.classList||!k.classList.contains('card-group'))return;
+        var units=Array.prototype.slice.call(k.children||[]).map(function(c,i){return {members:[c],score:scoreOf(c),index:i};});
+        orderBy(k,units);
+      });
+    }
+
     function run(){
       var raw=(inp.value||'').trim();
       var q=raw.toLowerCase();
       var qts=toks(q);
+      var eventKeys=eventKeysForQuery(raw);
       var shown=0;
       for(var i=0;i<rows.length;i++){
         var row=rows[i];
-        var ok=true;
-        for(var t=0;t<qts.length;t++){
+        var ok=true,total=0;
+        if(eventKeys!==null){
+          ok=false;
+          for(var ek=0;ek<eventKeys.length;ek++)if(row.keys.indexOf(eventKeys[ek])>=0){ok=true;total=1000-ek;break;}
+        }
+        for(var t=0;eventKeys===null&&t<qts.length;t++){
           var sc=scoreMatch(qts[t],row);
           if(sc===0){ok=false;break;}
+          total+=sc+nameBonus(qts[t],row);
         }
+        row.score=ok&&qts.length?total:0;
         row.el.classList.toggle('wo-hidden',!ok);
         if(ok)shown++;
       }
@@ -239,6 +311,7 @@
         var tqVisible=!q||!topQuick.querySelector('.wo-hidden');
         topQuick.classList.toggle('wo-hidden',!tqVisible);
       }
+      rankResults(!!q);
       if(nores)nores.style.display=(q&&shown===0)?'block':'none';
       if(clearBtn)clearBtn.style.display=raw?'flex':'none';
       if(countEl){

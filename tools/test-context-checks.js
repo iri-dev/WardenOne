@@ -376,10 +376,11 @@ check('and the answer is on screen before the tab moves',
 check('and says the block was yours, not something WardenOne worked out',
   /reason: 'you blocked this site'/.test(BG) && /userBlocked: true/.test(BG));
 /* Removing a shipped blocklist entry from LEARNED would do nothing, so claiming
-   to have unblocked it would be a lie. */
+   to have unblocked it would be a lie. Since 2026-10-31 only malware and scam lists stop the page
+   itself, so a site that is only on an ad or tracker list can still be blocked by the reader. */
 check('a shipped blocklist entry is not pretended to be toggleable',
-  /if \(BLOCKED_DOMAINS\.has\(host\) && !LEARNED\[host\]\)/.test(BG)
-    && /Already blocked by a protection list/.test(BG));
+  /if \(SECURITY_DOMAINS\.has\(host\) && !LEARNED\[host\]\)/.test(BG)
+    && /Already blocked by a malware or scam list/.test(BG));
 
 /* ---- the classifier ------------------------------------------------------ */
 const kindStart = BG.indexOf('function wardenIndicatorKind(raw) {');
@@ -616,7 +617,7 @@ function runtime() {
       const notices = []; const reloads = []; const wiped = [];
       const sb = {
         URL, Object, String, Date, Number, console, Set, JSON,
-        LEARNED: {}, BLOCKED_DOMAINS: new Set(), LEARNED_RULE_BASE: 700000, LEARNED_MAX: 2000,
+        LEARNED: {}, BLOCKED_DOMAINS: new Set(), SECURITY_DOMAINS: new Set(), LEARNED_RULE_BASE: 700000, LEARNED_MAX: 2000,
         WO_MENU_BLOCK: 'b', DEFAULT_CONFIG: { enabled: true },
         normalizeLearnedDomain: (h) => String(h || '').toLowerCase().replace(/^www\./, ''),
         /* The menu reads the host through this one, so the sandbox needs it too. */

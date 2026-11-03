@@ -51,12 +51,12 @@ assert.deepStrictEqual(sensitive.allowlist, ['sensitive.bank.example', 'shop.exa
   'projection changed the isolated config used by other scripts');
 
 const frameFields = [
-  'enabled', 'allowlist', 'frameSite', 'frameNoise', 'webglDisabled',
+  'enabled', 'allowlist', 'frameSite', 'frameNoise', 'frameClientHints', 'frameTrackerLearning', 'webglDisabled',
   'blockForcedPopups', 'strictPopupShield', 'blockPopupTricks',
   'blockTokenExfil', 'detectSkimmers', 'paymentCardGuard', 'gestureWindowMs',
   'blockThirdPartyCookies', 'blockSupercookies', 'storageAccessGuard',
   'blockAllStorageAccess', 'commandPasteGuard', 'permissionChainGuard',
-  'adShield', 'twitchAdBlock', 'twitchSteadyPlayback',
+  'adShield', 'scriptletEngine', 'twitchAdBlock', 'twitchSteadyPlayback',
 ];
 const full = Object.fromEntries(frameFields.map((key) => [key, key === 'allowlist' ? ['shop.example'] : false]));
 full.articleOnlySetting = 'unrelated';

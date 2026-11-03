@@ -19,7 +19,7 @@ const DOMAIN_SRC = path.join(ROOT, 'domain-utils.js');
 const DOMAIN_ISOLATED_OUT = path.join(ROOT, 'domain-utils-isolated.js');
 // Each region is delimited in src/content.js by a block comment opening with NAME-BEGIN and one
 // reading exactly NAME-END; the bootstrap names it in an @wardenone-include line.
-const REALM_REGIONS = ['AUTH', 'WEBGL-SAVER', 'FINGERPRINT-NOISE'];
+const REALM_REGIONS = ['AUTH', 'WEBGL-SAVER', 'CLIENT-HINTS', 'FINGERPRINT-NOISE'];
 const AUTH_OUTPUTS = ['bridge.js', 'anti-redirect.js', 'permission-chain.js', 'cryptominer-detect.js', 'spotify-adblock.js', 'yt-adblock.js', 'twitch-adblock.js'];
 
 function read(file) {

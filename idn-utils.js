@@ -128,6 +128,7 @@ const WARDENONE_BRAND_COUNTRY_SITES = Object.freeze({
   citibank: 'com com.sg com.hk ae com.my co.uk com.au co.in co.id com.ph com.tw co.th com.vn pl co.kr',
   mastercard: 'com us ca co.uk com.au co.in de fr es it ie co.nz com.sg com.hk co.za ae com.br com.mx',
   barclays: 'com co.uk de',
+  bbc: 'com co.uk',
 });
 
 /* True when the brand is the host's registrable label and what follows it is one listed suffix,

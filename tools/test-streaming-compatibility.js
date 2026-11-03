@@ -173,7 +173,7 @@ function loadRemoteSourceKindHelper() {
   vm.createContext(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
-    sourceBetween(BACKGROUND, 'const REMOTE_SOURCE_KIND_RANK', '\nfunction prioritizedDomainRuleDomains')
+    sourceBetween(BACKGROUND, 'const REMOTE_SOURCE_KIND_RANK', '\nasync function listDomainRules')
       + '\nthis.__strongestSourceKind = strongestRemoteListSourceKind;',
     sandbox,
   );

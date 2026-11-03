@@ -22,7 +22,18 @@ assert.equal(migrated.stopAnimatedVideoPreviews, true);
 assert.equal('stopYouTubeVideoPreviews' in migrated, false);
 assert.equal('retiredProviderKey' in migrated, false);
 assert.equal(migrated.phishTankKey, 'kept');
+assert.equal(migrated.forcedDownloadProtection, false);
+assert.equal(migrated.__forcedDownloadOptInV1, true);
 assert.equal(migrateStoredConfig(migrated, defaults), false);
+
+for (const initial of [true, false, undefined]) {
+  const cfg = { forcedDownloadProtection: initial };
+  migrateStoredConfig(cfg, defaults);
+  assert.equal(cfg.forcedDownloadProtection, false, 'legacy automatic defaults require a new opt-in');
+  cfg.forcedDownloadProtection = true;
+  assert.equal(migrateStoredConfig(cfg, defaults), false);
+  assert.equal(cfg.forcedDownloadProtection, true, 'a later explicit opt-in survives startup');
+}
 
 const source = fs.readFileSync('background.js', 'utf8');
 assert.match(source, /importScripts\('upgrade-config\.js'\)/);

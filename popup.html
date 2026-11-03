@@ -675,6 +675,9 @@
 }
 .wo-search-chip:hover{background:rgba(255,255,255,.7);color:var(--plum);border-color:rgba(176,111,214,.28);box-shadow:0 4px 10px rgba(67,42,94,.06);transform:translateY(-1px);}
 .wo-hidden{display:none!important;}
+/* While searching, results are ranked with CSS order; flex margins do not collapse, so the gaps are restated. */
+#groups.wo-ranked,.card-group.wo-ranked{display:flex;flex-direction:column;}
+#groups.wo-ranked>.card-group{margin:8px 0 0;}
 .wo-noresult{
   display:none;margin:8px 16px 4px;padding:12px 13px;border:1px solid rgba(218,199,238,.9);border-radius:14px;
   background:linear-gradient(145deg,rgba(255,255,255,.78),rgba(246,241,251,.92));color:var(--ink-soft);font-size:12px;line-height:1.45;
@@ -806,6 +809,16 @@
   .list-publisher-date.is-stale { color:var(--wo-warning); font-weight:700; }
   .list-publisher-date.is-unknown { color:var(--ink-soft); }
   .list-publisher-fetch { color:var(--ink-faint); }
+  #list-source-details { margin-top:8px; max-width:100%; }
+  #list-source-details > summary { cursor:pointer; color:var(--plum); font-size:11px; font-weight:700; }
+  #list-source-note { max-width:none; margin:6px 0; line-height:1.4; }
+  .list-source-scroll { max-height:260px; overflow:auto; }
+  #list-source-table { width:100%; border-collapse:collapse; font-size:11px; color:var(--ink-soft); }
+  #list-source-table th, #list-source-table td { padding:6px 0; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  #list-source-table th { font-weight:500; overflow-wrap:anywhere; }
+  #list-source-table thead th { font-weight:700; }
+  #list-source-table td, #list-source-table th:last-child { text-align:right; padding-left:12px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .list-source-kind { display:block; margin-top:2px; color:var(--ink-faint); font-size:10px; }
   .list-update-action { padding:0 0 12px; }
   .list-update-action .btn { display:block; width:100%; }
 
@@ -1243,7 +1256,7 @@
       <label class="tg"><input type="checkbox" data-key="downloadReputation"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Forced Download Protection</div><div class="desc">Stops clear automatic or disguised download links and holds unexpected files for review. Intentional downloads, exports and Save link as stay available. Checks intent locally, separately from Download Shield. Some browser Save As dialogs can still appear.</div></div>
+      <div><div class="name">Forced Download Protection</div><div class="desc">Opt-in: stops clear automatic or disguised download links and holds unexpected files for review. Intentional downloads and exports stay available, including downloads that start on a thank-you or countdown page. Checks intent locally, separately from Download Shield. Some sites may need an exception.</div></div>
       <label class="tg"><input type="checkbox" data-key="forcedDownloadProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     <!-- File Shield reads the selected file's bytes; Download Guard fingerprints a URL re-fetch. -->
@@ -1426,7 +1439,7 @@
 <h2>Privacy</h2>
     <div class="card-group">
     <div class="row">
-      <div><div class="name">Block trackers &amp; ad analytics</div><div class="desc">Hard-block third-party tracking networks (Google Analytics, DoubleClick, Facebook Pixel, etc.)</div></div>
+      <div><div class="name">Block trackers &amp; ad analytics</div><div class="desc">Blocks known third-party trackers and recognized Google Analytics collection hits sent through a site's own domain.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockTrackers"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1434,7 +1447,7 @@
       <label class="tg"><input type="checkbox" data-key="sendPrivacySignals"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Reduce third-party Client Hints</div><div class="desc">Removes detailed browser version, OS version, architecture, bitness, and device model from third-party requests. Known tracker hosts also lose basic browser hints. First-party sites keep their normal compatibility data; Anti-fingerprinting mode reduces the matching navigator.userAgentData values too.</div></div>
+      <div><div class="name">Reduce third-party Client Hints</div><div class="desc">Removes detailed browser version, OS version, architecture, bitness, and device model from third-party requests. Known tracker hosts also lose basic browser hints. Also reduces detailed navigator.userAgentData browser, OS and model metadata by default, while keeping CPU architecture and bitness for download selection. Hosted editors and identity providers keep their compatibility data.</div></div>
       <label class="tg"><input type="checkbox" data-key="clientHintProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1466,7 +1479,7 @@
       <label class="tg"><input type="checkbox" data-key="blockAllCookies"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block first-party trackers</div><div class="desc">Catch known analytics paths served from the site's own domain. Opt-in.</div></div>
+      <div><div class="name">Block first-party trackers</div><div class="desc">Catch additional analytics paths served from the site's own domain. Opt-in. Recognized Google Analytics collection hits are already covered by Block trackers &amp; ad analytics.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockFirstPartyTrackers"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1479,7 +1492,7 @@
       <label class="tg"><input type="checkbox" data-key="trackerLearner"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row" style="flex-direction:column;align-items:stretch;gap:6px;">
-      <div><div class="name" id="tracker-learning-mode-label">Learning mode</div><div class="desc" id="tracker-learning-mode-desc">Automatic tracker protection learns from browser evidence and blocks learned trackers until you unblock them. Review history whenever you want. Switching to review stops new automatic decisions; saved blocks stay.</div></div>
+      <div><div class="name" id="tracker-learning-mode-label">Learning mode</div><div class="desc" id="tracker-learning-mode-desc">WardenOne can learn from its own cookie, canvas, storage and matching URL-ID observations across three sites in one browser session. Automatic mode blocks learned trackers until you unblock them. Review mode requires approval; saved blocks stay.</div></div>
       <select id="tracker-learning-mode" data-key="trackerLearnerAuto" data-config-bool aria-labelledby="tracker-learning-mode-label" aria-describedby="tracker-learning-mode-desc">
         <option value="false">Review suggestions</option>
         <option value="true">Automatic tracker protection</option>
@@ -1509,7 +1522,7 @@
       <label class="tg"><input type="checkbox" data-key="deAmp"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Strict cross-site referrer protection</div><div class="desc">Removes the Referer header on cross-site requests while keeping same-site referrers. Sign-in, CAPTCHA, and payment destinations are excluded for compatibility. Opt-in because some hotlink and hand-off flows rely on a referrer.</div></div>
+      <div><div class="name">Strict cross-site referrer protection</div><div class="desc">Removes the Referer header on cross-site requests while keeping same-site referrers. Sign-in, CAPTCHA, and payment destinations are excluded for compatibility. A download link you press keeps the site&rsquo;s address, so file hosts that check it still work. Opt-in because other hotlink and hand-off flows rely on a referrer.</div></div>
       <label class="tg"><input type="checkbox" data-key="capReferrer"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1533,11 +1546,11 @@
       <label class="tg"><input type="checkbox" data-key="clearServiceWorkersOnLeave"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Remove link click pings</div><div class="desc">Removes <code>ping</code> attributes that notify another address when you click a link. It leaves the link destination untouched. This switch also lets the explicit clean-copy tools unwrap known tracking redirects.</div></div>
+      <div><div class="name">Skip tracking redirects</div><div class="desc">Opens the destination inside supported affiliate and click links without visiting the tracking host. Also removes link click pings. Links without a clear destination keep working normally.</div></div>
       <label class="tg"><input type="checkbox" data-key="unshimLinks"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Remove tracking parameters from page addresses</div><div class="desc">Cleans recognised tracking parameters when a site changes its own address with the History API. Also applies to explicit clean-link actions. It leaves ordinary links and forms untouched, so turning off the ping switch above does not turn this cleaner off.</div></div>
+      <div><div class="name">Remove tracking parameters from page addresses</div><div class="desc">Removes click and campaign identifiers such as fbclid, gclid and utm_ from a page address before the request leaves your browser, whether you open a link or a site rewrites its own address. Links on the page are left as written, and signed or sign-in links are never changed. Also applies to explicit clean-link actions, and works whether or not the ping switch above is on.</div></div>
       <label class="tg"><input type="checkbox" data-key="stripTrackingParams"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row clean-copy-row">
@@ -1592,7 +1605,7 @@
       <label class="tg"><input type="checkbox" data-key="warnSearchResults"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-<div><div class="name" style="font-size:12px;">Hide sponsored search results</div><div class="desc">Removes sponsored Google/Brave search blocks and blocks their ad-click wrappers and advertiser destinations from that results page.</div></div>
+<div><div class="name" style="font-size:12px;">Hide sponsored search results</div><div class="desc">Removes sponsored Google/Brave search blocks and stops their ad-click links. Ordinary results for the same website stay usable.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockSponsoredSearchResults"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>
@@ -1788,7 +1801,7 @@
 <h2>Adult-site safety</h2>
     <div class="card-group">
     <div class="row">
-      <div><div class="name">Warn on adult-site redirects</div><div class="desc">Shows an "are you sure?" screen when you arrive on an 18+ site you did not go looking for, so a mistyped address or a sneaky redirect never drops you (or a kid on the family computer) straight onto explicit content. Going there deliberately still works.</div></div>
+      <div><div class="name">Warn before adult sites</div><div class="desc">Shows an "are you sure?" screen before an 18+ site opens, and says whether a redirect sent you there or you chose to go, so a sneaky redirect never drops you (or a kid on the family computer) straight onto explicit content. One click continues.</div></div>
       <label class="tg"><input type="checkbox" data-key="gateAdultSites"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1954,6 +1967,16 @@
     </div>
     <div class="row" style="border-bottom:none;">
       <div><div class="name" id="list-status">Blocklist: built-in</div><div class="desc" id="list-updated">Updates automatically once a day</div>
+      <details id="list-source-details">
+        <summary>Domains by source</summary>
+        <p class="desc" id="list-source-note">Update the blocklist to load source counts.</p>
+        <div class="list-source-scroll">
+          <table id="list-source-table" hidden>
+            <thead><tr><th scope="col">Source</th><th scope="col">In list</th></tr></thead>
+            <tbody id="list-source-rows"></tbody>
+          </table>
+        </div>
+      </details>
       <!-- Named, not counted. A feed that 404s needs a new URL and one that is
            over its size cap needs a smaller edition of the same list; as a bare
            number those look identical and neither gets fixed. -->
@@ -2536,6 +2559,7 @@
   </div>
   <div class="site-dash-foot" id="site-dash-foot"></div>
 </section>
+<script src="protection-event-settings.js"></script>
 <script src="popup-settings-search.js"></script>
 <script src="engine-compat.js"></script>
 <script src="domain-utils.js"></script>

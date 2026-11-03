@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1,
+    "priority": 3001,
+    "action": {
+      "type": "redirect",
+      "redirect": { "extensionPath": "/download-site-blocked.html" }
+    },
+    "condition": {
+      "requestDomains": ["whuw8g.site"],
+      "resourceTypes": ["main_frame", "sub_frame"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 3000,
+    "action": { "type": "block" },
+    "condition": { "requestDomains": ["whuw8g.site"] }
+  }
+]

@@ -314,6 +314,8 @@ assert(/\.wo-interface-theme-options \.wo-theme-option\[aria-pressed="true"\][\s
 assert(/b\.style\.background\s*=\s*on\s*\?\s*'var\(--wo-popup-mode-gradient\)'/.test(popupSource), 'memory mode selection must use its theme-aware original gradient');
 assert(/A:\s*'var\(--wo-popup-grade-a\)'[\s\S]*?F:\s*'var\(--wo-popup-grade-f\)'/.test(popupSource), 'runtime score grades must use theme-aware popup colors');
 assert(/wo-popup-soft-danger-line/.test(popupSource) && /wo-popup-soft-danger-bg/.test(popupSource), 'runtime light danger controls must use the original rose palette through theme tokens');
+assert(/data-wardenone-page="popup"\]\[data-wardenone-theme-resolved="dark"\]\s+\.wo-search-clear\s*\{[^}]*color:\s*var\(--wo-text\)/.test(css), 'dark search clear button must have a readable high-contrast label');
+assert(/data-wardenone-page="popup"\]\[data-wardenone-theme-resolved="dark"\]\s+\.wo-noresult\s*\{[^}]*background:\s*var\(--wo-card-gradient\)/.test(css), 'dark empty search state must use the card gradient surface');
 
 class Control {
   constructor(theme) { this.theme = theme; this.attrs = { 'data-wardenone-theme': theme }; this.listeners = {}; }

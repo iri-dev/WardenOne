@@ -114,6 +114,7 @@ function loadMediaCompatibilityRules() {
       return state.rules.slice();
     },
     async updateSessionRules(update) {
+      if (state.failWrite) { state.failWrite = false; throw new Error('media write failed'); }
       const removeRuleIds = Array.from(update.removeRuleIds || []);
       const removeSet = new Set(removeRuleIds);
       const addRules = Array.from(update.addRules || []);
@@ -125,6 +126,8 @@ function loadMediaCompatibilityRules() {
     MEDIA_COMPAT_RULE_BASE: 806000,
     chrome: { declarativeNetRequest },
     console,
+    normalizeAllowlistHost: value => typeof value === 'string' && /^[a-z0-9.-]+$/.test(value) ? value.replace(/^www\./, '') : '',
+    hostMatchesSite: (host, pattern) => host === pattern || host.endsWith('.' + pattern),
   }, resourceTypes.resolveAll(BACKGROUND));
   vm.createContext(sandbox);
   installSessionIo(sandbox);
@@ -202,32 +205,32 @@ function requestDomainsMatchHost(condition, rawHost) {
 test('simple-list parser accepts only unambiguous whole hosts', () => {
   const { parseList } = loadNetworkParsers();
   const parsed = Array.from(parseList([
-    'plain.example',
-    'www.keep.example',
-    '0.0.0.0 hosts-one.example hosts-two.example',
+    'plain.feed-fixture.net',
+    'www.keep.feed-fixture.net',
+    '0.0.0.0 hosts-one.feed-fixture.net hosts-two.feed-fixture.net',
     '127.0.0.1 localhost',
-    '::1 ipv6-hosts.example',
-    '||exact-abp.example^',
-    'commented.example # trailing comment',
-    'b\u00fccher.example',
-    'https://url.example/path',
-    '||path-filter.example/tracker.js$script',
-    '||option-filter.example^$script',
-    '@@||exception.example^',
-    '*.wildcard.example',
-    'two.example domains.example',
-    'comma.example,second.example',
+    '::1 ipv6-hosts.feed-fixture.net',
+    '||exact-abp.feed-fixture.net^',
+    'commented.feed-fixture.net # trailing comment',
+    'b\u00fccher.feed-fixture.net',
+    'https://url.feed-fixture.net/path',
+    '||path-filter.feed-fixture.net/tracker.js$script',
+    '||option-filter.feed-fixture.net^$script',
+    '@@||exception.feed-fixture.net^',
+    '*.wildcard.feed-fixture.net',
+    'two.feed-fixture.net domains.feed-fixture.net',
+    'comma.feed-fixture.net,second.feed-fixture.net',
   ].join('\n')));
 
   assert.deepStrictEqual(parsed, [
-    'plain.example',
-    'www.keep.example',
-    'hosts-one.example',
-    'hosts-two.example',
-    'ipv6-hosts.example',
-    'exact-abp.example',
-    'commented.example',
-    'xn--bcher-kva.example',
+    'plain.feed-fixture.net',
+    'www.keep.feed-fixture.net',
+    'hosts-one.feed-fixture.net',
+    'hosts-two.feed-fixture.net',
+    'ipv6-hosts.feed-fixture.net',
+    'exact-abp.feed-fixture.net',
+    'commented.feed-fixture.net',
+    'xn--bcher-kva.feed-fixture.net',
   ]);
 });
 
@@ -356,35 +359,35 @@ test('a long feed parsed in slices gives the worker back and yields exactly pars
   for (let i = 0; i < 12000; i++) {
     if (i === 3998) lines.push('[section opening the second slice]');
     else if (i === 7998) lines.push('{"looks":"like json"}');
-    else if (i % 997 === 0) lines.push('0.0.0.0 hosts-' + i + '.example hosts-b' + i + '.example');
-    else if (i % 499 === 0) lines.push('||abp-' + i + '.example^');
-    else if (i % 333 === 0) lines.push('https://url-' + i + '.example/path');
-    else if (i % 101 === 0) lines.push('repeat-' + (i % 7) + '.example');
-    else lines.push('host-' + i + '.example # trailing comment');
+    else if (i % 997 === 0) lines.push('0.0.0.0 hosts-' + i + '.feed-fixture.net hosts-b' + i + '.feed-fixture.net');
+    else if (i % 499 === 0) lines.push('||abp-' + i + '.feed-fixture.net^');
+    else if (i % 333 === 0) lines.push('https://url-' + i + '.feed-fixture.net/path');
+    else if (i % 101 === 0) lines.push('repeat-' + (i % 7) + '.feed-fixture.net');
+    else lines.push('host-' + i + '.feed-fixture.net # trailing comment');
   }
   const text = lines.join('\n');
   yields.count = 0;
   const sliced = Array.from(await parseListInSlices(text));
   assert(yields.count >= 3, 'a 12,000-line feed was parsed without giving the worker back: ' + yields.count + ' yields');
   assert.deepStrictEqual(sliced, Array.from(parseList(text)), 'slicing changed the hosts or their order');
-  assert(sliced.includes('hosts-b997.example') && sliced.includes('repeat-0.example'), 'fixture hosts were not parsed');
+  assert(sliced.includes('hosts-b997.feed-fixture.net') && sliced.includes('repeat-0.feed-fixture.net'), 'fixture hosts were not parsed');
 
   yields.count = 0;
-  const json = JSON.stringify({ blocklist: ['json-a.example', 'json-b.example'] });
+  const json = JSON.stringify({ blocklist: ['json-a.feed-fixture.net', 'json-b.feed-fixture.net'] });
   assert.deepStrictEqual(Array.from(await parseListInSlices(json)), Array.from(parseList(json)), 'a JSON feed changed');
   /* Pretty-printed, a JSON feed runs to thousands of lines, and cut at a line it is not JSON. */
-  const longJson = JSON.stringify({ blocklist: Array.from({ length: 6000 }, (_, i) => 'json-' + i + '.example') }, null, 1);
+  const longJson = JSON.stringify({ blocklist: Array.from({ length: 6000 }, (_, i) => 'json-' + i + '.feed-fixture.net') }, null, 1);
   const longJsonHosts = Array.from(await parseListInSlices(longJson));
   assert.deepStrictEqual(longJsonHosts, Array.from(parseList(longJson)), 'a long JSON feed was cut into lines');
   assert.strictEqual(longJsonHosts.length, 6000, 'the long JSON fixture did not parse');
-  const short = 'one.example\ntwo.example';
+  const short = 'one.feed-fixture.net\ntwo.feed-fixture.net';
   assert.deepStrictEqual(Array.from(await parseListInSlices(short)), Array.from(parseList(short)), 'a short feed changed');
   assert.strictEqual(yields.count, 0, 'a JSON or short feed was sliced');
 });
 
 test('line scanning preserves slice boundaries, CRLF, and a trailing empty line', async () => {
   const { parseList, parseListInSlices, yields } = loadNetworkParsers();
-  const hosts = Array.from({ length: 4000 }, (_, i) => 'host-' + i + '.example');
+  const hosts = Array.from({ length: 4000 }, (_, i) => 'host-' + i + '.feed-fixture.net');
   yields.count = 0;
   const exact = hosts.join('\r\n');
   assert.deepStrictEqual(Array.from(await parseListInSlices(exact)), Array.from(parseList(exact)));
@@ -395,7 +398,7 @@ test('line scanning preserves slice boundaries, CRLF, and a trailing empty line'
   assert.deepStrictEqual(Array.from(await parseListInSlices(over)), Array.from(parseList(over)));
   assert.strictEqual(yields.count, 2, 'the trailing empty line is the 4001st line');
 
-  const boundary = hosts.join('\r\n') + '\r\n[section] CRLF boundary\r\nlast.example';
+  const boundary = hosts.join('\r\n') + '\r\n[section] CRLF boundary\r\nlast.feed-fixture.net';
   yields.count = 0;
   assert.deepStrictEqual(Array.from(await parseListInSlices(boundary)), Array.from(parseList(boundary)));
   assert.strictEqual(yields.count, 2);
@@ -425,10 +428,10 @@ test('network-rule line scanning keeps order, scope, cap, and final unterminated
 test('JSON list parsing does not broaden URLs, options, or allowlist entries', () => {
   const { parseList } = loadNetworkParsers();
   const parsed = Array.from(parseList(JSON.stringify({
-    blocklist: ['json.example', 'https://reject.example/path', '||scoped.example^$script'],
-    allowlist: ['safe.example'],
+    blocklist: ['json.feed-fixture.net', 'https://reject.feed-fixture.net/path', '||scoped.feed-fixture.net^$script'],
+    allowlist: ['safe.feed-fixture.net'],
   })));
-  assert.deepStrictEqual(parsed, ['json.example']);
+  assert.deepStrictEqual(parsed, ['json.feed-fixture.net']);
 });
 
 test('network parser preserves first/third-party and resource-type scope', () => {
@@ -543,8 +546,8 @@ test('remote-list commit cannot reinstall DNR rules after the master switch turn
   assert.strictEqual(stable.unchanged, true);
   assert.strictEqual(unchanged.state.updates.length, 0,
     'identical remote-list rules caused an unnecessary Chrome transaction');
-  assert(/commitRemoteListRules\(removeIds, desiredRules, dnrBandUnchanged\(mine, desiredRules\)\)/.test(BACKGROUND),
-    'remote-list planner did not pass a byte-equivalent band comparison to the guarded commit');
+  assert(/const unchanged = !!fingerprint && fingerprint === \(previousMeta && previousMeta\.rulesFingerprint\)\s*&& await remoteListRulesInstalled\(addRules\.length, optionRules\.length\);\s*const replacement = await commitRemoteListRules\(remoteListRuleIds\(\), desiredRules, unchanged\);/.test(BACKGROUND),
+    'remote-list planner did not pass its fingerprint check to the guarded commit');
 });
 
 test('location-privacy update migration preserves an explicit disabled setting', () => {
@@ -704,6 +707,34 @@ test('X application-family DNR allows are first-party scoped and keep ping block
       && rule.condition
       && /(?:x|twitter|twimg)\.com/.test(String(rule.condition.urlFilter || ''))),
   'X compatibility must not use a blanket allowAllRequests rule');
+});
+test('YouTube pause coordinates narrowly scoped ad requests and restore removes them', async () => {
+  const { apply, securityRule, state } = loadMediaCompatibilityRules();
+  const adRules = () => state.rules.filter(rule => rule.condition.requestDomains.some(domain => /doubleclick|googlesyndication|googleadservices/.test(domain)));
+  await apply(true);
+  assert.equal(adRules().length, 0);
+  const cfg = { siteOverrides: { 'm.youtube.com': { scriptletEngine: false }, 'elsewhere.example': { scriptletEngine: false },
+    'youtube.com.attacker.example': { scriptletEngine: false }, 'youtube.com': { adShield: false } } };
+  await apply(true, undefined, undefined, cfg);
+  assert.equal(adRules().length, 6);
+  for (const rule of adRules()) {
+    assert.equal(rule.action.type, 'allow');
+    assert.deepEqual(Array.from(rule.condition.initiatorDomains), ['m.youtube.com']);
+    assert(!rule.condition.resourceTypes.includes('main_frame'));
+    assert.equal(rule.priority, 1900);
+    assert(securityRule(rule.condition.requestDomains[0], 6000001, 'security').priority > rule.priority);
+    assert(2000 > rule.priority, 'targeted malicious resource blocks retain authority');
+  }
+  const writes = state.updates.length;
+  await apply(true, undefined, undefined, cfg); assert.equal(state.updates.length, writes);
+  await apply(true, undefined, undefined, { siteOverrides: {} });
+  assert.equal(adRules().length, 0, 'restore removes the ad allowances');
+  await apply(true, undefined, undefined, { scriptletEngine: false });
+  assert.equal(adRules().length, 6);
+  assert.deepEqual(Array.from(adRules()[0].condition.initiatorDomains), ['youtube.com', 'youtube-nocookie.com']);
+  state.failWrite = true;
+  assert.equal(await apply(false), false);
+  await apply(false); assert.equal(state.rules.length, 0, 'failed removal retries on the same state');
 });
 
 test('X compatibility does not globally exempt Twitter tracking infrastructure', () => {

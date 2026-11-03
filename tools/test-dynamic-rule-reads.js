@@ -65,6 +65,9 @@ const BAND_CONSTS = [
   'FINGERPRINT_SCRIPT_RULE_BASE', 'FINGERPRINT_SCRIPT_RULE_MAX', 'GOOGLE_SEARCH_ALLOW_RULE_BASE', 'GOOGLE_SEARCH_ALLOW_RULE_MAX',
   'SCRIPT_SHIELD_RULE_BASE', 'SCRIPT_SHIELD_RULE_MAX',
   'HTTPS_UPGRADE_RULE_ID', 'HTTPS_UPGRADE_DYNAMIC_RULE_ID', 'HTTPS_UPGRADE_RESOURCE_TYPES', 'HTTPS_UPGRADE_EXCLUDED_DOMAINS',
+  'LINK_CLEAN_RULE_BASE', 'LINK_CLEAN_RULES_BUDGET', 'LINK_CLEAN_CHUNK', 'LINK_CLEAN_GUARD_CHUNK', 'LINK_CLEAN_PARAMS', 'LINK_CLEAN_SIGNED_PARAMS',
+  'TRACKING_REDIRECT_RULE_BASE', 'TRACKING_REDIRECT_RULES_BUDGET',
+  'LOGIN_COMPAT_NEVER_BLOCK_DOMAINS',
   'ADSHIELD_STATIC_RULESET_ID', 'SPOTIFY_MEDIA_RULESET_ID', 'TRACKERS_STATIC_RULESET_ID', 'EASYPRIVACY_STATIC_RULESET_ID',
   'CNAME_STATIC_RULESET_ID',
 ];
@@ -80,7 +83,7 @@ const REAL = [
   'readFeedConfig', 'grabberFeedDisabled', 'minerFeedDisabled', 'masterSwitchOn',
   'applyNeverBlockAllowRules', 'applyUserBlocklistRules', 'applyGrabberFeedRules', 'applyMinerFeedRules',
   'applyLearnedRules', 'applyTrackerLearnerRules', 'wardenBlockRuleLive',
-  'httpsUpgradeRule', 'applyHttpsUpgradeRule', 'applyScriptShieldRules',
+  'httpsUpgradeRule', 'applyHttpsUpgradeRule', 'linkCleanRules', 'applyLinkCleaningRules', 'applyScriptShieldRules',
   'applyFingerprintScriptRules', 'applyGoogleSearchSponsoredAllowRules',
   'applyUserFilterRulesFrom', 'applyUserFilterRules', 'applyFirewallRulesFrom', 'applyFirewallRules',
   'userFilterBandStep', 'firewallBandStep', 'userBlocklistBandStep', 'refreshBlocklistRuleset',
@@ -89,8 +92,8 @@ const LIFTED = [
   fs.readFileSync(path.join(ROOT, 'background-cname.js'), 'utf8'),
   fs.readFileSync(path.join(ROOT, 'network-policy.js'), 'utf8'),
   BAND_CONSTS.map(constLine).join('\n'),
-  'let __httpsUpgradeRuleEnabled = null; let __scriptShieldRuleUpdate = Promise.resolve();',
-  "let __blocklistRulesetStateKey = ''; let __blocklistRulesetError = ''; let ADSHIELD_STATIC_ACTIVE = true;",
+  'let __httpsUpgradeRuleEnabled = null; let __linkCleanRulesEnabled = null; let __scriptShieldRuleUpdate = Promise.resolve();',
+  "let __blocklistRulesetStateKey = ''; let __blocklistRulesetError = ''; const STATIC_RULESET_ACTIVE = Object.create(null);",
   constLine('bandOutcome'),
   orElse('ownDynamicRuleBands', 'function ownDynamicRuleBands() { return []; }'),
   BAND_READ,
@@ -231,7 +234,7 @@ function worker(b) {
     eyeShieldThemingActive: () => false, eyeShieldPreloadFile: () => '', eyeShieldUsesBootstrap: () => false,
     resourceSaverScriptFiles: () => [],
     eyeShieldActiveProfileHosts: () => [], eyeShieldRegistrationScope: () => ({ matches: [], excludeMatches: [] }),
-    consentRejectActive: () => false, searchSponsoredCleanupActive: () => false,
+    consentRejectActive: () => false, searchSponsoredCleanupActive: () => false, youtubeAdCompatibilityInitiators: () => [],
   };
   const realNames = new Set(REAL.concat(['createReconcileDnrBatch', 'refreshExtensionState']));
   for (const { fn } of RUN_CALLS) if (!realNames.has(fn) && !(fn in sandbox)) sandbox[fn] = () => Promise.resolve(undefined);

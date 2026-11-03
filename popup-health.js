@@ -219,6 +219,100 @@ function listMetaCount(meta) {
 function listMetaActiveCount(meta) {
   return Number((meta && (meta.activeCount || meta.activeRuleCount)) || 0);
 }
+function listSourceBreakdown(meta) {
+  const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const total = count(meta && meta.activeCount);
+  const feeds = count(meta && meta.activeRuleCount);
+  const packaged = count(meta && meta.packagedActiveCount);
+  const learned = count(meta && meta.activeLearnedCount)
+    ?? (total !== null && feeds !== null && packaged !== null ? total - feeds - packaged : null);
+  const fallback = { rows: [], note: 'Update the blocklist to load source counts.' };
+  if (total === null || feeds === null || packaged === null || learned === null || learned < 0
+      || feeds + packaged + learned !== total) return fallback;
+  const rows = [];
+  let detailedFeeds = Array.isArray(meta.feedDomainCounts) && meta.feedDomainCounts.length <= 128;
+  const feedRows = [];
+  const seen = new Set();
+  for (const source of detailedFeeds ? meta.feedDomainCounts : []) {
+    try {
+      if (typeof source?.url !== 'string' || source.url.length > 2048) throw new Error();
+      const url = new URL(source.url);
+      const active = count(source.activeCount);
+      const known = count(source.count);
+      if (!/^https?:$/.test(url.protocol) || url.username || url.password || seen.has(url.href)
+          || active === null || known === null || active > known) throw new Error();
+      seen.add(url.href);
+      const listed = count(source.listedCount);
+      if (listed !== null && listed < known) throw new Error();
+      const parts = url.pathname.split('/').filter(Boolean);
+      const name = url.href === 'https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt' ? 'ThreatView'
+        : url.href === 'https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/adblock.txt' ? '1Hosts Lite'
+        : url.hostname === 'raw.githubusercontent.com' && parts.length >= 4
+        ? parts[0] + ' / ' + parts[1] + ' · ' + parts[parts.length - 1]
+        : url.hostname + (parts.length ? ' · ' + parts[parts.length - 1] : '');
+      feedRows.push({ name, count: listed, addedCount: active, detail: 'Downloaded feed', url: url.href });
+    } catch (_) { detailedFeeds = false; break; }
+  }
+  if (feedRows.reduce((sum, row) => sum + row.addedCount, 0) !== feeds) detailedFeeds = false;
+  if (detailedFeeds) rows.push(...feedRows);
+  else rows.push({ name: 'Downloaded feeds', count: null, addedCount: feeds });
+  const labels = {
+    base: 'Security domains', adshield_easylist: 'AdShield', trackers: 'Curated trackers',
+    easyprivacy: 'EasyPrivacy', badger_trained: 'Privacy Badger', cname_trackers: 'CNAME trackers',
+  };
+  const activeSets = meta.activePackagedRulesets;
+  const packagedCounts = meta.packagedDomainCounts;
+  const listedPackaged = meta.packagedListedDomainCounts;
+  const packagedRows = [];
+  let detailedPackaged = Array.isArray(activeSets) && activeSets.every((id) => Object.hasOwn(labels, id));
+  for (const [id, name] of Object.entries(labels)) {
+    const known = count(packagedCounts && packagedCounts[id]);
+    if (known === null) { detailedPackaged = false; break; }
+    const active = detailedPackaged && activeSets.includes(id);
+    const listed = count(listedPackaged && listedPackaged[id]);
+    packagedRows.push({ name, count: listed !== null && listed >= known ? listed : null,
+      addedCount: active ? known : 0, detail: active ? 'Built-in list' : 'Built-in list · off' });
+  }
+  if (packagedRows.reduce((sum, row) => sum + row.addedCount, 0) !== packaged) detailedPackaged = false;
+  if (detailedPackaged) rows.push(...packagedRows);
+  else rows.push({ name: 'Built-in lists', count: null, addedCount: packaged });
+  rows.push({ name: 'Locally learned domains', count: learned, addedCount: learned });
+  return { rows, note: 'List sizes overlap. “Added” is each source’s contribution to the unique total.'
+    + (detailedFeeds ? ' ' + feedRows.length + ' downloaded feeds shown.' : '')
+    + (rows.some(row => row.count === null) ? ' Update the blocklist to load full list sizes.' : '') };
+}
+function renderListSources(meta) {
+  const details = $('list-source-details');
+  const rows = $('list-source-rows');
+  const note = $('list-source-note');
+  const table = $('list-source-table');
+  if (!details || !rows || !note || !table) return;
+  const breakdown = listSourceBreakdown(meta);
+  rows.textContent = '';
+  note.textContent = breakdown.note;
+  table.hidden = !breakdown.rows.length;
+  for (const source of breakdown.rows) {
+    const row = document.createElement('tr');
+    const name = document.createElement('th');
+    name.scope = 'row';
+    name.textContent = source.name;
+    if (source.url) name.title = source.url;
+    if (source.detail) {
+      const detail = document.createElement('span');
+      detail.className = 'list-source-kind';
+      detail.textContent = source.detail;
+      name.appendChild(detail);
+    }
+    const value = document.createElement('td');
+    value.textContent = source.count === null ? 'Update needed' : fmtCount(source.count);
+    const added = document.createElement('span');
+    added.className = 'list-source-kind';
+    added.textContent = fmtCount(source.addedCount) + ' added';
+    value.appendChild(added);
+    row.append(name, value);
+    rows.appendChild(row);
+  }
+}
 function renderListPublishers(...groups) {
   const details = $('list-publisher-details');
   const summary = $('list-publisher-summary');
@@ -280,6 +374,7 @@ function renderListMeta() {
     const updEl = $('list-updated');
     const count = listMetaCount(meta);
     const activeCount = listMetaActiveCount(meta);
+    renderListSources(meta);
     if (count) {
       // Show enforced domains first, with the larger known total as context.
       if (activeCount && activeCount < count) {

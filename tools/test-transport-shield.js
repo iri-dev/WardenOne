@@ -134,7 +134,7 @@ const sorted = (a) => a.slice().sort().join(',');
   const fn = BG.slice(BG.indexOf('function domainToRule'));
   const body = fn.slice(0, fn.indexOf('\n}\n'));
   check('security blocklist rules use the full inventory',
-    /kind === 'security' \? SECURITY_RESOURCE_TYPES : RESOURCE_TYPES/.test(body),
+    /kind === 'security' \? SECURITY_RESOURCE_TYPES : LIST_RESOURCE_TYPES/.test(body),
     'domainToRule does not select by source kind');
 }());
 

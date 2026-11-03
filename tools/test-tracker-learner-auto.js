@@ -1,7 +1,7 @@
 /* WardenOne — Copyright (C) 2026 iri; GPL-3.0-or-later. See LICENSE. */
 'use strict';
-/* Opt-in automatic tracker learning: browser-held cross-site cookies, durable resource blocking,
-   and every automatic decision reversible. */
+/* Opt-in automatic tracker learning: cross-site ID cookies seen by the browser, in the jar or in a
+   Set-Cookie that cookie blocking strips; durable resource blocking; every decision reversible. */
 const assert = require('assert/strict');
 const fs = require('fs');
 const vm = require('vm');
@@ -217,11 +217,82 @@ async function dailyCapAndMigration() {
   assert.equal(migrated.api.learner().domains['manual.example'].state, 'learned');
   assert.equal(migrated.api.learner().domains['legacy.example'].state, 'proposed');
   await migrated.cookieRequest('new-site.example', 'px.tracker.example');
-  assert.equal(migrated.api.learner().domains['tracker.example'].automatic, 'block', 'fresh browser evidence can promote the migrated candidate');
+  assert.notEqual(migrated.api.learner().domains['tracker.example'].automatic, 'block', 'legacy counters cannot stand in for verified site evidence');
+  await migrated.cookieRequest('four.example', 'px.tracker.example');
+  await migrated.cookieRequest('five.example', 'px.tracker.example');
+  assert.equal(migrated.api.learner().domains['tracker.example'].automatic, 'block', 'three freshly verified sites can promote the migrated candidate');
   const cleared = rig(); await followAcross(cleared);
   await cleared.api.clear(); cleared.browserRestart(); await cleared.api.load(); await cleared.api.rules();
   assert(blockRule(cleared), 'clearing observations preserves decisions');
   assert.equal(Object.keys(cleared.api.learner().domains['tracker.example'].evidence).length, 0);
+}
+
+/* Block third-party cookies strips a tracker's Set-Cookie before the jar stores it, so in the
+   championship run the learner saw no evidence at all and learned nothing. The response header is
+   the evidence now, judged by the same rule as a jar cookie. */
+const ID_HEADER = 'tid=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; SameSite=None; Secure; Path=/; Max-Age=31536000';
+function setCookieHeaders() {
+  const judge = header => WOLearner.identifyingCookie(WOLearner.setCookieShape(header, NOW), NOW);
+  assert(judge(ID_HEADER), 'a year-long cross-site random ID');
+  assert(judge('uid=8746381230984561234abcDEF; Expires=' + new Date(NOW + 400 * DAY).toUTCString() + '; secure; samesite=none'), 'Expires and lower-case attributes');
+  for (const [label, header] of [
+    ['no Secure (the browser refuses it)', 'tid=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; SameSite=None; Max-Age=31536000'],
+    ['no SameSite', 'tid=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; Secure; Max-Age=31536000'],
+    ['Lax', 'tid=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; SameSite=Lax; Secure; Max-Age=31536000'],
+    ['partitioned', ID_HEADER + '; Partitioned'],
+    ['session cookie', 'tid=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; SameSite=None; Secure'],
+    ['ten minutes', 'tid=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; SameSite=None; Secure; Max-Age=600'],
+    ['Max-Age wins over Expires', 'tid=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; SameSite=None; Secure; Max-Age=600; Expires=' + new Date(NOW + 400 * DAY).toUTCString()],
+    ['deletion', 'tid=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; SameSite=None; Secure; Max-Age=0'],
+    ['consent record', 'euconsent-v2=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; SameSite=None; Secure; Max-Age=31536000'],
+    ['low-entropy value', 'lang=en-GB; SameSite=None; Secure; Max-Age=31536000'],
+    ['no name', '=AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4; SameSite=None; Secure; Max-Age=31536000'], ['empty', ''],
+  ]) assert(!judge(header), label);
+}
+async function strippedCookieLearning() {
+  /* The jar stays empty throughout, exactly as with the cookie protection on. */
+  const r = rig(); r.state.cookies = {};
+  await r.setCookieResponse('one.example', 'px.tracker.example', ID_HEADER);
+  await r.setCookieResponse('one.example', 'px.tracker.example', ID_HEADER, { type: 'script' });
+  assert.equal(r.api.learner().domains['tracker.example'].evidence['tracking-cookie'], 1, 'one count per page');
+  await r.setCookieResponse('two.example', 'px.tracker.example', ID_HEADER);
+  assert.equal(r.api.learner().domains['tracker.example'].state, 'candidate', 'two sites are not enough');
+  await r.setCookieResponse('three.example', 'px.tracker.example', ID_HEADER);
+  const entry = r.api.learner().domains['tracker.example'];
+  assert.equal(entry.state, 'learned', 'learned from response headers alone');
+  assert(entry.evidence['tracking-cookie'] === 3 && entry.evidence.network === 3 && /tracking-cookie/.test(entry.reason));
+  assert.equal(entry.sessions, 1, 'trusted observations can learn in one browser session');
+  assert(blockRule(r), 'and the learned block is enforced');
+  assert(!JSON.stringify(r.state.local).includes('AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4'), 'the cookie value is never stored');
+
+  const off = rig(false); off.state.cookies = {};
+  await followHeaders(off);
+  assert.equal(off.api.learner().domains['tracker.example'], undefined, 'review mode does not learn from headers');
+  const weak = rig(); weak.state.cookies = {};
+  await followHeaders(weak, 'lang=en; SameSite=None; Secure; Max-Age=31536000');
+  assert.equal(weak.api.learner().domains['tracker.example'], undefined, 'a non-identifying cookie is not evidence');
+  const own = rig(); own.state.cookies = {};
+  for (const site of ['www.tracker.example', 'shop.tracker.example']) await own.setCookieResponse(site, 'px.tracker.example', ID_HEADER);
+  assert.equal(own.api.learner().domains['tracker.example'], undefined, 'a first-party cookie is not evidence');
+  const none = rig(); none.state.cookies = {};
+  await none.api.setCookie({ tabId: 1, frameId: 0, documentId: 'doc-x', initiator: 'https://one.example', url: 'https://px.tracker.example/p', type: 'image' });
+  assert.equal(none.api.learner().domains['tracker.example'], undefined, 'a response without headers is not evidence');
+
+  const listen = rig();
+  listen.api.observe(true);
+  const header = listen.state.listeners.onHeadersReceived;
+  assert(header && header.fn === listen.api.listeners.header, 'automatic mode reads response headers');
+  same(header.spec, ['responseHeaders', 'extraHeaders'], 'extraHeaders, without which Set-Cookie is hidden');
+  assert(header.filter.urls.includes('https://*/*') && header.filter.types.includes('image') && !header.filter.types.includes('main_frame'));
+  assert.equal(listen.state.listeners.onBeforeRequest.fn, listen.api.listeners.jar, 'the jar observer is kept');
+  listen.api.observe(false);
+  assert(!listen.state.listeners.onHeadersReceived && !listen.state.listeners.onBeforeRequest, 'both observers follow the switch off');
+}
+async function followHeaders(r, header = ID_HEADER) {
+  await r.setCookieResponse('one.example', 'px.tracker.example', header);
+  await r.setCookieResponse('two.example', 'px.tracker.example', header);
+  r.browserRestart(); r.api.forgetCookieVerdicts();
+  await r.setCookieResponse('three.example', 'px.tracker.example', header);
 }
 
 function wiring() {
@@ -249,7 +320,9 @@ function wiring() {
 }
 (async () => {
   cookiePredicate();
+  setCookieHeaders();
   await promotion();
+  await strippedCookieLearning();
   await persistenceAndUnblock();
   await historyAndCapacity();
   await dailyCapAndMigration();

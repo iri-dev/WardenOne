@@ -44,7 +44,7 @@ const BAND_CONSTS = ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'OPTION_RULE_BASE', 'OP
   'SCRIPT_SHIELD_RULE_BASE', 'SCRIPT_SHIELD_RULE_MAX', 'FINGERPRINT_SCRIPT_RULE_BASE', 'FINGERPRINT_SCRIPT_RULE_MAX',
   'GOOGLE_SEARCH_ALLOW_RULE_BASE', 'GOOGLE_SEARCH_ALLOW_RULE_MAX', 'LEARNED_RULE_BASE', 'LEARNED_MAX', 'GRABBER_FEED_RULE_BASE', 'GRABBER_FEED_MAX', 'GRABBER_NAV_RULE_ID', 'GRABBER_MALWARE_NAV_RULE_ID',
   'TRACKER_RULE_BASE', 'TRACKER_RULE_MAX', 'USER_RULE_BASE', 'USER_RULE_MAX', 'USER_BLOCKLIST_RULE_BASE', 'FIREWALL_RULE_BASE', 'FIREWALL_RULE_MAX',
-  'FIREWALL_SESSION_RULE_BASE', 'FIREWALL_SESSION_RULE_MAX'].map(constLine).join('\n');
+  'FIREWALL_SESSION_RULE_BASE', 'FIREWALL_SESSION_RULE_MAX', 'TRACKING_REDIRECT_RULE_BASE', 'TRACKING_REDIRECT_RULES_BUDGET'].map(constLine).join('\n');
 
 function rig(options) {
   const o = options || {};
@@ -80,7 +80,7 @@ function rig(options) {
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), ctx);
   vm.runInContext(BAND_CONSTS + '\nvar __allowlistRulesKey = null; const ALLOWLIST_RULE_BASE = 800000;\n'
-    + ['masterSwitchOn', 'isWardenOneDynamicRuleId', 'removeWardenOneDynamicRules', 'applyUserFilterRulesFrom', 'applyUserFilterRules',
+    + ['masterSwitchOn', 'isWardenOneDynamicRuleId', 'remoteListRuleIds', 'removeWardenOneDynamicRules', 'applyUserFilterRulesFrom', 'applyUserFilterRules',
       'applyFirewallRulesFrom', 'applyFirewallRules', 'applyUserBlocklistRules', 'applyAllowlistRules',
       /* the compare-before-write the blocklist applier now does (PERF-05), and its band read */
       'dnrValueMatches', 'dnrBandUnchanged'].map(lift).join('\n')
@@ -89,7 +89,7 @@ function rig(options) {
     + ' userFiltersFrom: applyUserFilterRulesFrom, firewall: applyFirewallRules, firewallFrom: applyFirewallRulesFrom, blocklist: applyUserBlocklistRules, allowlist: applyAllowlistRules };', ctx);
   return { api: ctx.api, state, band: (base, max) => state.dnr.filter((r) => r.id >= base && r.id < base + max).length };
 }
-const BANDS = { 'CNAME tracker rules': [730000, 300], 'My rules + custom lists': [750000, 500], 'Per-site firewall': [950000, 250], 'Firewall allow-once': [960000, 50], 'User blocklist': [970000, 64] };
+const BANDS = { 'CNAME tracker rules': [730000, 300], 'Tracking redirect skipping': [912000, 32], 'My rules + custom lists': [750000, 500], 'Per-site firewall': [950000, 250], 'Firewall allow-once': [960000, 50], 'User blocklist': [970000, 64] };
 
 (async () => {
   console.log('\nmaster switch\n');

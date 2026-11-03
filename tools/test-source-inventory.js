@@ -61,6 +61,11 @@ assert.strictEqual(hagezi.length, metadata.profiles.hagezi.urls.length);
 assert(hagezi.every((s) => s.license.type === 'published-license' && s.license.id === 'GPL-3.0'
   && s.permission.status === 'granted' && s.permission.evidenceRef === 'permission-hagezi-2026-10-20'
   && s.compliance.status === 'implemented' && s.compliance.issueIds.length === 0));
+const threatview = grants.find(source => source.policyId === 'threatview');
+assert(threatview && threatview.permission.date === '2026-11-02'
+  && threatview.permission.evidenceRef === 'permission-threatview-2026-11-02'
+  && threatview.license.type === 'written-permission');
+assert(read('CREDITS.md').includes('Written permission (' + threatview.permission.date + ')'));
 assert.deepStrictEqual(inventory.sources.find((s) => s.policyId === 'peter').toggles.sort(), ['adShield','blockTrackers']);
 const snapshot = JSON.parse(read('cosmetic-rules.json'));
 const all = new Set([...inventory.sources, ...inventory.buildSources].map((s) => s.url));
@@ -80,6 +85,17 @@ for (const file of metadata.licenseFiles) assert(read('THIRD_PARTY_NOTICES.html'
 assert(/credits: 'THIRD_PARTY_NOTICES.html'/.test(read('settings.js')));
 assert(!require('./build-store-package.js').NON_RUNTIME.some((re) => re.test('CREDITS.md')));
 assert(!require('./build-store-package.js').NON_RUNTIME.some((re) => re.test('THIRD_PARTY_NOTICES.html')));
+/* A feed over its size cap quarantines the WHOLE refresh, so nothing updates at all -- which is what a feed
+   URL changing out from under its reviewed cap looks like. Every raised cap must still name a live source. */
+{
+  const background = read('background.js');
+  const block = /const LIST_REVIEWED_SOURCE_MAX_BYTES = Object\.freeze\(\{([\s\S]*?)\}\);/.exec(background);
+  assert(block, 'the reviewed per-source size caps moved in background.js');
+  const capped = [...block[1].matchAll(/'(https?:\/\/[^']+)'\s*:/g)].map((m) => m[1]);
+  assert(capped.length, 'no reviewed caps found');
+  const configured = new Set(inventory.sources.map((s) => s.url));
+  for (const url of capped) assert(configured.has(url), 'a raised size cap names a feed nothing fetches any more: ' + url);
+}
 const exceptions = inventory.sources.filter((s) => s.compliance.status !== 'implemented').map((s) => s.url).sort();
 assert.deepStrictEqual(unresolvedRights(inventory).sort(), exceptions);
 console.log('Source inventory: runtime/build coverage, exact URL matching, scoped grants, offline notices and specific release exceptions verified');

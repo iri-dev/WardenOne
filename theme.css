@@ -241,7 +241,6 @@
 }
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .tg .track { background: var(--wo-control); }
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .tg .knob,
-:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search-clear:hover,
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-range::-webkit-slider-thumb,
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-range::-moz-range-thumb { background: var(--wo-surface-raised); }
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .btn:hover,
@@ -275,6 +274,28 @@
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search::placeholder { color: var(--wo-text-faint); }
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search:focus { background: var(--wo-surface-wash); border-color: var(--wo-focus); }
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search-ico { color: var(--wo-text-faint); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search-clear {
+  background: var(--wo-control);
+  border-color: var(--wo-line-strong);
+  color: var(--wo-text);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-search-clear:hover {
+  background: var(--wo-control-hover);
+  border-color: var(--wo-brand-text);
+  color: var(--wo-text);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-noresult {
+  background: var(--wo-card-gradient);
+  border-color: var(--wo-line);
+  box-shadow: var(--wo-shadow-soft);
+  color: var(--wo-text-soft);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-noresult strong {
+  color: var(--wo-text);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .wo-noresult span {
+  color: var(--wo-text-soft);
+}
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] :is(.eyeshield-panel, .perm-list) {
   background: var(--wo-card-gradient);
   border-color: var(--wo-line);

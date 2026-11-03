@@ -34,7 +34,7 @@ const outcome = (rules, type = 'script', site = 'news.example.com', domain = 'cd
 };
 
 for (const all of ['allow', 'block']) {
-  for (const column of ['script', 'xhr', 'frame', 'media']) {
+  for (const column of ['script', 'xhr', 'beacon', 'frame', 'media']) {
     const result = compile(matrix({ all, [column]: 'noop', cookie: 'strip' }));
     const broad = result.rules.find(r => r.action.type === all);
     assert(broad);
@@ -91,7 +91,7 @@ const lists = vm.createContext({ isObj: value => value !== null && typeof value 
 vm.runInContext(settings.match(/^const savedHost = .*;$/m)[0] + '\n'
   + settings.slice(settings.indexOf('const strList ='), settings.indexOf('async function collectLists()'))
   + '\nthis.clean = cleanLists;', lists);
-const imported = lists.clean({ firewall: matrix({ all: 'block', script: 'noop', xhr: 'strip', cookie: 'allow', media: 'noop', frame: 'explode' }) });
-assert.strictEqual(JSON.stringify(imported.firewall), JSON.stringify(matrix({ all: 'block', script: 'noop', media: 'noop' })), 'backup validation retains only valid decisions');
+const imported = lists.clean({ firewall: matrix({ all: 'block', script: 'noop', beacon: 'block', xhr: 'strip', cookie: 'allow', media: 'noop', frame: 'explode' }) });
+assert.strictEqual(JSON.stringify(imported.firewall), JSON.stringify(matrix({ all: 'block', script: 'noop', beacon: 'block', media: 'noop' })), 'backup validation retains only valid decisions, including saved beacon blocks');
 assert.strictEqual(JSON.stringify(lists.clean(imported)), JSON.stringify(imported), 'backup normalization is stable');
 console.log('[ok] firewall noop authority, resource scopes, inherited rows and decision capacity');

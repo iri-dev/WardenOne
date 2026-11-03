@@ -278,9 +278,17 @@ function loadWholeQuietRule() {
 
   const setBlock = BG.slice(BG.indexOf("TAB_CONTEXT_ALLOWED_MESSAGES = new Set(["),
     BG.indexOf("]);", BG.indexOf("TAB_CONTEXT_ALLOWED_MESSAGES = new Set([")));
-  const missing = relayable.filter((kind) => setBlock.indexOf("'" + kind + "'") < 0);
-  check("every relayable kind is allowed from a tab", missing.length === 0,
+  const localMenus = ['badge-rule-menu', 'badge-rule-menu-close'];
+  const missing = relayable.filter((kind) => !localMenus.includes(kind) && setBlock.indexOf("'" + kind + "'") < 0);
+  check("every worker-relayable kind is allowed from a tab", missing.length === 0,
     "rejected before reaching its handler: " + missing.join(", "));
+  check('badge menu routes stay local and are not worker commands', localMenus.every((kind) =>
+    relayable.includes(kind) && !setBlock.includes("'" + kind + "'")));
+  const handler = BRIDGE.slice(BRIDGE.indexOf("woOn(document, 'wo-background-message'"), BRIDGE.indexOf('// Cookie reload-loop escape.'));
+  const local = handler.indexOf("if (message.kind === 'badge-rule-menu'");
+  const forwarded = handler.indexOf('chrome.runtime.sendMessage(message');
+  check('local badge menu handling returns before forwarding to the worker', local >= 0 && forwarded > local
+    && /badgeControlsPanel\.toggle\(\)[\s\S]*?badgeControlsPanel\.close\(\)[\s\S]*?return;/.test(handler.slice(local, forwarded)));
 }());
 (function everyKeyTheEngineReadsIsOneBuildConfigProduces() {
   /* The second whitelist to swallow this feature whole.

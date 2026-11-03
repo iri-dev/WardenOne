@@ -121,6 +121,54 @@ check('and there is one derived config, not one per site',
   (MIN.match(/const safe=Object\.assign\(\{\},cfg\);/g) || []).length === 1,
   'a second derived copy means a second site is being quietly stripped');
 
+{
+  const helper = SRC.match(/const youtubeAdUiPaused=[^;]+;/);
+  check('the shared YouTube ad UI gate exists', !!helper);
+  if (helper) for (const [name, media, youtube, ready, feature, expected] of [
+    ['paused YouTube', true, true, true, false, true],
+    ['YouTube awaiting config', true, true, false, true, true],
+    ['active YouTube', true, true, true, true, false],
+    ['other media host', true, false, true, false, false],
+    ['ordinary site', false, false, true, false, false],
+  ]) {
+    const ctx = { trustedMediaHost: media, WO: { __youtubeCompatibilityMode: youtube, scriptletEngine: feature }, __woConfigStore: { __configReady: ready } };
+    vm.createContext(ctx); vm.runInContext(helper[0] + 'this.paused=youtubeAdUiPaused();', ctx);
+    check(name + ' uses the correct ad UI state', ctx.paused === expected);
+  }
+  check('the general cosmetic engine waits at execution and retries after configuration',
+    SRC.includes('if(WO.adShield)try{') && SRC.includes('woOn(document,"wo-config-change",maybeStartAdshieldCosmetics)')
+      && /maybeStartAdshieldCosmetics=\(\)=>\{\s*if\([^\n]*youtubeAdUiPaused\(\)/.test(SRC)
+      && /requestAndApply=\(\)=>\{\s*try\{\s*if\(youtubeAdUiPaused\(\)\)/.test(SRC));
+  const startCosmetics = SRC.indexOf('      let adshieldCosmeticsStarted=!1;');
+  const endCosmetics = SRC.indexOf('      maybeStartAdshieldCosmetics(),', startCosmetics);
+  check('the deferred cosmetic initializer remains locatable', startCosmetics >= 0 && endCosmetics > startCosmetics);
+  if (startCosmetics >= 0 && endCosmetics > startCosmetics) {
+    let paused = true, requests = 0;
+    const ctx = { document: { documentElement: {} }, youtubeAdUiPaused: () => paused,
+      allowGoogleSearchCosmetics: () => true, requestAndApply: () => { requests++; } };
+    vm.createContext(ctx);
+    vm.runInContext(SRC.slice(startCosmetics, endCosmetics) + 'this.start=maybeStartAdshieldCosmetics;', ctx);
+    ctx.start(); check('a pending YouTube config does not start cosmetics', requests === 0);
+    paused = false; ctx.start(); ctx.start();
+    check('authenticated activation starts cosmetics once after the initial attempt', requests === 1);
+  }
+  const from = SRC.indexOf('        const __woMaybeAdCollapse=()=>{');
+  const end = SRC.indexOf('      __woMaybeAdCollapse(),', from);
+  check('the generic ad collapse path remains locatable', from >= 0 && end > from);
+  if (helper && from >= 0 && end > from) for (const paused of [true, false]) {
+    let styles = 0;
+    const ctx = {
+      WO: { adShield: true }, trustedMediaHost: true, __woConfigStore: { __configReady: true },
+      __woAdCollapseStarted: false,
+      document: { readyState: 'complete', createElement: () => ({}), head: { appendChild() { styles++; } }, querySelectorAll: () => [] },
+      isGoogleSearchResults: () => false, woOn() {}, woObserve() {}, __woIdle: fn => fn(), setTimeout,
+    };
+    ctx.WO.__youtubeCompatibilityMode = true; ctx.WO.scriptletEngine = !paused;
+    vm.createContext(ctx); vm.runInContext(helper[0] + SRC.slice(from, end) + '__woMaybeAdCollapse();', ctx);
+    check((paused ? 'paused' : 'active') + ' YouTube generic ad styles', styles === (paused ? 0 : 1));
+  }
+}
+
 if (failed) {
   console.error('youtube compat: ' + failed + ' failed');
   process.exit(1);

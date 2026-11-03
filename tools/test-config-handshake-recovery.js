@@ -30,7 +30,7 @@ function section(name, fn) {
 }
 
 /* ---- lift the acquisition block ------------------------------------------------------------- */
-const a = BRIDGE.indexOf("  const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME ? ['overrides', 'learned', 'supplemental', 'hidden'] : ['overrides', 'hidden'];");
+const a = BRIDGE.indexOf("  const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME ? ['overrides', 'learned', 'supplemental', 'hidden', 'appearance'] : ['overrides', 'hidden'];");
 const bMarker = "      bridgeFetchContentConfig(wanted, cb, SIBLING_CONFIG_ATTEMPTS);\n    };\n  } catch (_) {}\n";
 const b = a >= 0 ? BRIDGE.indexOf(bMarker, a) : -1;
 const BLOCK = a >= 0 && b > a ? BRIDGE.slice(a, b + bMarker.length) : '';
@@ -128,7 +128,7 @@ if (BLOCK) {
   section('the first request is made at once', () => {
     const w = world();
     check('one request goes out on start', w.outbox.length === 1);
-    check('for the bridge\'s four parts', JSON.stringify(w.outbox[0].msg) === JSON.stringify({ kind: 'content-config-get', need: ['overrides', 'learned', 'supplemental', 'hidden'] }));
+    check('for the bridge\'s requested parts', JSON.stringify(w.outbox[0].msg) === JSON.stringify({ kind: 'content-config-get', need: ['overrides', 'learned', 'supplemental', 'hidden', 'appearance'] }));
     check('a deadline is armed against a reply that never comes', w.pending().length === 1 && w.pending()[0] === 8000);
     w.reply(0, ok(100));
     check('a good answer is applied once', w.sent.length === 1 && w.sent[0].marker === 'rev100');

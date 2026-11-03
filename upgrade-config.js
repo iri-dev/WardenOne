@@ -3,6 +3,11 @@
 
 function migrateStoredConfig(cfg, defaults) {
   let changed = false;
+  if (cfg.__forcedDownloadOptInV1 !== true) {
+    cfg.forcedDownloadProtection = false;
+    cfg.__forcedDownloadOptInV1 = true;
+    changed = true;
+  }
   if (cfg.__locationPrivacyV344Enabled !== true) {
     if (typeof cfg.blockGeolocation === 'undefined') cfg.blockGeolocation = true;
     cfg.__locationPrivacyV344Enabled = true;

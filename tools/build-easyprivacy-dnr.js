@@ -18,7 +18,7 @@ const RESOURCE_TYPES = [
   'sub_frame', 'stylesheet', 'script', 'image', 'font', 'object',
   'xmlhttprequest', 'ping', 'csp_report', 'media', 'websocket', 'other',
 ];
-const BATCH = 100;          // hostnames per rule (well under DNR's per-rule domain limit)
+const BATCH = 500;          // hostnames per rule; rules-cname.json proves far larger lists load
 const PRIORITY = 1000;      // same priority band as rules-trackers.json
 
 // Well-known, high-prevalence trackers/RUM/session-replay/attribution vendors the audit
@@ -84,7 +84,8 @@ function main() {
     console.error('usage: node build-easyprivacy-dnr.js <easyprivacy.txt> <rules-trackers.json> <out> [maxHosts]');
     process.exit(2);
   }
-  const maxHosts = Math.max(100, Number(maxArg) || 8000);
+  // A ceiling, not a cut: the old default sliced the sorted list and shipped only hosts up to "f".
+  const maxHosts = Math.max(100, Number(maxArg) || 100000);
 
   // Hosts already covered by the curated trackers ruleset -> don't duplicate.
   let existing = new Set();
@@ -117,10 +118,12 @@ function main() {
     if (!covered) kept.push(h);
   }
 
-  // Keep priority hosts first, then fill to the cap.
+  if (kept.length > maxHosts) {
+    console.error('easyprivacy: ' + kept.length + ' hosts exceed the ' + maxHosts + '-host ceiling; raise it deliberately');
+    process.exit(1);
+  }
   const prioritySet = new Set(PRIORITY_HOSTS.filter((h) => kept.includes(h)));
-  const ordered = kept.filter((h) => prioritySet.has(h)).concat(kept.filter((h) => !prioritySet.has(h)));
-  const finalHosts = ordered.slice(0, maxHosts);
+  const finalHosts = kept.filter((h) => prioritySet.has(h)).concat(kept.filter((h) => !prioritySet.has(h)));
 
   // domainType:'thirdParty' -- this auto-generated set blocks trackers only in a THIRD-PARTY
   // context, so it can never block a site loading a resource from its OWN domain. That makes

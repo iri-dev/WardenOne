@@ -24,6 +24,11 @@ const cases = [
   { name: 'preferences-required-mixed', settings: 'mixed', expected: ['settings'] },
   { name: 'preferences-hidden-marketing', settings: 'hidden', expected: ['settings'] },
   { name: 'preferences-normal', settings: 'on', expected: ['settings', 'save'] },
+  ...['style', 'hidden', 'opacity', 'reinsert', 'clone'].map(repeat => ({ name: 'returning-' + repeat, label: 'Reject all', repeat, expected: ['reject', 'reject', 'reject'] })),
+  { name: 'returning-enabled-later', label: 'Reject all', repeat: 'style', disableOnReturn: true, expected: ['reject', 'reject', 'reject'] },
+  { name: 'returning-preferences', settings: 'on', repeat: 'clone', expected: ['settings', 'save', 'settings', 'save', 'settings', 'save'] },
+  { name: 'returning-preferences-reused', settings: 'on', repeat: 'style', reuseSettings: true, expected: ['settings', 'save', 'settings', 'save', 'settings', 'save'] },
+  { name: 'stuck-banner', label: 'Reject all', stuck: true, expected: ['reject'] },
 ];
 function fixture(test) {
   const bannerStyle = 'position:fixed;inset:40px auto auto 40px;width:650px;min-height:180px;background:white;color:black;z-index:99999;padding:20px';
@@ -39,12 +44,24 @@ function fixture(test) {
   return '<!doctype html><meta charset="utf-8"><title>Consent stress: ' + test.name + '</title><input id="editor" value="works"><main>' + 'A readable article. '.repeat(120)
     + '</main><script>window.fixtureActions=[];window.fixtureReady=false;setTimeout(()=>{let root=document.body;'
     + 'for(let i=0;i<' + (test.shadow || 0) + ';i++){const host=document.createElement("div");root.append(host);root=host.attachShadow({mode:"open"});}'
-    + 'const holder=document.createElement("div");holder.innerHTML=' + JSON.stringify(banner) + ';root.append(holder);'
+    + 'const banner=' + JSON.stringify(banner) + ';function show(){const holder=document.createElement("div");holder.innerHTML=banner;root.append(holder);wire(holder);}function wire(holder){'
     + (test.settings
-      ? 'holder.querySelector("button").onclick=()=>{fixtureActions.push("settings");holder.innerHTML=' + JSON.stringify(pane) + ';holder.querySelector(".save-preference-btn-handler").onclick=()=>{fixtureActions.push("save");window.fixtureOptionalOn=[...holder.querySelectorAll("input")].some(x=>x.checked&&/analytics|marketing/i.test(x.parentElement.textContent));document.cookie="OptanonConsent="+encodeURIComponent("groups=C0001:1,C0002:"+(fixtureOptionalOn?1:0))+"; Secure; path=/; SameSite=Lax";holder.remove();};};'
-      : 'holder.querySelector("#choice").onclick=e=>{e.preventDefault();fixtureActions.push(' + JSON.stringify(test.action || 'reject') + ');document.cookie="OptanonConsent="+encodeURIComponent(' + JSON.stringify('groups=C0001:1,C0002:' + (test.action === 'accept' ? '1' : '0')) + ')+"; Secure; path=/; SameSite=Lax";holder.remove();};')
+      ? test.reuseSettings
+        ? 'const bannerNode=holder.firstElementChild;holder.querySelector("button").onclick=()=>{fixtureActions.push("settings");bannerNode.hidden=true;const preferences=document.createElement("div");preferences.innerHTML=' + JSON.stringify(pane) + ';holder.append(preferences);preferences.querySelector(".save-preference-btn-handler").onclick=()=>{fixtureActions.push("save");window.fixtureOptionalOn=[...preferences.querySelectorAll("input")].some(x=>x.checked&&/analytics|marketing/i.test(x.parentElement.textContent));document.cookie="OptanonConsent="+encodeURIComponent("groups=C0001:1,C0002:"+(fixtureOptionalOn?1:0))+"; Secure; path=/; SameSite=Lax";preferences.remove();finished(holder,()=>bannerNode.hidden=false);};};'
+        : 'holder.querySelector("button").onclick=()=>{fixtureActions.push("settings");holder.innerHTML=' + JSON.stringify(pane) + ';holder.querySelector(".save-preference-btn-handler").onclick=()=>{fixtureActions.push("save");window.fixtureOptionalOn=[...holder.querySelectorAll("input")].some(x=>x.checked&&/analytics|marketing/i.test(x.parentElement.textContent));document.cookie="OptanonConsent="+encodeURIComponent("groups=C0001:1,C0002:"+(fixtureOptionalOn?1:0))+"; Secure; path=/; SameSite=Lax";finished(holder);};};'
+      : 'holder.querySelector("#choice").onclick=e=>{e.preventDefault();fixtureActions.push(' + JSON.stringify(test.action || 'reject') + ');document.cookie="OptanonConsent="+encodeURIComponent(' + JSON.stringify('groups=C0001:1,C0002:' + (test.action === 'accept' ? '1' : '0')) + ')+"; Secure; path=/; SameSite=Lax";finished(holder);};')
     + (test.enableLater ? 'setTimeout(()=>{holder.querySelector("#choice").disabled=false;},900);' : '')
-    + 'window.fixtureReady=true;},' + (test.delay || 200) + ');</script>';
+    + '}function finished(holder,onReturn){'
+    + (test.stuck ? 'setTimeout(()=>holder.classList.toggle("cookie-visible"),400);'
+      : !test.repeat ? 'holder.remove();'
+      : 'if(fixtureActions.filter(x=>x==="reject"||x==="save").length>=3){holder.remove();return;}'
+        + (test.disableOnReturn ? 'holder.querySelector("#choice").disabled=true;setTimeout(()=>holder.querySelector("#choice").disabled=false,1400);' : '')
+        + (test.repeat === 'style' ? 'holder.style.display="none";setTimeout(()=>{if(onReturn)onReturn();holder.style.display="";},400);'
+          : test.repeat === 'hidden' ? 'holder.hidden=true;setTimeout(()=>holder.hidden=false,400);'
+            : test.repeat === 'opacity' ? 'holder.style.opacity="0";setTimeout(()=>holder.style.opacity="1",400);'
+            : test.repeat === 'reinsert' ? 'holder.remove();setTimeout(()=>root.append(holder),400);'
+              : 'holder.remove();setTimeout(show,400);'))
+    + '}show();window.fixtureReady=true;},' + (test.delay || 200) + ');</script>';
 }
 async function evaluate(cdp, session, expression) {
   const r = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, session);
@@ -57,8 +74,10 @@ async function until(check, label) {
   throw Error('Timed out: ' + label);
 }
 async function run() {
-  const [runtimeArg, browserArg, output] = process.argv.slice(2);
-  if (!output || fs.existsSync(output)) throw Error('Usage: browser-consent-stress.js frozen-runtime browser.exe new-report.json');
+  const [runtimeArg, browserArg, output, caseName] = process.argv.slice(2);
+  if (!output || fs.existsSync(output)) throw Error('Usage: browser-consent-stress.js frozen-runtime browser.exe new-report.json [case-name]');
+  const selected = caseName ? cases.filter(test => test.name === caseName) : cases;
+  if (!selected.length) throw Error('Unknown consent fixture: ' + caseName);
   const runtime = path.resolve(runtimeArg), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-consent-stress-'));
   const report = { date: new Date().toISOString(), cases: [], complete: false };
   const server = https.createServer(tls, (req, res) => {
@@ -78,13 +97,13 @@ async function run() {
     await worker('Promise.all([...__subsystemQueues.values()]).then(()=>true)');
     await profile.closeExtensionTabs(cdp, port, ext.id);
     report.config = await worker('chrome.storage.local.get("wardenone_config").then(s=>({enabled:s.wardenone_config.enabled,autoRejectConsent:s.wardenone_config.autoRejectConsent}))');
-    for (const test of cases) {
+    for (const test of selected) {
       const url = 'https://' + test.name + '.test:' + server.address().port + '/' + test.name;
       const { targetId } = await cdp.send('Target.createTarget', { url });
       const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
       await cdp.send('Page.enable', {}, sessionId); await cdp.send('Runtime.enable', {}, sessionId);
       await until(() => evaluate(cdp, sessionId, 'window.fixtureReady===true'), 'fixture ' + test.name);
-      await sleep(test.settings ? 4000 : 2000);
+      await sleep(test.repeat ? 5000 : test.settings ? 4000 : 2000);
       const state = await evaluate(cdp, sessionId, '({actions:window.fixtureActions,cookie:document.cookie,optionalOn:window.fixtureOptionalOn,editor:document.getElementById("editor").value})');
       const passed = JSON.stringify(state.actions) === JSON.stringify(test.expected) && state.editor === 'works' && !(state.actions.includes('save') && state.optionalOn);
       report.cases.push({ name: test.name, expected: test.expected, ...state, passed });

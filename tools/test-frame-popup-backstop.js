@@ -41,7 +41,12 @@ function world(config = {}, sourceUrl = 'https://playmogo.com/d/1s8i3o0preys', w
       get: async (id) => ({ url: id === 12 ? targetUrl : currentUrl, windowId: 20 }),
       remove: async (id) => { removed.push(id); },
       create: async (options) => { created.push(options); },
-      sendMessage: (id, message, options) => { notices.push({ id, message, options }); },
+      sendMessage: (id, message, options) => {
+        notices.push({ id, message, options });
+        if (message && message.kind === 'open-pressed-download') {
+          return sandbox.__pageNavigates ? Promise.resolve({ ok: true }) : Promise.reject(new Error('no receiver'));
+        }
+      },
     }, windows: { get: async () => ({ type: windowType }) } },
     siteIdentityBg: h => String(h).split('.').slice(-2).join('.'),
     activeAllowlist: c => c.allowlist || [],
@@ -61,7 +66,7 @@ function world(config = {}, sourceUrl = 'https://playmogo.com/d/1s8i3o0preys', w
   vm.createContext(sandbox);
   vm.runInContext(source.slice(start, end), sandbox);
   return { sandbox, removed, created, history, notices, navigate: url => { currentUrl = url; },
-    setTarget: url => { targetUrl = url; }, flush: async () => {
+    setTarget: url => { targetUrl = url; }, flushOne: async () => { await scheduled.shift()?.(); }, flush: async () => {
     while (scheduled.length) await scheduled.shift()();
   } };
 }
@@ -91,6 +96,92 @@ const attempt = (w, overrides = {}, armed = true) => {
   await attempt(w, { sourceFrameId: 0, url: auctionUrl }, false);
   assert.deepStrictEqual(w.removed, [12], 'a top-frame ad-auction popup closes without a player gesture');
   assert.strictEqual(w.history[0]?.detail.why, 'A page opened an ad-auction popup.');
+  await w.flush();
+  assert.deepStrictEqual(w.created, [], 'with no pressed download, closing the auction opens nothing');
+  /* SteamRIP 2026-10-31: the ad spent the click's one popup, so the download link's own tab never opened. */
+  w = world({}, 'https://steamrip.com/game');
+  w.sandbox.PRESSED_LINK_AT[11] = Date.now();
+  w.sandbox.PRESSED_LINK_HOST[11] = 'fileditchfiles.st';
+  w.sandbox.PRESSED_LINK_URL[11] = 'https://fileditchfiles.st/balpha5/677b/Game.rar';
+  w.sandbox.PRESSED_LINK_SOURCE_URL[11] = 'https://steamrip.com/game';
+  const sessionWrites = [];
+  w.sandbox.PRESSED_DOWNLOAD_REFERER_RULE_ID = 900009;
+  w.sandbox.writeSessionRules = async (change) => { sessionWrites.push(change); };
+  await attempt(w, { sourceFrameId: 0, url: auctionUrl }, false);
+  await w.flush();
+  assert.deepStrictEqual(w.removed, [12]);
+  assert.deepStrictEqual(w.created.map(tab => tab.url), ['https://fileditchfiles.st/balpha5/677b/Game.rar'],
+    'closing an ad-auction popup reopens the download the reader pressed');
+  /* bzzhr.to sends a visit without SteamRIP's Referer to SteamRIP's home page. */
+  const referer = sessionWrites[0] && sessionWrites[0].addRules[0];
+  assert(referer && referer.action.requestHeaders[0].header === 'referer'
+    && referer.action.requestHeaders[0].value === 'https://steamrip.com/'
+    && referer.condition.urlFilter === '|https://fileditchfiles.st/balpha5/677b/Game.rar|'
+    && JSON.stringify(referer.condition.resourceTypes) === '["main_frame"]',
+    'the reopened download carries the page origin as Referer, for that one address: ' + JSON.stringify(sessionWrites));
+  assert(sessionWrites.some(change => change.removeRuleIds[0] === 900009 && change.addRules.length === 0),
+    'the Referer rule is removed again');
+  /* 2026-10-31: a tab the worker opens carries Sec-Fetch-Site: none whatever its Referer says, and bzzhr.to
+     still sent it to the home page. The page navigating itself is a navigation of the page's own. */
+  w = world({}, 'https://steamrip.com/game');
+  w.sandbox.__pageNavigates = true;
+  w.sandbox.PRESSED_LINK_AT[11] = Date.now();
+  w.sandbox.PRESSED_LINK_HOST[11] = 'fileditchfiles.st';
+  w.sandbox.PRESSED_LINK_URL[11] = 'https://fileditchfiles.st/balpha5/677b/Game.rar';
+  w.sandbox.PRESSED_LINK_SOURCE_URL[11] = 'https://steamrip.com/game';
+  w.sandbox.writeSessionRules = async () => {};
+  await attempt(w, { sourceFrameId: 0, url: auctionUrl }, false);
+  await w.flush();
+  const asked = w.notices.filter(note => note.message.kind === 'open-pressed-download');
+  assert.strictEqual(asked.length, 1, 'the page is asked to open the download it pressed');
+  assert.strictEqual(asked[0].id, 11);
+  assert.strictEqual(asked[0].options.frameId, 0, 'only the top frame is asked');
+  assert.strictEqual(asked[0].message.url, 'https://fileditchfiles.st/balpha5/677b/Game.rar');
+  assert.deepStrictEqual(w.created, [], 'a page that navigates itself needs no tab opened for it');
+  assert(/kind === 'open-pressed-download' && window === window\.top/.test(fs.readFileSync(path.join(__dirname, '..', 'bridge.js'), 'utf8')),
+    'the bridge obeys it only in the top frame');
+  w = world({ capReferrer: true }, 'https://steamrip.com/game');
+  w.sandbox.PRESSED_LINK_AT[11] = Date.now();
+  w.sandbox.PRESSED_LINK_HOST[11] = 'fileditchfiles.st';
+  w.sandbox.PRESSED_LINK_URL[11] = 'https://fileditchfiles.st/balpha5/677b/Game.rar';
+  w.sandbox.PRESSED_LINK_SOURCE_URL[11] = 'https://steamrip.com/game';
+  const strictWrites = [];
+  w.sandbox.PRESSED_DOWNLOAD_REFERER_RULE_ID = 900009;
+  w.sandbox.writeSessionRules = async (change) => { strictWrites.push(change); };
+  await attempt(w, { sourceFrameId: 0, url: auctionUrl }, false);
+  await w.flush();
+  /* 2026-10-31: strict referrer mode used to mean the reopened download carried no Referer either, and the
+     download host sent it to its own home page. The reader pressed this link; it keeps the page's origin. */
+  const strictReferer = strictWrites[0] && strictWrites[0].addRules[0];
+  assert(w.created.length === 1 && strictReferer
+    && strictReferer.action.requestHeaders[0].value === 'https://steamrip.com/'
+    && strictReferer.priority > 2,
+  'strict referrer mode still lets the pressed download carry the page origin, above the header shield: ' + JSON.stringify(strictWrites));
+  /* 2026-10-31, the SteamRIP button, measured in Chrome and against a browser with no extension: no popup was
+     involved at all. Strict cross-site referrer protection removed the Referer from the navigation itself, and
+     bzzhr.to sends a visit without one to steamrip.com. Pressing a cross-site link now keeps the page's origin
+     for that address, and only with that setting on. */
+  {
+    const pressed = 'https://bzzhr.to/hut8hw900l9a';
+    const press = async (config) => {
+      const p = world(config, 'https://steamrip.com/game');
+      const writes = [];
+      p.sandbox.PRESSED_DOWNLOAD_REFERER_RULE_ID = 900009;
+      p.sandbox.writeSessionRules = async (change) => { writes.push(change); };
+      await p.sandbox.keepPressedLinkReferer(pressed, 'https://steamrip.com');
+      return writes;
+    };
+    const strict = await press({ capReferrer: true });
+    const rule = strict[0] && strict[0].addRules[0];
+    assert(rule && rule.action.requestHeaders[0].header === 'referer'
+      && rule.action.requestHeaders[0].value === 'https://steamrip.com/'
+      && rule.condition.urlFilter === '|' + pressed + '|'
+      && JSON.stringify(rule.condition.resourceTypes) === '["main_frame"]'
+      && rule.priority > 2,
+    'a pressed cross-site link keeps the page origin, for that address, in the top frame: ' + JSON.stringify(strict));
+    assert.deepStrictEqual(await press({}), [], 'with the setting off the browser already sends it, so nothing is added');
+    assert.deepStrictEqual(await press({ capReferrer: true, enabled: false }), [], 'and nothing is added while WardenOne is off');
+  }
   w = world({}, 'https://pawchive.pw/patreon/user/4618037');
   await attempt(w, { sourceFrameId: 0, url: 'https://accounts.google.com/o/oauth2/auth?state=' + 'x'.repeat(1100) }, false);
   assert.deepStrictEqual(w.removed, [], 'a long OAuth popup remains available');
@@ -191,6 +282,43 @@ const attempt = (w, overrides = {}, armed = true) => {
   w.sandbox.notePressedLinkTarget({ sourceTabId: 11, sourceFrameId: 0, url: 'https://link-vault.org/c/example#torrent' });
   await w.flush();
   assert.deepStrictEqual(w.created, [], 'the native intended tab prevents a duplicate restore');
+  for (const lateBeacon of [false, true]) {
+    w = world({}, 'https://gamedrive.org/game');
+    const arm = () => {
+      w.sandbox.PRESSED_LINK_AT[11] = Date.now();
+      w.sandbox.PRESSED_LINK_HOST[11] = 'link-vault.org';
+      w.sandbox.PRESSED_LINK_URL[11] = 'https://link-vault.org/c/example#torrent';
+      w.sandbox.PRESSED_LINK_SOURCE_URL[11] = 'https://gamedrive.org/game';
+    };
+    if (!lateBeacon) arm();
+    await w.sandbox.recheckMismatchedLinkPopup({
+      tabId: 12, sourceTabId: 11, sourceFrameId: 0, url: 'https://link-vault.org/c/example#torrent',
+    });
+    if (lateBeacon) arm();
+    w.setTarget('https://gofile.io/d/example');
+    await w.flush();
+    assert.deepStrictEqual(w.removed, [], 'the chosen tab can redirect to a file host; late beacon: ' + lateBeacon);
+    assert.deepStrictEqual(w.created, [], 'following the chosen link never creates a replacement tab');
+  }
+  w = world({}, 'https://gamedrive.org/game');
+  w.sandbox.PRESSED_LINK_AT[11] = Date.now();
+  w.sandbox.PRESSED_LINK_HOST[11] = 'link-vault.org';
+  w.sandbox.PRESSED_LINK_URL[11] = 'https://link-vault.org/c/example#torrent';
+  w.sandbox.PRESSED_LINK_SOURCE_URL[11] = 'https://gamedrive.org/game';
+  await w.sandbox.recheckMismatchedLinkPopup({
+    tabId: 12, sourceTabId: 11, sourceFrameId: 0, url: 'about:blank',
+  });
+  w.setTarget('https://link-vault.org/c/example#torrent');
+  await w.flushOne();
+  w.setTarget('https://gofile.io/d/example');
+  await w.flush();
+  assert.deepStrictEqual(w.removed, [], 'a staged blank tab that reaches the chosen host remains open');
+  assert.strictEqual(await w.sandbox.recheckMismatchedLinkPopup({
+    tabId: 13, sourceTabId: 11, sourceFrameId: 0, url: 'https://fake-downloader.example/ad',
+  }), true, 'matching the intended tab does not protect a separate ad tab');
+  await w.flush();
+  assert.deepStrictEqual(w.removed, [13]);
+  assert.deepStrictEqual(w.created, [], 'closing that ad does not duplicate the intended download');
   w = world({}, 'https://gamedrive.org/game');
   w.sandbox.PRESSED_LINK_AT[11] = Date.now();
   w.sandbox.PRESSED_LINK_URL[11] = 'https://link-vault.org/c/example#torrent';

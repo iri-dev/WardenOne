@@ -1107,6 +1107,29 @@ start, against eight reads per wake and 19 reads with five writes per start befo
 browser restart was not traced again, because `--load-extension` takes the install path on every
 relaunch.
 
+Since 2026-10-31 the dynamic-rule file holds every downloaded list domain (about 1.49 million in 28
+rules) instead of 18,000, so Chrome parses a larger file for that one filtered read. Measured in
+Edge 156 with all 27 sources loaded, committed build against the change: the filtered read went from
+about 103 ms to 275 ms, a settings change that writes dynamic rules lands after 2.5 s instead of
+0.5 s (Chrome re-indexes the whole file on every write, off the UI thread), browser private memory
+from 89 to 133 MB, and the rule files from 7 to 74 MB. Request matching got faster: Chrome
+binary-searches each rule's domain list, so 28 large rules beat 18,000 one-domain rules (0.13 ms
+against 0.71 ms per `testMatchOutcome`). The list band is never read back; the per-wake read and the
+list update both avoid it, because an unfiltered read of it stalls the UI thread for about 340 ms.
+`tools/test-list-domain-rules.js` covers the packing and the no-read-back paths.
+
+On 2026-11-01 the malware feed moved from HaGeZi's medium threat-intelligence list to its full one
+(322,000 addresses to 1.86 million), which took the rule file from about 1.49 million domains in 28
+rules to 2.98 million in 58. Measured in Edge 156 on a fresh profile after a real refresh: the
+per-wake filtered read is 427-445 ms (was 275 ms), one small dynamic write lands after about 3.5 s
+(was 2.5 s, still off the UI thread), `testMatchOutcome` averages 0.27 ms, and the profile's rule
+files are 138 MB (was 74 MB). Browser private memory was not re-measured. Two things made the
+upgrade possible and are worth keeping in mind before raising a feed again: a source over its size
+cap quarantines the *entire* refresh, so the 36.8 MB feed installed nothing at all until it was
+pinned in `LIST_REVIEWED_SOURCE_MAX_BYTES`; and 58 rules left only two below the old
+`LIST_DOMAIN_RULES_MAX` of 60, past which packing silently reports `complete: false`, so the
+ceiling is now 120.
+
 ## Chrome over the DevTools pipe
 
 Chrome 152 ignores `--load-extension`, so the browser tools reach a current Chrome only through a
@@ -1159,6 +1182,16 @@ after a browser restart.
   variant with the marker present refuses too. Chrome 152 no longer loads unpacked extensions
   from the command line, so the browser is Microsoft Edge, and its version is in every profile
   (for Chrome, see [Chrome over the DevTools pipe](#chrome-over-the-devtools-pipe)).
+
+## Badge controls — 2 November 2026
+
+The isolated badge controls and shared event-ownership catalogue add two manifest
+dependencies: about 29 KB of source together, about 9 KB with gzip when reviewed.
+The catalogue does not build its entries in child frames, and the control module
+creates no child-frame controller or DOM. The menu builds its DOM on demand.
+The script-entry/file limits increase by exactly two; byte, archive, worker and
+DNR limits remain unchanged. These are static measurements, not a new browser
+startup-time or per-frame profile.
 
 ## 1.0.1 at 27e619f (2026-09-20)
 

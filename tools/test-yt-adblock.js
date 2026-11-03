@@ -51,7 +51,7 @@ function newCtx(networkBody) {
   const ctx = {
     window: { location, addEventListener: addWindowListener },
     self: { fetch: function () { return Promise.resolve(new FakeResponse(networkBody, { status: 200 })); } },
-    document: { readyState: "loading", body: null, createElement: () => ({}), head: { appendChild() {} },
+    document: { readyState: "loading", body: null, createElement: () => ({}), head: { appendChild(node) { ctx.document.__lastStyle = node; } },
       documentElement: { localName: "html", attributes: [], getElementsByTagName: () => [], appendChild() {} }, location },
     CustomEvent: function (type, init) { this.type = type; this.detail = init && init.detail; },
     Response: FakeResponse,
@@ -88,6 +88,13 @@ function coldSample() {
     videoDetails: { videoId: "abc123" },
   };
 }
+function runModule(ctx, initial = { enabled: true, scriptletEngine: true }) {
+  if (initial) ctx.document.addEventListener('wo-bridge-replay', () => {
+    if (!ctx.__bridge) ctx.__bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    ctx.__bridge.sendConfig(initial);
+  });
+  vm.runInContext(src, ctx);
+}
 function streamingIntact(r) {
   return r && r.streamingData &&
     r.streamingData.serverAbrStreamingUrl === "https://r1.googlevideo.com/abr" &&
@@ -105,7 +112,7 @@ async function main() {
     const ctx = newCtx('{}');
     let css = '';
     ctx.document.createElement = () => ({ set textContent(value) { css = value; } });
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const wrapperSelector = css.slice(0, css.indexOf(',ytd-ad-slot-renderer'));
     ok('ad rich-grid wrappers collapse when a menu sibling remains',
       wrapperSelector.includes('ytd-rich-item-renderer:has(> #content > :is(ytd-ad-slot-renderer,')
@@ -126,16 +133,16 @@ async function main() {
   {
     const ctx = newCtx("{}");
     ctx.window.ytInitialPlayerResponse = coldSample();
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const r = ctx.window.ytInitialPlayerResponse;
-    ok("ads removed", adsGone(r));
+    ok("bootstrap received before authenticated config stays untouched", !adsGone(r));
     ok("streamingData/videoDetails/deep-field intact", streamingIntact(r));
   }
 
   console.log("2) Cold-load trap (setter path, assigned after script):");
   {
     const ctx = newCtx("{}");
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     ctx.window.ytInitialPlayerResponse = coldSample();
     const r = ctx.window.ytInitialPlayerResponse;
     ok("ads removed", adsGone(r));
@@ -145,7 +152,7 @@ async function main() {
   console.log("3) JSON.parse hook (response.text()+JSON.parse path):");
   {
     const ctx = newCtx("{}");
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const r = ctx.JSON.parse(JSON.stringify(coldSample()));
     ok("ads removed", adsGone(r));
     ok("streamingData intact", streamingIntact(r));
@@ -157,7 +164,8 @@ async function main() {
     let stringifies = 0;
     const originalStringify = ctx.JSON.stringify;
     ctx.JSON.stringify = function () { stringifies++; return originalStringify.apply(this, arguments); };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
+    stringifies = 0;
     const r = ctx.JSON.parse(JSON.stringify({ foo: 1, bar: { baz: 2, data: 'x'.repeat(50000) } }));
     ok("object unchanged", r.foo === 1 && r.bar.baz === 2);
     ok("ordinary JSON is not serialized again for error detection", stringifies === 0);
@@ -166,7 +174,7 @@ async function main() {
   console.log("5) fetch-response hook on /youtubei/v1/player:");
   {
     const ctx = newCtx(JSON.stringify(coldSample()));
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const resp = await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x");
     const r = JSON.parse(await resp.text());
     ok("ads removed in rebuilt response", adsGone(r));
@@ -176,7 +184,7 @@ async function main() {
   console.log("6) fetch on a NON-player URL is passed through untouched:");
   {
     const ctx = newCtx(JSON.stringify(coldSample()));
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const resp = await ctx.self.fetch("https://www.youtube.com/api/stats/watchtime");
     const r = JSON.parse(await resp.text());
     ok("non-player response NOT pruned (ads still present)", r && "adPlacements" in r);
@@ -185,7 +193,7 @@ async function main() {
   console.log("7) Nested playlist [].playerResponse.* + Shorts [-] splice:");
   {
     const ctx = newCtx("{}");
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const playlist = ctx.JSON.parse(JSON.stringify([
       { playerResponse: { adPlacements: [1], adSlots: [1], streamingData: { adaptiveFormats: [1] } } },
     ]));
@@ -204,7 +212,7 @@ async function main() {
   console.log("8) STEALTH: hooked fetch/JSON.parse report [native code] via toString:");
   {
     const ctx = newCtx("{}");
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const fStr = Function.prototype.toString.call(ctx.self.fetch);
     const jStr = Function.prototype.toString.call(ctx.JSON.parse);
     ok("fetch toString is [native code] (Proxy stealth)", /\[native code\]/.test(fStr) && !/PLAYER_RE|args\[0\]/.test(fStr));
@@ -220,7 +228,7 @@ async function main() {
     let captured = null;
     const ctx = newCtx("{}");
     ctx.self.fetch = function () { captured = arguments; return Promise.resolve(new FakeResponse("{}", { status: 200 })); };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const body = Object.assign({ context: { client: { clientName: "WEB", userAgent: ua } }, videoId: "abc" }, extra);
     await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", { method: "POST", body: JSON.stringify(body) });
     return captured && captured[1] && captured[1].body;
@@ -252,7 +260,7 @@ async function main() {
       captured = arguments;
       return Promise.resolve(new FakeResponse("{}", { status: 200 }));
     };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const body = {
       context: { client: { clientName: "MWEB", userAgent: "UA" } },
       videoId: "mobile",
@@ -274,7 +282,7 @@ async function main() {
     let captured = null;
     const ctx = newCtx("{}");
     ctx.self.fetch = function () { captured = arguments; return Promise.resolve(new FakeResponse("{}", { status: 200 })); };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const original = JSON.stringify({ context: { client: { userAgent: "x" } }, videoId: "xyz", playbackContext: { contentPlaybackContext: {} } });
     await ctx.self.fetch("https://www.youtube.com/youtubei/v1/browse", { method: "POST", body: original });
     ok("browse request body unchanged", captured && captured[1] && captured[1].body === original);
@@ -283,7 +291,7 @@ async function main() {
   console.log("11) Promise.then defuser no-ops onAbnormalityDetected callbacks only:");
   {
     const ctx = newCtx("{}");
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     let normalRan = false, abnormalRan = false;
     await Promise.resolve().then(function () { normalRan = true; });
     const abnormalCb = function () { /* onAbnormalityDetected */ abnormalRan = true; };
@@ -297,7 +305,7 @@ async function main() {
   console.log("12) Outbound /player XHR request gets AdGuard-style shaping (real desktop path):");
   {
     const ctx = newCtx("{}");
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const xhr = new ctx.XMLHttpRequest();
     xhr.open("POST", "https://www.youtube.com/youtubei/v1/player?key=x");
     xhr.send(JSON.stringify({ context: { client: { clientName: "WEB", userAgent: "UA" } }, videoId: "vid42", playbackContext: { contentPlaybackContext: {} } }));
@@ -318,7 +326,7 @@ async function main() {
   console.log("13) Non-player XHR body is NOT modified:");
   {
     const ctx = newCtx("{}");
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const xhr = new ctx.XMLHttpRequest();
     const original = JSON.stringify({ context: { client: { userAgent: "x; channel" } }, videoId: "zzz" });
     xhr.open("POST", "https://www.youtube.com/youtubei/v1/browse");
@@ -329,7 +337,7 @@ async function main() {
   console.log("14) Request constructor carries AdGuard /player shaping:");
   {
     const ctx = newCtx("{}");
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const original = JSON.stringify({ context: { client: { clientName: "WEB", userAgent: "UA" } }, videoId: "req1", playbackContext: { contentPlaybackContext: {} } });
     const req = new ctx.Request("https://www.youtube.com/youtubei/v1/player?key=x", { method: "POST", body: original });
     const reqBody = JSON.parse(req.body);
@@ -347,7 +355,7 @@ async function main() {
     };
     ctx.Node = function () {};
     ctx.Node.prototype.appendChild = function (child) { return child; };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const frame = new ctx.HTMLIFrameElement();
     new ctx.Node().appendChild(frame);
     ok("about:blank iframe gets hooked fetch", frame.contentWindow.fetch === ctx.self.fetch);
@@ -360,7 +368,7 @@ async function main() {
     const ctx = newCtx("{}");
     ctx.window.setTimeout = function (_cb, delay) { capturedDelay = delay; return 1; };
     ctx.setTimeout = ctx.window.setTimeout;
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     ctx.window.setTimeout(ctx.Array.prototype.push, 17000);
     ok("native 17000ms timeout is unchanged", capturedDelay === 17000);
   }
@@ -378,10 +386,11 @@ async function main() {
     };
     ctx.setTimeout = ctx.window.setTimeout;
     ctx.window.yt = { config_: { EXPERIMENT_FLAGS: { html5_enable_ssap_entity_id: true } } };
-    ctx.document.addEventListener = function (ev, cb) { if (ev === "DOMContentLoaded") domCb = cb; };
+    const addDocumentListener = ctx.document.addEventListener;
+    ctx.document.addEventListener = function (ev, cb) { addDocumentListener(ev, cb); if (ev === "DOMContentLoaded") domCb = cb; };
     ctx.document.querySelector = function (selector) { return selector === "video" ? video : null; };
     ctx.MutationObserver = class { observe() {} };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const hookedPush = ctx.Array.prototype.push;
     hookedPush.call([], { start: 0, end: 5000, namespace: "ssap", id: "ssap-1" });
     hookedPush.call([], { start: 5000, end: 10000, namespace: "ssap", id: "ssap-2" });
@@ -404,7 +413,7 @@ async function main() {
     const originalPush = ctx.Array.prototype.push;
     ctx.window.yt = { config_: { EXPERIMENT_FLAGS: { html5_enable_ssap_entity_id: false } } };
     ctx.MutationObserver = class { observe() {} };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     ok("push is left alone when the experiment flag is off",
       ctx.Array.prototype.push === originalPush);
   }
@@ -419,7 +428,7 @@ async function main() {
     const originalPush = ctx.Array.prototype.push;
     ctx.window.yt = undefined;
     ctx.MutationObserver = class { observe() {} };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     ok("push is still hooked when the config has not loaded yet",
       ctx.Array.prototype.push !== originalPush);
   }
@@ -428,7 +437,7 @@ async function main() {
     const originalPush = ctx.Array.prototype.push;
     ctx.window.yt = { config_: {} };
     ctx.MutationObserver = class { observe() {} };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     ok("and when EXPERIMENT_FLAGS is not there yet",
       ctx.Array.prototype.push !== originalPush);
   }
@@ -438,7 +447,7 @@ async function main() {
     let captured = null;
     const ctx = newCtx("{}");
     ctx.self.fetch = function () { captured = arguments; return Promise.resolve(new FakeResponse("{}", { status: 200 })); };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     ctx.JSON.parse(JSON.stringify({ responseContext: {}, playabilityStatus: { status: "UNPLAYABLE" }, videoDetails: { videoId: "rot" } }));
     await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", {
       method: "POST",
@@ -451,7 +460,7 @@ async function main() {
     captured = null;
     const ctx2 = newCtx("{}");
     ctx2.self.fetch = function () { captured = arguments; return Promise.resolve(new FakeResponse("{}", { status: 200 })); };
-    vm.runInContext(src, ctx2);
+    runModule(ctx2);
     ctx2.JSON.parse(JSON.stringify({ responseContext: {}, playabilityStatus: { status: "LOGIN_REQUIRED" }, videoDetails: { videoId: "login" } }));
     await ctx2.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", {
       method: "POST",
@@ -468,7 +477,7 @@ async function main() {
       captured = null;
       const errorCtx = newCtx("{}");
       errorCtx.self.fetch = function () { captured = arguments; return Promise.resolve(new FakeResponse("{}", { status: 200 })); };
-      vm.runInContext(src, errorCtx);
+      runModule(errorCtx);
       errorCtx.JSON.parse(input, reviver);
       await errorCtx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", {
         method: "POST",
@@ -483,10 +492,11 @@ async function main() {
     const ctx = newCtx("{}");
     // Give the mock document the listener API so the DOMContentLoaded path runs.
     let domCb = null;
-    ctx.document.addEventListener = function (ev, cb) { if (ev === "DOMContentLoaded") domCb = cb; };
+    const addDocumentListener = ctx.document.addEventListener;
+    ctx.document.addEventListener = function (ev, cb) { addDocumentListener(ev, cb); if (ev === "DOMContentLoaded") domCb = cb; };
     ctx.document.getElementById = function () { return null; };
     ctx.MutationObserver = class { observe() {} };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     // Map.has must still be native (Proxy stealth) and pass through transparently.
     ok("Map.prototype.has toString native", /\[native code\]/.test(Function.prototype.toString.call(ctx.globalThis.Map.prototype.has)));
     const m = new ctx.globalThis.Map([["k", 1]]);
@@ -505,8 +515,8 @@ async function main() {
     let loaded = null;
     ctx.location.href = "https://www.youtube.com/watch?v=healthy";
     ctx.location.search = "?v=healthy";
-    ctx.window.addEventListener = function (ev, cb) { if (ev === "load") loadCb = cb; };
-    ctx.document.addEventListener = function () {};
+    const addWindowListener = ctx.window.addEventListener;
+    ctx.window.addEventListener = function (ev, cb) { addWindowListener(ev, cb); if (ev === "load") loadCb = cb; };
     ctx.document.getElementById = function (id) {
       if (id !== "movie_player") return null;
       return { loadVideoById: (videoId, start) => { loaded = { videoId, start }; } };
@@ -516,7 +526,7 @@ async function main() {
     };
     ctx.MutationObserver = class { observe() {} };
     ctx.setTimeout = (cb) => { cb(); return 1; };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     if (loadCb) loadCb();
     await Promise.resolve();
     ok("no snapshot means no recovery reload", loaded === null);
@@ -531,8 +541,8 @@ async function main() {
     ctx.self.fetch = function () { captured = arguments; return Promise.resolve(new FakeResponse("{}", { status: 200 })); };
     ctx.location.href = "https://www.youtube.com/watch?v=back";
     ctx.location.search = "?v=back";
-    ctx.window.addEventListener = function (ev, cb) { if (ev === "load") loadCb = cb; };
-    ctx.document.addEventListener = function () {};
+    const addWindowListener = ctx.window.addEventListener;
+    ctx.window.addEventListener = function (ev, cb) { addWindowListener(ev, cb); if (ev === "load") loadCb = cb; };
     ctx.document.getElementById = function (id) {
       if (id !== "movie_player") return null;
       return {
@@ -546,7 +556,7 @@ async function main() {
     };
     ctx.MutationObserver = class { observe() {} };
     ctx.setTimeout = (cb) => { cb(); return 1; };
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     vm.runInContext("(function(){}).call({ requestNumber: 1, snapshot: { transport: { backoffTimeMs: 250 } } });", ctx);
     if (loadCb) loadCb();
     await Promise.resolve();
@@ -561,6 +571,41 @@ async function main() {
   }
 
   console.log("21) master-off config makes YouTube hooks pass through:");
+  for (const route of ['bootstrap', 'json', 'fetch', 'xhr']) {
+    const ctx = newCtx('{}'); runModule(ctx, null);
+    if (route === 'bootstrap') { ctx.window.ytInitialPlayerResponse = coldSample(); void ctx.window.ytInitialPlayerResponse; }
+    if (route === 'json') ctx.JSON.parse(JSON.stringify(coldSample()));
+    if (route === 'fetch') await ctx.self.fetch('https://www.youtube.com/youtubei/v1/player');
+    if (route === 'xhr') { const xhr = new ctx.XMLHttpRequest(); xhr.open('GET', '/youtubei/v1/player'); xhr.send(); }
+    const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    bridge.sendConfig({ enabled: true, scriptletEngine: true });
+    ok('late enabled settings cannot switch an already unmodified ' + route + ' player into pruning', !adsGone(ctx.JSON.parse(JSON.stringify(coldSample()))));
+    ok('late enabled settings still install ad UI cosmetics after ' + route, ctx.document.__lastStyle?.textContent.includes('ytd-ad-slot-renderer'));
+  }
+  {
+    const ctx = newCtx('{}'); runModule(ctx, null);
+    ctx.window.ytInitialPlayerResponse = coldSample();
+    const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    bridge.sendConfig({ enabled: true, scriptletEngine: true });
+    ok('bootstrap assigned before settings is pruned when first read after authenticated activation', adsGone(ctx.window.ytInitialPlayerResponse));
+  }
+  {
+    const ctx = newCtx(JSON.stringify(coldSample()));
+    let sent = null;
+    const raw = new FakeResponse(JSON.stringify(coldSample()), { status: 200 });
+    ctx.self.fetch = (_url, init) => { sent = init.body; return Promise.resolve(raw); };
+    runModule(ctx, null);
+    const body = JSON.stringify({ context: { client: { clientName: 'WEB' } }, playbackContext: { contentPlaybackContext: {} } });
+    const pending = ctx.self.fetch('https://www.youtube.com/youtubei/v1/player', { method: 'POST', body });
+    const initial = coldSample(); ctx.window.ytInitialPlayerResponse = initial;
+    ok('before authenticated settings, bootstrap and JSON player data pass through', !adsGone(initial) && !adsGone(ctx.JSON.parse(JSON.stringify(coldSample()))));
+    const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    bridge.sendConfig({ enabled: true, scriptletEngine: false });
+    ok('a paused fresh document sends the original player request and response', sent === body && await pending === raw);
+    ok('paused configuration never retroactively rewrites consumed bootstrap data', !adsGone(initial) && streamingIntact(initial));
+    ctx.__postWindowMessage({ source: 'wardenone', kind: 'config', token: bridge.token, overrides: { scriptletEngine: true } });
+    ok('an unsigned enable cannot change a paused player', !adsGone(ctx.JSON.parse(JSON.stringify(coldSample()))));
+  }
   {
     let receivedBody = "";
     const ctx = newCtx(JSON.stringify(coldSample()));
@@ -568,8 +613,8 @@ async function main() {
       receivedBody = init && init.body;
       return Promise.resolve(new FakeResponse(JSON.stringify(coldSample()), { status: 200 }));
     };
-    vm.runInContext(src, ctx);
-    const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    runModule(ctx);
+    const bridge = ctx.__bridge || auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
     bridge.sendConfig({ enabled: false });
     const body = { context: { client: { clientName: "WEB", userAgent: "UA" } }, videoId: "off", playbackContext: { contentPlaybackContext: {} } };
     const resp = await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x", { method: "POST", body: JSON.stringify(body) });
@@ -592,20 +637,42 @@ async function main() {
   }
 
   {
-    for (const delayBody of [false, true]) {
+    const ctx = newCtx(JSON.stringify(coldSample()));
+    runModule(ctx, { enabled: true, scriptletEngine: false });
+    const bridge = ctx.__bridge || auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    const prunes = () => adsGone(ctx.JSON.parse(JSON.stringify(coldSample())));
+    bridge.sendConfig({ enabled: true, scriptletEngine: false });
+    ok("YouTube site pause preserves player ads and streaming data", !prunes());
+    const original = await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x");
+    const originalData = JSON.parse(await original.text());
+    ok("YouTube site pause leaves the media response and streaming URLs intact", !adsGone(originalData) && streamingIntact(originalData));
+    bridge.sendConfig({ enabled: true });
+    ok("a master-only update does not undo the YouTube site pause", !prunes());
+    bridge.sendConfig({ scriptletEngine: true });
+    ok("resuming YouTube protection waits for the requested reload", !prunes());
+    const reloaded = newCtx('{}'); runModule(reloaded);
+    ok("a new document applies the restored YouTube setting", adsGone(reloaded.JSON.parse(JSON.stringify(coldSample()))));
+    bridge.sendConfig({ enabled: false });
+    bridge.sendConfig({ scriptletEngine: true });
+    ok("a YouTube-only update cannot enable a disabled master", !prunes());
+  }
+
+  {
+    for (const field of ['enabled', 'scriptletEngine']) for (const delayBody of [false, true]) {
       let release;
       const raw = new FakeResponse(JSON.stringify(coldSample()), { status: 200 });
       const ctx = newCtx("{}");
       if (delayBody) raw.text = () => new Promise(resolve => { release = () => resolve(raw._t); });
       ctx.self.fetch = () => delayBody ? Promise.resolve(raw) : new Promise(resolve => { release = () => resolve(raw); });
-      vm.runInContext(src, ctx);
-      const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+      runModule(ctx);
+      const bridge = ctx.__bridge || auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
       const pending = ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x");
       if (delayBody) await Promise.resolve();
-      bridge.sendConfig({ enabled: false });
+      bridge.sendConfig({ [field]: false });
       release();
       const response = await pending;
-      ok("master off preserves the original in-flight " + (delayBody ? "response body" : "response"), response === raw);
+      ok(field + " change keeps the in-flight " + (delayBody ? "response body" : "response") + " consistent with its request",
+        field === 'enabled' ? response === raw : adsGone(JSON.parse(await response.text())));
     }
   }
 
@@ -613,7 +680,7 @@ async function main() {
   {
     const protecting = ctx => adsGone(ctx.JSON.parse(JSON.stringify(coldSample())));
     const ctx = newCtx("{}");
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const fake = { source: "wardenone", kind: "config", token: "attacker-picked", overrides: { enabled: false } };
     ctx.__postWindowMessage({ source: "wardenone-handshake", token: fake.token });
     ctx.__postWindowMessage(fake);
@@ -621,7 +688,7 @@ async function main() {
     const foreign = auth.handshake(() => {}, ctx.__postWindowMessage, { token: fake.token });
     foreign.sendConfig({ enabled: false });
     ok("a self-signed config without the document-start key is rejected", protecting(ctx));
-    const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    const bridge = ctx.__bridge || auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
     const genuine = auth.configMessage(bridge.signer, bridge.token, { enabled: false });
     for (const [name, change] of [
       ["missing MAC", { mac: undefined }], ["invalid MAC", { mac: "0".repeat(64) }],
@@ -666,17 +733,17 @@ async function main() {
     late.document.addEventListener("wo-bridge-replay", () => {
       replays++;
       late.__dispatchDocument("wo-key", { token: lateBridge.token, key: lateBridge.key });
-      lateBridge.sendConfig({ enabled: false });
+      lateBridge.sendConfig({ enabled: false, scriptletEngine: true });
     });
     vm.runInContext(src, late);
     ok("a module loaded after the bridge obtains authenticated config through replay", replays === 1 && !protecting(late));
     lateBridge.sendConfig({ enabled: true });
     ok("replayed initialization preserves later legitimate toggles", protecting(late));
     const invalidKey = newCtx("{}");
-    vm.runInContext(src, invalidKey);
+    runModule(invalidKey, null);
     invalidKey.__dispatchDocument("wo-key", { token: "forged", key: "not-a-key" });
     const validKey = auth.handshake(invalidKey.__dispatchDocument, invalidKey.__postWindowMessage);
-    validKey.sendConfig({ enabled: false });
+    validKey.sendConfig({ enabled: false, scriptletEngine: true });
     ok("malformed key handoffs cannot poison legitimate initialization", !protecting(invalidKey));
   }
   for (const [name, change] of [
@@ -687,10 +754,10 @@ async function main() {
   ]) {
     const ctx = newCtx("{}");
     change(ctx.document);
-    vm.runInContext(src, ctx);
+    runModule(ctx);
     const forged = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
-    forged.sendConfig({ enabled: false });
-    ok(name + " cannot establish a new signing key", adsGone(ctx.JSON.parse(JSON.stringify(coldSample()))));
+    forged.sendConfig({ enabled: true, scriptletEngine: true });
+    ok(name + " cannot establish a key or enable player modifications", !adsGone(ctx.JSON.parse(JSON.stringify(coldSample()))));
   }
 
   {

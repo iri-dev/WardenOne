@@ -1,16 +1,16 @@
 {
   "schemaVersion": 2,
   "note": "Generated from runtime constants, embedded build provenance and docs/source-licensing.json. Edit policy metadata, not this file. Counts include optional configured feeds; license and permission counts can overlap.",
-  "checkedAt": "2026-10-25",
+  "checkedAt": "2026-11-02",
   "summary": {
-    "runtimeFeeds": 41,
-    "publishers": 25,
-    "publishedLicenseCoveredFeeds": 35,
-    "writtenPermissionFeeds": 9,
-    "resolvedFeeds": 37,
+    "runtimeFeeds": 43,
+    "publishers": 27,
+    "publishedLicenseCoveredFeeds": 36,
+    "writtenPermissionFeeds": 10,
+    "resolvedFeeds": 39,
     "unresolvedFeeds": 4,
-    "buildOnlyInputs": 10,
-    "redistributedArtifacts": 24
+    "buildOnlyInputs": 11,
+    "redistributedArtifacts": 27
   },
   "sources": [
     {
@@ -917,6 +917,59 @@
       "checkedAt": "2026-10-19"
     },
     {
+      "url": "https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/adblock.txt",
+      "purposes": [
+        "Network-level ad filtering"
+      ],
+      "toggles": [
+        "adShield"
+      ],
+      "kind": "fetched",
+      "policyId": "1hosts-lite",
+      "name": "1Hosts Lite",
+      "publisher": "badmojr and 1Hosts contributors",
+      "home": "https://github.com/badmojr/1Hosts",
+      "license": {
+        "type": "published-license",
+        "id": "MPL-2.0",
+        "url": "https://github.com/badmojr/1Hosts/blob/master/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "The Lite feed header identifies MPLv2 and links the published licence. Direct download and local processing follow those terms; no personal permission reply is inferred or required."
+      },
+      "attribution": "1Hosts Lite by badmojr and contributors; upstream curators are credited in https://github.com/badmojr/1Hosts/blob/master/-data/lists/assets.txt.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Retain MPL-2.0 and applicable notices; identify normalization and rule conversion. If covered derived data is distributed, comply with its source-availability obligations. Attribution does not imply endorsement."
+        ],
+        "implementation": [
+          "Direct runtime download; raw 1Hosts data is not bundled or mirrored.",
+          "Source, author, licence and local-processing notices in CREDITS.md and packaged THIRD_PARTY_NOTICES.html.",
+          "The complete MPL-2.0 text is already bundled in licenses/MPL-2.0.txt.",
+          "AdShield source classification, protected-service compatibility and third-party resource scope remain in force."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/MPL-2.0.txt"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/adblock.txt",
+          "finding": "The checked Lite header explicitly states Licence: MPLv2 and links Mozilla MPL 2.0, identifies the 1Hosts homepage and credits its upstream curators."
+        },
+        {
+          "url": "https://github.com/badmojr/1Hosts/blob/master/LICENSE",
+          "finding": "The current repository licence is Mozilla Public License Version 2.0; Git blob a612ad9813b006ce81d1ee438dd784da99a54007 was checked on 1 November 2026."
+        }
+      ],
+      "checkedAt": "2026-11-01"
+    },
+    {
       "url": "https://raw.githubusercontent.com/blocklistproject/Lists/master/scam.txt",
       "purposes": [
         "IP-logger and grabber domains"
@@ -1279,7 +1332,7 @@
       ],
       "kind": "fetched",
       "policyId": "hagezi",
-      "name": "HaGeZi Light, Pro and Threat Intelligence Feed Medium",
+      "name": "HaGeZi Light, Pro and Threat Intelligence Feed",
       "publisher": "HaGeZi",
       "home": "https://github.com/hagezi/dns-blocklists",
       "license": {
@@ -1339,7 +1392,7 @@
       ],
       "kind": "fetched",
       "policyId": "hagezi",
-      "name": "HaGeZi Light, Pro and Threat Intelligence Feed Medium",
+      "name": "HaGeZi Light, Pro and Threat Intelligence Feed",
       "publisher": "HaGeZi",
       "home": "https://github.com/hagezi/dns-blocklists",
       "license": {
@@ -1390,7 +1443,7 @@
       "checkedAt": "2026-10-20"
     },
     {
-      "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.medium.txt",
+      "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.txt",
       "purposes": [
         "Malware and phishing domains"
       ],
@@ -1399,7 +1452,7 @@
       ],
       "kind": "fetched",
       "policyId": "hagezi",
-      "name": "HaGeZi Light, Pro and Threat Intelligence Feed Medium",
+      "name": "HaGeZi Light, Pro and Threat Intelligence Feed",
       "publisher": "HaGeZi",
       "home": "https://github.com/hagezi/dns-blocklists",
       "license": {
@@ -2019,7 +2072,7 @@
         "conditions": [
           "Keep copyright and permission notices with redistributed material.",
           "Credit the authors, link the license and source, identify modifications, and do not imply endorsement.",
-          "MVPS retained material is CC BY-NC-SA 4.0; Dan Pollock permits noncommercial copying/distribution with attribution and original URL. WardenOne is free and noncommercial and uses direct runtime downloads only.",
+          "MVPS retained material is CC BY-NC-SA 4.0; Dan Pollock permits noncommercial copying/distribution with attribution and original URL, and confirmed in writing on 30 October 2026 that WardenOne may use his file so long as it does not charge for use. WardenOne is free and noncommercial and uses direct runtime downloads only.",
           "Do not bundle/relicense the aggregate as MIT-only or use it commercially on the strength of this record."
         ],
         "implementation": [
@@ -2119,8 +2172,8 @@
         {
           "name": "Dan Pollock – [someonewhocares](https://someonewhocares.org/)",
           "url": "https://someonewhocares.org/hosts/zero/hosts",
-          "license": "non-commercial with attribution",
-          "note": ""
+          "license": "non-commercial with attribution; WardenOne-specific permission while free of charge",
+          "note": "Written permission, 30 October 2026, reviewed from the owner's screenshot; original retained privately."
         },
         {
           "name": "Tiuxo hostlist - ads",
@@ -2197,6 +2250,66 @@
         }
       ],
       "checkedAt": "2026-10-19"
+    },
+    {
+      "url": "https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt",
+      "purposes": [
+        "Malware and phishing domains"
+      ],
+      "toggles": [
+        "blockMalwareSites"
+      ],
+      "kind": "fetched",
+      "policyId": "threatview",
+      "name": "ThreatView malicious domains",
+      "publisher": "ThreatView.io",
+      "home": "https://threatview.io/",
+      "license": {
+        "type": "written-permission",
+        "id": "",
+        "url": "https://threatview.io/"
+      },
+      "permission": {
+        "status": "granted",
+        "date": "2026-11-02",
+        "scope": "WardenOne may use the public feed with source credit, through direct downloads by users and local processing. Raw-feed redistribution or relicensing is not recorded as granted; the commercial API and platform are separate offerings.",
+        "evidenceRef": "permission-threatview-2026-11-02",
+        "evidence": "Reviewed from the owner-supplied screenshot of ThreatView's publisher reply, dated 2 November 2026. The reply approves feed use conditional on source credit. Original correspondence remains private."
+      },
+      "attribution": "ThreatView.io Domain High Confidence feed. Source data remains the work of its maintainers; attribution does not imply endorsement.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Credit ThreatView as the feed source. This scoped permission records the current direct-download/local-processing use; it does not establish an open licence or access to the separate commercial API/platform."
+        ],
+        "implementation": [
+          "Direct runtime download and local processing; raw feed data is not bundled or mirrored.",
+          "ThreatView source credit and links in CREDITS.md and packaged THIRD_PARTY_NOTICES.html.",
+          "The popup identifies the feed and separates its full accepted size from its contribution after overlap.",
+          "TV-1 is closed for the documented runtime use on the basis of the owner-supplied publisher reply."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "reference": "permission-threatview-2026-11-02",
+          "finding": "Owner-supplied screenshot shows ThreatView's publisher reply dated 2 November 2026 approving use of the feeds with source credit. The commercial API/platform demo is a separate offer, not an extension of this permission."
+        },
+        {
+          "url": "https://threatview.io/",
+          "finding": "Checked 1 November 2026: publisher advertises free community feeds and security-product ingestion; no current feed licence text was located on the checked page."
+        },
+        {
+          "url": "https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt",
+          "documentSha256": "60f18b1e5bccbf1eb715eea839903ec5d8a17b46634302b4a01083cc3f12eeba",
+          "finding": "Reviewed plaintext domain snapshot has no licence header; parser replay accepts 550309 hosts after excluding 40 invalid or non-web entries. This is format evidence, not a permission grant."
+        }
+      ],
+      "checkedAt": "2026-11-02"
     },
     {
       "url": "https://ublockorigin.github.io/uAssets/filters/badware.txt",
@@ -2800,6 +2913,50 @@
       "checkedAt": "2026-10-30"
     },
     {
+      "url": "https://github.com/EFForg/privacybadger",
+      "purpose": "Pinned pre-trained tracker decisions, yellowlist, site fixes and owner groups; exact input paths and hashes retained in the source snapshot",
+      "artifact": "rules-badger.json",
+      "kind": "build-input",
+      "policyId": "privacy-badger",
+      "name": "Privacy Badger pre-trained tracker list",
+      "publisher": "Electronic Frontier Foundation",
+      "home": "https://github.com/EFForg/privacybadger",
+      "license": {
+        "type": "published-license",
+        "id": "GPL-3.0-or-later",
+        "url": "https://github.com/EFForg/privacybadger/blob/cf67bb9da012b240c6f8babcdeb45a81417f6ca8/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Privacy Badger is published under GPL v3 or later, the license WardenOne uses; its trained tracker data is part of that work."
+      },
+      "attribution": "Copyright © 2015 Electronic Frontier Foundation and other contributors.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Distribute the derived ruleset under GPL v3 or later with the copyright notice and its corresponding source."
+        ],
+        "implementation": [
+          "Pin seed.json, pbconfig.json (yellowlist and site fixes), socialwidgets.json, surrogates.js and multiDomainFirstParties.js at a reviewed revision and convert trained blocks to third-party rules that keep Privacy Badger's cookie-only, DNT-policy, yellowlist, site-fix and owner exemptions.",
+          "Preserve source bytes, revision and hashes in docs/badger-source-snapshot.json.gz, the builder in tools/build-badger-dnr.js and the copyright notice in licenses/PrivacyBadger-NOTICE.txt and packaged notices."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/PrivacyBadger-NOTICE.txt",
+          "LICENSE"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://github.com/EFForg/privacybadger/blob/cf67bb9da012b240c6f8babcdeb45a81417f6ca8/LICENSE",
+          "finding": "The pinned repository states that Privacy Badger as a whole is licensed GPL v3 or later; the trained data files are part of that repository."
+        }
+      ],
+      "checkedAt": "2026-10-31"
+    },
+    {
       "url": "https://raw.githubusercontent.com/AdguardTeam/companiesdb/8d845040224a0e3ea9cbba5df68ceb6a988235d2/dist/trackers.json",
       "purpose": "Local product/domain/category attribution metadata",
       "artifact": "tracker-catalog.json",
@@ -2921,7 +3078,7 @@
       "license": "CC-BY-SA-3.0",
       "provenance": "The EasyList authors; EasyPrivacy plus WardenOne tracker rules",
       "builtBy": "tools/build-easyprivacy-dnr.js",
-      "modifications": "Hosts normalized, batched and capped; curated tracker additions. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.",
+      "modifications": "Hosts normalized and batched, every host rule shipped; curated tracker additions. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.",
       "sourceFiles": [],
       "compliance": {
         "status": "implemented",
@@ -2933,7 +3090,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "6511869ab74a22ba16fcc4de1e1d492c1148d2f28653245aee3af37eb6515cab"
+      "sha256": "acf6172d028b0f4f9c8aa4b07b284e389344e4d82612e1dac7d3ac7a5b6b071c"
     },
     {
       "file": "cosmetic-rules.json",
@@ -3067,6 +3224,27 @@
       "sha256": "3939ac3a6a033fd50b3372262b2f09ae2a536eb121830137c5db5e2f8ea4cfc9"
     },
     {
+      "file": "rules-download-landings.json",
+      "license": "GPL-3.0-or-later (WardenOne curation)",
+      "provenance": "Owner-reported deceptive download landing family; evidence in docs/redirect-chain-stop-audit.md",
+      "builtBy": null,
+      "modifications": "Locally maintained host-boundary rules; no third-party dataset imported.",
+      "sourceFiles": [
+        "rules-download-landings.json"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      },
+      "kind": "redistributed",
+      "sha256": "c91a116976c165dbae62ba526d7045a9a1ae0a97e69b7b318a88331dd5abdb57"
+    },
+    {
       "file": "rules-trackers.json",
       "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
       "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
@@ -3085,7 +3263,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "50199c7e66d5314c52c2879b213c07c490b90371ae4f91ab2c8a772291f050c7"
+      "sha256": "b3a17cc0ace18cd5d953a9ef2b6f9ba62a8aae9b43dbed190e80c1d63ecf90a5"
     },
     {
       "file": "grabber-extra.json",
@@ -3367,6 +3545,50 @@
       "sha256": "9c9dc664c6d1d984fd7388e16595ac5c71621e4b5ef0996cfc2923e87f2a34c5"
     },
     {
+      "file": "rules-badger.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "EFForg/privacybadger, the pre-trained tracker list",
+      "builtBy": "tools/build-badger-dnr.js",
+      "modifications": "Trained blocks converted to third-party block rules; cookie-only, DNT-policy, yellowlisted, surrogate, widget and compatibility-protected hosts left loading; site fixes and owner groups kept as initiator exemptions.",
+      "sourceFiles": [
+        "docs/badger-source-snapshot.json.gz",
+        "tools/build-badger-dnr.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/PrivacyBadger-NOTICE.txt"
+        ],
+        "issueIds": []
+      },
+      "kind": "redistributed",
+      "sha256": "fe9a27875c47921afbf6ab7a4e9d2ff2286759c2ca34ecd0947342feec121a94"
+    },
+    {
+      "file": "first-party-sites.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "EFForg/privacybadger, multiDomainFirstParties.js (sites one owner runs)",
+      "builtBy": "tools/build-badger-dnr.js",
+      "modifications": "Hostnames normalized; owner groups of one site dropped; used only to keep a site's own domains out of Smart Script Shield's third-party heuristic.",
+      "sourceFiles": [
+        "docs/badger-source-snapshot.json.gz",
+        "tools/build-badger-dnr.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "licenses/PrivacyBadger-NOTICE.txt"
+        ],
+        "issueIds": []
+      },
+      "kind": "redistributed",
+      "sha256": "604bc07a861ec028985dfcb2e67ef13befa1755a958f86b91c285908be357cb4"
+    },
+    {
       "file": "tracker-network-data.js",
       "license": "See contributing input licences; generator GPL-3.0-or-later",
       "provenance": "Observation scopes derived from the licensed CNAME mapping, packaged tracker conditions and WardenOne fingerprint-library inventory.",
@@ -3388,7 +3610,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "ca9bc17bfc63338896c1d66d45a571ea27cdc21f36d961a4f37bbf553a05d970"
+      "sha256": "4d71feb091939787445e77a066bb84b9267ff2233c697962aabe504abcb22308"
     },
     {
       "file": "tracker-catalog.json",
@@ -3542,6 +3764,7 @@
       "endpoints": [
         "https://versions.brave.com/latest/release-{platform}-{arch}.version",
         "https://brave.com/latest/",
+        "https://api.github.com/repos/brave/brave-browser/releases/latest",
         "https://versionhistory.googleapis.com/v1/chrome/platforms/{platform}/channels/stable/versions?pageSize=1",
         "https://edgeupdates.microsoft.com/api/products/stable"
       ],

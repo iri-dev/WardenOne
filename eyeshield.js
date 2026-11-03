@@ -733,8 +733,15 @@
     removeForeignEls();
     clearContrastFixes(); // revert any forced high-contrast text colours from the contrast guard
   }
+  /* Opera's video toolbar uses an open shadow root with a transparent host. */
+  function isBrowserOverlayRoot(root) {
+    for (let host = root && root.host; host; host = host.getRootNode().host) {
+      if (host.id === 'detach-button-host' || host.id === 'qr-host') return true;
+    }
+    return false;
+  }
   function themeShadowRoot(mode, sr) {
-    if (isTwitchHost()) return;
+    if (isTwitchHost() || isBrowserOverlayRoot(sr)) return;
     observeRoot(sr); // watch this shadow root for its own lazily-added children
     if (sr.querySelector('style#' + THEME_ID)) return; // already themed (and not wiped)
     let body;
@@ -752,6 +759,7 @@
     roots = roots || rootsList();
     for (let r = 0; r < roots.length; r++) {
       const root = roots[r];
+      if (isBrowserOverlayRoot(root)) continue;
       if (root !== document) observeRoot(root); // watch shadow roots for new children
       let body;
       try {

@@ -38,6 +38,7 @@ function build(root){
     if(probes.has(host))uses.push({trigger:'user-started network self-test',data:'favicon probe'});
     if(host==='raw.githubusercontent.com')uses.push({trigger:'opt-in OpenPhish feed',data:'fixed public feed request'});
     if(CLASSIFICATION[host])uses.push({trigger:CLASSIFICATION[host][0],data:CLASSIFICATION[host][1]});
+    if(host==='api.github.com')uses.push({trigger:'automatic popup browser update check',data:'fixed public Brave release request; fallback for missing Chromium release information'});
     assert(uses.length,'Unclassified outbound host: '+host+' at '+hosts.get(host));
     return{host,source:hosts.get(host).split(':')[0],uses};
   });

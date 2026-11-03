@@ -144,7 +144,7 @@ const COPY = {
   trackerLearnerAuto: ['Learning mode', '', 'Automatic tracker protection learns from browser evidence and blocks learned trackers until you unblock them. Switching to review stops new automatic decisions; saved blocks stay. Open Learned trackers to search your history, review evidence or unblock a domain.'],
   socialWidgetGuard: ['Click to load social embeds', '', 'Facebook, X, Instagram and TikTok embeds wait for your click.'],
   trackerCacheProtection: ['Block cache-tag tracking', 'adv', 'Stops trackers rebuilding an ID from your browser cache.'],
-  stripTrackingParams: ['Strip tracking from addresses', 'rec', 'Removes utm, fbclid and friends when a site rewrites its address.'],
+  stripTrackingParams: ['Strip tracking from addresses', 'rec', 'Removes utm, fbclid and friends before the site receives them, when you open a link or a site rewrites its address.'],
   cleanCopyLinks: ['Clean links you copy', '', 'Copies links without their tracking codes, so pastes come out clean.'],
   unshimLinks: ['Remove click-tracking pings', '', 'Stops links reporting your click to another address.'],
   deAmp: ['Skip AMP pages', '', 'Opens the real article instead of the AMP copy.'],
@@ -1135,6 +1135,17 @@ const SEARCH_ALIASES = {
   eyeshield: 'dark mode night mode',
   shortcuts: 'shortcuts hotkeys'
 };
+function searchEventKeys(raw) {
+  const value = String(raw || '').trim().toLowerCase();
+  const keys = /^[a-z][a-z0-9_:-]{0,95}$/.test(value) && typeof wardenEventProtectionKeys === 'function'
+    ? wardenEventProtectionKeys(value) : [];
+  if (keys.length) return [...new Set(keys)];
+  return /^[a-z][a-z0-9_]*_[a-z0-9_]*$/.test(value) ? [] : null;
+}
+function initialSettingsSearch(search, hash) {
+  const value = new URLSearchParams(search).get('search');
+  return String(value === null ? new URLSearchParams(String(hash || '').replace(/^#/, '')).get('q') || '' : value).slice(0, 200);
+}
 /* One form for a word and its plural: "entries" is "entry", but "cookies" is "cookie". */
 function searchNorm(word) {
   let w = String(word || '').toLowerCase().replace(/[’'`]/g, '').replace(/[^a-z0-9]/g, '');
@@ -1279,10 +1290,14 @@ function renderSearch(raw) {
   })));
   const vocab = new Set();
   all.forEach((x) => x.fields.forEach((f) => f.tokens.forEach((t) => vocab.add(t))));
-  const plan = searchPlan(raw, vocab);
+  const eventKeys = searchEventKeys(raw);
+  const rowKeys = eventKeys && eventKeys.map((key) => ROW_OF_FIELD[key] || key);
+  const plan = eventKeys !== null ? { words: [], corrected: [] } : searchPlan(raw, vocab);
   let some = false;
-  let hits = all.map((x) => Object.assign(x, { score: searchScore(x.fields, plan, false) })).filter((x) => x.score > 0);
-  if (!hits.length && plan.words.length > 1) {
+  let hits = all.map((x) => Object.assign(x, { score: rowKeys
+    ? (rowKeys.includes(x.key) ? 1000 - rowKeys.indexOf(x.key) : 0)
+    : searchScore(x.fields, plan, false) })).filter((x) => x.score > 0);
+  if (eventKeys === null && !hits.length && plan.words.length > 1) {
     some = true;
     hits = all.map((x) => Object.assign(x, { score: searchScore(x.fields, plan, true) })).filter((x) => x.score > 0);
   }
@@ -1299,13 +1314,14 @@ function renderSearch(raw) {
   let summary = !shown.length ? (hits.length ? 'None of the ' + plural(hits.length, 'result') + ' ' + says[0] + '.' : 'Nothing matched.')
     : searchFilter === 'all' ? plural(shown.length, 'result') + ' across every category, best matches first' + onCount + '.'
     : shown.length + ' of ' + plural(hits.length, 'result') + ' ' + says[shown.length === 1 ? 0 : 1] + ', best matches first' + onCount + '.';
+  if (eventKeys && eventKeys.length) summary = hits.length ? 'Protection controls for this event. ' + summary : 'This event has no control on this page.';
   plan.corrected.forEach(([typed, used]) => { summary += ' Showing results for “' + used + '”, not “' + typed + '”.'; });
   if (some) summary += ' Nothing matched every word, so these match some of them.';
   const chips = hits.length ? '<div class="search-filters" role="group" aria-label="Show only">' + SEARCH_FILTERS.map(([id, label]) =>
     '<button class="chip" data-filter="' + id + '" aria-pressed="' + (searchFilter === id) + '"' + (counts[id] || id === 'all' || id === searchFilter ? '' : ' disabled') + '>' + icon('i-check') + esc(label) + ' <span class="cnt">' + counts[id] + '</span></button>').join('') + '</div>' : '';
   $('#pane').innerHTML = headHTML('Results for “' + raw + '”', summary) + chips +
     (shown.length ? '<div class="rows flat search-results">' + shown.map((h) => itemHTML(h.it, h.it.type === 'switch' ? { meta: true } : { page: h.p, group: h.g })).join('') + '</div>'
-      : '<div class="empty">' + icon('i-search') + '<div>' + (hits.length ? 'Pick another filter above to see them.' : 'No setting matches that. Try one word, like “cookie”, “ads” or “tab”.') + '</div></div>');
+      : '<div class="empty">' + icon('i-search') + '<div>' + (hits.length ? 'Pick another filter above to see them.' : eventKeys && eventKeys.length ? 'No switch is shown because this event has no control on this page.' : 'No setting matches that. Try one word, like “cookie”, “ads” or “tab”.') + '</div></div>');
   /* Every word of a name that matched a word of the search is marked, whatever form it matched in. */
   $$('#pane .search-results .r-label').forEach((label) => {
     label.innerHTML = label.textContent.split(/([A-Za-z0-9’'-]+)/).map((part, i) =>
@@ -1731,7 +1747,10 @@ function rememberPage(id) {
   next.delete('q');
   next.delete('inspect');
   next.delete('presets');
-  history.replaceState(null, '', location.pathname + location.search + '#' + next);
+  const query = new URLSearchParams(location.search);
+  query.delete('search');
+  const remaining = query.toString();
+  history.replaceState(null, '', location.pathname + (remaining ? '?' + remaining : '') + '#' + next);
 }
 function goTo(id) {
   if (!knownPage(id)) return;
@@ -1900,7 +1919,8 @@ else if (knownPage(savedPage)) current = savedPage;
 try { localStorage.setItem(SETTINGS_PAGE_KEY, current); } catch (_) {}
 if (hash.get('theme') === 'dark') setTheme('Dark');
 eyeSiteHost = WOEyeShieldProfiles.hostOf(hash.get('eyeSite'));
-if (hash.get('q')) $('#q').value = hash.get('q');
+const initialSearch = initialSettingsSearch(location.search, location.hash);
+if (initialSearch) $('#q').value = initialSearch;
 if (hash.get('inspect')) inspect = { type: 'setting', key: hash.get('inspect') };
 if (hash.get('presets')) inspect = { type: 'preset' };
 
@@ -3316,7 +3336,7 @@ function cleanLists(raw) {
       Object.keys(columns).forEach((column) => {
         const verdict = columns[column];
         if (column === 'cookie' ? verdict === 'strip'
-          : ['script', 'xhr', 'frame', 'media', 'all'].includes(column) && VERDICTS.includes(verdict) && !(column === 'all' && verdict === 'noop')) cells[column] = verdict;
+          : ['script', 'xhr', 'beacon', 'frame', 'media', 'all'].includes(column) && VERDICTS.includes(verdict) && !(column === 'all' && verdict === 'noop')) cells[column] = verdict;
       });
       if (Object.keys(cells).length) keep[domain] = cells;
     });

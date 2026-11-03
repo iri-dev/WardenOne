@@ -60,7 +60,7 @@ check('Memory Shield explains its unconditional video and camera/mic protections
   settingsJs.includes('Video/live platforms and active camera/mic sessions are always protected.'));
 
 const scripts = Array.from(settingsHtml.matchAll(/<script src="([^"]+)"><\/script>/g)).map((m) => m[1]);
-assert.deepStrictEqual(scripts, ['build-profile.js', 'build-update.js', 'eyeshield-profiles.js', 'notification-schema.js', 'popup-diagnostics.js', 'settings-data.js', 'site-dashboard-shared.js', 'config-lock.js', 'domain-utils.js', 'settings.js'], 'settings.html loads what settings.js uses, before it');
+assert.deepStrictEqual(scripts, ['build-profile.js', 'build-update.js', 'eyeshield-profiles.js', 'protection-event-settings.js', 'notification-schema.js', 'popup-diagnostics.js', 'settings-data.js', 'site-dashboard-shared.js', 'config-lock.js', 'domain-utils.js', 'settings.js'], 'settings.html loads what settings.js uses, before it');
 check('the page loads nothing from outside the package', !/(?:src|href)="(?:https?:)?\/\//.test(settingsHtml.replace(/<a [^>]*>/g, '')) && !settingsHtml.includes('../'));
 check('the browser’s Extension options is Settings', manifest.options_page === 'settings.html');
 check('the popup’s Settings button opens it as the options page', /settingsBtn\.addEventListener\('click', \(\) => \{\s*try \{\s*chrome\.runtime\.openOptionsPage\(/.test(popupJs));
@@ -132,8 +132,8 @@ check('the overview answers each kind of hint', ["fix.startsWith('setting:')", "
 const engineAt = settingsJs.indexOf('/* ---------- Search engine ----------');
 const engineEnd = settingsJs.indexOf('/* ---------- Search engine end ---------- */');
 assert(engineAt > 0 && engineEnd > engineAt, 'the search engine block has moved');
-const engine = {};
-vm.runInNewContext(settingsJs.slice(engineAt, engineEnd) + '\nthis.E = { searchNorm, searchTokens, searchDistance, searchPlan, searchScore, SEARCH_ALIASES, SEARCH_GROUPS };', engine);
+const engine = { URLSearchParams };
+vm.runInNewContext(settingsJs.slice(engineAt, engineEnd) + '\nthis.E = { searchNorm, searchTokens, searchDistance, searchPlan, searchScore, initialSettingsSearch, SEARCH_ALIASES, SEARCH_GROUPS };', engine);
 const E = engine.E;
 check('plurals and apostrophes fold', E.searchNorm('Cookies') === 'cookie' && E.searchNorm('entries') === 'entry' && E.searchNorm('site’s') === 'site' && E.searchNorm('access') === 'access');
 check('a hyphenated word is found joined and by its parts', ['thirdparty', 'third', 'party', 'cookie'].every((t) => E.searchTokens('Third-party cookies').has(t)));
@@ -158,6 +158,78 @@ const typo = search('cokie');
 check('a typo is read as the word it was one slip from, and says so', typo.corrected.length === 1 && typo.corrected[0][1] === 'cookie' && typo.keys.includes('blockThirdPartyCookies'));
 check('a short word is never guessed at', search('dark').corrected.length === 0);
 check('nonsense finds nothing', search('zzzz qqqq').keys.length === 0);
+for (const [query, hash, expected] of [
+  ['?search=cookie_blocked', '#q=ads', 'cookie_blocked'],
+  ['?search=blocked_thirdparty_cookie', '', 'blocked_thirdparty_cookie'],
+  ['', '#q=third%20party%20cookies', 'third party cookies'],
+  ['?search=', '#q=ads', ''],
+  ['?search=%3Cimg%20src%3Dx%3E', '', '<img src=x>'],
+  ['?search=' + 'a'.repeat(201), '', 'a'.repeat(200)],
+]) {
+  const input = { value: '' };
+  const start = settingsJs.indexOf('const initialSearch = initialSettingsSearch(');
+  const end = settingsJs.indexOf("if (hash.get('inspect'))", start);
+  const ctx = { initialSettingsSearch: E.initialSettingsSearch, location: { search: query, hash }, $: () => input };
+  vm.runInNewContext(settingsJs.slice(start, end), ctx);
+  check('the search deep link becomes bounded input text: ' + query.slice(0, 48), input.value === expected);
+}
+{
+  const navigation = [], ctx = {
+    URLSearchParams, SETTINGS_PAGE_KEY: 'test', localStorage: { setItem() {} },
+    location: { pathname: '/settings.html', search: '?search=cookie_blocked&other=keep', hash: '#q=ads&inspect=blockAllCookies' },
+    history: { replaceState(state, title, url) { navigation.push(url); } },
+  };
+  const start = settingsJs.indexOf('function rememberPage('), end = settingsJs.indexOf('\nfunction goTo(', start);
+  vm.runInNewContext(settingsJs.slice(start, end) + '\nrememberPage("privacy");', ctx);
+  check('choosing a category clears the event deep link without leaving the Options page', navigation[0] === '/settings.html?other=keep#page=privacy');
+}
+{
+  const pane = { innerHTML: '' }, rendered = [];
+  const items = ['blockAllCookies', 'blockThirdPartyCookies', 'blockCameraMic', '__master'].map((key) => ({ type: 'switch', key }));
+  const group = { title: 'Privacy', items };
+  const ctx = {
+    PAGES: [{ title: 'Privacy', groups: [group] }, { title: 'Also privacy', groups: [{ title: 'Repeated', items: [items[0]] }] }],
+    groupsOf: (page) => page.groups,
+    ROW_OF_FIELD: { enabled: '__master' },
+    state: Object.fromEntries(items.map((item) => [item.key, true])),
+    searchFilter: 'all', SEARCH_FILTERS: [['all', 'Everything']], SEARCH_FILTER_SAYS: {}, SEARCH_FILTER_TEST: { all: () => true },
+    info: (key) => ({ name: ({ blockAllCookies: 'Block all cookies', blockThirdPartyCookies: 'Block third-party cookies', blockCameraMic: 'Block camera and microphone', __master: 'Master switch' })[key], line: '', long: '' }),
+    wardenEventProtectionKeys: (type) => type === 'blocked_thirdparty_cookie' ? ['blockThirdPartyCookies']
+      : type === 'cookie_blocked' ? ['blockAllCookies', 'blockThirdPartyCookies', 'blockAllCookies']
+        : type === 'engine_disabled' ? ['enabled'] : [],
+    headHTML: (title, summary) => title + summary, itemHTML: (item) => { rendered.push(item.key); return item.key; },
+    plural: (n, label) => n + ' ' + label + (n === 1 ? '' : 's'), icon: () => '', esc: (value) => String(value),
+    $: () => pane, $$: () => [],
+  };
+  const start = settingsJs.indexOf('function searchFields(');
+  const end = settingsJs.indexOf('\nconst CHECKS =', start);
+  vm.runInNewContext(settingsJs.slice(engineAt, engineEnd) + '\n' + settingsJs.slice(start, end), ctx);
+  for (const [query, expected] of [
+    ['blocked_thirdparty_cookie', ['blockThirdPartyCookies']], ['  BLOCKED_THIRDPARTY_COOKIE  ', ['blockThirdPartyCookies']],
+    ['cookie_blocked', ['blockAllCookies', 'blockThirdPartyCookies']], ['cookie_blokced', []],
+    ['engine_disabled', ['__master']], ['camera', ['blockCameraMic']],
+  ]) {
+    rendered.length = 0;
+    ctx.renderSearch(query);
+    assert.deepStrictEqual(rendered, expected, query + ' resolves only the intended unique controls');
+  }
+  const catalog = {};
+  vm.runInNewContext(read('protection-event-settings.js'), catalog);
+  ctx.wardenEventProtectionKeys = catalog.wardenEventProtectionKeys;
+  for (const [query, expected] of [
+    ['cookie_blocked', ['blockAllCookies', 'blockThirdPartyCookies']],
+    ['blocked_thirdparty_cookie', ['blockThirdPartyCookies']], ['blocked_media_capture', ['blockCameraMic']],
+  ]) {
+    rendered.length = 0;
+    ctx.renderSearch(query);
+    assert.deepStrictEqual(rendered, expected, query + ' follows the shipped event ownership registry');
+  }
+  rendered.length = 0;
+  ctx.renderSearch('detected_beacon');
+  assert.deepStrictEqual(rendered, [], 'a watch-only event does not invent a switch');
+  assert.ok(pane.innerHTML.includes('This event has no control on this page.'));
+  check('exact event IDs and aliases route to responsible controls without fuzzy fallback', true);
+}
 const placedOrIds = new Set(Array.from(placed).concat(['eyeshield', 'shortcuts']));
 assert.deepStrictEqual(Object.keys(E.SEARCH_ALIASES).filter((k) => !placedOrIds.has(k)), [], 'every search alias names a setting on the page');
 

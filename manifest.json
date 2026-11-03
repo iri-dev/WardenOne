@@ -91,6 +91,11 @@
   "declarative_net_request": {
     "rule_resources": [
       {
+        "id": "download_landings",
+        "enabled": true,
+        "path": "rules-download-landings.json"
+      },
+      {
         "id": "grabbers",
         "enabled": true,
         "path": "rules-grabber-resources.json"
@@ -134,10 +139,25 @@
         "id": "cname_trackers",
         "enabled": true,
         "path": "rules-cname.json"
+      },
+      {
+        "id": "badger_trained",
+        "enabled": true,
+        "path": "rules-badger.json"
       }
     ]
   },
   "web_accessible_resources": [
+    {
+      "resources": ["download-site-blocked.html", "download-site-blocked.js"],
+      "matches": ["<all_urls>"],
+      "use_dynamic_url": true
+    },
+    {
+      "resources": ["tracking-redirect.html"],
+      "matches": ["<all_urls>"],
+      "use_dynamic_url": true
+    },
     {
       "resources": [
         "spotify-silent-1s.mp4"
@@ -428,6 +448,8 @@
       "js": [
         "domain-utils-isolated.js",
         "engine-compat.js",
+        "protection-event-settings.js",
+        "badge-controls.js",
         "bridge.js",
         "frame-image-logger.js"
       ],

@@ -82,6 +82,7 @@ function bridgeRealm(opts) {
     'const BRIDGE_RATE = Object.create(null);',
     grabFn(BRIDGE, 'bridgeRateOk'),
     grabFn(BRIDGE, 'boundedBridgeDetail'),
+    (/function redirectReviewDetail\(/.test(BRIDGE) ? grabFn(BRIDGE, 'redirectReviewDetail') : ''),
     'let bridgeEngineSeen = false; let bridgePendingPong = null;',
     /* The event signature every security event now needs (bridge.js eventSigned). */
     BRIDGE.slice(BRIDGE.indexOf('  const KEY_PADS = KEY ?'), BRIDGE.indexOf('  let bridgeEventSeq = 0;')),
@@ -239,15 +240,31 @@ const asEvent = (b, d, key) => {
     em.seen.length === 1 && em.seen[0].detail.mac === undefined && em.seen[0].emac === undefined && b.badges().length === 0 && b.interstitials().length === 0, JSON.stringify(em.seen));
 }
 
+{
+  const b = bridgeRealm();
+  const em = emitterRealm(d => b.dispatch(d));
+  const url = 'https://files.example/download?signature=' + 'signed-value'.repeat(100) + '#keep';
+  em.emit('blocked_gestureless_nav', { kind: 'download-destination', url,
+    why: 'The destination is not verified.', silent: false });
+  check('a destination review preserves its complete signed URL', b.interstitials().length === 1 && b.interstitials()[0].detail.url === url);
+  check('the diagnostic event retains its existing text limit', b.badges().length === 1 && b.badges()[0].detail.url.length <= 600);
+  const tooLong = 'https://files.example/' + 'x'.repeat(2050);
+  em.emit('blocked_gestureless_nav', { kind: 'download-destination', url: tooLong,
+    why: 'The destination is not verified.', silent: false });
+  check('an oversized signed URL cannot produce a truncated destination offer', b.interstitials().length === 1);
+}
+
 /* ---- 4. the wiring, in the shipped files ---------------------------------------------------- */
-check('the relay still bounds the detail it forwards (test-bridge-bounds pins the same string)',
-  BRIDGE.indexOf("kind: 'redirect-warning', detail: boundedBridgeDetail(d.detail)") > 0);
+check('the relay forwards only bounded review fields',
+  BRIDGE.indexOf('const detail = redirectReviewDetail(d.detail);') > 0
+  && BRIDGE.indexOf("kind: 'redirect-warning', detail }") > 0);
 check('the relay believes a security event only when it is signed, before it forwards anything',
   /if \(!eventSigned\(d\) \|\| d\.src === 'bridge'\) return;/.test(BRIDGE)
-  && BRIDGE.indexOf('if (!eventSigned(d)') < BRIDGE.indexOf("kind: 'rg-block', type"));
+  && BRIDGE.indexOf('if (!eventSigned(d)') < BRIDGE.indexOf("kind: 'rg-block', type, detail:")
+  && /if \(d\.src !== 'realm' \|\| !eventSigned\(d\)[^\n]*return;[\s\S]{0,150}kind: 'rg-block', type/.test(BRIDGE));
 check('the relay checks the signature before it forwards an interstitial request',
   /if \(!interstitialRequestSigned\(d\.detail\)\) return;/.test(BRIDGE)
-  && BRIDGE.indexOf('interstitialRequestSigned(d.detail)') < BRIDGE.indexOf("kind: 'redirect-warning', detail: boundedBridgeDetail(d.detail)"));
+  && BRIDGE.indexOf('interstitialRequestSigned(d.detail)') < BRIDGE.indexOf("kind: 'redirect-warning', detail }"));
 check('the guard signs at dispatch, after the queue, so a queued request is signed when it goes out',
   /function emit\(type, detail\) \{[\s\S]*?queuedEvents\.push\(payload\);[\s\S]*?signInterstitial\(payload\.detail\)/.test(GUARD));
 check('the signature covers the number, the destination, the reason and the kind on both sides',

@@ -339,17 +339,71 @@
   /* Authenticate security events, permission signals and media state with HMAC and monotonic sequences.
      A public routing token cannot authorize history, badge or warning updates. */
   const KEY_PADS = KEY ? __woAuth.key(KEY) : null;
-  const EVENT_SOURCES = new Set(['engine', 'hardener', 'miner', 'bridge', 'adshield']);
+  let badgeThemeResolved = null;
+  let applyBadgeThemePreference = () => {};
+  const badgeProtectionEvents = typeof WardenProtectionEvents === 'object' ? WardenProtectionEvents : null;
+  const badgeControlsPanel = window === window.top && typeof WardenBadgeControls === 'object'
+    ? WardenBadgeControls.create({ document, registry: badgeProtectionEvents, site: location.hostname,
+      onActivity: snapshot => publishBadgeCounts(snapshot),
+      send: (message, callback) => {
+        try {
+          if (!chrome.runtime.id) { callback({ ok: false, reloadRequired: true }); return; }
+          chrome.runtime.sendMessage(message, result => {
+            const error = chrome.runtime.lastError;
+            callback(!error && result ? result : { ok: false, reloadRequired: !!error && /context invalidated/i.test(String(error.message || '')) });
+          });
+        } catch (_) { callback({ ok: false, reloadRequired: true }); }
+      } }) : null;
+  const EVENT_SOURCES = new Set(['engine', 'hardener', 'miner', 'bridge', 'adshield', 'realm']);
   const eventSeqSeen = Object.create(null);
   const eventSigned = (d) => {
     const src = String((d && d.src) || '');
     const seq = Number(d && d.eseq);
+    const type = String((d && d.type) || '');
+    const detail = d && d.detail;
     if (!KEY_PADS || !EVENT_SOURCES.has(src) || !Number.isInteger(seq) || seq <= (eventSeqSeen[src] || 0)) return false;
-    if (!__woAuth.same(d.emac, __woAuth.hmac(KEY_PADS, __woAuth.eventText(src, seq, String(d.type || ''), d.detail)))) return false;
+    if (!__woAuth.same(d.emac, __woAuth.hmac(KEY_PADS, __woAuth.eventText(src, seq, type, detail)))) return false;
     eventSeqSeen[src] = seq;
+    if (badgeControlsPanel) badgeControlsPanel.observe(type, type === 'youtube_ads_removed' ? d.detail?.count : 1,
+      type === 'detected_beacon' || type === 'detected_thirdparty_tracker' ? d.detail?.matched : undefined);
     return true;
   };
   let bridgeEventSeq = 0;
+  function publishBadgeCounts(snapshot) {
+    if (!KEY_PADS || !snapshot || !snapshot.current) return;
+    const detail = { total: snapshot.current.total, networkAvailable: snapshot.current.networkAvailable === true };
+    publishBadgeDisplay('badge_activity', detail);
+  }
+  function publishBadgeTheme() {
+    if (badgeControlsPanel && badgeThemeResolved !== null) publishBadgeDisplay('badge_theme', { dark: badgeThemeResolved === 'dark' });
+  }
+  function publishBadgeDisplay(type, detail) {
+    if (!KEY_PADS) return;
+    bridgeEventSeq += 1;
+    document.dispatchEvent(new CustomEvent('wo-badge-activity', { detail: { token: TOKEN, type, detail,
+      src: 'bridge', eseq: bridgeEventSeq,
+      emac: __woAuth.hmac(KEY_PADS, __woAuth.eventText('bridge', bridgeEventSeq, type, detail)) } }));
+  }
+  function installBadgeTheme() {
+    if (!badgeControlsPanel) return;
+    let selected = null, query = null;
+    woHold({ disconnect() { applyBadgeThemePreference = () => {}; badgeControlsPanel.close(); } });
+    try { query = window.matchMedia('(prefers-color-scheme: dark)'); } catch (_) {}
+    const apply = () => {
+      badgeThemeResolved = selected === 'dark' || selected === 'system' && query?.matches ? 'dark' : 'light';
+      badgeControlsPanel.setTheme(badgeThemeResolved);
+      publishBadgeTheme();
+    };
+    const choose = value => { selected = ['light', 'dark', 'system'].includes(value) ? value : 'light'; apply(); };
+    applyBadgeThemePreference = choose;
+    if (query?.addEventListener) woOn(query, 'change', () => { if (selected === 'system') apply(); });
+    else if (query?.addListener) {
+      const changed = () => { if (selected === 'system') apply(); };
+      query.addListener(changed);
+      woHold({ disconnect() { query.removeListener(changed); } });
+    }
+    if (bridgeSnapshot && Object.prototype.hasOwnProperty.call(bridgeSnapshot, 'appearance')) choose(bridgeSnapshot.appearance);
+  }
   /* Only extension-owned notices are signed here. A page cannot call this isolated-world function
      or forge the resulting event, and the worker's popup event can now reach the page card. */
   const LOCAL_NOTICE_TYPES = new Set(['detected_manual_check', 'blocked_popup',
@@ -532,6 +586,15 @@
       return out;
     };
     try { return copy(value, 0); } catch (_) { return null; }
+  }
+
+  function redirectReviewDetail(detail) {
+    if (!detail || typeof detail.url !== 'string' || !detail.url || detail.url.length > 2048) return null;
+    return {
+      url: detail.url,
+      why: String(detail.why || '').slice(0, 180),
+      kind: String(detail.kind || '').slice(0, 40),
+    };
   }
 
   function pageTargetOrigin() {
@@ -1718,6 +1781,11 @@
     try {
       chrome.runtime.sendMessage({ kind: 'smart-script-status' }, (res) => {
         void chrome.runtime.lastError;
+        // The worker now lets this site's own CDN folder through; it answers this only once per folder.
+        if (!chrome.runtime.lastError && res && res.ok && res.reload === true) {
+          try { location.reload(); } catch (_) {}
+          return;
+        }
         if (chrome.runtime.lastError || !res || !res.ok || !Number(res.refused)) return;
         showSmartScriptNotice(res, reason);
       });
@@ -1918,6 +1986,29 @@
     } catch (_) { return false; }
   }
 
+  function bridgeFrameClientHintsAllowed(clean) {
+    try {
+      if (!clean || clean.enabled === false || clean.clientHintProtection === false) return false;
+      const own = bridgeOwnHost(), top = bridgeTopHost();
+      for (const host of [own, top]) {
+        if (!host) continue;
+        if (bridgeHostMatchesList(host, clean.allowlist)) return false;
+        if (typeof wardenOneHostedAppHost === 'function' && wardenOneHostedAppHost(host)) return false;
+      }
+      const off = top && top !== own ? bridgeSiteOverridesFor(clean, top) : {};
+      return off.enabled !== false && off.clientHintProtection !== false;
+    } catch (_) { return false; }
+  }
+  function bridgeFrameLearningAllowed(clean) {
+    try {
+      if (!clean || clean.enabled === false || clean.trackerLearner === false) return false;
+      const own = bridgeOwnHost(), top = bridgeTopHost();
+      if ([own, top].some(host => host && bridgeHostMatchesList(host, clean.allowlist))) return false;
+      const off = top && top !== own ? bridgeSiteOverridesFor(clean, top) : {};
+      return off.enabled !== false && off.trackerLearner !== false;
+    } catch (_) { return false; }
+  }
+
   function bridgeFrameGrabberWarningAllowed() {
     if (!bridgeConfigReady || bridgeConfig.enabled !== true || bridgeConfig.warnGrabberDomains !== true) return false;
     const own = bridgeOwnHost();
@@ -2103,9 +2194,10 @@
   const DOWNLOAD_INTENT_MS = 30000;
   const DOWNLOAD_FILE_PATTERN = /\.(?:exe|msi|msix|scr|bat|cmd|ps1|vbs|js|jar|apk|dmg|pkg|zip|7z|rar|pdf|docx?|xlsx?|csv|png|jpe?g|mp[34]|webm)(?:$|[?#])/i;
   const DOWNLOAD_ACTIVE_PATTERN = /\.(?:exe|msi|msix|scr|bat|cmd|ps1|vbs|js|jar|apk|dmg|pkg)$/i;
+  let downloadNavigationRemembered = false;
 
   function forcedDownloadGuardOn() {
-    if (!bridgeConfigReady || bridgeConfig.enabled === false || bridgeConfig.forcedDownloadProtection === false || bridgeHostAllowedByUser()) return false;
+    if (!bridgeConfigReady || bridgeConfig.enabled === false || bridgeConfig.forcedDownloadProtection !== true || bridgeHostAllowedByUser()) return false;
     for (const host of [bridgeOwnHost(), bridgeTopHost()]) {
       const off = bridgeSiteOverridesFor(bridgeConfig, host);
       if (off.enabled === false || off.forcedDownloadProtection === false) return false;
@@ -2134,6 +2226,24 @@
     if (downloadRequestNamesFile(gesture)) return sameDownloadAddress(gesture.href, href);
     if (!gesture.startedHref) gesture.startedHref = href;
     return sameDownloadAddress(gesture.startedHref, href);
+  }
+  function rememberDownloadNavigation(details) {
+    if (!forcedDownloadGuardOn()) return;
+    let href = '';
+    try {
+      const target = new URL(details.href);
+      if (details.requested && !downloadRequestNamesFile(details) && target.origin === location.origin
+        && !sameDownloadAddress(target.href, location.href)) href = target.href;
+    } catch (_) {}
+    if (!href && !downloadNavigationRemembered) return;
+    downloadNavigationRemembered = !!href;
+    try { chrome.runtime.sendMessage({ kind: 'download-navigation-intent', href }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+  }
+  function adoptDownloadNavigationIntent(intent) {
+    if (downloadGesture || !forcedDownloadGuardOn() || !intent || intent.navigation !== true
+      || intent.requested !== true || !Number.isFinite(intent.at) || Date.now() - intent.at < 0
+      || Date.now() - intent.at > DOWNLOAD_INTENT_MS) return;
+    downloadGesture = { at: intent.at, requested: true, href: '', claimed: '', label: 'Download', navigation: true };
   }
   function downloadControlVisible(control) {
     if (!control || !control.isConnected) return false;
@@ -2217,6 +2327,7 @@
     const previous = downloadGesture;
     if (trusted) downloadGesture = Object.assign({ at: Date.now() }, details,
       { requested: !!(visible && details.requested) || (event.type === 'contextmenu' && !!details.href) });
+    if (trusted && event.type !== 'contextmenu') rememberDownloadNavigation(Object.assign({}, details, { requested: !!(visible && details.requested) }));
     if (!forcedDownloadGuardOn() || !control || !details.href || !/^https?:|^blob:|^data:/i.test(details.href)) return;
     if (!fileLink || event.type === 'contextmenu') return;
     const recentRequest = !trusted && previous && previous.requested && Date.now() - previous.at <= DOWNLOAD_INTENT_MS
@@ -2244,6 +2355,7 @@
       const control = downloadControl(event);
       const details = control ? downloadControlDetails(control) : { requested: false, href: '', claimed: '', label: '' };
       downloadGesture = Object.assign({ at: Date.now() }, details, { requested: !!(control && details.requested && downloadControlVisible(control)) });
+      rememberDownloadNavigation(downloadGesture);
     }
   }, true);
   woOnMessage((msg, sender, respond) => {
@@ -2260,12 +2372,12 @@
   });
 
   const FRAME_CONFIG_FIELDS = [
-    'enabled', 'allowlist', 'frameSite', 'frameNoise', 'webglDisabled',
+    'enabled', 'allowlist', 'frameSite', 'frameNoise', 'frameClientHints', 'frameTrackerLearning', 'webglDisabled',
     'blockForcedPopups', 'strictPopupShield', 'blockPopupTricks',
     'blockTokenExfil', 'detectSkimmers', 'paymentCardGuard', 'gestureWindowMs',
     'blockThirdPartyCookies', 'frameCookieIsolation', 'blockSupercookies', 'storageAccessGuard',
     'blockAllStorageAccess', 'commandPasteGuard', 'permissionChainGuard',
-    'adShield', 'twitchAdBlock', 'twitchSteadyPlayback',
+    'adShield', 'scriptletEngine', 'twitchAdBlock', 'twitchSteadyPlayback',
   ];
   function mainWorldConfigForHost(source, host, frameOnly) {
     source = source || {};
@@ -2314,6 +2426,7 @@
 
   const sendConfig = (overrides) => {
     const raw = (overrides && typeof overrides === 'object') ? overrides : {};
+    const replaying = raw === bridgeConfig;
     bridgeConfig = Object.assign({}, bridgeConfig, raw);
     bridgeConfig.allowlist = sanitizeBridgeHostList(bridgeConfig.allowlist, 1000);
     bridgeConfig.forgetMeList = sanitizeBridgeHostList(bridgeConfig.forgetMeList, 1000);
@@ -2336,6 +2449,18 @@
     // Per-site switches are applied here rather than shipped as data, so no
     // downstream script has to remember to consult them.
     const siteOff = bridgeSiteOverridesFor(clean, location.hostname);
+    if (badgeControlsPanel && !replaying) {
+      const global = {};
+      const keys = new Set(badgeProtectionEvents.eventIds().flatMap(type => badgeProtectionEvents.pauseKeysFor(type)));
+      for (const key of ['enabled', ...keys]) if (typeof raw[key] === 'boolean') global[key] = raw[key];
+      const state = { global };
+      if (Object.prototype.hasOwnProperty.call(raw, 'siteOverrides')) {
+        const local = raw.siteOverrides && raw.siteOverrides[bridgeCleanHost(location.hostname)];
+        state.paused = Object.keys(siteOff).filter(key => keys.has(key));
+        state.local = Object.keys(local || {}).filter(key => keys.has(key) && local[key] === false);
+      }
+      badgeControlsPanel.configure(state);
+    }
     for (const key of Object.keys(siteOff)) {
       if (typeof clean[key] === 'boolean') clean[key] = false;
       // The bridge's own gates (permission chain, script drift, login age, search cleanup) read
@@ -2347,6 +2472,8 @@
     // Decided while siteOverrides is still here to consult for the top host (SEC-05). The engine
     // in the top frame ignores this field and decides for itself, as it always has.
     clean.frameNoise = bridgeFrameNoiseAllowed(clean);
+    clean.frameClientHints = bridgeFrameClientHintsAllowed(clean);
+    clean.frameTrackerLearning = bridgeFrameLearningAllowed(clean);
     clean.webglDisabled = bridgeFrameWebGLDisabled(clean);
     delete clean.webglSaverMode;
     delete clean.webglSaverBlockHosts;
@@ -2398,6 +2525,7 @@
     // who this frame is. Inside the signed copy, so the page cannot supply one either (SEC-07).
     clean.frameSite = bridgeFrameSite;
     const pageConfig = mainWorldConfigForHost(clean, location.hostname, !BRIDGE_TOP_FRAME);
+    if (badgeControlsPanel && (pageConfig.enabled === false || pageConfig.showBadge === false)) badgeControlsPanel.close();
     const message = signed('config', JSON.stringify(pageConfig), { source: 'wardenone', kind: 'config', token: TOKEN, overrides: pageConfig });
     if (hostLists) {
       message.lists = hostLists;
@@ -2411,6 +2539,7 @@
     // detector registered after this bridge asks at its own document_start and gets it, a page
     // asking later gets the nonce and the config it has already seen.
     replayKey();
+    publishBadgeTheme();
     postToPage({ source: 'wardenone-handshake', token: TOKEN });
     if (bridgeConfigReady) sendConfig(bridgeConfig);
   };
@@ -2508,6 +2637,11 @@
     }
     const securitySignal = type === 'behavioral_risk'
       || /^warned_(?:potential_)?xss_|^warned_potential_(?:dom_xss|xss_)|^warned_clickfix_|^warned_command_paste$/.test(type);
+    if (type === 'detected_canvas_fingerprint') {
+      if (d.src !== 'realm' || !eventSigned(d) || !bridgeRateOk('wo-canvas-observation', 1, 60000)) return;
+      try { chrome.runtime.sendMessage({ kind: 'rg-block', type }, () => { void chrome.runtime.lastError; }); } catch (_) {}
+      return;
+    }
     /* Routine page actions the Activity log never takes -- cleaned addresses and copied links,
        stripped pings, cookie banners rejected, search clutter hidden, script cookie writes
        stopped. They go to the Site Dashboard's count only (rg-tally): no log entry, no badge.
@@ -2540,9 +2674,11 @@
       // A child-frame block reaches the top page through the worker's notice path.
       if (type === 'blocked_gestureless_nav' && d.detail && d.detail.url && d.detail.why !== 'no recent user gesture' && d.detail.silent !== true) {
         // And only the guard may ask for one (SEC-15); the badge above already has the block.
+        const detail = redirectReviewDetail(d.detail);
+        if (!detail) return;
         if (!interstitialRequestSigned(d.detail)) return;
         try {
-          chrome.runtime.sendMessage({ kind: 'redirect-warning', detail: boundedBridgeDetail(d.detail) }, () => { void chrome.runtime.lastError; });
+          chrome.runtime.sendMessage({ kind: 'redirect-warning', detail }, () => { void chrome.runtime.lastError; });
         } catch (_) {}
       }
     }
@@ -2584,7 +2720,7 @@
   // newer revisions so a late response cannot roll back settings.
   // A child frame leaves out 'learned' and 'supplemental': they are the engine's host lists,
   // and the engine is not in a child frame (BRIDGE_TOP_FRAME).
-  const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME ? ['overrides', 'learned', 'supplemental', 'hidden'] : ['overrides', 'hidden'];
+  const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME ? ['overrides', 'learned', 'supplemental', 'hidden', 'appearance'] : ['overrides', 'hidden'];
   const CONFIG_RETRY_BASE_MS = 300;
   const CONFIG_RETRY_MAX_MS = 5000;
   const CONFIG_RETRY_ATTEMPTS = 8;
@@ -2670,11 +2806,13 @@
     if (rev && bridgeConfigRev && rev < bridgeConfigRev) return false;
     if (rev) bridgeConfigRev = rev;
     bridgeSnapshot = res;
+    if (Object.prototype.hasOwnProperty.call(res, 'appearance')) applyBadgeThemePreference(res.appearance);
     setLearnedGrabberDomains(res.learned);
     setSupplementalLists(res.supplemental);
     if (Array.isArray(res.hidden) && res.hidden.length) bridgeApplyUserHidden(res.hidden);
     bridgeFrameSite = normalizeBridgeHost(res.site) || '';
-    sendConfig(res.overrides || {});
+    sendConfig(Object.assign({ siteOverrides: {} }, res.overrides || {}));
+    if (res.downloadIntent) adoptDownloadNavigationIntent(res.downloadIntent);
     return true;
   };
   // Only one acquisition runs at a time; a new one (a refresh, a page shown again) supersedes
@@ -2747,6 +2885,11 @@
   try {
     const smartFrameReloadedUrls = new Set();
     woOnMessage((msg, _sender, sendResponse) => {
+      if (msg && msg.kind === 'badge-activity-update' && badgeControlsPanel && _sender.id === chrome.runtime.id && !_sender.tab) {
+        const since = Number(msg.snapshot && msg.snapshot.since);
+        if (Number.isFinite(since) && Math.abs(performance.timeOrigin - since) < 2) badgeControlsPanel.update(msg.snapshot);
+        return;
+      }
       if (msg && msg.kind === 'config-update' && msg.overrides) sendConfig(msg.overrides);
       if (msg && msg.kind === 'wo-blocked-action' && window === window.top) {
         const d = msg.detail && typeof msg.detail === 'object' ? msg.detail : {};
@@ -2774,6 +2917,24 @@
         const d = msg.detail && typeof msg.detail === 'object' ? msg.detail : {};
         const detail = { sample: String(d.sample || '').slice(0, 180), frameHost: String(d.frameHost || '').slice(0, 120) };
         postToPage(signed('frame-clickfix', JSON.stringify(detail), { source: 'wardenone', kind: 'frame-clickfix', token: TOKEN, detail }));
+      }
+      /* The ad spent this click's one popup, so the browser dropped the link's own tab. A tab the worker
+         opens instead arrives with Sec-Fetch-Site: none and no referrer of its own, and download hosts send
+         that to their home page. Navigating from here is the page's own navigation, so it carries the page's
+         referrer and reads as a click. The worker decides whether to ask; this only obeys. */
+      if (msg && msg.kind === 'open-pressed-download' && window === window.top) {
+        let target = '';
+        try {
+          const parsed = new URL(String(msg.url || ''), location.href);
+          if (/^https?:$/.test(parsed.protocol)) target = parsed.href;
+        } catch (_) {}
+        if (!target || target === location.href) {
+          try { sendResponse({ ok: false }); } catch (_) {}
+          return true;
+        }
+        try { sendResponse({ ok: true }); } catch (_) {}
+        woTimeout(() => { try { location.href = target; } catch (_) {} }, 0);
+        return true;
       }
       if (msg && msg.kind === 'smart-script-route-changed') {
         smartFrameReloadedUrls.clear();
@@ -2869,6 +3030,13 @@
     };
     const relayAllowedMessage = (raw) => {
       const msg = Object.assign({}, raw || {});
+      if (msg.kind === 'badge-rule-menu' || msg.kind === 'badge-rule-menu-close') {
+        if (window !== window.top || !badgeControlsPanel || Object.keys(msg).length !== 3
+            || !Object.prototype.hasOwnProperty.call(msg, 'kind')
+            || !Object.prototype.hasOwnProperty.call(msg, 'rseq') || !Object.prototype.hasOwnProperty.call(msg, 'rmac')
+            || !relayRequestSigned(msg, { kind: msg.kind })) return null;
+        return { kind: msg.kind };
+      }
       if (msg.kind === 'adshield-cosmetic') {
         const hostname = regDomain(msg.hostname);
         if (!hostname || !/^[a-z0-9.-]+$/i.test(hostname)) return null;
@@ -2885,6 +3053,8 @@
       /* SEC-14: both were reachable with the public token alone -- one forged mute silenced a
          class of security notices on every site, for good. They now carry the engine's signature
          over exactly these fields, with a sequence that only moves forward. */
+      /* How this tab arrived, for the adult-site card's wording. Read-only; the worker answers for the sending tab. */
+      if (msg.kind === 'adult-arrival') return { kind: 'adult-arrival' };
       if (msg.kind === 'toast-shown') {
         const type = String(msg.type || '');
         if (!/^[a-z_]{3,60}$/.test(type)) return null;
@@ -2912,6 +3082,11 @@
       if (!message) return;
       if (!bridgeRateOk('background-relay-' + message.kind, 20, 60000)) {
         postBackgroundReply(id, { ok: false, error: 'Rate limited by WardenOne.' });
+        return;
+      }
+      if (message.kind === 'badge-rule-menu' || message.kind === 'badge-rule-menu-close') {
+        const open = message.kind === 'badge-rule-menu' ? badgeControlsPanel.toggle() : (badgeControlsPanel.close(), false);
+        postBackgroundReply(id, { ok: true, open });
         return;
       }
       chrome.runtime.sendMessage(message, (res) => { void chrome.runtime.lastError;
@@ -3567,6 +3742,8 @@
   // receive it. Nothing but content scripts can be running at this point of a document_start
   // injection; if something has been built already, this bridge was injected late and the key
   // stays here.
+  installBadgeTheme();
   handOffKey();
+  publishBadgeTheme();
   try { window.__wardenOneBridgeReadyVersion = BRIDGE_VERSION; } catch (_) {}
 })();

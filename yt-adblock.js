@@ -17,6 +17,9 @@
   var realParse = JSON.parse;
   var realStringify = JSON.stringify;
   var woMasterEnabled = true;
+  var woYoutubeEnabled = true;
+  var woYoutubeConfigured = false;
+  var woYoutubePassthroughStarted = false;
   var cosmeticStyle = null;
   var installSsapPushCapture = function () {};
   var restoreSsapPushCapture = function () {};
@@ -230,7 +233,11 @@
   }
 
   function masterEnabled() {
-    return woMasterEnabled !== false;
+    return featureEnabled() && !woYoutubePassthroughStarted;
+  }
+
+  function featureEnabled() {
+    return woYoutubeConfigured && woMasterEnabled !== false && woYoutubeEnabled !== false;
   }
 
   function setMasterEnabled(value) {
@@ -238,17 +245,23 @@
     if (!masterEnabled()) {
       restoreSsapPushCapture();
       restoreVisibility();
-      removeCosmetics();
     } else {
-      applyCosmetics();
       installSsapPushCapture();
     }
+    if (featureEnabled()) applyCosmetics(); else removeCosmetics();
   }
 
   try {
     window.addEventListener("message", function (event) {
       var overrides = configReceiver.read(event, window);
-      if (overrides) setMasterEnabled(overrides.enabled !== false);
+      if (overrides) {
+        /* Player bootstraps and requests must use one feature state until the requested reload. */
+        if (!woYoutubeConfigured && typeof overrides.scriptletEngine === "boolean") {
+          woYoutubeEnabled = overrides.scriptletEngine;
+          woYoutubeConfigured = true;
+        }
+        setMasterEnabled(typeof overrides.enabled === "boolean" ? overrides.enabled : woMasterEnabled);
+      }
     });
   } catch (_) {}
 
@@ -632,16 +645,30 @@
     try {
       var existing = window[name];
       if (existing !== undefined) {
+        noteUnconfiguredPlayer(existing);
         definePlain(name, pruneAdGuard(existing));
         return;
       }
+      var pendingValue, assigned = false;
       Object.defineProperty(window, name, {
         configurable: true,
         enumerable: true,
-        get: function () { return undefined; },
-        set: function (value) { definePlain(name, pruneAdGuard(value)); },
+        get: function () {
+          if (!assigned) return undefined;
+          noteUnconfiguredPlayer(pendingValue);
+          var value = pruneAdGuard(pendingValue);
+          definePlain(name, value);
+          return value;
+        },
+        set: function (value) { pendingValue = value; assigned = true; },
       });
     } catch (_) {}
+  }
+
+  function noteUnconfiguredPlayer(value) {
+    if (woYoutubeConfigured || !isObject(value)) return;
+    if (value.playabilityStatus || value.streamingData || value.playerResponse && value.playerResponse.playabilityStatus)
+      woYoutubePassthroughStarted = true;
   }
 
   trapInitial("ytInitialPlayerResponse");
@@ -678,8 +705,11 @@
       return Reflect.get(target, prop, receiver);
     },
     apply: function (target, thisArg, args) {
-      if (!masterEnabled()) return Reflect.apply(target, thisArg, args);
       var url = urlFromInput(args && args[0]);
+      if (!masterEnabled()) {
+        if (!woYoutubeConfigured && shouldPruneUrl(url)) woYoutubePassthroughStarted = true;
+        return Reflect.apply(target, thisArg, args);
+      }
       try {
         if (isInitPlayback(url)) {
           return Promise.resolve(new Response("", { status: 204, statusText: "No Content" }));
@@ -728,7 +758,10 @@
     var realSend = XMLHttpRequest.prototype.send;
     XMLHttpRequest.prototype.send = new Proxy(realSend, {
       apply: function (target, thisArg, args) {
-        if (!masterEnabled()) return Reflect.apply(target, thisArg, args);
+        if (!masterEnabled()) {
+          if (!woYoutubeConfigured && shouldPruneUrl(xhrUrls.get(thisArg) || '')) woYoutubePassthroughStarted = true;
+          return Reflect.apply(target, thisArg, args);
+        }
         try {
           var url = xhrUrls.get(thisArg) || "";
           if (isInitPlayback(url)) return undefined;
@@ -811,6 +844,7 @@
   JSON.parse = new Proxy(realParse, {
     apply: function (target, thisArg, args) {
       var obj = Reflect.apply(target, thisArg, args);
+      noteUnconfiguredPlayer(obj);
       try {
         if (masterEnabled()) {
           if (mightContainPlayerAds(obj)) pruneAdGuard(obj);
@@ -1109,6 +1143,7 @@
   try {
     var flagTimer = setInterval(function () {
       try {
+        if (!woYoutubeConfigured) return;
         if (!masterEnabled()) {
           clearInterval(flagTimer);
           return;
@@ -1130,7 +1165,7 @@
   }
 
   function applyCosmetics() {
-    if (!masterEnabled() || cosmeticStyle) return;
+    if (!featureEnabled() || cosmeticStyle) return;
     try {
     var css =
       /* An ad card can keep a menu beside its hidden ad renderer; collapse the card too. */

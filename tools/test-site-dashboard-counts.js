@@ -42,7 +42,7 @@ assert.equal(screenshotCase.cats.ads, 4,
   'Settings must not show zero ads when the popup counted four YouTube player removals');
 
 for (const [name, html, entry] of [['popup', popup, 'popup.js'], ['Settings', settings, 'settings.js']]) {
-  assert(html.indexOf('site-dashboard-shared.js') >= 0 && html.indexOf('site-dashboard-shared.js') < html.indexOf(entry),
+  assert(html.indexOf('src="site-dashboard-shared.js"') >= 0 && html.indexOf('src="site-dashboard-shared.js"') < html.indexOf('src="' + entry + '"'),
     name + ' loads the shared counter before its entry script');
 }
 assert(settingsJs.includes('wardenSiteDashSummarize(report)'), 'Settings uses the shared counter');

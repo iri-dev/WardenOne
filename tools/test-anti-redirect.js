@@ -25,6 +25,8 @@ const DOMAIN_UTILS = fs.readFileSync(path.join(__dirname, '..', 'domain-utils.js
 const PREDS = {
   'a[href],area[href]': (el) => (el.tagName === 'A' || el.tagName === 'AREA') && (el.attrs.href != null || el.href),
   'button,input': (el) => el.tagName === 'BUTTON' || el.tagName === 'INPUT',
+  'button,input[type="button"],input[type="submit"],[role="button"]': (el) => el.tagName === 'BUTTON'
+    || (el.tagName === 'INPUT' && ['button', 'submit'].includes(el.attrs.type)) || el.attrs.role === 'button',
   'form[action]': (el) => el.tagName === 'FORM' && el.attrs.action != null,
   'a,button,input,[role="button"],[tabindex]': (el) => ['A', 'BUTTON', 'INPUT'].indexOf(el.tagName) >= 0 || el.attrs.role === 'button' || el.attrs.tabindex != null,
   'video,audio': (el) => el.tagName === 'VIDEO' || el.tagName === 'AUDIO',
@@ -55,6 +57,8 @@ function makeEl(props) {
     attrs: props.attrs || {},
     parent: props.parent || null,
     parentElement: props.parent || null,
+    previousElementSibling: props.previous || null,
+    nextSibling: props.next || null,
     textContent: props.text || '',
     id: props.id || '',
     className: props.className || '',
@@ -62,6 +66,8 @@ function makeEl(props) {
     formAction: props.formAction,
     action: props.action,
     target: props.target || '',
+    form: props.form || null,
+    disabled: !!props.disabled,
     duration: props.duration,
     currentTime: props.currentTime || 0,
     style: Object.assign({
@@ -131,6 +137,8 @@ function build(opts) {
   const nativeOpen = function (u) {
     const initial = String(u == null ? 'about:blank' : u);
     state.opened.push(initial);
+    /* The browser's own popup blocker, once the click's one popup has been spent. */
+    if (opts.popupsRefused) return null;
     let popupHref = initial;
     const popupLocation = {
       assign(v) { this.href = v; },
@@ -315,6 +323,16 @@ function build(opts) {
     setHref(u) { loc.href = u; },
     submit(form) { sandbox.HTMLFormElement.prototype.submit.call(form); },
     lastEmit() { return state.emits[state.emits.length - 1] || null; },
+    engineEvent(type, seq, overrides, deliver = true) {
+      const authRegion = SRC.slice(SRC.indexOf('/* AUTH-BEGIN'), SRC.indexOf('/* AUTH-END'));
+      const auth = vm.runInNewContext('(function(){' + authRegion + ';return __woAuth;})()');
+      const d = { token: api.link.token, src: 'engine', type, eseq: seq, detail: { action: 'resume' } };
+      d.emac = auth.hmac(auth.key(api.link.key), auth.eventText(d.src, seq, type, d.detail));
+      Object.assign(d, overrides);
+      if (deliver) dispatchDoc('wo-event', d);
+      return d;
+    },
+    deliverEngine(detail) { dispatchDoc('wo-event', detail); },
     handshake(config) {
       if (!api.link) {
         const body = sandbox.document.body, root = sandbox.document.documentElement;
@@ -583,9 +601,21 @@ for (const [name, pressed, popup, allowed] of [
 for (const [name, options, eligible] of [
   ['GameDrive download', { hostname: 'gamedrive.org' }, true],
   ['other site download', { hostname: 'files.example' }, true],
+  ['Click Here below download heading', { text: 'Click Here', heading: 'DOWNLOAD LINKS' }, true],
+  ['Click Here below mirror heading', { text: 'Click Here', heading: 'Download mirrors:' }, true],
+  ['Click Here outside downloads', { text: 'Click Here' }, false],
+  ['ordinary link below download heading', { text: 'Read article', heading: 'DOWNLOAD LINKS' }, false],
+  ['Click Here below unrelated heading', { text: 'Click Here', heading: 'Latest news' }, false],
+  ['accessible download label', { text: 'Click Here', ariaLabel: 'Download file' }, true],
+  ['literal file-host link with an adjacent archive name', { text: 'https://vikingfile.com/f/vE7SETC7Nf',
+    url: 'https://vikingfile.com/f/vE7SETC7Nf', filename: '1551360.B19909478-Games4U.Org.part1.rar' }, true],
+  ['an adjacent name does not authorize a mislabeled URL', { text: 'https://vikingfile.com/f/vE7SETC7Nf',
+    filename: '1551360.B19909478-Games4U.Org.part1.rar' }, false],
+  ['ordinary adjacent prose', { text: 'https://vikingfile.com/f/vE7SETC7Nf',
+    url: 'https://vikingfile.com/f/vE7SETC7Nf', filename: 'Read this article' }, false],
   ['ordinary link', { text: 'Read article' }, false],
-  ['same-site link', { url: 'https://gamedrive.org/download' }, false],
-  ['same-tab link', { target: '_self' }, false],
+  ['same-site link', { url: 'https://gamedrive.org/download' }, true],
+  ['same-tab link', { target: '_self' }, true],
   ['hidden link', { opacity: 0 }, false],
   ['press outside link bounds', { outside: true }, false],
   ['modified click', { ctrlKey: true }, false],
@@ -598,7 +628,11 @@ for (const [name, options, eligible] of [
   const t = build({ hostname, href: 'https://' + hostname + '/game',
     config: options.allowlist ? { allowlist: [hostname] } : undefined });
   const url = options.url || 'https://link-vault.org/c/example#torrent';
-  const a = makeEl({ tag: 'a', href: url, attrs: Object.assign({ href: url }, options.download ? { download: '' } : {}),
+  const heading = options.heading ? makeEl({ tag: 'h2', text: options.heading }) : null;
+  const row = makeEl({ tag: 'p', text: 'Vikingfile (Recommended) – Click Here', previous: heading });
+  const a = makeEl({ tag: 'a', href: url, parent: row,
+    next: options.filename ? { nodeType: 3, textContent: ' ' + options.filename + '\n' } : null,
+    attrs: Object.assign({ href: url }, options.download ? { download: '' } : {}, options.ariaLabel ? { 'aria-label': options.ariaLabel } : {}),
     target: options.target || '_blank', text: options.text || 'DOWNLOAD',
     style: options.opacity === 0 ? { opacity: 0 } : {},
     rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
@@ -610,6 +644,317 @@ for (const [name, options, eligible] of [
   t.open('https://fake-downloader.example/ad');
   const hijack = t.state.navSignals.find(signal => signal.kind === 'download-hijack');
   check('T10g ' + name + ' recovery trigger', !!hijack === eligible, t.state.navSignals);
+}
+
+for (const [name, gap, interveningHeading, containerTag, eligible] of [
+  ['sixth download row', 5, false, 'DIV', true],
+  ['heading outside the sibling limit', 8, false, 'DIV', false],
+  ['a new section after downloads', 0, true, 'DIV', false],
+  ['download heading outside this article', 0, false, 'ARTICLE', false],
+]) {
+  const t = build({ hostname: 'files.example', href: 'https://files.example/game' });
+  let previous = makeEl({ tag: 'h2', text: 'DOWNLOAD LINKS' });
+  if (interveningHeading) previous = makeEl({ tag: 'h2', text: 'Other pages', previous });
+  for (let i = 0; i < gap; i++) previous = makeEl({ tag: 'p', text: 'Mirror – Click Here', previous });
+  const section = makeEl({ tag: containerTag, previous });
+  const row = makeEl({ tag: 'p', parent: section });
+  const url = 'https://link-vault.org/c/example';
+  const a = makeEl({ tag: 'a', parent: row, href: url, attrs: { href: url }, target: '_blank', text: 'Click Here',
+    rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+  a.isConnected = true;
+  t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+  check('download section scope: ' + name,
+    t.state.navSignals.some(signal => signal.kind === 'link-press' && signal.url === url) === eligible,
+    t.state.navSignals);
+}
+
+{
+  const source = 'https://txtlink.cybar.to/views/4ss9XcQpLl';
+  const url = 'https://vikingfile.com/f/vE7SETC7Nf';
+  const fake = 'https://media-whuk.whuw8g.site/';
+  const setup = () => {
+    const t = build({ hostname: 'txtlink.cybar.to', href: source });
+    const a = makeEl({ tag: 'a', href: url, attrs: { href: url }, target: '_blank', text: url,
+      next: { nodeType: 3, textContent: ' 1551360.B19909478-Games4U.Org.part1.rar\n' },
+      rect: { left: 10, top: 10, right: 410, bottom: 40, width: 400, height: 30 } });
+    a.isConnected = true;
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 25, isTrusted: true });
+    return t;
+  };
+  const popup = setup();
+  popup.open(fake);
+  check('the supplied unrelated popup is refused before native window.open', popup.state.opened.length === 0);
+  check('the observed filename/link layout can recover the captured Vikingfile link',
+    popup.state.navSignals.some(signal => signal.kind === 'link-press' && signal.url === url)
+      && popup.state.navSignals.some(signal => signal.kind === 'download-hijack'));
+  const navigate = setup();
+  check('the supplied unrelated same-tab script navigation is cancelled before commit',
+    navigate.navigate(fake).defaultPrevented === true);
+  check('that cancellation opens only the captured host page',
+    navigate.state.opened.length === 1 && navigate.state.opened[0] === url, navigate.state.opened);
+  const gate = build({ hostname: 'txtlink.cybar.to', href: 'https://txtlink.cybar.to/gets/m7dLAKqau6' });
+  const getLink = makeEl({ tag: 'a', href: source, attrs: { href: source }, text: 'GET LINK',
+    rect: { left: 10, top: 10, right: 210, bottom: 60, width: 200, height: 50 } });
+  getLink.isConnected = true;
+  gate.fire('pointerdown', { target: getLink, button: 0, clientX: 50, clientY: 25, isTrusted: true });
+  gate.open('https://www.opera.com/computer/thanks?utm_source=PWNgames&utm_campaign=PWN_GB_HVR_9571_WEB_458');
+  check('an unrelated promoted-browser popup is refused before it gets a native tab', gate.state.opened.length === 0);
+  check('the gate\'s own link-list navigation stays available', gate.navigate(source).defaultPrevented === false);
+}
+
+for (const [name, options, eligible] of [
+  ['native button', { tag: 'button', attrs: { 'data-url': 'https://files.example/download/game' } }, true],
+  ['input button', { tag: 'input', text: '', attrs: { type: 'button', value: 'Download', 'data-href': 'https://files.example/download/game' } }, true],
+  ['ARIA button', { attrs: { role: 'button', 'data-link': 'https://files.example/download/game' } }, true],
+  ['keyboard activation', { tag: 'button', attrs: { 'data-download-url': 'https://files.example/download/game' }, keyboard: true }, true],
+  ['touch activation', { tag: 'button', attrs: { 'data-url': 'https://files.example/download/game' }, touch: true }, true],
+  ['ordinary button', { tag: 'button', text: 'Read article', attrs: { 'data-url': 'https://files.example/download/game' } }, false],
+  ['form submitter', { tag: 'button', form: {}, attrs: { 'data-url': 'https://files.example/download/game' } }, false],
+  ['disabled button', { tag: 'button', disabled: true, attrs: { 'data-url': 'https://files.example/download/game' } }, false],
+  ['invisible button', { tag: 'button', style: { opacity: 0 }, attrs: { 'data-url': 'https://files.example/download/game' } }, false],
+  ['ambiguous button destinations', { tag: 'button', attrs: { 'data-url': 'https://files.example/download/game', 'data-link': 'https://other.example/file' } }, false],
+  ['credentialed button URL', { tag: 'button', attrs: { 'data-url': 'https://user:pass@files.example/download/game' } }, false],
+  ['script-only handler', { tag: 'button', attrs: { onclick: 'location.href="https://files.example/download/game"' } }, false],
+  ['script-scheme metadata', { tag: 'button', attrs: { 'data-url': 'javascript:location.href="https://files.example/download/game"' } }, false],
+  ['oversized metadata', { tag: 'button', attrs: { 'data-url': 'https://files.example/' + 'x'.repeat(2050) } }, false],
+  ['synthetic button press', { tag: 'button', attrs: { 'data-url': 'https://files.example/download/game' }, trusted: false }, false],
+]) {
+  const t = build({ hostname: 'catalog.example', href: 'https://catalog.example/game' });
+  const control = makeEl(Object.assign({ text: 'Download',
+    rect: { left: 10, top: 10, right: 210, bottom: 60, width: 200, height: 50 } }, options));
+  control.isConnected = true;
+  t.fire(options.keyboard ? 'keydown' : options.touch ? 'touchstart' : 'pointerdown', {
+    target: control, button: options.touch || options.keyboard ? undefined : 0, key: 'Enter',
+    clientX: options.keyboard ? undefined : 50, clientY: options.keyboard ? undefined : 25, isTrusted: options.trusted !== false,
+    touches: options.touch ? [{ clientX: 50, clientY: 25 }] : undefined,
+  });
+  check('download controls: captured destination for ' + name,
+    t.state.navSignals.some(signal => signal.kind === 'link-press' && signal.url === 'https://files.example/download/game') === eligible,
+    t.state.navSignals);
+  const event = t.navigate('https://unrelated.example/offer');
+  check('download controls: early mismatch guard for ' + name, event.defaultPrevented === eligible);
+  if (eligible) check('download controls: only the captured destination reopens for ' + name,
+    t.state.opened.length === 1 && t.state.opened[0] === 'https://files.example/download/game', t.state.opened);
+}
+
+{
+  const t = build({ hostname: 'catalog.example' });
+  const control = makeEl({ tag: 'button', text: 'Download', attrs: { 'data-url': 'https://files.example/original' },
+    rect: { left: 10, top: 10, right: 210, bottom: 60, width: 200, height: 50 } });
+  control.isConnected = true;
+  const press = { target: control, button: 0, clientX: 50, clientY: 25, isTrusted: true };
+  t.fire('pointerdown', press);
+  control.attrs['data-url'] = 'https://unrelated.example/swapped';
+  t.fire('mousedown', press);
+  t.fire('click', press);
+  t.open('https://unrelated.example/swapped');
+  check('a pointer/mouse sequence retains the pre-handler button URL',
+    t.state.navSignals.filter(signal => signal.kind === 'link-press' && signal.url).every(signal => signal.url === 'https://files.example/original'));
+  check('changed button metadata cannot authorize the replacement destination', t.state.opened.length === 0);
+  check('its later script navigation is cancelled', t.navigate('https://unrelated.example/swapped').defaultPrevented === true);
+  check('recovery still opens only the first captured destination', t.state.opened.length === 1
+    && t.state.opened[0] === 'https://files.example/original', t.state.opened);
+}
+
+{
+  const makeButton = (text = 'Download') => {
+    const button = makeEl({ tag: 'button', text,
+      rect: { left: 10, top: 10, right: 210, bottom: 60, width: 200, height: 50 } });
+    button.isConnected = true;
+    return button;
+  };
+  const press = (t, text, trusted = true) => t.fire('pointerdown', {
+    target: makeButton(text), button: 0, clientX: 50, clientY: 25, isTrusted: trusted,
+  });
+  const review = t => t.state.emits.filter(event => event.type === 'blocked_gestureless_nav'
+    && event.detail.kind === 'download-destination');
+  const hostile = () => {
+    const t = build({ fakeClock: true, now: 5000000, hostname: 'catalog.example' });
+    t.open('https://ads.cfd/offer');
+    t.advanceTime(4000);
+    return t;
+  };
+  const t = hostile();
+  press(t, 'Download');
+  t.open('https://files.example/opaque');
+  check('a hidden destination on a page with a blocked hijack never gets a native popup', t.state.opened.length === 0);
+  const event = review(t)[0]?.detail;
+  check('it gets a one-time destination review', review(t).length === 1 && event.silent === false);
+  check('the review states that the destination is unverified', !!event && /not verified/i.test(event.why));
+  check('the review is signed for that exact destination', !!event && event.mac === woAuth.hmac(t.link.key,
+    'redirect-warning\n' + event.seq + '\n' + event.url + '\n' + event.why + '\n' + event.kind));
+  t.open('https://files.example/retry');
+  check('a retry cannot stack destination reviews', review(t).length === 1);
+  const direct = hostile();
+  press(direct, 'Download');
+  check('a hidden scripted destination is cancelled before navigation',
+    direct.navigate('https://files.example/opaque').defaultPrevented === true);
+  check('that navigation gets the same review', review(direct).length === 1);
+  check('a second navigation stays blocked while the first review is pending',
+    direct.navigate('https://other.example/retry').defaultPrevented === true && review(direct).length === 1);
+  const assignment = hostile();
+  press(assignment, 'Download');
+  assignment.assign('https://files.example/opaque');
+  check('direct Location hooks cannot bypass the destination review', assignment.state.assigned.length === 0 && review(assignment).length === 1);
+  assignment.assign('https://other.example/retry');
+  check('direct Location retries stay blocked without stacking reviews', assignment.state.assigned.length === 0 && review(assignment).length === 1);
+  for (const url of ['https://files.example/' + 'x'.repeat(2050), 'https://user:pass@files.example/opaque']) {
+    const invalid = hostile();
+    press(invalid, 'Download');
+    invalid.open(url);
+    check('an unreviewable hidden destination is blocked without a native popup', invalid.state.opened.length === 0, url.length);
+    check('it does not offer a shortened or credentialed Continue destination', review(invalid).length === 0);
+    check('an unreviewable scripted destination is cancelled too', invalid.navigate(url).defaultPrevented === true);
+  }
+  const revoked = hostile();
+  press(revoked, 'Download');
+  press(revoked, 'Read article');
+  revoked.open('https://files.example/opaque');
+  check('a later ordinary press revokes the hidden-download request', review(revoked).length === 0);
+  const expired = hostile();
+  press(expired, 'Download');
+  expired.advanceTime(31000);
+  expired.open('https://files.example/opaque');
+  check('a stale button press cannot create a destination review', review(expired).length === 0);
+  const delayed = hostile();
+  press(delayed, 'Download');
+  delayed.advanceTime(5000);
+  check('a countdown cannot bypass hidden-destination review', delayed.navigate('https://files.example/opaque').defaultPrevented === true
+    && review(delayed).length === 1);
+  const replaced = hostile();
+  const replacedButton = makeButton('Download');
+  replaced.fire('pointerdown', { target: replacedButton, button: 0, clientX: 50, clientY: 25, isTrusted: true });
+  replacedButton.isConnected = false;
+  replaced.advanceTime(5000);
+  check('removing the pressed button during a countdown cannot bypass review',
+    replaced.navigate('https://files.example/opaque').defaultPrevented === true && review(replaced).length === 1);
+  const fresh = build({ hostname: 'catalog.example' });
+  press(fresh, 'Download');
+  fresh.open('https://files.example/opaque');
+  check('a page without blocked-hijack evidence keeps its ordinary download button',
+    fresh.state.opened.length === 1 && review(fresh).length === 0);
+  for (const [name, label, trusted, patch] of [
+    ['an ordinary control', 'Read article', true, {}],
+    ['synthetic activation', 'Download', false, {}],
+    ['sign-in context', 'Sign in to download', true, {}],
+    ['disabled master', 'Download', true, { enabled: false }],
+    ['disabled popup guard', 'Download', true, { blockForcedPopups: false }],
+    ['disabled trick guard', 'Download', true, { blockPopupTricks: false }],
+    ['paused source', 'Download', true, { allowlist: ['catalog.example'] }],
+  ]) {
+    const c = hostile();
+    c.handshake(patch);
+    press(c, label, trusted);
+    c.open('https://files.example/opaque');
+    check('hidden destination review compatibility: ' + name, review(c).length === 0);
+  }
+}
+
+// T10h: SteamRIP's DOWNLOAD HERE to FileDitch (2026-10-31). The ad took the click, WardenOne refused the
+// ad, and nothing opened. Every refusal path asks the worker to reopen the pressed link.
+{
+  const setup = (extra) => {
+    const t = build(Object.assign({ hostname: 'steamrip.com', href: 'https://steamrip.com/game' }, extra));
+    const url = 'https://fileditchfiles.st/balpha5/677b/Game.rar';
+    const a = makeEl({ tag: 'a', href: url, attrs: { href: url }, target: '_blank', text: 'DOWNLOAD HERE',
+      rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+    a.isConnected = true;
+    return { t, a, url };
+  };
+  const hijacks = (t) => t.state.navSignals.filter(signal => signal.kind === 'download-hijack').length;
+  {
+    const { t, a, url } = setup();
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+    a.href = a.attrs.href = 'https://fake-download.example/get';
+    const event = t.fire('click', { target: a, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+    check('a swapped new-tab download is cancelled before native navigation', event.defaultPrevented === true);
+    check('only its captured original URL is opened', t.state.opened.length === 1 && t.state.opened[0] === url, t.state.opened);
+  }
+  {
+    const { t, a, url } = setup();
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+    const event = t.navigate('https://fake-download.example/get');
+    check('a download press cannot send the source tab to a different destination', event.defaultPrevented === true);
+    check('that cancellation restores the original URL inside the gesture', t.state.opened.length === 1 && t.state.opened[0] === url, t.state.opened);
+    check('recovery severs the new tab\'s opener', t.state.handles[0]?.opener === null);
+    check('a retry of the unwanted navigation is cancelled too', t.navigate('https://fake-download.example/retry').defaultPrevented === true);
+    check('retries cannot open duplicate download tabs', t.state.opened.length === 1, t.state.opened);
+  }
+  for (const [name, destination, options, extra, blocked] of [
+    ['the pressed destination', 'https://fileditchfiles.st/balpha5/677b/Game.rar', {}, {}, false],
+    ['the source site', 'https://steamrip.com/other', {}, {}, false],
+    ['a real native link navigation', 'https://other.example/get', {}, { userInitiated: true }, false],
+    ['a form submission', 'https://other.example/get', {}, { formData: {} }, false],
+    ['back and forward', 'https://other.example/get', {}, { navigationType: 'traverse' }, false],
+    ['a reload', 'https://other.example/get', {}, { navigationType: 'reload' }, false],
+    ['a same-document change', 'https://other.example/get', {}, { destination: { url: 'https://other.example/get', sameDocument: true } }, false],
+    ['a non-cancellable navigation', 'https://other.example/get', {}, { cancelable: false }, false],
+    ['an explicit download event', 'https://other.example/get', {}, { downloadRequest: 'Game.rar' }, false],
+    ['a sign-in flow', 'https://accounts.google.com/o/oauth2/auth', {}, {}, false],
+    ['the master switch', 'https://other.example/get', { config: { enabled: false } }, {}, false],
+    ['the redirect switch', 'https://other.example/get', { config: { blockGesturelessNav: false } }, {}, false],
+    ['the popup-trick switch', 'https://other.example/get', { config: { blockPopupTricks: false } }, {}, false],
+    ['a paused source', 'https://other.example/get', { config: { allowlist: ['steamrip.com'] } }, {}, false],
+  ]) {
+    const { t, a } = setup(options);
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50, isTrusted: true });
+    check('download navigation compatibility: ' + name, t.navigate(destination, extra).defaultPrevented === blocked);
+  }
+  {
+    const { t, a } = setup();
+    t.sandbox.__wardenOnePopupMatchers.register('scriptlet:nowoif', (u) => /trip\.example/.test(u) ? 'ad popup' : null);
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50 });
+    t.open('https://trip.example/?Allianceid=1&SID=2');
+    check('T10h a popup the ad lists refuse after the press reopens the pressed download', hijacks(t) === 1, t.state.navSignals);
+  }
+  {
+    /* Cancelling the click means nothing else will open the download, so it opens here, inside the click:
+       a tab the worker opens instead carries no Sec-Fetch-User and arrives at the host's home page. */
+    const { t, a, url } = setup();
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50 });
+    a.href = 'https://ads.example/i.ashx?a=1840&c=8332&clickid=1';
+    a.attrs.href = a.href;
+    const ev = t.fire('click', { target: a, button: 0, clientX: 50, clientY: 50 });
+    check('T10h the link swapped to an ad between press and click is cancelled', ev.defaultPrevented === true, ev);
+    check('T10h and the download pressed before the swap opens inside that click', t.state.opened.includes(url), t.state.opened);
+    check('T10h not the address the page swapped in', !t.state.opened.some(u => /ads\.example/.test(u)), t.state.opened);
+    check('T10h so the worker is not asked to reopen it as well', hijacks(t) === 0, t.state.navSignals);
+  }
+  {
+    const { t, a } = setup({ popupsRefused: true });
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50 });
+    a.href = 'https://ads.example/i.ashx?a=1840&c=8332&clickid=1';
+    a.attrs.href = a.href;
+    t.fire('click', { target: a, button: 0, clientX: 50, clientY: 50 });
+    check('T10h when the browser refuses that tab, the worker is asked instead', hijacks(t) === 1, t.state.navSignals);
+  }
+  {
+    const { t, a } = setup();
+    a.href = 'https://ads.example/i.ashx?a=1840&c=8332&clickid=1';
+    a.attrs.href = a.href;
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50 });
+    t.fire('click', { target: a, button: 0, clientX: 50, clientY: 50 });
+    t.open('https://ads.example/i.ashx?a=1840&c=8332&clickid=1');
+    check('T10h a link that already pointed at the ad when pressed asks for nothing', hijacks(t) === 0, t.state.navSignals);
+  }
+  {
+    const { t, a } = setup();
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50 });
+    t.open('https://files.fileditchfiles.st/mirror');
+    check('T10h a popup to the pressed link\'s own site asks for nothing', hijacks(t) === 0, t.state.navSignals);
+  }
+  {
+    /* The bridge drops a link press whose host is not the URL's exact hostname, so a www. link never armed. */
+    const t = build({ hostname: 'steamrip.com', href: 'https://steamrip.com/game' });
+    const url = 'https://www.mediafire.com/file/abc/Game.rar';
+    const a = makeEl({ tag: 'a', href: url, attrs: { href: url }, target: '_blank', text: 'DOWNLOAD HERE',
+      rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+    a.isConnected = true;
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50 });
+    const press = t.state.navSignals.find(signal => signal.kind === 'link-press');
+    check('T10h a download link on a subdomain names the hostname the bridge checks',
+      press && press.url === url && press.host === 'www.mediafire.com', press);
+  }
 }
 
 // A real content link supplies its own site to the browser popup backstop.
@@ -947,9 +1292,9 @@ const MONETAG = 'https://dadgah.org/4/52106d0b?refer=https%3A%2F%2Fplaymogo.com%
   /* The top frame, a page with no player, and the switch. */
   const top = build({ hostname: 'playmogo.com', videoRects: [VIDEO_RECT] });
   top.userClick(top.videos[0], 500, 280);
-  /* The top frame carries the guard against a child player moving it, and the tab-under guard. */
   check('T13p the child-frame guard never judges the top frame\'s own navigations',
-    top.navListeners.length === 2 && top.navigate(HOP).defaultPrevented === false, top.navListeners.length);
+    !top.navListeners.some(listener => listener.name === 'guardPlayerFrameNavigation')
+      && top.navigate(HOP).defaultPrevented === false);
   const noPlayer = build({ framed: true, hostname: 'example-news.com' });
   noPlayer.userClick(makeEl({}), 500, 280);
   check('T13p a frame with no player is not judged', noPlayer.navigate(HOP).defaultPrevented === false);
@@ -1978,6 +2323,51 @@ function unguardedChild() {
   child.HTMLElement.prototype.click.call(link);
   child.EventTarget.prototype.dispatchEvent.call(link, { type: 'click' });
   check('T48f a detached link clicked through an unguarded child realm is refused, both ways', clicked.length === 0, clicked.length);
+}
+
+{
+  const t = build();
+  t.handshake({ enabled: true, detectRedirectChains: true, blockPopupTricks: false, blockForcedPopups: false, strictPopupShield: false, blockGesturelessNav: false });
+  t.engineEvent('blocked_redirect_chain', 1);
+  t.open('https://videosite.com/another-hop');
+  t.open('about:blank');
+  t.open('https://external.example/fake');
+  check('T49 a signed engine chain stop blocks popup escapes independently of popup settings', t.state.opened.length === 0);
+  t.engineEvent('allowed_redirect_chain', 2, { emac: '0'.repeat(64) });
+  t.engineEvent('allowed_redirect_chain', 2, { src: 'bridge' });
+  t.open('https://external.example/forged-release');
+  check('T49b forged releases cannot clear the chain stop', t.state.opened.length === 0);
+  t.engineEvent('allowed_redirect_chain', 2);
+  t.open('https://external.example/explicit-resume');
+  check('T49c a signed explicit resume releases the chain popup stop', t.state.opened.length === 1);
+  t.engineEvent('blocked_redirect_chain', 1);
+  t.open('https://external.example/replayed-block');
+  check('T49d replaying an older engine event cannot change the stop state', t.state.opened.length === 2);
+  const changing = t.engineEvent('blocked_redirect_chain', 3, undefined, false);
+  let reads = 0;
+  Object.defineProperty(changing, 'type', { get() { return ++reads <= 2 ? 'blocked_redirect_chain' : 'allowed_redirect_chain'; } });
+  t.deliverEngine(changing);
+  t.open('https://external.example/changing-event');
+  check('T49h event accessors cannot change a verified block into a release', t.state.opened.length === 2);
+}
+for (const setting of ['enabled', 'detectRedirectChains']) {
+  const t = build();
+  t.handshake({ enabled: true, detectRedirectChains: true, blockPopupTricks: false, blockForcedPopups: false, strictPopupShield: false });
+  t.engineEvent('blocked_redirect_chain', 1);
+  t.handshake({ enabled: true, detectRedirectChains: true, blockPopupTricks: false, blockForcedPopups: false, strictPopupShield: false, [setting]: false });
+  t.open('https://external.example/paused');
+  check('T49e chain popup enforcement respects disabled ' + setting, t.state.opened.length === 1);
+}
+{
+  const t = build();
+  t.handshake({ enabled: true, detectRedirectChains: true, blockPopupTricks: false, blockForcedPopups: false, strictPopupShield: false });
+  t.engineEvent('blocked_redirect_chain', 1);
+  const link = makeEl({ tag: 'a', attrs: { href: 'https://videosite.com/fake', target: '_blank', download: 'fake.zip' } });
+  link.href = link.attrs.href;
+  const synthetic = t.fire('click', { target: link, isTrusted: false });
+  const native = t.userClick(link);
+  check('T49f synthetic same-site download anchors cannot escape the chain stop', synthetic.defaultPrevented);
+  check('T49g genuine native destination links remain usable', !native.defaultPrevented);
 }
 
 console.log('');

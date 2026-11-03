@@ -32,6 +32,7 @@ async function run() {
     URL, console, setTimeout,
     SECURITY_RESOURCE_TYPES: resourceTypes.resolve('SECURITY_RESOURCE_TYPES', background),
     RESOURCE_TYPES: resourceTypes.resolve('RESOURCE_TYPES', background),
+    LIST_RESOURCE_TYPES: resourceTypes.resolve('LIST_RESOURCE_TYPES', background),
     LOGIN_COMPAT_RESOURCE_TYPES: resourceTypes.resolve('LOGIN_COMPAT_RESOURCE_TYPES', background),
     getDynamicRulesInBand: async () => clone(state.rules),
     writeDynamicRules: async ({ removeRuleIds, addRules }) => {
@@ -65,7 +66,7 @@ async function run() {
     + 'miner:addMinerDomains,packaged:packagedGrabberDomainsFrom};', box);
   const api = box.api;
   const hosts = ['raw.githubusercontent.com', 'objects.githubusercontent.com', 'github.com',
-    'github-cloud.s3.amazonaws.com', 'accounts.google.com', 'login.live.com', 'youtube.com', 'realfraud.test'];
+    'github-cloud.s3.amazonaws.com', 'accounts.google.com', 'login.live.com', 'youtube.com', 'realfraud.feed-fixture.net'];
   for (const text of [hosts.join('\n'), hosts.map(host => '0.0.0.0 ' + host).join('\n'),
     hosts.map(host => '||' + host + '^').join('\n'), JSON.stringify({ blocklist: hosts })]) {
     assert.deepEqual(clone(api.parse(text)), hosts);
@@ -87,8 +88,8 @@ async function run() {
       assert.equal(rule.action.type, 'block');
       if (kind === 'security') assert.equal(rule.priority, 3000);
     }
-    assert(api.allowed('realfraud.test', '', kind));
-    assert(api.allowed('github.com.attacker.test', '', kind));
+    assert(api.allowed('realfraud.feed-fixture.net', '', kind));
+    assert(api.allowed('github.com.attacker.feed-fixture.net', '', kind));
   }
   for (const build of [api.grabber, api.miner]) {
     const target = new Set();
@@ -117,7 +118,7 @@ async function run() {
     assert(allowance.priority > api.domain('raw.githubusercontent.com', 100000, 'adshield').priority);
   }
   const core = lift('updateRemoteListsCore');
-  assert(core.includes("remoteListBlockAllowed(d, '', sourceKind)"));
+  assert(core.includes("remoteListBlockAllowed(d, '', sourceKind, result.url)"));
   assert(core.includes("r.action.type !== 'allow' && !remoteListBlockAllowed(patternHost, pattern, sourceKind)"));
   await api.login(false);
   assert.equal(state.session.length, 0);

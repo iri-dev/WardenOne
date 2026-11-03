@@ -149,6 +149,17 @@ function realm(local) {
 const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
 
 (async () => {
+  for (const value of ['light', 'dark', 'system', undefined, 'invalid', {}]) {
+    const saved = store(); saved.wardenone_theme = value;
+    const r = realm(saved), appearance = await r.request('a.com', ['appearance']);
+    check('appearance is a bounded preference: ' + JSON.stringify(value),
+      appearance.appearance === (['light', 'dark', 'system'].includes(value) ? value : 'light')
+        && Object.keys(appearance.overrides).length === 0 && Object.keys(appearance.learned).length === 0);
+    const child = await r.request('a.com', ['overrides', 'hidden']);
+    check('consumers that do not request appearance receive none', !Object.hasOwn(child, 'appearance'));
+    saved.wardenone_theme = 'dark'; r.api.invalidateContentConfigMemo();
+    check('invalidated appearance snapshots follow the updated preference', (await r.request('a.com', ['appearance'])).appearance === 'dark');
+  }
   {
     const saved = store();
     saved.wardenone_config.eyeShieldSites = {
@@ -271,7 +282,7 @@ const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
 
   /* ---- the wiring --------------------------------------------------------------------------- */
   check('the storage.onChanged hook clears the memo before it tells the pages to refresh',
-    /\|\| changes\.wardenone_search_junk_domains\)\) \{\s*invalidateContentConfigMemo\(\);\s*scheduleContentConfigRefresh\(\);/.test(BG));
+    /\|\| changes\.wardenone_search_junk_domains\s*\|\| changes\.wardenone_theme\)\) \{\s*invalidateContentConfigMemo\(\);\s*scheduleContentConfigRefresh\(\);/.test(BG));
   check('and the worker\'s own writes clear it before that event can arrive',
     /function localSet\(obj, writeToken\) \{[\s\S]{0,800}invalidateContentConfigMemo\(\)/.test(BG));
   check('the handler passes what the caller asked for and the top site', /await buildContentConfigSnapshot\(frameHost, contentConfigNeeds\(msg\.need\), topHost\)/.test(BG));

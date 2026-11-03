@@ -126,8 +126,8 @@ assert(antiEntry, 'anti-redirect content-script entry is missing');
 assert(antiEntry.js.indexOf('domain-utils.js') >= 0 && antiEntry.js.indexOf('domain-utils.js') < antiEntry.js.indexOf('anti-redirect.js'));
 const bridgeEntry = scripts.find((entry) => Array.isArray(entry.js) && entry.js.includes('bridge.js'));
 assert(bridgeEntry, 'bridge content-script entry is missing');
-assert.deepStrictEqual(bridgeEntry.js.slice(0, 4),
-  ['domain-utils-isolated.js', 'engine-compat.js', 'bridge.js', 'frame-image-logger.js']);
+assert.deepStrictEqual(bridgeEntry.js.slice(0, 6),
+  ['domain-utils-isolated.js', 'engine-compat.js', 'protection-event-settings.js', 'badge-controls.js', 'bridge.js', 'frame-image-logger.js']);
 assert.strictEqual(bridgeEntry.world, 'ISOLATED');
 assert.strictEqual(antiEntry.world, 'MAIN');
 

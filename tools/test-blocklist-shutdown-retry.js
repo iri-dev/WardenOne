@@ -34,7 +34,8 @@ const constants = ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'OPTION_RULE_BASE', 'OPTI
   'GRABBER_FEED_RULE_BASE', 'GRABBER_FEED_MAX', 'GRABBER_NAV_RULE_ID', 'GRABBER_MALWARE_NAV_RULE_ID',
   'TRACKER_RULE_BASE', 'TRACKER_RULE_MAX', 'USER_RULE_BASE', 'USER_RULE_MAX', 'USER_BLOCKLIST_RULE_BASE',
   'FIREWALL_RULE_BASE', 'FIREWALL_RULE_MAX', 'ADSHIELD_STATIC_RULESET_ID', 'SPOTIFY_MEDIA_RULESET_ID',
-  'TRACKERS_STATIC_RULESET_ID', 'EASYPRIVACY_STATIC_RULESET_ID', 'CNAME_STATIC_RULESET_ID'];
+  'TRACKERS_STATIC_RULESET_ID', 'EASYPRIVACY_STATIC_RULESET_ID', 'CNAME_STATIC_RULESET_ID', 'BADGER_STATIC_RULESET_ID',
+  'TRACKING_REDIRECT_RULE_BASE', 'TRACKING_REDIRECT_RULES_BUDGET'];
 const orchestrator = between('const RECONCILE_DEGRADED_KEY = ', '\nfunction searchAiCleanupActive');
 const health = between('  let enabledRulesets = null;', "  // The tab the popup is open on, asked rather than assumed (FEAT-02).");
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -80,10 +81,10 @@ function world(options = {}) {
     eyeShieldThemingActive: () => false, eyeShieldUsesBootstrap: () => false,
     eyeShieldActiveProfileHosts: () => [], eyeShieldPreloadFile: () => '',
     eyeShieldRegistrationScope: () => ({ matches: [], excludeMatches: [] }),
-    resourceSaverScriptFiles: () => [], consentRejectActive: () => false, searchSponsoredCleanupActive: () => false,
+    resourceSaverScriptFiles: () => [], consentRejectActive: () => false, searchSponsoredCleanupActive: () => false, youtubeAdCompatibilityInitiators: () => [],
     LISTENERS_NOT_REGISTERED: [],
     readFeedLoadFailures: async () => [],
-    ADSHIELD_STATIC_ACTIVE: true,
+    STATIC_RULESET_ACTIVE: Object.create(null),
     __subsystemQueues: new Map(),
     applyLearnedRules: async () => state.learnedResult,
     applyTrackerLearnerRules: async () => { if (state.trackerHold) await state.trackerHold; return state.trackerResult; },
@@ -94,7 +95,7 @@ function world(options = {}) {
   vm.createContext(box);
   vm.runInContext(constants.map(constant).join('\n') + '\n'
     + dynamicIo.prelude(background) + '\n'
-    + ['isWardenOneDynamicRuleId', 'removeWardenOneDynamicRules', 'serializeSubsystem'].map(lift).join('\n') + '\n'
+    + ['isWardenOneDynamicRuleId', 'remoteListRuleIds', 'removeWardenOneDynamicRules', 'serializeSubsystem'].map(lift).join('\n') + '\n'
     + between('let __blocklistRulesetStateKey = ', '\nconst ALL_COOKIES_BACKUP_KEY') + '\n' + orchestrator
     + '\nconst originalRefresh=refreshBlocklistRuleset;'
     + '\nrefreshBlocklistRuleset=(...args)=>serializeSubsystem("refreshBlocklistRuleset",()=>originalRefresh(...args));'
@@ -119,8 +120,9 @@ async function run() {
     w.state[failure] = 1;
     assert.equal(await w.api.blocklist({ enabled: false }), false, failure);
     assert.equal(w.api.cache(), '');
-    assert(w.api.error().includes('rejected'));
-    assert(w.state.dynamic.some(rule => rule.id === w.api.ownId));
+    assert(w.api.error().includes('rejected'), failure + ': ' + w.api.error());
+    /* The remote lists are removed by id before anything is read, so only a failed write leaves them. */
+    assert.equal(w.state.dynamic.some(rule => rule.id === w.api.ownId), failure !== 'failReads', failure);
     await w.api.blocklist({ enabled: false });
     assert(w.api.cache().startsWith('0|'));
     assert.equal(w.api.error(), '');

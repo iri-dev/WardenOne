@@ -126,7 +126,7 @@ check('bridge no longer fetches hidden rules at start-up',
 check('it still refreshes them when the reader edits the list',
   /if \(!msg \|\| msg\.kind !== 'hidden-rules-refresh'\) return;\n    bridgeLoadUserHidden\(\);/.test(BRIDGE));
 check('and applies the rules that arrive with the config',
-  /if \(Array\.isArray\(res\.hidden\) && res\.hidden\.length\) bridgeApplyUserHidden\(res\.hidden\);\n\s*(?:bridgeFrameSite = [^\n]*\n\s*)?sendConfig\(res\.overrides \|\| \{\}\);/.test(BRIDGE));
+  /if \(Array\.isArray\(res\.hidden\) && res\.hidden\.length\) bridgeApplyUserHidden\(res\.hidden\);\n\s*(?:bridgeFrameSite = [^\n]*\n\s*)?sendConfig\(Object\.assign\(\{ siteOverrides: \{\} \}, res\.overrides \|\| \{\}\)\);/.test(BRIDGE));
 check('the refresh path and the config path share one applier',
   /bridgeApplyUserHidden\(res\.inherited\);/.test(BRIDGE) && /function bridgeApplyUserHidden\(list\)/.test(BRIDGE));
 
@@ -177,21 +177,27 @@ check('the refresh path and the config path share one applier',
 {
   check('a child frame does not ask for the engine\'s host lists',
     /const BRIDGE_TOP_FRAME = window === window\.top;/.test(BRIDGE)
-    && /const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME \? \['overrides', 'learned', 'supplemental', 'hidden'\] : \['overrides', 'hidden'\];/.test(BRIDGE));
+    && /const CONTENT_CONFIG_NEED = BRIDGE_TOP_FRAME \? \['overrides', 'learned', 'supplemental', 'hidden', 'appearance'\] : \['overrides', 'hidden'\];/.test(BRIDGE));
   const SEND = between(BRIDGE, '  const sendConfig = (overrides) => {', '\n  const bridgeReplay = () => {', 'sendConfig');
-  const run = (top, hostname = 'shop.example', adultSupplement = ['adult.example']) => {
+  const run = (top, hostname = 'shop.example', adultSupplement = ['adult.example'], badge = false) => {
     const posted = [];
     const sanitized = [];
+    const configured = [];
     const ctx = {
       JSON, Object, Array, String, console,
       BRIDGE_TOP_FRAME: top,
       bridgeConfig: {}, bridgeConfigReady: false, bridgeFrameSite: 'shop.example',
+      badgeControlsPanel: badge ? { configure: value => configured.push(JSON.parse(JSON.stringify(value))), close() {} } : null,
+      badgeProtectionEvents: { eventIds: () => ['youtube_ads_removed'], pauseKeysFor: () => ['scriptletEngine'] },
+      bridgeCleanHost: value => value.replace(/^www\./, ''),
       sanitizeBridgeHostList: (list) => { sanitized.push(list); return Array.isArray(list) ? list.slice() : []; },
       bridgeSyncGoogleCleanupCss() {},
       bridgeActiveAllowlist: () => [],
-      bridgeSiteOverridesFor: () => ({}),
+      bridgeSiteOverridesFor: value => value.siteOverrides?.[hostname] || {},
       bridgeFrameNoiseAllowed: () => false,
       bridgeFrameWebGLDisabled: () => false,
+      bridgeFrameClientHintsAllowed: () => false,
+      bridgeFrameLearningAllowed: () => false,
       gateSilentPresentation() {},
       mainWorldConfigForHost: (clean) => clean,
       mergeNormalizedHostLists: (limit, ...lists) => [].concat(...lists.map((l) => l || [])),
@@ -206,8 +212,8 @@ check('the refresh path and the config path share one applier',
       CustomEvent: function CustomEvent(type) { this.type = type; },
     };
     vm.createContext(ctx);
-    vm.runInContext(SEND + '\nsendConfig({ enabled: true, adultDomainsExtra: ["own-adult.example"] });', ctx);
-    return { message: posted[0], sanitized };
+    vm.runInContext(SEND + '\nthis.sendTest=sendConfig;sendConfig({ enabled: true, adultDomainsExtra: ["own-adult.example"] });', ctx);
+    return { message: posted[0], sanitized, configured, ctx };
   };
   const child = run(false);
   check('a child frame\'s config carries no host lists, inside or beside it',
@@ -240,6 +246,19 @@ check('the refresh path and the config path share one applier',
   check('a match at the end of a large adult list reaches the engine alone',
     JSON.stringify(largeList.lists.adultDomainsExtra) === '["listed.adult.example.com"]'
     && !largeList.signedText.includes('listed.adult.example.com'), JSON.stringify(largeList.lists));
+  const badge = run(true, 'youtube.com', [], true);
+  badge.configured.length = 0;
+  badge.ctx.sendTest({ enabled: true, scriptletEngine: true, siteOverrides: {
+    'youtube.com': { scriptletEngine: false }, 'private-other.example': { scriptletEngine: false }
+  }, safeBrowsingKey: 'private-key' });
+  check('badge state keeps the global value and only its own reviewed site keys', JSON.stringify(badge.configured) === JSON.stringify([
+    { global: { enabled: true, scriptletEngine: true }, paused: ['scriptletEngine'], local: ['scriptletEngine'] }
+  ]), JSON.stringify(badge.configured));
+  check('site-resolved engine state is paused', badge.ctx.bridgeConfig.scriptletEngine === false);
+  badge.ctx.sendTest(badge.ctx.bridgeConfig);
+  check('replaying resolved config cannot turn a restorable site pause into a global pause', badge.configured.length === 1);
+  badge.ctx.sendTest({ enabled: true, scriptletEngine: true, siteOverrides: {} });
+  check('a saved restore clears the badge pause state', badge.configured[1].paused.length === 0 && badge.configured[1].global.scriptletEngine === true);
 }
 
 /* ---- 5. the click-layer sweep asks its document-level gates first ------------------- *

@@ -55,6 +55,7 @@ const GLOBALS = {
 };
 const EVENTS = {
   'wo-event': 'engine and guard findings to the bridge; routed on the public token, authority never derived from it',
+  'wo-badge-activity': 'HMAC-signed display-only totals and resolved appearance for the MAIN badge; separate from findings so display updates cannot create block records',
   'wo-nav-signal': 'navigation signals to the bridge; HMAC-signed (SEC-13)',
   'wo-key': 'the bridge hands the MAIN world its key at document_start, before any page script',
   'wo-ping': 'the bridge\'s liveness challenge; the engine answers with a signed pong',

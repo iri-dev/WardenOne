@@ -226,6 +226,7 @@ function checkContentBuild() {
   'tools/test-consent-reject.js',
   'tools/test-consent-wall.js',
   'tools/test-update-guardian.js',
+  'tools/test-list-source-breakdown.js',
   'tools/test-protection-count.js',
   'tools/test-engine-watchdog.js',
   'tools/test-file-access-guard.js',
@@ -285,6 +286,15 @@ function checkContentBuild() {
   'tools/test-permission-chain-trust.js',
   'tools/test-optional-history-permission.js',
   'tools/test-warning-dialogs.js',
+  'tools/test-redirect-chain-stop.js',
+  'tools/test-download-site-page.js',
+  'tools/test-download-site-return.js',
+  'tools/test-protection-event-settings.js',
+  'tools/test-badge-controls.js',
+  'tools/test-badge-beacon-rules.js',
+  'tools/test-badge-activity.js',
+  'tools/test-badge-rule-actions.js',
+  'tools/test-badge-menu-authority.js',
   'tools/test-phishing-false-positives.js',
   'tools/test-phishing-differential.js',
   'tools/test-phishing-path-intent.js',
@@ -313,6 +323,7 @@ function checkContentBuild() {
   'tools/test-search-result-warnings.js',
   'tools/test-link-ping-strip.js',
   'tools/test-history-url-clean.js',
+  'tools/test-link-clean-navigation.js',
   'tools/test-bounce-purge.js',
   'tools/test-media-capability-fp.js',
   'tools/test-keyboard-shortcuts.js',
@@ -342,6 +353,7 @@ function checkContentBuild() {
   'tools/test-runtime-config-lifecycle.js',
   'tools/test-network-compatibility.js',
   'tools/test-smart-script-recovery.js',
+  'tools/test-smart-script-own-zones.js',
   'tools/test-resource-saver-injection.js',
   'tools/test-script-popup-shield.js',
   'tools/test-frame-popup-backstop.js',
@@ -396,6 +408,8 @@ function checkContentBuild() {
   'tools/test-storage-inventory.js',
   'tools/test-private-network.js',
   'tools/test-remote-input-boundaries.js',
+  'tools/test-feed-domain-validation.js',
+  'tools/test-threatview-feed.js',
   'tools/test-secret-hygiene.js',
   'tools/test-history-privacy.js',
   'tools/test-privacy-data-erase.js',
@@ -424,6 +438,8 @@ function checkContentBuild() {
   'tools/test-privacy-baseline.js',
   'tools/test-cname-protection.js',
   'tools/test-cname-catalog.js',
+  'tools/test-badger-trained.js',
+  'tools/test-list-domain-rules.js',
   'tools/test-history-retention.js',
   'tools/test-listener-registration.js',
   'tools/test-logger-batch-reset.js',
@@ -440,6 +456,15 @@ function checkContentBuild() {
   'tools/test-warning-ownership.js',
   'tools/test-tracker-learner-trust.js',
   'tools/test-tracker-learner-auto.js',
+  'tools/test-tracker-runtime-learning.js',
+  'tools/test-first-party-ga.js',
+  'tools/test-tracking-redirects.js',
+  'tools/test-tracking-redirect-control.js',
+  'tools/browser-tracking-redirects.js',
+  'tools/browser-threatview-feed.js',
+  'tracking-redirects.js',
+  'tracking-redirect-page.js',
+  'tools/browser-first-party-ga.js',
   'tools/test-tracker-evidence.js',
   'tools/test-tracker-evidence-corpus.js',
   'tools/test-tracker-sketch.js',
@@ -474,6 +499,7 @@ function checkContentBuild() {
   'tools/test-search-junk-seed.js',
   'tools/test-text-scan-scheduler.js',
   'tools/test-fingerprint-realm.js',
+  'tools/test-client-hints-metadata.js',
   'tools/test-confirm-bait-linked-overlay.js',
   'tools/test-config-handshake-recovery.js',
   'tools/test-incognito-isolation.js',
@@ -582,6 +608,9 @@ function checkContentBuild() {
   'oauth-guard.js',
   'permission-chain.js',
   'redirect-warning.js',
+  'download-site-blocked.js',
+  'badge-controls.js',
+  'protection-event-settings.js',
   'ip-logger-warning.js',
   'safe-browsing-block.js',
   'yt-adblock.js',
@@ -604,6 +633,8 @@ function checkContentBuild() {
   'rules-trackers.json',
   'rules-easyprivacy.json',
   'rules-cname.json',
+  'rules-badger.json',
+  'first-party-sites.json',
   'rules-adshield.json',
   'rules-spotify-media.json',
   'malware-hashes.json',
@@ -651,6 +682,8 @@ checkCommand('cold-wake write tests', ['tools/test-cold-wake-writes.js']);
 checkCommand('dynamic-rule read tests', ['tools/test-dynamic-rule-reads.js']);
 checkCommand('redirect-chain mirror tests', ['tools/test-redirect-chain-mirror.js']);
 checkCommand('feed load safety tests', ['tools/test-feed-load-safety.js']);
+checkCommand('feed domain validation tests', ['tools/test-feed-domain-validation.js']);
+checkCommand('ThreatView feed integration tests', ['tools/test-threatview-feed.js']);
 checkCommand('feed reachability coverage', ['tools/test-feed-check-coverage.js']);
 checkCommand('navigation signal forgery tests', ['tools/test-nav-signal-forgery.js']);
 checkCommand('redirect interstitial forgery tests', ['tools/test-redirect-interstitial-forgery.js']);
@@ -694,6 +727,7 @@ checkCommand('feature page warning tests', ['tools/test-feature-page-warnings.js
 checkCommand('runtime config lifecycle tests', ['tools/test-runtime-config-lifecycle.js']);
 checkCommand('network compatibility tests', ['tools/test-network-compatibility.js']);
 checkCommand('Smart Script Shield recovery tests', ['tools/test-smart-script-recovery.js']);
+checkCommand('Smart Script Shield own CDN folder tests', ['tools/test-smart-script-own-zones.js']);
 checkCommand('site compatibility tests', ['tools/test-site-compatibility.js']);
 checkCommand('streaming compatibility tests', ['tools/test-streaming-compatibility.js']);
 checkCommand('token destination trust tests', ['tools/test-token-exfil-trust.js']);
@@ -752,6 +786,7 @@ checkCommand('engine teardown tests', ['tools/test-engine-teardown.js']);
 checkCommand('consent reject tests', ['tools/test-consent-reject.js']);
 checkCommand('consent wall tests', ['tools/test-consent-wall.js']);
 checkCommand('Update Guardian tests', ['tools/test-update-guardian.js']);
+checkCommand('blocklist source breakdown tests', ['tools/test-list-source-breakdown.js']);
 checkCommand('WardenOne build update tests', ['tools/test-build-update.js']);
 checkCommand('saved-profile config migration tests', ['tools/test-upgrade-config.js']);
 checkCommand('protection count tests', ['tools/test-protection-count.js']);
@@ -814,11 +849,18 @@ checkCommand('CNAME protection tests', ['tools/test-cname-protection.js']);
 checkCommand('tracker cookie isolation tests', ['tools/test-tracker-cookie-isolation.js']);
 checkCommand('CNAME mapping source parity', ['tools/build-cname-data.js', '--check']);
 checkCommand('CNAME catalog tests', ['tools/test-cname-catalog.js']);
+checkCommand('Privacy Badger trained list source parity', ['tools/build-badger-dnr.js', '--check']);
+checkCommand('trained tracker coverage tests', ['tools/test-badger-trained.js']);
+checkCommand('downloaded list rules', ['tools/test-list-domain-rules.js']);
 checkCommand('site-compatibility host scope tests', ['tools/test-compat-host-scope.js']);
 checkCommand('blocker durability tests', ['tools/test-blocker-durability.js']);
 checkCommand('warning ownership tests', ['tools/test-warning-ownership.js']);
 checkCommand('tracker learner trust tests', ['tools/test-tracker-learner-trust.js']);
 checkCommand('automatic tracker learning tests', ['tools/test-tracker-learner-auto.js']);
+checkCommand('trusted runtime tracker learning tests', ['tools/test-tracker-runtime-learning.js']);
+checkCommand('first-party Google Analytics rules', ['tools/test-first-party-ga.js']);
+checkCommand('tracking redirect resolution', ['tools/test-tracking-redirects.js']);
+checkCommand('tracking redirect authority', ['tools/test-tracking-redirect-control.js']);
 checkCommand('tracker network data parity', ['tools/build-tracker-network-data.js', '--check']);
 checkCommand('tracker evidence tests', ['tools/test-tracker-evidence.js']);
 checkCommand('fingerprint consistency tests', ['tools/test-fingerprint-consistency.js']);
@@ -866,6 +908,7 @@ checkCommand('cold-wake profile harness', ['tools/test-cold-wake-profile.js']);
 checkCommand('cosmetic cache lifecycle', ['tools/test-cosmetic-cache-lifecycle.js']);
 checkCommand('frame ClickFix tests', ['tools/test-frame-clickfix.js']);
 checkCommand('fingerprint realm tests', ['tools/test-fingerprint-realm.js']);
+checkCommand('Client Hints metadata tests', ['tools/test-client-hints-metadata.js']);
 checkCommand('confirm-bait linked overlay tests', ['tools/test-confirm-bait-linked-overlay.js']);
 checkCommand('config handshake recovery tests', ['tools/test-config-handshake-recovery.js']);
 checkCommand('Store asset tests', ['tools/test-store-assets.js']);
@@ -918,6 +961,15 @@ checkCommand('package completeness tests', ['tools/test-package-completeness.js'
 checkCommand('privacy disclosure contract', ['tools/test-privacy-disclosure.js']);
 checkCommand('permission-chain trust tests', ['tools/test-permission-chain-trust.js']);
 checkCommand('warning dialog tests', ['tools/test-warning-dialogs.js']);
+checkCommand('redirect chain stop tests', ['tools/test-redirect-chain-stop.js']);
+checkCommand('download site page tests', ['tools/test-download-site-page.js']);
+checkCommand('download site return tests', ['tools/test-download-site-return.js']);
+checkCommand('protection event ownership tests', ['tools/test-protection-event-settings.js']);
+checkCommand('badge protection controls tests', ['tools/test-badge-controls.js']);
+checkCommand('saved badge beacon rules tests', ['tools/test-badge-beacon-rules.js']);
+checkCommand('badge activity tests', ['tools/test-badge-activity.js']);
+checkCommand('badge rule action tests', ['tools/test-badge-rule-actions.js']);
+checkCommand('badge menu authority tests', ['tools/test-badge-menu-authority.js']);
 checkCommand('warning accessibility tests', ['tools/test-warning-accessibility.js']);
 checkCommand('phishing false-positive tests', ['tools/test-phishing-false-positives.js']);
 checkCommand('phishing differential tests', ['tools/test-phishing-differential.js']);
@@ -968,6 +1020,7 @@ checkCommand('autofill trap', ['tools/test-autofill-trap.js']);
 checkCommand('search-result warnings', ['tools/test-search-result-warnings.js']);
 checkCommand('link ping strip', ['tools/test-link-ping-strip.js']);
 checkCommand('history url clean', ['tools/test-history-url-clean.js']);
+checkCommand('link cleaning on navigation', ['tools/test-link-clean-navigation.js']);
 checkCommand('bounce purge', ['tools/test-bounce-purge.js']);
 checkCommand('media capability fingerprinting', ['tools/test-media-capability-fp.js']);
 checkCommand('keyboard shortcuts', ['tools/test-keyboard-shortcuts.js']);

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-wardenone-page="download-site-blocked">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>WardenOne — Fake download ad blocked</title>
+  <style>
+    :root{--display:"Quicksand","Nunito","Segoe UI Rounded",system-ui,sans-serif;--body:"Nunito",-apple-system,"Segoe UI",system-ui,sans-serif}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:grid;place-items:center;padding:28px 18px;background:var(--wo-page-background);color:var(--wo-text);font:15px/1.65 var(--body)}
+    main{width:min(660px,100%);overflow:hidden;border:1px solid var(--wo-line);border-radius:24px;background:var(--wo-card-gradient);box-shadow:var(--wo-shadow)}
+    .hero{padding:28px 30px;color:var(--wo-on-brand);background:linear-gradient(135deg,#6a3a86 0%,#9a55b5 50%,#d65f9a 100%)}
+    .brand{display:flex;align-items:center;gap:12px;font:800 12px var(--display);letter-spacing:.06em}
+    .mark{display:grid;place-items:center;flex:none;width:42px;height:42px;border:1px solid rgba(255,255,255,.35);border-radius:13px;background:rgba(255,255,255,.12)}
+    .mark svg{width:25px;height:25px}
+    h1{margin:20px 0 8px;font:900 clamp(28px,5vw,40px)/1.1 var(--display)}
+    .lead{margin:0;color:rgba(255,255,255,.94);font-size:16px}
+    .content{padding:24px 30px 28px}
+    .next-step{margin:0;padding:16px 18px;border:1px solid var(--wo-line);border-radius:15px;background:var(--wo-surface-wash);color:var(--wo-text)}
+    .next-step strong{display:block;margin-bottom:6px;color:var(--wo-brand-text);font-family:var(--display)}
+    .note{margin:16px 0;color:var(--wo-text-soft);font-size:13px}
+    button{min-height:44px;padding:11px 20px;border:0;border-radius:12px;background:var(--wo-control-gradient);color:var(--wo-on-brand);font:800 14px var(--display);cursor:pointer}
+    button:hover{filter:brightness(1.08)}button:disabled{opacity:.7;cursor:wait}
+    button:focus-visible{outline:3px solid var(--wo-focus);outline-offset:4px}
+    #return-status{margin:14px 0 0;color:var(--wo-text-soft);font-size:13px}#return-status:empty{margin:0}
+    @media(max-width:480px){.hero,.content{padding:23px}button{width:100%}}
+  </style>
+  <link rel="stylesheet" href="theme.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <div class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v5.5c0 4.3 3.1 7.8 7.5 9.5 4.4-1.7 7.5-5.2 7.5-9.5V6L12 3Z"/><path d="m8.5 12 2.3 2.3 4.7-4.7"/></svg></span>WARDENONE</div>
+      <h1>Fake download ad blocked</h1>
+      <p class="lead">This was an advertising page pretending to be your download.</p>
+    </section>
+    <section class="content">
+      <p class="next-step"><strong>Try the original download button again</strong>Return to the original page and click the same download button again to try opening the intended file host.</p>
+      <p class="note">WardenOne blocked <strong>whuw8g.site</strong>, a reported deceptive download network. A matching game title or “Malware Scanned” badge does not verify a file.</p>
+      <button type="button" id="back">Back to download page</button>
+      <p id="return-status" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+  <script src="download-site-blocked.js"></script>
+</body>
+</html>

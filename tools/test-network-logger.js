@@ -114,7 +114,7 @@ if (sourceRegion) {
   vm.createContext(box2);
   /* The real constants, so the map is tested against the ids actually shipped. */
   const bases = { TRACKER_COOKIE_RULE_ID: 900007, TRACKER_COOKIE_ALIAS_RULES_BUDGET: 300 };
-  for (const m of BG.matchAll(/const ([A-Z_]*RULE_BASE) = (\d+)/g)) bases[m[1]] = Number(m[2]);
+  for (const m of BG.matchAll(/const ([A-Z_]*(?:RULE|FALLBACK)_BASE) = (\d+)/g)) bases[m[1]] = Number(m[2]);
   Object.assign(box2, bases);
   box2.LOG_STATIC_RULESETS = { adshield_easylist: 'AdShield / EasyList', easyprivacy: 'EasyPrivacy' };
   vm.runInContext(sourceRegion + ';globalThis.src = logRuleSource;globalThis.canBlock = logRuleCanBlock;',
@@ -126,6 +126,8 @@ if (sourceRegion) {
   check('a blocked-site id names Blocked sites', src(bases.LEARNED_RULE_BASE + 1, '_dynamic') === 'Blocked sites');
   check('a tracker id names tracker blocking', src(bases.TRACKER_RULE_BASE + 9, '_dynamic') === 'Tracker blocking');
   check('an allowlist id names your allowlist', src(bases.ALLOWLIST_RULE_BASE, '_dynamic') === 'Your allowlist');
+  check('a skipped redirect has its own source', src(bases.TRACKING_REDIRECT_RULE_BASE, '_dynamic') === 'Tracking redirect skipped');
+  check('a redirect continuation cannot explain a block', canBlock(bases.TRACKING_REDIRECT_FALLBACK_BASE, '_session') === false);
   check('a static ruleset is named by its list', src(7, 'easyprivacy') === 'EasyPrivacy');
   check('an unknown static ruleset falls back to its id', src(7, 'something-new') === 'something-new');
   /* Ranges must not overlap into the wrong owner. */

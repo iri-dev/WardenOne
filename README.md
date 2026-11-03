@@ -103,8 +103,15 @@ Then pick **Normal** notifications or **Silent mode**. Silent mode still protect
 hides the routine pop-ups and badges. Everything's still in the Notification Centre if you want
 to look.
 
-The on-page badge shows selected page protections, such as blocked pop-ups and overlays. It does
-not count every network rule; open WardenOne's Site Dashboard in the toolbar for network blocks.
+The on-page badge opens a compact list of triggered rules, with their IDs and site-specific
+controls. Rule names open matching settings; a closed lock pauses a supported control on
+this site, including YouTube ad blocking. The open lock restores it, including after reload.
+Its count includes available browser network matches
+and fades back to a hint after its brief highlight. Observations are
+separate from blocks; Activity holds the site's history. When network counts are unavailable,
+the badge marks the count as partial rather than claiming nothing was blocked.
+Its panel and corner badge follow WardenOne's Light, Dark or System appearance choice,
+including changes made while a page is open.
 
 The final setup step links Settings and section arrangement, and has a searchable guide to every
 protection, popup control and tool. Open a group or search for something like GIFs, WebGL, Zapper
@@ -222,6 +229,18 @@ thousands of domains are stored locally and the upstream feeds cover millions.
 
 If an update fails the last working copy stays put, so there's no gap. And the update only
 downloads a public list file. Nothing about your history or the page you're on goes with it.
+
+Expand **Domains by source** beneath the popup's blocklist total to see each downloaded feed,
+built-in list and locally learned contribution. Each source shows its full domain count, with
+its contribution to the unique total underneath. Lists overlap, so their full sizes are not
+added together. Individual source counts become available after the next blocklist update.
+
+ThreatView's malicious domains join those downloaded malware lists and follow the malware
+switch and site pauses. Its **ThreatView** row shows the full accepted list size and its
+contribution after overlap. [Source and usage notes](docs/source-rights-review.md#specific-exceptions-not-a-new-outreach-campaign).
+
+**1Hosts Lite** adds ad and tracker domains through AdShield. It follows the AdShield
+switch and appears by name in the same source breakdown, with overlapping addresses counted once.
 
 ## Phishing & Look-Alike Protection
 
@@ -341,14 +360,60 @@ landing somewhere you can't see.
 
 ## Redirect, Pop-up & Back-trap Protection
 
+The Guard Active badge lists triggered rules, event IDs and their counts. A closed lock pauses the
+responsible protection for this site when there is one supported control; the open lock restores it. Reload is a
+separate action. Shared or ambiguous events open the matching Options search instead.
+Page-only exceptions say when network protection still applies. Paused rules remain in the badge
+after reload, and the popup marks affected global switches with an **Off on this site** notice
+and a restore button. YouTube applies its page-engine choice on reload to keep player requests
+and responses in the same mode. Options and popup search also accept exact IDs
+such as `cookie_blocked` and `blocked_thirdparty_cookie`.
+If an extension update disconnects an open page, the badge offers Reload to reconnect.
+Recorded beacons and tracker requests show their event ID and destination domains in the badge.
+New beacons briefly brighten the corner badge with a beacon count. Opening it shows already
+recorded details immediately; network totals and saved-rule controls load independently.
+Each beacon destination has a site-specific **Block** or **Unblock** choice and a recommendation.
+Choices persist across reloads and browser restarts; **Saved blocks** opens the firewall's Beacon
+column to review or remove them. Beacon rules cover background beacon and link-ping requests,
+while ordinary API requests stay separate. Unblocking removes this rule's block; other protections
+still apply. Recorded events stay separate from confirmed blocks, and payloads are never shown.
+On YouTube hosts, the pause also lets the player's Google ad-service requests load.
+Restoring removes those exceptions; malicious-resource rules keep their higher priority.
+
 Forced pop-ups and pop-unders. Ad tabs that open on a timer. Redirects you never clicked, CPA
 chains, meta-refresh bounces, download pages hidden behind ads, fake confirm boxes, frames that
 steal your click and send it somewhere else. They're all related but each one gets handled on its
 own.
 
-If a clearly labeled new-tab download link opens an unrelated ad tab instead, WardenOne closes
+If a clearly labeled download link opens an unrelated ad tab instead, WardenOne closes
 the ad and opens the link you pressed when the intended tab did not open on its own. It follows
 the link shown by the page; it cannot verify a file host hidden behind later redirects.
+This also covers “Click Here” links beneath a nearby Download Links or Download Mirrors heading.
+Visible URL links followed immediately by an archive filename qualify too. A recently pressed
+download link can stop a cancellable script redirect to a different site before navigation starts.
+If the page swaps a new-tab download link during the click, WardenOne cancels it and opens only
+the address captured when you pressed it. Recovery opens that host page once and removes its opener.
+This covers same-tab and same-site download links, keyboard and touch activation, and native or
+ARIA buttons that declare a URL in `data-url`, `data-href`, `data-link` or `data-download-url`.
+It does not execute a button's JavaScript to guess where it goes, and conflicting URLs remain uncertain.
+Once the intended tab opens, its redirects remain subject to normal threat checks without being
+mistaken for a separate ad tab. Following the intended link does not establish that its file is safe.
+
+When the redirect-chain detector displays its warning, supported browsers cancel the relay’s
+automatic navigation. Dismissing the warning keeps that stop active. “Resume page redirects”
+is an explicit override for the current document. Unsupported browsers show a detection warning
+without claiming that native navigation was stopped. The reported deceptive-download host
+`whuw8g.site` and its subdomains have a separate native request rule, controlled by malicious-site
+protection. The fake-ad warning offers a return to the original page or source tab and
+explains how to try the original download button again. If that source is unavailable,
+it keeps the warning open with manual instructions. These protections do not verify the
+contents of a file.
+
+After the current page has had a popup or redirect blocked, a download button that hides its
+destination requires a one-time review before a cross-site popup or cancellable script navigation
+opens it. The review shows the destination and states that neither it nor its files have been
+verified. This applies to that document; it does not label an entire site as malicious. Forms,
+sign-in flows and pages without that blocked-action evidence retain their normal behavior.
 
 Auto-skip download ads follows a continuation only after you click a visible download link and
 the gate identifies that same destination. Loading a sponsor offer does not start a download.
@@ -519,8 +584,11 @@ normal privacy cleaning because it's for emergencies, not tidying up.
 
 ### Forced Download Protection
 
-On by default, with its own toggle in Download checks. This is protection 110. It checks how a
+Off by default, with its own toggle in Download checks. Enable it explicitly to check download
+intent. This is protection 110. It checks how a
 download started, independently of Download Shield's file-safety checks, using local information.
+Upgrading from a version that enabled it automatically switches it off once. A later explicit
+opt-in is retained.
 
 Clear automatic or disguised file links are stopped before navigation, with a small **Download
 once** / **Cancel** panel. This includes an installer behind a Play button and some unrelated
@@ -532,6 +600,8 @@ Visible download links, exports, keyboard saves and Save link as remain availabl
 trusted-site pauses and this feature's site exceptions apply. When source context is missing or
 ambiguous, or a delayed action cannot be classified reliably, the intent check leaves it alone.
 Download Shield can still review it for independent safety evidence.
+Download buttons that lead to a thank-you or countdown page are supported. Each request still
+covers only one file.
 
 The browser-level check starts after Chrome creates the download. A little data may arrive first,
 and Chrome or Brave can still show a native Save As dialog. Detached links and response-only
@@ -963,8 +1033,19 @@ later.
 
 ## Tracker protection
 
-Known analytics and tracking services get blocked using built-in EasyPrivacy-style rules and fresh
-feeds. WardenOne can send the Do Not Track and Global Privacy Control signals too. Domains that only
+The default **Block trackers & ad analytics** switch also blocks recognizable Google Analytics 4
+collection hits sent through the site's own domain or a subdomain, including custom path prefixes.
+It matches the collection path and `tid=G-…` together. Ordinary endpoints on that domain and direct
+page navigation stay available. The tracker switch and **Pause on this site** control this too.
+
+Known analytics and tracking services get blocked using built-in rules and fresh feeds. The
+built-in rules carry every host rule in EasyPrivacy and Privacy Badger's pre-trained list: the
+trackers EFF's crawler saw following people across real sites. Like Privacy Badger, WardenOne
+blocks those only as third parties, leaves sister sites of one owner alone, and keeps loading
+the names Privacy Badger only strips cookies from or has fixed for particular sites. Every
+domain in the downloaded feeds is blocked as well, about 1.5 million across the ad, tracker,
+malware and phishing lists. WardenOne can send the Do Not Track and Global Privacy Control
+signals too. Domains that only
 exist to track get treated more strictly than normal cross-site services, since there's no login
 or checkout on them to protect.
 
@@ -1011,18 +1092,30 @@ up evidence on your device over time.
 **Block trackers & ad analytics** blocks known trackers by default, independently of learning.
 The **Local tracker learner** has one on/off switch and a **Learning mode** selector.
 The default, **Review suggestions**, collects repeated third-party activity. After three of
-your sites across two browser sessions it shows a suggestion under *Learned trackers*.
+your sites it can show a suggestion under *Learned trackers* in one browser session when
+WardenOne observes the tracking behavior itself. Page-only claims still need two sessions.
 These suggestions need your approval before the learner blocks their requests. Each shows its
 source, confidence and age. Browser observations matched to packaged tracker lists or the local
 CNAME mapping are marked **corroborated**; page API/path observations remain **inferred**, and
 page claims remain **unverified**. A page can influence a suggestion, including a mistaken one,
 but cannot turn it into a blocking rule.
 
-**Automatic tracker protection** is an opt-in learning mode. It checks the browser's cookie
-jar for an unpartitioned third-party cookie with `SameSite=None`, at least a month remaining
-and an ID-shaped value. Page reports cannot supply this browser-held evidence. Cookie shape
+**Automatic tracker protection** is an opt-in learning mode. It looks for an unpartitioned
+third-party cookie with `SameSite=None`, at least a month remaining and an ID-shaped value,
+either in the browser's cookie jar or in the tracker's own `Set-Cookie` response, read before
+**Block third-party cookies** removes it from tracking pixels, so learning never needs that
+protection turned off. The value is judged in memory and never kept. Page reports cannot
+supply this evidence. Cookie shape
 is a tracking heuristic, not proof of malicious intent; load-balancer, bot-check and consent
-cookies are excluded. After three sites and two browser sessions, qualifying domains get
+cookies are excluded. WardenOne also observes hidden text-canvas drawing and readback inside
+third-party frames, reads ID-shaped localStorage values in an isolated extension world, and
+checks native request URLs for IDs matching a stored cookie or an observed storage ID.
+Storage and URL IDs must match across three sites in the same browser session; a different
+partitioned ID on each site does not qualify. Canvas evidence identifies the frame that used
+the canvas, not a script host named by a page or stack trace. Third-party scripts running in
+the top page are outside this canvas learner's scope.
+
+After three independently verified sites, qualifying domains can get
 durable blocks for their third-party resources, including scripts, frames, images and data
 requests. Direct visits remain available, and known sign-in, payment and media hosts are
 excluded from automatic learning. A domain allowed on any site is not learned automatically.
@@ -1043,6 +1136,9 @@ sites you visited. Up to 10,000 decisions are kept, separately from 600 expiring
 At capacity, existing decisions are retained and new decisions pause instead of evicting
 old blocks. Cookie values are checked only in memory and never stored. Earlier cookie-only
 decisions require fresh browser evidence before becoming full resource blocks.
+Storage and URL correlation keeps at most 512 salted identifier digests and site-count sketches
+in browser-session storage. Raw IDs are never persisted. Worker suspension preserves those
+digests; closing the browser or clearing observations removes them.
 
 In review mode, **Block requests** blocks the learned domain's third-party image, beacon, XHR/fetch and
 WebTransport requests across sites. It does not block every script, frame or direct visit.
@@ -1122,12 +1218,26 @@ checkouts.
 
 ## Link hygiene
 
+When you open a link carrying click or campaign identifiers (`fbclid`, `gclid`, `msclkid`, `utm_*`
+and similar), WardenOne removes them before the request leaves your browser, so the site never
+receives them. This happens in the browser's network layer for top-level page loads, however the
+navigation started: a click, a script, a redirect that added them, or a link opened from another
+app. The link on the page is left exactly as written, and links carrying a signature, token or
+sign-in code are never changed, because removing a parameter can invalidate them.
+
+**Skip tracking redirects** opens the destination inside supported affiliate and click links
+without visiting their tracking host. It handles known Google, social and affiliate wrappers,
+including Awin, CJ, Rakuten, Skimlinks, Partnerize and eBay, when they include a clear HTTP(S)
+destination. Nested wrappers are decoded locally. The destination's signed query and embedded
+fragment survive, and it still goes through threat blocking. Opaque short links and wrappers
+that cannot safely be changed follow their normal route. Site pauses and the switch apply here too.
+
 When you copy a link the known tracking parameters and redirect wrappers get stripped off.
-Hyperlink-auditing `ping` attributes are removed before they can report your click. WardenOne also
+The redirect switch also removes hyperlink-auditing `ping` attributes before they can report your click. WardenOne also
 catches tracking parameters a page sticks straight into the address bar with `history.pushState` or
 `replaceState`. There's no click and no navigation there for a normal link cleaner to notice.
-Link-click pings and the address cleaner have separate switches in the popup, and neither one
-changes where a normal link or form goes.
+Redirect skipping and the address cleaner have separate switches in the popup. Neither one edits a
+link or form on the page; redirect skipping acts when a top-level link opens.
 
 Other optional link controls warn when a link hides a destination in a redirect parameter or behind
 a shortener. They still let you follow it. De-AMP can take you from Google's AMP copy to the
@@ -1169,11 +1279,19 @@ protection for known tracking services only. First-party, sign-in, CAPTCHA and p
 are left alone. Rewriting every header everywhere would look impressive and break a ton of sites.
 So I kept it narrow.
 
+**Reduce third-party Client Hints** also reduces JavaScript's detailed browser version, OS
+version and device model by default, in the page and supported frames. CPU architecture and
+bitness stay available so sites can select a suitable download. Turning the switch off restores
+native metadata. The broader graphics, audio, font and screen changes remain opt-in under
+**Anti-fingerprinting mode**; hosted editor and identity-provider compatibility exemptions apply.
+Workers retain their native metadata.
+
 ## Consent protection
 
 Cookie banners come in a few different shapes and one action doesn't fit them all:
 
 - WardenOne uses explicit OneTrust, Cookiebot and TrustArc controls where recognized, with a guarded generic fallback. It opens choices when needed and saves disabled optional categories while preserving required choices.
+- If a banner comes back after rejection, WardenOne rejects it again, including banners that reuse their original controls. It waits for the banner to disappear and return before reusing a clicked button, and spaces repeated choices to avoid click loops.
 - Activity distinguishes a failed action, a dispatched action with an **unverified** opt-out, and an opt-out verified in the consent manager's changed saved state. A disappearing banner alone does not establish rejection. Custom or unreadable states remain unverified.
 - If it's a consent-or-pay wall with no way to say no, and the article's already there underneath, an opt-in can lift the wall without clicking anything or saving a consent cookie. If the article never actually loaded WardenOne puts the wall back. Better than a blank page.
 - If you accepted tracking yourself, the consent and tracking cookies can get cleared after you leave and you stay signed in.
@@ -2024,7 +2142,9 @@ from the ad and security engines.
 ## Adult-site Arrival Screen
 
 An optional screen that shows up before a listed (or likely) adult site loads. So a typo or a
-redirect you didn't click doesn't put explicit content right in front of you.
+redirect you didn't click doesn't put explicit content right in front of you. It says how you got
+there: a site you opened yourself, or one a redirect brought you to. The page stays dark from its
+first moment until the screen appears, so nothing explicit flashes up while settings load.
 
 ## SafeSearch & Restricted Mode
 

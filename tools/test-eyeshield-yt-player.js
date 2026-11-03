@@ -149,6 +149,80 @@ check('the dark theme still passes its text colour',
 check('the version records the change',
   /yt-native-player-controls/.test(source) && /yt-player-keeps-own-pills/.test(source));
 
+function overlayHarness(managed) {
+  const observed = new Set();
+  const makeRoot = (host) => ({
+    host, children: [],
+    appendChild(node) { this.children.push(node); },
+    querySelector() { return this.children.find((node) => node.id === 'wardenone-eyeshield-theme') || null; },
+  });
+  const document = {
+    head: makeRoot(null),
+    createElement() { return { nodeType: 1, id: '', children: [], setAttribute() {} }; },
+  };
+  const roots = [];
+  function component(id, parentRoot = document) {
+    const host = { id, nodeType: 1, children: [], getRootNode: () => parentRoot };
+    host.shadowRoot = makeRoot(host);
+    roots.push(host.shadowRoot);
+    if (parentRoot !== document) parentRoot.children.push(host);
+    return host;
+  }
+  const site = component('youtube-controls');
+  const lookalike = component('detach-button-host-extra');
+  const hosts = [site, lookalike];
+  const overlays = [];
+  for (const id of ['detach-button-host', 'qr-host']) {
+    const host = component(id);
+    hosts.push(host);
+    overlays.push(host.shadowRoot, component('native-control', host.shadowRoot).shadowRoot);
+  }
+  const context = {
+    document, themeEls: [], foreignEls: [], themedOnce: false, themeBuiltWithoutSites: false,
+    THEME_ID: 'wardenone-eyeshield-theme',
+    rootsList: () => [document, ...roots],
+    isManagedThemeHost: () => managed,
+    needsManagedObserverHost: () => true,
+    isTwitchHost: () => false,
+    managedRemapsOwnText: () => false,
+    observeRoot: (root) => observed.add(root),
+    sheetsOfRoot: () => [],
+    buildThemeCSS: () => ':host{color:white;}',
+    managedShadowCSS: () => ':host{background:#0f0f0f;}',
+    genericRepairCSS: () => ':host{background:#16181a;}',
+    selectionCSS: () => '::selection{color:white;}',
+    themeHeader: () => 'html{background:#0f0f0f;}',
+    themeFooter: () => '',
+    eyeSites: () => ({}),
+    scheduleContrastGuard() {},
+  };
+  vm.createContext(context);
+  const themeEnd = source.indexOf('\n  }', source.indexOf('  function applyTheme(mode, roots) {')) + 4;
+  const lateStart = source.indexOf('  function themeShadowsIn(node, mode) {');
+  const lateEnd = source.indexOf('\n  }', lateStart) + 4;
+  vm.runInContext(source.slice(source.indexOf('  function removeAllThemeStyleEls() {'), themeEnd)
+    + '\n' + source.slice(lateStart, lateEnd), context);
+  return { context, document, site, lookalike, overlays, observed, hosts };
+}
+
+for (const managed of [true, false]) {
+  for (const mode of ['light', 'dark', 'ultra']) {
+    for (const phase of ['initial', 'late']) {
+      const h = overlayHarness(managed);
+      const label = [managed ? 'managed' : 'generic', mode, phase].join(' ');
+      if (phase === 'initial') h.context.applyTheme(mode);
+      else h.context.themeShadowsIn({ nodeType: 1, children: h.hosts }, mode);
+      check(label + ' themes site components', !!h.site.shadowRoot.querySelector());
+      check(label + ' does not exempt lookalike IDs', !!h.lookalike.shadowRoot.querySelector());
+      for (const root of h.overlays) {
+        check(label + ' leaves Opera overlay ' + root.host.id + ' unthemed', !root.querySelector());
+        check(label + ' does not observe Opera overlay ' + root.host.id, !h.observed.has(root));
+      }
+      if (phase === 'initial') check(label + ' still themes the document', h.document.head.children.length === 1);
+    }
+  }
+}
+
 if (failed) {
   console.error('eyeshield youtube player: ' + failed + ' failed');
   process.exit(1);

@@ -1,0 +1,11 @@
+Privacy Badger
+Copyright © 2015 Electronic Frontier Foundation and other contributors
+
+Privacy Badger as a whole is presently Licensed GPL v3 or later, though many portions
+of the code are dual-licensed under other free/open source licenses.
+
+WardenOne's rules-badger.json and first-party-sites.json are derived from Privacy Badger's data
+(src/data/seed.json, src/data/pbconfig.json, src/data/socialwidgets.json,
+src/data/surrogates.js and src/js/multiDomainFirstParties.js) at revision
+cf67bb9da012b240c6f8babcdeb45a81417f6ca8 of https://github.com/EFForg/privacybadger,
+and are distributed under the GNU General Public License v3 or later (see LICENSE).

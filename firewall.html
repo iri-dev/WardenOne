@@ -106,7 +106,7 @@
         <p>A row exists because a request actually happened. Click a cell to cycle it:
           <strong>&mdash;</strong> leaves it to WardenOne, <strong>allow</strong> forces it through every
           blocklist including malware and phishing lists, <strong>block</strong> stops it here.
-          Enable <strong>Include noop</strong> to choose values directly in Script, XHR, Frame and Media.
+          Enable <strong>Include noop</strong> to choose values directly in Script, XHR, Beacon, Frame and Media.
           <strong>Noop</strong> skips this row's All decision for that column and lets other rules decide.
           <strong>Cookie</strong> is different: the request happens without its cookies.
           <strong>Allow once</strong>, under a domain, lets it load freely until the browser closes and stores
@@ -136,6 +136,7 @@
               <th>Domain</th>
               <th class="fw-col">Script</th>
               <th class="fw-col">XHR</th>
+              <th class="fw-col">Beacon</th>
               <th class="fw-col">Frame</th>
               <th class="fw-col">Media</th>
               <th class="fw-col">Cookie</th>
@@ -151,7 +152,7 @@
       <p class="fw-note" style="margin-top:14px;">A cell showing <strong>&middot; loaded</strong> or
         <strong>&middot; blocked</strong> is telling you what happened, not what you chose &mdash; and where
         WardenOne blocked something, the row says which list decided. <strong>All</strong> covers everything,
-        including stylesheets and the request types with no column of their own. A specific column beats
+        including stylesheets and the request types with no column of their own. Beacon covers background beacon and link-ping requests, while ordinary API requests stay in XHR. A specific column beats
         <strong>All</strong>: allow everything and block scripts, and the scripts are blocked. <strong>Cookie</strong>
         strip beats an allow in the same row. A temporary allowance beats every stored firewall decision while it lasts,
         including security-list blocks. <strong>Noop</strong> creates no allowance: other rows, including parent-domain

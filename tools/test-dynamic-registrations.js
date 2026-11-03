@@ -138,8 +138,8 @@ check('Twitch media compatibility allow remains installed',
     && mediaAllowTypes.includes('media'),
   'targeted page guarding must retain the broad Twitch media allow');
 check('media compatibility refresh no longer depends on the Twitch ad-block toggle',
-  /applyMediaCompatibilityRules\(cfg\.enabled !== false\)/.test(background)
-    && /applyMediaCompatibilityRules\(on, sharedSessionRules, submitRules\), String\(on\), sessionBatch\)/.test(background)
+  /applyMediaCompatibilityRules\(cfg\.enabled !== false, undefined, undefined, cfg\)/.test(background)
+    && /applyMediaCompatibilityRules\(on, sharedSessionRules, submitRules, cfg\), JSON\.stringify\(\[on, youtubeAdCompatibilityInitiators\(cfg\)\]\), sessionBatch\)/.test(background)
     && !/applyMediaCompatibilityRules\([^\n]*twitchAdBlock/.test(background),
   'media allows and the Twitch page guard must be independently toggleable');
 

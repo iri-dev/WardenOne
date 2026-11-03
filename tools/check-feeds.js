@@ -121,7 +121,7 @@ process.on('uncaughtException', (err) => {
   console.error('\nA refused feed does not break WardenOne -- the others still load -- but the'
     + '\nblocked-domain count drops silently and the popup just says "N unreachable".'
     + '\nFor a list that is merely too big, upstream usually publishes a smaller'
-    + '\nvariant (hagezi ships .medium and .mini); WardenOne caps active domains at'
-    + '\nMAX_DYNAMIC anyway, so the giant edition buys nothing.');
+    + '\nvariant (hagezi ships .medium and .mini). Every downloaded domain is enforced,'
+    + '\nso a bigger edition costs browser memory and rule-update time.');
   process.exit(1);
 })();

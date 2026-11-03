@@ -515,10 +515,19 @@ async function main() {
   const auctionSrc = BG.slice(BG.indexOf('function adAuctionClickUrl'),
     BG.indexOf('async function maybeBlockForcedTopRedirect(details) {'));
   const adAuction = vm.runInNewContext(auctionSrc + ';adAuctionClickUrl', { URL });
-  const regional = vm.runInNewContext(auctionSrc + ';knownRegionalRedirect', { URL });
+  /* The exemption reads the brand country-site list, so the worker's copy of idn-utils.js is loaded first. */
+  const IDN = fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8');
+  const regional = vm.runInNewContext(IDN + ';' + auctionSrc + ';knownRegionalRedirect', { URL });
   for (const [source, target, expected] of [
     ['https://www.bbc.co.uk/', 'https://www.bbc.com/', true],
     ['https://bbc.co.uk/news', 'https://bbc.com/news', true],
+    // UK visitors to bbc.com are sent the other way; that raised a Redirect Check on BBC News.
+    ['https://www.bbc.com/news', 'https://www.bbc.co.uk/news', true],
+    ['https://www.google.com/', 'https://www.google.co.uk/', true],
+    ['https://www.amazon.de/', 'https://www.amazon.co.uk/', true],
+    ['https://www.bbc.com/', 'https://www.google.com/', false],
+    ['https://www.bbc.com/', 'https://www.bbc.xyz/', false],
+    ['https://www.bbc.com/', 'https://bbc.co.uk.evil.example/', false],
     ['https://www.bbc.com/', 'https://unrelated.example/', false],
     ['https://bbc.co.uk.evil.example/', 'https://bbc.com/', false],
     ['https://bbc.co.uk/', 'https://bbc.com.evil.example/', false],

@@ -49,7 +49,7 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
     querySelectorAll() { return []; },
     closest() { return null; },
     focus() {},
-    click() { clicks.push(label); },
+    click() { clicks.push(label); if (options.onClick) options.onClick(); },
   }));
 
   dialog = {
@@ -140,8 +140,9 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
       };
     },
     MutationObserver: class {
-      observe() {}
-      disconnect() {}
+      constructor(fn) { this.fn = fn; this.targets = new Set(); if (options.observers) options.observers.push(this); }
+      observe(target) { this.targets.add(target); }
+      disconnect() { this.targets.clear(); }
     },
     chrome: {
       storage: {
@@ -164,10 +165,10 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
       if (delay === 0) fn();
       return 1;
     },
-    setInterval() { return 1; },
-    clearInterval() {},
+    setInterval(fn, delay) { if (options.intervals) options.intervals.push({ fn, delay }); return 1; },
+    clearInterval(id) { if (options.clearedIntervals) options.clearedIntervals.push(id); },
     console,
-    Date,
+    Date: options.clock ? class extends Date { static now() { return options.clock.now; } } : Date,
     Set,
     WeakSet,
   };
@@ -175,6 +176,7 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
      vm sandbox does not have. One place answers for those. */
   installPlatformGlobals(context);
   vm.runInNewContext(consent, context, { filename: 'consent-reject.js' });
+  if (options.fixture) Object.assign(options.fixture, { dialog, controls, document, window });
   return clicks;
 }
 
@@ -317,6 +319,51 @@ for (const generic of [false, true]) {
   hidden.timers.find((timer) => timer.delay === 50).fn();
   check((generic ? 'obfuscated' : 'named') + ' CSS-only banner reveal still receives a fast poll',
     hiddenClicks.length === 1 && hiddenClicks[0] === 'Reject all', JSON.stringify(hiddenClicks));
+}
+
+for (const reveal of ['style', 'hidden', 'reinsert']) {
+  const options = { clock: { now: 10000 }, observers: [], timers: [], fixture: {} };
+  options.onClick = () => { options.hidden = true; };
+  const clicks = runConsentDialog('We use cookies for analytics and advertising.', ['Reject all', 'Accept all'], null, options);
+  const { dialog, document } = options.fixture;
+  const notify = records => { for (const observer of options.observers) if (observer.targets.size) observer.fn(records); };
+  check(reveal + ': first appearance rejects once', clicks.length === 1);
+  if (reveal === 'reinsert') {
+    dialog.isConnected = false;
+    notify([{ type: 'childList', target: document.body, addedNodes: [], removedNodes: [dialog] }]);
+  }
+  options.clock.now += 130000;
+  options.timers.find(timer => timer.delay === 120000).fn();
+  check(reveal + ': watcher stays available beyond initial discovery', options.observers.some(observer => observer.targets.has(document.documentElement)));
+  options.hidden = false; dialog.isConnected = true;
+  notify(reveal === 'reinsert' ? [{ type: 'childList', target: document.body, addedNodes: [dialog], removedNodes: [] }]
+    : [{ type: 'attributes', attributeName: reveal, target: dialog }]);
+  check(reveal + ': reused reject control works when the banner returns', clicks.length === 2, JSON.stringify(clicks));
+  options.clock.now += 1500; options.hidden = false;
+  notify([{ type: 'attributes', attributeName: reveal === 'reinsert' ? 'class' : reveal, target: dialog }]);
+  check(reveal + ': further appearances keep rejecting', clicks.length === 3, JSON.stringify(clicks));
+}
+{
+  const options = { clock: { now: 10000 }, generic: true, intervals: [], clearedIntervals: [] };
+  runConsentDialog('An ordinary article', ['Visit'], null, options);
+  options.clock.now += 95;
+  options.intervals.find(timer => timer.delay === 95).fn();
+  check('startup polling remains available before a delayed banner arrives', options.clearedIntervals.length === 0);
+}
+{
+  const options = { clock: { now: 10000 }, observers: [], timers: [], fixture: {}, stats: { rootWalks: 0 } };
+  const clicks = runConsentDialog('We use cookies for analytics and advertising.', ['Reject all', 'Accept all'], null, options);
+  const { dialog } = options.fixture;
+  options.clock.now += 2000;
+  for (const observer of options.observers) if (observer.targets.size) observer.fn([{ type: 'attributes', attributeName: 'class', target: dialog }]);
+  check('a continuously visible banner is not clicked repeatedly', clicks.length === 1);
+  const walks = options.stats.rootWalks;
+  for (let i = 0; i < 20; i++) for (const observer of options.observers) if (observer.targets.size) observer.fn([
+    { type: 'childList', addedNodes: [{ nodeType: 3, nodeValue: 'Ordinary article text' }] },
+  ]);
+  check('ordinary page updates do not wake full consent scans after rejection', options.stats.rootWalks === walks);
+  options.fixture.window.__wardenOneConsentRejectDispose();
+  check('disposal disconnects recurring-banner watchers', options.observers.every(observer => observer.targets.size === 0));
 }
 
 /* Which button counts as "no".

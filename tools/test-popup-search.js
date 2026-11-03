@@ -12,6 +12,9 @@ const searchBlock = source.match(/;\(function\(\)\{\r?\n  var inp=document\.getE
 assert(searchBlock, 'popup settings-search module must remain discoverable');
 assert(popupHtml.indexOf('<script src="popup-scroll-memory.js"></script>') < popupHtml.indexOf('<script src="popup-settings-search.js"></script>'),
   'settings search must load after popup memory helpers');
+assert(popupHtml.includes('<script src="protection-event-settings.js"></script>')
+  && popupHtml.indexOf('<script src="protection-event-settings.js"></script>') < popupHtml.indexOf('<script src="popup-settings-search.js"></script>'),
+  'settings search must load after its event ownership registry');
 assert(popupHtml.includes('id="js-shield"') && popupHtml.includes('WebAssembly startup'),
   'the search fixture must cover the real Script Shield section');
 
@@ -33,6 +36,10 @@ class FakeClassList {
 
   remove(name) {
     this.names.delete(name);
+  }
+
+  add(name) {
+    this.names.add(name);
   }
 }
 
@@ -91,10 +98,14 @@ class FakeElement {
     if (selector === '.row:not(.wo-hidden)') {
       return this.children.find((child) => child.classList.contains('row') && !child.classList.contains('wo-hidden')) || null;
     }
+    if (selector === '.name') return this.children.find((child) => child.classList.contains('name')) || null;
     return null;
   }
 
   querySelectorAll(selector) {
+    if (selector === '[data-key]') {
+      return this.children.flatMap((child) => (child.hasAttribute('data-key') ? [child] : []).concat(child.querySelectorAll(selector)));
+    }
     if (selector.indexOf('.eyeshield-') >= 0) return eyeSearchChildren.slice();
     if (selector === 'button') return this.children.filter((child) => child.tagName === 'BUTTON');
     return [];
@@ -148,6 +159,31 @@ const micGroup = new FakeElement({ classes: ['card-group'] });
 const micHeading = new FakeElement({ tagName: 'H2', text: 'Media Shield' });
 micGroup.previousElementSibling = micHeading;
 const micRow = micGroup.append(new FakeElement({ classes: ['row'], text: 'Block camera and microphone includes speech recognition which reaches the microphone by a different route' }));
+const cookieGroup = new FakeElement({ classes: ['card-group'] });
+const cookieThirdRow = cookieGroup.append(new FakeElement({ classes: ['row'], text: 'Block third-party cookies' }));
+cookieThirdRow.append(new FakeElement({ tagName: 'INPUT', attributes: { 'data-key': 'blockThirdPartyCookies' } }));
+const cookieAllRow = cookieGroup.append(new FakeElement({ classes: ['row'], text: 'Block all cookies' }));
+cookieAllRow.append(new FakeElement({ tagName: 'INPUT', attributes: { 'data-key': 'blockAllCookies' } }));
+
+/* Two sections that both answer "site perm", the weaker one first, as in the real popup. */
+const nameRow = (name, desc) => {
+  const row = new FakeElement({ classes: ['row'], text: name + ' ' + desc });
+  row.append(new FakeElement({ classes: ['name'], text: name }));
+  return row;
+};
+const groupsEl = new FakeElement({ id: 'groups', classes: ['group'] });
+const downloadHeading = groupsEl.append(new FakeElement({ tagName: 'H2', text: 'Download Shield' }));
+const downloadGroup = groupsEl.append(new FakeElement({ classes: ['card-group'] }));
+const trustedDownloadRow = downloadGroup.append(nameRow('Trusted download sites', 'Trusted sources are graded more gently; a permanent list.'));
+const securityHeading = groupsEl.append(new FakeElement({ tagName: 'H2', text: 'Security Centre' }));
+const securityGroup = groupsEl.append(new FakeElement({ classes: ['card-group'] }));
+const cookieHeading = groupsEl.append(new FakeElement({ tagName: 'H2', text: 'Cookie protection' }));
+groupsEl.append(cookieGroup);
+cookieGroup.previousElementSibling = cookieHeading;
+const extensionRow = securityGroup.append(nameRow('Review installed extensions', 'Checks each extension site access and permissions.'));
+const permScannerRow = securityGroup.append(nameRow('Site permission scanner', 'Scan this site, then allow, block, or ask for each permission.'));
+downloadGroup.previousElementSibling = downloadHeading;
+securityGroup.previousElementSibling = securityHeading;
 
 /* The footer under the settings list: reachable by id, as in the real popup. */
 const footerButtons = [
@@ -168,6 +204,7 @@ const byId = new Map([
   [extras.id, extras],
   [scriptGroup.id, scriptGroup],
   [tabInput.id, tabInput],
+  [groupsEl.id, groupsEl],
 ]);
 
 const document = {
@@ -179,9 +216,9 @@ const document = {
     return null;
   },
   querySelectorAll(selector) {
-    if (selector === '.row') return [rewindRow, interfaceTheme, tabRow, micRow, webAssemblyRow, trustedScriptRow];
-    if (selector === '.card-group') return [rewindGroup, interfaceGroup, tabGroup, micGroup, scriptGroup];
-    if (selector === '.group>h2, .eyeshield-panel+h2, #js-shield+h2') return [eyeHeading, interfaceHeading, scriptHeading];
+    if (selector === '.row') return [rewindRow, interfaceTheme, tabRow, micRow, cookieThirdRow, cookieAllRow, webAssemblyRow, trustedScriptRow, trustedDownloadRow, extensionRow, permScannerRow];
+    if (selector === '.card-group') return [rewindGroup, interfaceGroup, tabGroup, micGroup, cookieGroup, scriptGroup, downloadGroup, securityGroup];
+    if (selector === '.group>h2, .eyeshield-panel+h2, #js-shield+h2') return [eyeHeading, interfaceHeading, scriptHeading, downloadHeading, securityHeading, cookieHeading];
     if (selector.indexOf('.eyeshield-mode') >= 0) return eyeSearchChildren.slice();
     return [];
   },
@@ -201,6 +238,10 @@ const context = {
   restorePopupSearch() {},
   setTimeout() { return 1; },
   window: { addEventListener() {} },
+  wardenEventProtectionKeys(type) {
+    return type === 'blocked_thirdparty_cookie' ? ['blockThirdPartyCookies']
+      : type === 'cookie_blocked' ? ['blockAllCookies', 'blockThirdPartyCookies', 'blockAllCookies'] : [];
+  },
   $(id) { return document.getElementById(id); },
 };
 
@@ -295,7 +336,40 @@ for (const query of ['cookies', 'repair', 'zzzz']) {
 }
 searchInput.value = 'cookies';
 searchInput.emit('input');
-assert.strictEqual(resultCount.textContent, '0 results', 'footer buttons must not be counted as search results');
+assert.strictEqual(resultCount.textContent, '3 results', 'only the matching cookie rows and their heading count; footer buttons do not');
+
+for (const query of ['blocked_thirdparty_cookie', '  BLOCKED_THIRDPARTY_COOKIE  ']) {
+  searchInput.value = query;
+  searchInput.emit('input');
+  assert.strictEqual(resultCount.textContent, '1 result', 'an exact event ID reveals its owner once');
+  assert(!cookieThirdRow.classList.contains('wo-hidden') && cookieAllRow.classList.contains('wo-hidden'));
+  assert(micRow.classList.contains('wo-hidden') && trustedDownloadRow.classList.contains('wo-hidden'));
+}
+searchInput.value = 'cookie_blocked';
+searchInput.emit('input');
+assert.strictEqual(resultCount.textContent, '2 results', 'an event alias deduplicates its responsible controls');
+assert(!cookieAllRow.classList.contains('wo-hidden') && !cookieThirdRow.classList.contains('wo-hidden'));
+assert(Number(cookieAllRow.style.order) < Number(cookieThirdRow.style.order), 'event owners preserve their registry priority');
+searchInput.value = 'cookie_blokced';
+searchInput.emit('input');
+assert.strictEqual(resultCount.textContent, '0 results', 'unknown event IDs do not fuzzy-match other controls');
+
+/* 2026-10-31: "site perm" listed Trusted download sites first and the permission scanner further down,
+   because results kept page order. The setting whose own name starts with the words searched now leads. */
+searchInput.value = 'site perm';
+searchInput.emit('input');
+const order = (el) => Number(el.style.order);
+assert(!trustedDownloadRow.classList.contains('wo-hidden') && !permScannerRow.classList.contains('wo-hidden'), 'both sections answer');
+assert(groupsEl.classList.contains('wo-ranked'), 'sections are ranked while searching');
+assert(order(securityHeading) < order(downloadHeading) && order(securityGroup) < order(downloadGroup), 'the scanner section comes first');
+assert(order(securityHeading) < order(securityGroup), 'a section keeps its heading above its rows');
+assert(order(permScannerRow) < order(extensionRow), 'the scanner leads inside its section');
+searchInput.value = 'download';
+searchInput.emit('input');
+assert(order(downloadHeading) < order(securityHeading), 'ranking follows the query, not the last search');
+searchInput.value = '';
+searchInput.emit('input');
+assert(!groupsEl.classList.contains('wo-ranked') && groupsEl.children.every((el) => !el.style.order), 'clearing restores page order');
 
 initialMemory ={ wardenone_popup_search_memory: { q: 'WebAssembly' } };
 let restored = false;
@@ -305,5 +379,15 @@ context.restorePopupSearch(() => {
   assert(!webAssemblyRow.classList.contains('wo-hidden') && !scriptGroup.classList.contains('wo-hidden'));
 });
 assert(restored);
+
+const catalog = {};
+vm.runInNewContext(fs.readFileSync('protection-event-settings.js', 'utf8'), catalog);
+context.wardenEventProtectionKeys = catalog.wardenEventProtectionKeys;
+for (const [query, count] of [['cookie_blocked', '2 results'], ['blocked_thirdparty_cookie', '1 result']]) {
+  searchInput.value = query;
+  searchInput.emit('input');
+  assert.strictEqual(resultCount.textContent, count, query + ' follows the shipped event ownership registry');
+  assert(!cookieThirdRow.classList.contains('wo-hidden'));
+}
 
 console.log('[ok] popup settings-search grouping checks passed');

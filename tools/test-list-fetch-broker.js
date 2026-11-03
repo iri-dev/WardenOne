@@ -174,7 +174,13 @@ async function refresh(r) {
       && main.includes(adguardTracking) && ![...distinct].some((u) => new URL(u).hostname === 'filters.adtidy.org'));
     console.log('  [info] ' + asked + ' reads of ' + distinct.size + ' addresses; ' + r.state.calls.length + ' requests, peak ' + r.state.peak + ' in flight');
     check('a default refresh reads ' + asked + ' sources across three pipelines, of which ' + distinct.size + ' are distinct',
-      asked === 40 && distinct.size === 37 && distinct.size <= unique.size, asked + ' / ' + distinct.size);
+      asked === 42 && distinct.size === 39 && distinct.size <= unique.size, asked + ' / ' + distinct.size);
+    check('ThreatView is read once by the malware pipeline',
+      main.includes('https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt')
+      && r.state.calls.filter(url => url === 'https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt').length === 1);
+    check('1Hosts Lite is read once by AdShield',
+      main.includes('https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/adblock.txt')
+      && r.state.calls.filter(url => url === 'https://raw.githubusercontent.com/badmojr/1Hosts/master/Lite/adblock.txt').length === 1);
     check('and makes one request per address', r.state.calls.length === distinct.size, r.state.calls.length + ' request(s)');
     const dupes = r.state.calls.filter((u, i, a) => a.indexOf(u) !== i);
     check('no address is fetched twice', dupes.length === 0, [...new Set(dupes)].join(', '));

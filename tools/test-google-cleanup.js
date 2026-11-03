@@ -20,7 +20,7 @@ if (START < 0 || END < 0 || END <= START) {
   process.exit(1);
 }
 const SLICE = MIN.slice(START, END) +
-  ';globalThis.__t={googleCleanupSweep,googleModuleFor,inPaa,containsResults,collapseShell,googleHide,installGoogleCleanupCss,searchRememberSponsoredLinks,searchIsSponsoredUrl,searchSponsoredDestinations,GOOGLE_CLEANUP_SELECTORS,GOOGLE_AI_TARGET_SEL,BRAVE_AI_SELECTORS,BRAVE_SPONSORED_SELECTORS,SEARCH_AI_ON,SEARCH_ADS_ON};';
+  ';globalThis.__t={googleCleanupSweep,googleModuleFor,inPaa,containsResults,collapseShell,googleHide,installGoogleCleanupCss,searchMarkSponsoredModule,searchIsSponsoredUrl,GOOGLE_CLEANUP_SELECTORS,GOOGLE_AI_TARGET_SEL,BRAVE_AI_SELECTORS,BRAVE_SPONSORED_SELECTORS,SEARCH_AI_ON,SEARCH_ADS_ON};';
 
 /* ------------------------------------------------------------------ *
  * Minimal fake DOM.
@@ -54,6 +54,7 @@ class E {
   constructor(tag, props) {
     props = props || {};
     this.tagName = String(tag).toUpperCase();
+    this.nodeType = 1;
     this.id = props.id || '';
     this.className = props.className || '';
     this.attrs = Object.assign({}, props.attrs || {});
@@ -197,6 +198,8 @@ function applyCssEmulation(doc, t) {
 
 function makeContext(doc, w, h, opts) {
   opts = opts || {};
+  const listeners = {};
+  doc.addEventListener = function () {};
   const host = opts.host || 'www.google.com';
   const path = opts.path || '/search';
   const wo = Object.assign({
@@ -214,9 +217,16 @@ function makeContext(doc, w, h, opts) {
     isGoogleSearchResults: function () { return /(^|\.)google\.[a-z.]+$/i.test(host) && /^\/(search|webhp)?$/i.test(path || '/'); },
     isBraveSearchResults: function () { return host === 'search.brave.com' && path === '/search'; },
     log: function () {},
+    woOn(target, type, callback) { if (target === doc) listeners[type] = callback; },
   });
   vm.runInContext(SLICE, ctx);
-  return ctx.__t;
+  const api = ctx.__t;
+  api.click = (target, type = 'click') => {
+    let prevented = false;
+    listeners[type]?.({ target, preventDefault() { prevented = true; }, stopPropagation() {}, stopImmediatePropagation() {} });
+    return prevented;
+  };
+  return api;
 }
 
 /* ------------------------------------------------------------------ *
@@ -606,8 +616,8 @@ function runFeature(doc, t, w, h) {
 }
 
 /* ================================================================== *
- * S12 -- sponsored-site blocking: hidden ad modules record advertiser
- * destinations and ad-click wrappers are classified as sponsored.
+ * S12 -- sponsored placements and ad-click wrappers stay blocked while
+ * ordinary links to the same advertiser remain usable.
  * ================================================================== */
 {
   const adLink = new E('a', { attrs: { href: 'https://sponsor.example/landing?utm_source=google' }, text: 'Sponsored destination', rect: { width: 420, height: 24 } });
@@ -624,9 +634,39 @@ function runFeature(doc, t, w, h) {
   runFeature(s.doc, t);
 
   check('S12 sponsored module hidden', gone(sponsored), sponsored._style);
-  check('S12 direct advertiser destination is blocked', t.searchIsSponsoredUrl('https://sponsor.example/landing'));
+  check('S12 a destination alone is not evidence of an ad', !t.searchIsSponsoredUrl('https://sponsor.example/landing'));
+  check('S12 the actual sponsored placement still blocks direct clicks', t.click(adLink) && t.click(adLink, 'auxclick'));
   check('S12 Google ad-click wrapper is blocked', t.searchIsSponsoredUrl('/aclk?sa=L&adurl=https%3A%2F%2Fwrapped-sponsor.example%2Fdeal'));
   check('S12 unlisted organic destination is not blocked', !t.searchIsSponsoredUrl('https://organic.example/article'));
+}
+
+for (const [host, attrs, wrapper] of [
+  ['www.google.com', { 'data-google-query-id': 'adquery' }, '/aclk?adurl=https%3A%2F%2Fantigravity.google%2Fdownload%2F'],
+  ['search.brave.com', { 'data-testid': 'ad-result' }, '/a?url=https%3A%2F%2Fantigravity.google%2Fdownload%2F'],
+]) {
+  const destination = 'https://antigravity.google/product/antigravity-2/';
+  const adLink = new E('a', { attrs: { href: destination }, text: 'Advertiser link' });
+  const ad = new E('div', { attrs }).append(adLink);
+  const direct = new E('a', { attrs: { href: destination }, text: 'Antigravity App' });
+  const alternate = new E('a', { attrs: { href: 'https://docs.antigravity.google/start' }, text: 'Documentation' });
+  const adClick = new E('a', { attrs: { href: wrapper }, text: 'Ad redirect' });
+  const organic = new E('div', { className: 'MjjYud' }).append(new E('h3', { text: 'Antigravity App' }), direct, alternate, adClick);
+  const s = scaffold([ad, organic].concat(organicResults()));
+  const t = makeContext(s.doc, null, null, { host, ai: false, ads: true });
+  runFeature(s.doc, t);
+  check(host + ' hides the sponsored placement', gone(ad));
+  for (const type of ['click', 'auxclick']) {
+    check(host + ' blocks the placement via ' + type, t.click(adLink, type));
+    check(host + ' blocks an ad-click URL outside the placement via ' + type, t.click(adClick, type));
+    check(host + ' allows the organic Antigravity result via ' + type, !t.click(direct, type));
+    check(host + ' allows another organic subdomain via ' + type, !t.click(alternate, type));
+  }
+  ad.attrs = {}; ad.className = '';
+  t.searchMarkSponsoredModule(ad);
+  check(host + ' keeps its own ad marker after provider attributes change', t.click(adLink));
+  const off = makeContext(s.doc, null, null, { host, ai: false, ads: false });
+  runFeature(s.doc, off);
+  check(host + ' respects the sponsored-result switch', !off.click(adClick) && !off.searchIsSponsoredUrl(wrapper));
 }
 
 console.log('');

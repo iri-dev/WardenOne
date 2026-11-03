@@ -1,6 +1,6 @@
 # WardenOne — Privacy Policy
 
-**Last updated: October 27, 2026**
+**Last updated: November 1, 2026**
 
 WardenOne is a browser security extension that protects you against phishing, malware
 downloads, redirect chains, IP grabbers, trackers, token theft, bad certificates, and
@@ -35,10 +35,26 @@ unclear, contact us (see **Contact** below).
   then records the same counts described below.
   Qualifying domains receive durable third-party resource blocks. The check makes no external
   lookup and automatic learning is disabled in private windows.
+- The local learner can also observe hidden text-canvas readback in third-party frames and
+  read up to eight ID-shaped localStorage values from a loaded third-party frame in an isolated
+  extension world. Native URL-ID evidence must match an identifying cookie or an observed
+  storage value. Matching storage/URL identifiers are correlated on three sites within one
+  browser session using at most 512 salted SHA-256 digests and site sketches in
+  `storage.session`. Raw values and full request URLs are never persisted or sent anywhere.
+  Closing the browser or clearing observations removes this correlation; worker suspension
+  preserves it. Canvas observations contain no pixels, text or page-selected script addresses.
+  Review mode requires approval; automatic decisions remain opt-in.
 - Consent verification reads only the recognized consent manager's saved cookie
   after an opt-out action. Cookie values stay out of Activity; it records the
   manager, action, outcome and evidence type. Pending verification is canceled
   by pause, disposal or clearing history. Verification adds no external lookup.
+- Tracking redirect skipping decodes supported links on your device without asking a
+  link-resolution service or contacting the tracking host. A local extension page briefly
+  holds the original link in its fragment and replaces itself with the destination.
+  Signed or ambiguous wrappers that must continue normally can receive a temporary,
+  tab-scoped permission for that host's top-level GET navigation, limited to the exact
+  URL when the browser supports its expression. Expiry is scheduled after 30 seconds or on
+  navigation or tab closure. This adds no persistent URL records.
 - Privacy signals expose GPC to page scripts and send GPC/DNT headers. Turning
   the feature off restores the browser's own preference. Site exceptions follow
   each document's hostname, including embedded documents.
@@ -105,6 +121,13 @@ account by WardenOne, and is **not** uploaded to us:
   longer does. The related redirect-chain memory, used to explain a download that arrived
   through a chain, keeps only counts, the sites crossed and a fingerprint of the final
   address — not the address — for ten minutes.
+- **Returning from a blocked download ad.** WardenOne keeps browser-provided source tab
+  IDs and, when a reported download-ad destination is attempted, the source page address
+  needed by the Back button. Memory-only session storage holds a maximum of 100 records.
+  Records stop being usable after 30 minutes and are pruned when return metadata is next
+  updated. Closing the warning tab, completing the return or closing the browser removes
+  its record. Source addresses are not put into the public warning URL or returned to
+  the warning page.
 - Download-review records for the Download Guard: the file name, the grade and its reasons,
   and the source address in the same form the activity log keeps — scheme, host and a path
   with token-shaped parts starred, without the query string or fragment — for up to two hours,
@@ -125,9 +148,11 @@ account by WardenOne, and is **not** uploaded to us:
   faster and work offline.
 - **Two records that touch where you have been, kept as small as their job allows.**
   The tracker learner notices a third-party domain following you around, and to decide
-  whether to suggest a block, or automatically block it when the opt-in mode has browser-held
-  cookie evidence, it needs to know that the domain appeared on three different
-  sites of yours in two different browser sessions. That is all it keeps: per tracker
+  whether to suggest a block, or automatically block it when the opt-in mode has seen it set an
+  identifying cookie (judged in memory as the browser receives it; the value is never kept),
+  it needs to know that the domain appeared on three different
+  sites of yours. WardenOne's own verified observations can qualify in one browser session;
+  page-only suggestions still need two. That is all it keeps durably: per tracker
   domain, a count of sites (never their names) and a 128-bit sketch keyed to your install
   that can only answer "was this site already counted?" — held while the domain is still
   gathering its three sites and dropped the moment it is proposed or decided — plus a count
@@ -223,10 +248,10 @@ files — **your browsing history is not sent**; the list host only sees the nor
 request (including your IP address, as with any website you load). No personal data is
 attached.
 
-Those downloads reach seven hosts, and this is all of them:
+Those downloads reach eight hosts, and this is all of them:
 `raw.githubusercontent.com`, `easylist.to`,
 `easylist-downloads.adblockplus.org`, `phishing.army`, `malware-filter.gitlab.io`,
-`pgl.yoyo.org` and `ublockorigin.github.io`. An earlier version of this policy named four
+`pgl.yoyo.org`, `ublockorigin.github.io` and `threatview.io`. An earlier version of this policy named four
 of them behind a "for example", which is not a disclosure. Every individual list, its
 maintainer and its exact URL are published in
 [`docs/source-inventory.json`](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json), which is **generated from the
@@ -254,10 +279,11 @@ also turned on the VirusTotal hash lookup described below.
 
 Update Guardian asks your browser maker for its current public Stable release when you
 open the popup or press **Check again**. Brave uses `versions.brave.com` and
-`brave.com`; Chrome uses `versionhistory.googleapis.com`; Edge uses
+`brave.com`, with Brave's official release metadata on `api.github.com` as a fallback
+when the notes do not identify the release's Chromium version; Chrome uses `versionhistory.googleapis.com`; Edge uses
 `edgeupdates.microsoft.com`. Only the source for your detected browser is contacted.
 These requests carry no browsing history, page address, or WardenOne settings and use
-no cookies; the maker still sees an ordinary request from your IP address. Results
+no cookies; the source hosts still see ordinary requests from your IP address. Results
 are kept in temporary extension storage for up to six hours. That storage is cleared when
 the browser closes or WardenOne is reloaded or updated, so the first popup after a restart
 asks again even if six hours have not passed. If the check fails, WardenOne does not guess

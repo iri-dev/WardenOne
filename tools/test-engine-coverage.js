@@ -87,14 +87,15 @@ const chainStart = src.indexOf('    const YT_COMPAT_PAUSED=[');
 const chainEnd = src.indexOf('    WO_TOP=window===window.top,', chainStart);
 assert(chainStart > 0 && chainEnd > chainStart);
 const chain = src.slice(chainStart, chainEnd).replace(/,\s*$/, ';');
-const enabled = ['enabled', 'removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint',
+const enabled = ['enabled', 'removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint', 'clientHintProtection',
   'detectPhishing', 'commandPasteGuard', 'formTrapDetector', 'detectSkimmers', 'fakeUpdateDetector',
   'scamLockGuard', 'paymentCardGuard', 'blockTokenExfil', 'sessionShield'];
 const config = Object.fromEntries(enabled.map((key) => [key, true]));
-const paused = ['removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint'];
+const paused = ['removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint', 'clientHintProtection'];
 for (const url of contentPages) {
   const ctx = vm.createContext({ location: new URL(url), __woConfigStore: config,
-    __woWebGLControl: { set() {} }, __woRealmRecord: null, woOn() {}, document: {} });
+    __woRedirectChainControl: { configure() {}, blocked() { return false; } },
+    __woWebGLControl: { set() {} }, __woClientHintsControl: { set() {} }, __woRealmRecord: null, woOn() {}, document: {} });
   vm.runInContext(read('engine-compat.js') + '\n' + chain + '\nthis.policy=WO; this.paused=HOSTED_APP_COMPAT_PAUSED; this.refresh=__woSyncConfig;', ctx);
   assert.deepStrictEqual(Array.from(ctx.paused), paused);
   for (const key of enabled) assert.strictEqual(ctx.policy[key], !paused.includes(key), url + ': ' + key);

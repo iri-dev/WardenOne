@@ -540,9 +540,11 @@ function loadCookieEscape() {
   class Sheet {
     replaceSync(css) { this.css = css; }
   }
-  const build = vm.runInNewContext('(' + builder + ')', {
+  const paletteContext = {
     document, CSSStyleSheet: Sheet, clearNode(root) { root.children.length = 0; },
-  });
+    __woBadgeThemeDark: false, __woBadgeThemeReady: false,
+  };
+  const build = vm.runInNewContext('(' + builder + ')', paletteContext);
   const root = makeNode('#shadow-root');
   build(root);
   check('badge styles are adopted inside its own shadow root',
@@ -553,9 +555,17 @@ function loadCookieEscape() {
     /\.panel\{[^}]*display:none/.test(root.adoptedStyleSheets[0].css)
       && /\.b\{[^}]*position:fixed/.test(root.adoptedStyleSheets[0].css));
   check('badge styles do not enter the page stylesheet list', document.adoptedStyleSheets === undefined);
+  check('an unresolved appearance uses a neutral visible pending palette',
+    /\bpending-theme\b/.test(root.children[0].className)
+      && /\.b\.pending-theme\.show\{[^}]*background:rgba\(100,70,115,\.14\)/.test(root.adoptedStyleSheets[0].css)
+      && !/\.b\.pending-theme[^}]*visibility:hidden/.test(root.adoptedStyleSheets[0].css));
   build(root);
   check('rebuilding a badge replaces its sheet and nodes',
     root.adoptedStyleSheets.length === 1 && root.children.length === 2);
+  paletteContext.__woBadgeThemeDark = true; paletteContext.__woBadgeThemeReady = true; build(root);
+  check('a badge mounted after a dark appearance update keeps its dark palette',
+    /\bdark\b/.test(root.children[0].className) && !/pending-theme/.test(root.children[0].className)
+      && /\.b\.dark\{[^}]*#dcc9e5/.test(root.adoptedStyleSheets[0].css));
 }
 
 // Compensate scrollbar-less pages without shifting pages that already reserve a gutter
