@@ -4,7 +4,7 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-/* Build feature decisions shared by the worker, popup and generated docs/store-single-purpose.md.
+/* Build feature decisions shared by the worker, popup and generated docs/build-profiles.md.
    The Store packager strips omitted utilities; missing features must degrade to unavailable. */
 
 const WARDENONE_BUILD = Object.freeze({

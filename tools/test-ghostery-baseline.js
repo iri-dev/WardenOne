@@ -21,7 +21,7 @@ assert.deepEqual(safeSettings({enabled:true,apiKey:'sensitive',nested:{nonce:'se
   {enabled:true,apiKey:'[redacted]',nested:{nonce:'[redacted]',token:'',mode:'normal'},hosts:['fixture.example']});
 const polluted=JSON.parse('{"__proto__":{"leak":true},"constructor":"bad","safe":true}');
 assert.deepEqual(safeSettings(polluted),{safe:true});
-const roadmap=JSON.parse(fs.readFileSync('docs/ghostery-roadmap-status.json'));
+function validateRoadmap(roadmap) {
 assert.equal(new Set(roadmap.phases.map(p=>p.id)).size,9);
 for(let n=1;n<=9;n++)assert(roadmap.phases.some(p=>p.id==='G-0'+n));
 for(const phase of roadmap.phases) {
@@ -30,4 +30,17 @@ for(const phase of roadmap.phases) {
   for(const file of [...phase.owners,...phase.regressions])assert(fs.existsSync(file),file);
   if(phase.status==='complete')assert(phase.changeReferences.length&&phase.validationReferences.length,'Completed phases need evidence');
 }
+}
+const roadmapFixture={phases:Array.from({length:9},(_,i)=>({
+  id:'G-0'+(i+1),status:'planned',checklist:['fixture'],gap:'fixture gap',existing:'fixture baseline',
+  owners:['background.js'],regressions:['tools/test-ghostery-baseline.js'],changeReferences:[],validationReferences:[],
+}))};
+validateRoadmap(roadmapFixture);
+for(const mutate of [r=>{r.phases[0].id='G-02';},r=>{r.phases[0].status='unknown';},
+  r=>{r.phases[0].checklist=[];},r=>{r.phases[0].gap='';},r=>{r.phases[0].owners=['missing-fixture.js'];},
+  r=>{r.phases[0].status='complete';}]) {
+  const invalid=structuredClone(roadmapFixture);mutate(invalid);assert.throws(()=>validateRoadmap(invalid));
+}
+const privateRoadmap='docs/ghostery-roadmap-status.json';
+if(fs.existsSync(privateRoadmap))validateRoadmap(JSON.parse(fs.readFileSync(privateRoadmap)));
 console.log('[ok] Ghostery commit/blob/package pinning, mismatched provenance rejection and baseline secret redaction');

@@ -44,7 +44,7 @@ if (require.main === module) {
   const inventory = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/source-inventory.json'), 'utf8'));
   const issues = unresolvedRights(inventory);
   if (issues.length) {
-    console.error('Store submission blocked by ' + issues.length + ' specific source exception(s). See docs/source-rights-review.md.');
+    console.error('Store submission blocked by ' + issues.length + ' specific source exception(s). See docs/source-usage.md.');
     issues.forEach((item) => console.error('  ' + item));
     process.exitCode = 1;
   } else console.log('Source license/permission conditions implemented for all inventoried inputs');

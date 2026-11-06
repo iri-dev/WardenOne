@@ -220,7 +220,8 @@ async function main() {
       nativeAlarm: true, browserRestartCatchup: true, startupCallbackCoverage: 'worker harness; startup-only native event unverified',
       duplicateScheduledRuns: false, popupPresetAndCleanup: true, popup: errors,
       layout, scrollChecks, keyboardSections: true, inlinePreviewDoesNotDelete: true, visibleDestructiveWarnings: true };
-    fs.writeFileSync(path.join(ROOT, 'docs/privacy-cleaner-browser-evidence.json'), JSON.stringify(evidence, null, 2) + '\n');
+    fs.mkdirSync(path.join(ROOT, '.private-review'), { recursive: true });
+    fs.writeFileSync(path.join(ROOT, '.private-review/privacy-cleaner-browser-evidence.json'), JSON.stringify(evidence, null, 2) + '\n');
     console.log('[ok] disposable Edge: protected cookies/storage/IndexedDB/caches, scoped preview, independent observations, playing media, real alarm, restart catch-up and popup controls/layout');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }

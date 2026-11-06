@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { zipEntries, validateEntries, stagedZip } = require('./check-package-archive');
+const { forbiddenPaths } = require('./check-repository-hygiene.js');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -31,9 +32,7 @@ function check(name, condition, extra) {
   check('the tracked-file list can be inspected', trackedResult.status === 0,
     String(trackedResult.stderr || '').trim());
   if (trackedResult.status === 0) {
-    const forbiddenNames = new Set(['cws-submission.md', 'maintainability.md']);
-    const forbidden = trackedResult.stdout.split('\0').filter(Boolean).filter((file) =>
-      forbiddenNames.has(path.posix.basename(file).toLowerCase()));
+    const forbidden = forbiddenPaths(trackedResult.stdout.split('\0').filter(Boolean));
     check('private maintainer notes are not tracked', forbidden.length === 0,
       forbidden.join(', '));
   }

@@ -1,9 +1,9 @@
 /* WardenOne — Copyright (C) 2026 iri; GPL-3.0-or-later. See LICENSE. */
 'use strict';
-const fs=require('fs'),path=require('path'),assert=require('assert/strict');
+const fs=require('fs'),path=require('path'),assert=require('assert/strict'),crypto=require('crypto');
 const {build}=require('./lib/outbound-inventory.js');
-const root=path.resolve(__dirname,'..'),actual=JSON.parse(fs.readFileSync(path.join(root,'docs/outbound-destinations.json'))),expected=build(root);
-assert.deepEqual(actual,expected,'Outbound inventory must be regenerated from shipped code');
+const root=path.resolve(__dirname,'..'),expected=JSON.parse(fs.readFileSync(path.join(root,'tools/contracts/outbound-destinations.json'))),actual=build(root);
+assert.deepEqual(expected,{schemaVersion:1,sha256:crypto.createHash('sha256').update(JSON.stringify(actual,null,2)+'\n').digest('hex')},'Outbound inventory must be regenerated from shipped code');
 assert.equal(actual.entries.length,31);assert.equal(actual.dynamic.length,5);
 const byHost=new Map(actual.entries.map(x=>[x.host,x]));
 for(const host of ['api.github.com','safebrowsing.googleapis.com','www.virustotal.com','gql.twitch.tv','raw.githubusercontent.com'])assert(byHost.has(host));

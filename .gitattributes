@@ -17,8 +17,9 @@ build-profile.js export-subst
 *.pem binary
 *.gz binary
 
-# Dev-only paths kept out of the packaged Release zip (`git archive`). They stay
-# in the repo but don't bloat the download people load unpacked: unminified
+# Public development paths kept out of the Release zip (`git archive`). Archive
+# exclusions do not control GitHub visibility. The repository hygiene gate
+# rejects private review files before publication. Public sources include unminified
 # source (the manifest loads content.min.js), the test/build tooling, README
 # screenshots, issue templates, and repo-meta / store docs. Every file in the
 # zip is there on purpose: LICENSE and NOTICE travel with the work because the
@@ -28,6 +29,7 @@ build-profile.js export-subst
 # because no rule happened to remove it (tools/test-package-completeness.js
 # checks the archive's document set against this intent).
 docs/ export-ignore
+.private-review/ export-ignore
 # The public website. Belongs on GitHub Pages, not inside the extension package.
 site/ export-ignore
 tools/ export-ignore

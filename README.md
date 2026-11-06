@@ -237,7 +237,7 @@ added together. Individual source counts become available after the next blockli
 
 ThreatView's malicious domains join those downloaded malware lists and follow the malware
 switch and site pauses. Its **ThreatView** row shows the full accepted list size and its
-contribution after overlap. [Source and usage notes](docs/source-rights-review.md#specific-exceptions-not-a-new-outreach-campaign).
+contribution after overlap. [Source and usage notes](docs/source-usage.md#unresolved-source-scope).
 
 **1Hosts Lite** adds ad and tracker domains through AdShield. It follows the AdShield
 switch and appears by name in the same source breakdown, with overlapping addresses counted once.
@@ -1390,8 +1390,7 @@ native device types and usable opaque selection IDs.
 Noise is stable for identical measurements within a document and resamples text/layout values
 in new documents. Workers retain native values. Raw pixel/audio signals can still link visits,
 and cross-realm reflection can reveal the wrappers. This option does not promise anonymity or
-an indistinguishable hardware profile. The [fingerprint resistance audit](docs/fingerprint-resistance-audit.md)
-records the measured boundaries and compatibility coverage.
+an indistinguishable hardware profile.
 
 Fingerprint probe detection has its own switch. It notices canvas, audio, WebGL, font, layout and
 device probing without changing the answers.
@@ -1552,8 +1551,7 @@ To check every source's live header yourself run `node tools/check-feed-publishe
 means a source is worth a look, not that it gets deleted. WardenOne keeps the last rules it
 accepted and keeps checking daily while auto-update's on. Before I drop a source that really has
 been abandoned I compare its unique domains and false-positive risk with the current feeds, and add
-a vetted replacement if one's needed. The [September 2026 source review](docs/feed-freshness-review.md)
-covers the four feeds with older dates (without removing them).
+a vetted replacement if one's needed.
 
 <p align="center">
   <a href="docs/screenshots/02-protection-health-2026-10.webp">
@@ -2120,9 +2118,8 @@ The popup keeps the mode pills and brightness slider in one card. Its scope chip
 the **All sites** default, custom settings for the current site, and turning EyeShield off there.
 Changes save automatically. Contrast, saturation, warmth and greyscale live under **More reading
 controls**; the sliders announce their values as percentages. Security warnings
-keep their keyboard and screen-reader support whether EyeShield's on or not. The local
-accessibility check (and the spoken screen-reader pass that's still to come) is written up in
-[the accessibility audit](docs/accessibility-audit.md).
+keep their keyboard and screen-reader support whether EyeShield's on or not. A spoken
+screen-reader pass remains pending.
 
 ## WardenOne Themes
 
@@ -2280,7 +2277,7 @@ Guessing what something costs isn't the same as measuring it, so release candida
 too. `node tools/perf-profile.js` loads the real extension into a real browser and measures three
 local test pages. An article, a page that builds a deep DOM like frameworks do, and a page with
 eight frames. Extension off and on, five runs each. It writes the medians, the tails and every raw
-value to [docs/perf](docs/perf/), tied to the commit and the browser version.
+value to a private local report, tied to the commit and the browser version.
 
 It won't measure anything unless the extension's actually loaded and running. It has to prove it
 can spot a known regression before its numbers count. And nothing it does leaves the machine. The
@@ -2294,8 +2291,8 @@ included. It leaves out Twitch Rewind, which is really its own separate media to
 its files, manifest entries and settings, not just a line in the description.
 `node tools/build-store-package.js` builds that package from a commit, byte-for-byte reproducibly.
 The worker and popup read `build-profile.js` so they run fine without the parts that got left out.
-Why, and where every popup section fits under the one purpose, is in
-[docs/store-single-purpose.md](docs/store-single-purpose.md). Nothing's been submitted yet. The
+The public [build profile reference](docs/build-profiles.md) lists the included and omitted
+features. Nothing's been submitted yet. The
 tool's there so if it ever is, what goes up matches the record exactly.
 
 # Official source & authenticity
@@ -2373,4 +2370,4 @@ more. The full list of sources and credits is in [CREDITS.md](CREDITS.md).
 **Settings → About WardenOne → Licenses & credits** opens the packaged notices
 offline. Third-party data retains its applicable terms; the generated
 [source inventory](docs/source-inventory.json) distinguishes published licenses,
-scoped written permissions and [specific exceptions](docs/source-rights-review.md).
+scoped written permissions and [specific exceptions](docs/source-usage.md).

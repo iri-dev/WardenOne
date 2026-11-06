@@ -1,0 +1,766 @@
+{
+  "schemaVersion": 1,
+  "dimensions": [
+    "success",
+    "falsePositive",
+    "breakageException",
+    "disabled",
+    "siteOverride",
+    "workerRestart",
+    "ruleCapacity",
+    "upgradeMigration",
+    "invalidInput",
+    "dataErasure"
+  ],
+  "scope": {
+    "characters": 204,
+    "sha256": "25a287d6fa4a57247a0556d2e8b4aa90df92ce8581dc8b9c8428a7b3e0512a5e"
+  },
+  "features": [
+    {
+      "feature": "cname",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-cname-protection.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        }
+      }
+    },
+    {
+      "feature": "trackerCookieIsolation",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-tracker-cookie-isolation.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-tracker-cookie-isolation.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-tracker-cookie-isolation.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-tracker-cookie-isolation.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-tracker-cookie-rule.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        }
+      }
+    },
+    {
+      "feature": "trackerEvidence",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-tracker-evidence.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-tracker-evidence-corpus.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-tracker-evidence-corpus.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-tracker-learner-trust.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-tracker-evidence.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-tracker-learner-minimisation.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        }
+      }
+    },
+    {
+      "feature": "fingerprintConsistency",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-fingerprint-consistency.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-fingerprint-media.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-streaming-compatibility.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "workerRestart": {
+          "notApplicable": {
+            "characters": 129,
+            "sha256": "303243501c484dcf229c15f27be3fbe7084030c75829d96bbabdb9f579e6a292"
+          }
+        },
+        "ruleCapacity": {
+          "notApplicable": {
+            "characters": 129,
+            "sha256": "303243501c484dcf229c15f27be3fbe7084030c75829d96bbabdb9f579e6a292"
+          }
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-runtime-idempotence.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "dataErasure": {
+          "notApplicable": {
+            "characters": 129,
+            "sha256": "303243501c484dcf229c15f27be3fbe7084030c75829d96bbabdb9f579e6a292"
+          }
+        }
+      }
+    },
+    {
+      "feature": "filterCompilation",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-filter-compilation.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-filter-compilation.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-streaming-compatibility.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-cold-start-state.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-cosmetic-provenance.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        }
+      }
+    },
+    {
+      "feature": "feedRecovery",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-feed-load-safety.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-feed-load-safety.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-blocklist-shutdown-retry.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-cold-start-state.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-cold-start-state.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        }
+      }
+    },
+    {
+      "feature": "messageBoundaries",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-message-boundaries.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-main-world-authority.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-master-switch.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "siteOverride": {
+          "tests": [
+            "tools/test-site-override-scope.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-reputation-bypass.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "ruleCapacity": {
+          "tests": [
+            "tools/test-dnr-budget.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-main-world-authority.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        }
+      }
+    },
+    {
+      "feature": "historyModes",
+      "dimensions": {
+        "success": {
+          "tests": [
+            "tools/test-history-modes.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "falsePositive": {
+          "tests": [
+            "tools/test-history-retention.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "breakageException": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "disabled": {
+          "tests": [
+            "tools/test-history-modes.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "siteOverride": {
+          "notApplicable": {
+            "characters": 82,
+            "sha256": "af7e6c1c974a121cdb0804144fd8a5f2b6e7b43bf7a170c56af94e463e74a742"
+          }
+        },
+        "workerRestart": {
+          "tests": [
+            "tools/test-history-modes.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "ruleCapacity": {
+          "notApplicable": {
+            "characters": 41,
+            "sha256": "bf3167295c54bf19b1a6da442888e3f5df31449b6f4c3774a1532a13946761ac"
+          }
+        },
+        "upgradeMigration": {
+          "tests": [
+            "tools/test-history-modes.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        },
+        "invalidInput": {
+          "tests": [
+            "tools/test-message-hardening.js"
+          ],
+          "scope": {
+            "characters": 38,
+            "sha256": "bf75a9368549b6481154cf7d93a3152978c71832f1399671129b16f66491d194"
+          }
+        },
+        "dataErasure": {
+          "tests": [
+            "tools/test-privacy-data-erase.js"
+          ],
+          "scope": {
+            "characters": 99,
+            "sha256": "7f7a0d9c8c3e1caadc767d483bf1a8418bd7e9c0c1bbbf49699903cd8e7d321e"
+          }
+        }
+      }
+    }
+  ]
+}

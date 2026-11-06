@@ -14,7 +14,7 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const MANIFEST = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
 const PERMS_HTML = fs.readFileSync(path.join(ROOT, 'permissions.html'), 'utf8');
-const AUDIT = fs.readFileSync(path.join(ROOT, 'docs', 'permission-audit.md'), 'utf8');
+const REFERENCE = fs.readFileSync(path.join(ROOT, 'docs', 'permissions.md'), 'utf8');
 
 let failures = 0;
 function check(label, condition, extra) {
@@ -118,9 +118,9 @@ check('the manifest does not imply a partial outbound host inventory',
 check('no optional permissions are declared without being explained',
   !MANIFEST.optional_permissions || MANIFEST.optional_permissions.every(
     (p) => PERMS_HTML.includes('<code>' + p + '</code>')));
-check('the audit maps every named permission and the host scope',
-  declaredPermissions.every((p) => AUDIT.includes('| `' + p + '` |'))
-  && AUDIT.includes('`<all_urls>`'));
+check('the public reference maps every named permission and the host scope',
+  declaredPermissions.every((p) => REFERENCE.includes('| `' + p + '` |'))
+  && REFERENCE.includes('`<all_urls>`'));
 
 console.log('');
 if (failures) {

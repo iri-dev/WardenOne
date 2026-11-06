@@ -67,5 +67,5 @@ must keep that corresponding source available alongside its build:
 https://github.com/iri-dev/WardenOne
 
 Four configured feeds have specific scope exceptions documented in
-docs/source-rights-review.md. Written permissions for Phishing Army and
+docs/source-usage.md. Written permissions for Phishing Army and
 flinteger remain granted; those exceptions concern identified upstream inputs.

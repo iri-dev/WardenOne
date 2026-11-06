@@ -5,7 +5,7 @@ const path = require('path');
 const vm = require('vm');
 const crypto = require('crypto');
 const root = path.resolve(__dirname, '..');
-const output = path.join(root, 'docs/storage-inventory.json');
+const output = path.join(root, 'tools/contracts/storage-inventory.json');
 function generate() {
   const scripts = fs.readdirSync(root).filter(f => f.endsWith('.js')).sort();
   const sources = Object.fromEntries(scripts.map(f => [f, fs.readFileSync(path.join(root, f), 'utf8')]));
@@ -51,14 +51,22 @@ function generate() {
     unregistered: [...unregistered].sort(), browserStorageSites, declaredLimits,
     sourceHashes: Object.fromEntries(Object.entries(sources).map(([file, text]) => [file, crypto.createHash('sha256').update(text).digest('hex')])),
     dynamicKeys: [{ prefix: 'wardenone_warning:', policy: 'wardenone_warning', contains: 'Exact destination URL needed for current warning navigation; random handle in page URL.' }],
-    scope: 'Extension datasets plus a census of DOM storage/IndexedDB/cache operations. Page-storage hooks that inspect or clear website-owned data are not extension datasets. See docs/data-minimisation-audit.md.' };
+    scope: 'Extension datasets plus a census of DOM storage/IndexedDB/cache operations. Page-storage hooks that inspect or clear website-owned data are not extension datasets.' };
+}
+function contract(data = generate()) {
+  return { schemaVersion: 1, sha256: crypto.createHash('sha256').update(JSON.stringify(data, null, 2) + '\n').digest('hex') };
 }
 if (require.main === module) {
   const data = generate();
   if (data.unregistered.length) throw Error('Unregistered stores: ' + data.unregistered.join(', '));
-  const json = JSON.stringify(data, null, 2) + '\n';
+  const json = JSON.stringify(contract(data), null, 2) + '\n';
+  if (process.argv.includes('--report')) {
+    const directory = path.join(root, '.private-review/reports');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'storage-inventory.json'), JSON.stringify(data, null, 2) + '\n');
+  }
   if (process.argv.includes('--write')) fs.writeFileSync(output, json);
   else if (fs.readFileSync(output, 'utf8') !== json) throw Error('Storage inventory is stale; run tools/audit-storage.js --write');
   console.log('[ok] ' + data.entries.length + ' registered storage keys and ' + data.browserStorageSites.length + ' DOM storage sites inventoried');
 }
-module.exports = { generate, output };
+module.exports = { generate, contract, output };

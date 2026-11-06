@@ -5,7 +5,7 @@
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
 /* Build the Store profile from a Git tree. build-profile.js holds the utility decisions;
-   docs/store-single-purpose.md records the policy case and build commands. */
+   docs/build-profiles.md records the policy case and build commands. */
 'use strict';
 
 const fs = require('fs');
@@ -16,7 +16,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const PROFILE_FILE = 'build-profile.js';
-const DOC = path.join(ROOT, 'docs', 'store-single-purpose.md');
+const DOC = path.join(ROOT, 'docs', 'build-profiles.md');
 const DOC_BEGIN = '<!-- BEGIN GENERATED FEATURE TABLE -->';
 const DOC_END = '<!-- END GENERATED FEATURE TABLE -->';
 /* Keep source and repository docs out of the Store ZIP; retain licence and privacy files. */
@@ -278,7 +278,7 @@ function writeZip(tree, outPath) {
   }
 }
 
-/* The generated half of docs/store-single-purpose.md: the utilities and their decisions. */
+/* The generated half of docs/build-profiles.md: the utilities and their decisions. */
 function featureTable(build) {
   const omitted = new Set(storeOmitted(build));
   const lines = [DOC_BEGIN, '',

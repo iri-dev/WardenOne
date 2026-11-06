@@ -1,14 +1,14 @@
 {
   "schemaVersion": 2,
   "note": "Generated from runtime constants, embedded build provenance and docs/source-licensing.json. Edit policy metadata, not this file. Counts include optional configured feeds; license and permission counts can overlap.",
-  "checkedAt": "2026-11-02",
+  "checkedAt": "2026-11-05",
   "summary": {
     "runtimeFeeds": 43,
     "publishers": 27,
-    "publishedLicenseCoveredFeeds": 36,
-    "writtenPermissionFeeds": 10,
-    "resolvedFeeds": 39,
-    "unresolvedFeeds": 4,
+    "publishedLicenseCoveredFeeds": 37,
+    "writtenPermissionFeeds": 11,
+    "resolvedFeeds": 41,
+    "unresolvedFeeds": 2,
     "buildOnlyInputs": 11,
     "redistributedArtifacts": 27
   },
@@ -334,7 +334,7 @@
       },
       "attribution": "Ming Di Leom / malware-filter; OpenPhish, IPThreat and PhishTank.",
       "compliance": {
-        "status": "clarification-required",
+        "status": "implemented",
         "conditions": [
           "Credit the authors, link the license and source, identify modifications, and do not imply endorsement.",
           "Share adaptations under compatible share-alike terms. This license applies to filters, while src/ code is MIT/CC0."
@@ -347,23 +347,25 @@
           "CREDITS.md",
           "THIRD_PARTY_NOTICES.html"
         ],
-        "issueIds": [
-          "OP-1"
-        ]
+        "issueIds": []
       },
       "evidence": [
         {
           "url": "https://gitlab.com/malware-filter/phishing-filter/-/raw/main/README.md",
           "documentSha256": "eaf7eae96ec55af9af2c71d04b8e600acae6941d51bf16f17eb03ec30aa623f3",
           "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        },
+        {
+          "reference": "owner-review-decision-2026-11-05",
+          "finding": "Owner accepted the existing OpenPhish grant for current local use, including aggregate-derived domains; OP-1 closed without further publisher outreach. The direct feed continues to use the requested GitHub repository."
         }
       ],
       "upstream": [
         {
           "name": "OpenPhish",
           "url": "https://openphish.com/terms.html",
-          "license": "Scope clarification pending",
-          "note": ""
+          "license": "Community Feed terms; written WardenOne permission",
+          "note": "Current local use reviewed under permission-openphish-2026-11-03."
         },
         {
           "name": "IPThreat",
@@ -378,7 +380,7 @@
           "note": ""
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-11-05"
     },
     {
       "url": "https://malware-filter.gitlab.io/malware-filter/urlhaus-filter-hosts.txt",
@@ -648,7 +650,6 @@
           "THIRD_PARTY_NOTICES.html"
         ],
         "issueIds": [
-          "OP-1",
           "PA-1"
         ]
       },
@@ -661,6 +662,10 @@
           "url": "https://raw.githubusercontent.com/drego85/PhishingArmyCore/master/SOURCES.md",
           "documentSha256": "20b071fcc60e4787df9d938b5755368aa434f32d89aeeb1856ce5d2ce89f472d",
           "finding": "Current nine intelligence providers plus separate whitelist and shared-platform boundary inputs."
+        },
+        {
+          "reference": "owner-review-decision-2026-11-05",
+          "finding": "Owner accepted the existing OpenPhish grant for current local use, including aggregate-derived domains; OP-1 closed without further publisher outreach. The direct feed continues to use the requested GitHub repository."
         }
       ],
       "upstream": [
@@ -697,8 +702,8 @@
         {
           "name": "OpenPhish",
           "url": "https://openphish.com/terms.html",
-          "license": "Scope clarification pending",
-          "note": ""
+          "license": "Community Feed terms; written WardenOne permission",
+          "note": "Current local use reviewed under permission-openphish-2026-11-03."
         },
         {
           "name": "urlscan.io",
@@ -719,7 +724,7 @@
           "note": "WardenOne does not query the upstream API."
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-11-05"
     },
     {
       "url": "https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt",
@@ -1244,7 +1249,7 @@
       "compliance": {
         "status": "clarification-required",
         "conditions": [
-          "Written permission is conditional on honoring project and upstream licenses; no repository LICENSE was found on master/release. This is not itself an absence of permission from flinteger."
+          "Written permission requires honoring project and applicable upstream data licenses."
         ],
         "implementation": [
           "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
@@ -1255,9 +1260,7 @@
           "THIRD_PARTY_NOTICES.html"
         ],
         "issueIds": [
-          "OP-1",
-          "PA-1",
-          "FL-1"
+          "PA-1"
         ]
       },
       "evidence": [
@@ -1274,6 +1277,14 @@
           "url": "https://raw.githubusercontent.com/flinteger/dnss-blocklists/master/scripts/process.py",
           "documentSha256": "be14d76f489bc9c9804c96ccad6b8b89aca10be8b6503b4248be22971cca059d",
           "finding": "Failed downloads are skipped, not read from cached source files."
+        },
+        {
+          "reference": "owner-review-decision-2026-11-05",
+          "finding": "Owner accepted the existing OpenPhish grant for current local use, including aggregate-derived domains; OP-1 closed without further publisher outreach. The direct feed continues to use the requested GitHub repository."
+        },
+        {
+          "reference": "owner-review-decision-2026-11-05",
+          "finding": "Owner accepted the existing conditional flinteger grant as the basis for retaining the report-derived domain input; FL-1 closed without a separate Mandiant permission claim. Upstream conditions and attribution remain."
         }
       ],
       "upstream": [
@@ -1286,8 +1297,8 @@
         {
           "name": "OpenPhish",
           "url": "https://openphish.com/terms.html",
-          "license": "Scope clarification pending",
-          "note": ""
+          "license": "Community Feed terms; written WardenOne permission",
+          "note": "Current local use reviewed under permission-openphish-2026-11-03."
         },
         {
           "name": "Mitchell Krog Badd-Boyz-Hosts",
@@ -1316,11 +1327,11 @@
         {
           "name": "Mandiant APT1 Appendix D via ethanr",
           "url": "https://bitbucket.org/ethanr/dns-blacklists/",
-          "license": "No reuse grant identified for Appendix D",
-          "note": "The configured mirror still returns 200; this is an actual active input, not a hypothetical concern."
+          "license": "Report-derived domain indicators",
+          "note": "Retained under the owner-reviewed flinteger grant for current feed use; no separate Mandiant grant is recorded."
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-11-05"
     },
     {
       "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/light.txt",
@@ -1655,42 +1666,47 @@
       "policyId": "openphish",
       "name": "OpenPhish Community Feed",
       "publisher": "OpenPhish",
-      "home": "https://openphish.com/",
+      "home": "https://github.com/openphish/public_feed/",
       "license": {
         "type": "usage-terms",
         "id": "LicenseRef-OpenPhish-Terms",
         "url": "https://openphish.com/terms.html"
       },
       "permission": {
-        "status": "contacted-awaiting-response",
-        "scope": "Whether WardenOne’s direct end-user security use, normalization and local blocking are covered.",
-        "evidence": "Owner reports prior outreach; no permission reply is recorded."
+        "status": "granted",
+        "date": "2026-11-03",
+        "scope": "Use of the Community Feed in WardenOne, a free, open-source extension, through browser downloads from OpenPhish's direct GitHub repository and local URL matching.",
+        "evidenceRef": "permission-openphish-2026-11-03",
+        "evidence": "Reviewed on 5 November 2026 from the owner-supplied screenshot of OpenPhish Support Team's reply dated 3 November 2026. The reply permits Community Feed use in the project and requests use of the direct GitHub repository. Original correspondence remains private."
       },
       "attribution": "OpenPhish Community Phishing Feed.",
       "compliance": {
-        "status": "clarification-required",
+        "status": "implemented",
         "conditions": [
-          "Personal/research restrictions and a written-consent requirement for third-party disclosure and derivative sharing; the free community label is not an open license."
+          "Use the Community Feed from OpenPhish's direct GitHub repository at https://github.com/openphish/public_feed/."
         ],
         "implementation": [
-          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "OPENPHISH_FEED_URL downloads feed.txt directly from openphish/public_feed on GitHub's raw content host.",
+          "Attribution, direct GitHub repository and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
           "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
         ],
         "noticeFiles": [
           "CREDITS.md",
           "THIRD_PARTY_NOTICES.html"
         ],
-        "issueIds": [
-          "OP-1"
-        ]
+        "issueIds": []
       },
       "evidence": [
+        {
+          "reference": "permission-openphish-2026-11-03",
+          "finding": "Owner-supplied screenshot shows OpenPhish Support Team granting Community Feed use in WardenOne on 3 November 2026 and requesting the direct GitHub repository."
+        },
         {
           "url": "https://openphish.com/terms.html",
           "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
         }
       ],
-      "checkedAt": "2026-10-19"
+      "checkedAt": "2026-11-05"
     },
     {
       "url": "https://raw.githubusercontent.com/phishdestroy/destroylist/main/rootlist/formats/primary_active/domains.txt",
@@ -3226,7 +3242,7 @@
     {
       "file": "rules-download-landings.json",
       "license": "GPL-3.0-or-later (WardenOne curation)",
-      "provenance": "Owner-reported deceptive download landing family; evidence in docs/redirect-chain-stop-audit.md",
+      "provenance": "Owner-reported deceptive download landing family, curated into local rules",
       "builtBy": null,
       "modifications": "Locally maintained host-boundary rules; no third-party dataset imported.",
       "sourceFiles": [

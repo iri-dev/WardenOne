@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Internal audit reports and raw browser measurement data are no longer published with the source. An explicit list now decides which documents, test contracts and fixtures are public, the five shipped inventories carry fingerprints instead of full reports, and both the publication check and the source-bundle builder refuse anything outside that list. New public references cover the controls, build profiles, permissions and development setup.
+- Source usage records now show OpenPhish's Community Feed permission and flinteger's permission terms, replacing the pending scope notes in the packaged third-party notices.
 - The IP logger warning no longer says “Block not confirmed” after a block that really happened. This could appear when the browser was busy, when WardenOne checked its records while the page was still opening, or after several logger visits in a few minutes. Reloading the warning or coming back to it now keeps the result, and if the browser refuses the check the page says it could not check instead of warning of exposure.
 - New beacon events immediately flash their count in the corner badge, and the panel opens with recorded rule IDs and destinations without a loading screen. Saved beacon controls load independently of network totals, and delayed state reads cannot overwrite newer choices.
 - Beacon controls keep waiting for slower browser rule writes and show their progress, instead of falsely reporting a save failure after eight seconds and discarding the later confirmation.

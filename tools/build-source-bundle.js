@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { zipEntries } = require('./check-package-archive.js');
-const { localStatePath } = require('./check-repository-hygiene.js');
+const { forbiddenPaths, publicContract } = require('./check-repository-hygiene.js');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -33,15 +33,22 @@ function parseArgs(args) {
 }
 
 function buildSourceBundle(options = {}) {
-  const status = git(['status', '--porcelain=v1', '--untracked-files=all']);
+  const root = path.resolve(options.root || ROOT);
+  const sourceGit = (args, settings = {}) => git(args, { cwd: root, ...settings });
+  const status = sourceGit(['status', '--porcelain=v1', '--untracked-files=all']);
   assertClean(status, options.committed === true);
-  const commit = git(['rev-parse', 'HEAD']).trim();
-  const tracked = git(['ls-tree', '-r', '--name-only', '-z', commit]).split('\0').filter(Boolean).sort();
-  const local = tracked.filter(localStatePath);
-  if (local.length) throw new Error('Committed local files must be removed before bundling: ' + local.join(', '));
+  const commit = sourceGit(['rev-parse', 'HEAD']).trim();
+  const tracked = sourceGit(['ls-tree', '-r', '--name-only', '-z', commit]).split('\0').filter(Boolean).sort();
+  const local = forbiddenPaths(tracked);
+  if (local.length) throw new Error('Committed private files must be removed before bundling: ' + local.join(', '));
+  for (const file of tracked.filter(name => name.startsWith('tools/contracts/'))) {
+    let valid = false;
+    try { valid = publicContract(file, JSON.parse(sourceGit(['show', commit + ':' + file]))); } catch (_) {}
+    if (!valid) throw new Error('Committed public contract contains a full report or invalid data: ' + file);
+  }
 
-  const output = path.resolve(options.output || path.join(path.dirname(ROOT), 'WardenOne-source-' + commit.slice(0, 12) + '.zip'));
-  const relative = path.relative(ROOT, output);
+  const output = path.resolve(options.output || path.join(path.dirname(root), 'WardenOne-source-' + commit.slice(0, 12) + '.zip'));
+  const relative = path.relative(root, output);
   if (relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative))) {
     throw new Error('Write the source bundle outside the repository');
   }
@@ -52,11 +59,11 @@ function buildSourceBundle(options = {}) {
   const temporaryRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'wardenone-source-repo-'));
   const temporaryOutput = output + '.' + process.pid + '.tmp';
   try {
-    git(['init', '--bare', temporaryRepo]);
-    const objects = path.resolve(ROOT, git(['rev-parse', '--git-path', 'objects']).trim());
+    sourceGit(['init', '--bare', temporaryRepo]);
+    const objects = path.resolve(root, sourceGit(['rev-parse', '--git-path', 'objects']).trim());
     fs.writeFileSync(path.join(temporaryRepo, 'objects', 'info', 'alternates'), objects.replace(/\\/g, '/') + '\n');
     fs.writeFileSync(path.join(temporaryRepo, 'info', 'attributes'), '* -export-ignore\n');
-    git(['--git-dir=' + temporaryRepo, 'archive', '--format=zip', '--output=' + temporaryOutput, commit]);
+    sourceGit(['--git-dir=' + temporaryRepo, 'archive', '--format=zip', '--output=' + temporaryOutput, commit]);
     const actual = zipEntries(fs.readFileSync(temporaryOutput)).sort();
     if (actual.length !== tracked.length || actual.some((name, index) => name !== tracked[index])) {
       const found = new Set(actual);

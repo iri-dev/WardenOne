@@ -8,7 +8,7 @@ const { loadBackground } = require('./test-message-rate-limits.js');
 const inventory = require('./audit-message-boundaries.js');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function run() {
-  assert.equal(fs.readFileSync(inventory.output, 'utf8'), JSON.stringify(inventory.generate(), null, 2) + '\n', 'message inventory must match source and generated scripts');
+  assert.equal(fs.readFileSync(inventory.output, 'utf8'), JSON.stringify(inventory.contract(), null, 2) + '\n', 'message inventory must match source and generated scripts');
   const h = loadBackground();
   await sleep(100);
   const tab = { id: h.chrome.runtime.id, frameId: 0, tab: { id: 91, url: 'https://benign.example/page' }, url: 'https://benign.example/page', origin: 'https://benign.example' };

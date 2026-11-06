@@ -5,7 +5,7 @@ const path = require('path');
 const vm = require('vm');
 const { sha256 } = require('./lib/privacy-baseline.js');
 const root = path.resolve(__dirname, '..');
-const output = path.join(root, 'docs/protection-contracts.json');
+const output = path.join(root, 'tools/contracts/protection-contracts.json');
 const groups = {
   'search-junk.js': 'warnSearchResults',
   'anti-redirect.js': 'storageAccessGuard blockAllStorageAccess blockPopupTricks',
@@ -56,14 +56,22 @@ function generate() {
     ruleAllocations: { owner: 'background.js', constants: rules, precedence: 'network-policy.js', regression: 'tools/test-dnr-budget.js' },
     manifest: { permissions: manifest.permissions, optionalPermissions: manifest.optional_permissions || [], hostPermissions: manifest.host_permissions,
       background: manifest.background, contentScripts: manifest.content_scripts, webAccessibleResources: manifest.web_accessible_resources },
-    logTypeReferences: logs, logSchema: 'notification-schema.js', storageInventory: 'docs/storage-inventory.json', messageInventory: 'docs/message-boundaries.json',
+    logTypeReferences: logs, logSchema: 'notification-schema.js', storageInventory: 'tools/contracts/storage-inventory.json', messageInventory: 'tools/contracts/message-boundaries.json',
     sourceHashes: Object.fromEntries(Object.entries(sources).map(([file, source]) => [file, sha256(source)])),
     scope: 'Owners are accountable enforcement modules, not exclusive consumers. Configuration is generated from canonical settings data. Log references are a lexical census, including non-incident type fields. Manifest permissions belong to the extension; this inventory does not assert each owner needs every permission.' };
 }
+function contract(data = generate()) {
+  return { schemaVersion: 1, sha256: sha256(JSON.stringify(data, null, 2) + '\n') };
+}
 if (require.main === module) {
-  const data = generate(), json = JSON.stringify(data, null, 2) + '\n';
+  const data = generate(), json = JSON.stringify(contract(data), null, 2) + '\n';
+  if (process.argv.includes('--report')) {
+    const directory = path.join(root, '.private-review/reports');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'protection-contracts.json'), JSON.stringify(data, null, 2) + '\n');
+  }
   if (process.argv.includes('--write')) fs.writeFileSync(output, json);
   else if (fs.readFileSync(output, 'utf8') !== json) throw Error('Protection inventory stale; run tools/audit-protection-contracts.js --write');
   console.log('[ok] ' + data.protections.length + ' protection owners and ' + data.configuration.length + ' configuration fields');
 }
-module.exports = {generate, output};
+module.exports = {generate, contract, output};

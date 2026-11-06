@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const root = path.resolve(__dirname, '..');
-const output = path.join(root, 'docs/message-boundaries.json');
+const output = path.join(root, 'tools/contracts/message-boundaries.json');
 const hash = text => crypto.createHash('sha256').update(text).digest('hex');
 function generate() {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
@@ -84,13 +84,22 @@ function generate() {
   return { schemaVersion: 1, sources: files, endpoints, messages,
     webAccessibleResources: manifest.web_accessible_resources, externallyConnectable: manifest.externally_connectable || null,
     generated: { 'content.min.js': 'src/content.js (byte-exact build gate)', 'fingerprint-realm.js': 'src/fingerprint-realm.js (byte-exact build gate)' },
-    notes: ['Lexical census includes sender and receiver sites, including embedded worker text. Policy review and precise schemas are in docs/message-security-audit.md.',
+    notes: ['Lexical census includes sender and receiver sites, including embedded worker text. Handler schemas and validation remain in their executable source.',
       'Observed fields identify review locations, not an authorization allowlist. All branch-specific checks remain executable in the named handler.'] };
 }
+function contract(data = generate()) {
+  return { schemaVersion: 1, sha256: hash(JSON.stringify(data, null, 2) + '\n') };
+}
 if (require.main === module) {
-  const data = JSON.stringify(generate(), null, 2) + '\n';
+  const inventory = generate();
+  const data = JSON.stringify(contract(inventory), null, 2) + '\n';
+  if (process.argv.includes('--report')) {
+    const directory = path.join(root, '.private-review/reports');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'message-boundaries.json'), JSON.stringify(inventory, null, 2) + '\n');
+  }
   if (process.argv.includes('--write')) fs.writeFileSync(output, data);
   else if (fs.readFileSync(output, 'utf8') !== data) throw Error('Message inventory is stale; run tools/audit-message-boundaries.js --write');
   console.log('[ok] message endpoint and handler inventory');
 }
-module.exports = { generate, output };
+module.exports = { generate, contract, output };

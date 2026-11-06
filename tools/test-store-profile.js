@@ -24,7 +24,7 @@ const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
 const CHANGELOG = fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8');
 const GATE = fs.readFileSync(path.join(ROOT, 'tools', 'check-maintainability.js'), 'utf8');
 const ATTRIBUTES = fs.readFileSync(path.join(ROOT, '.gitattributes'), 'utf8');
-const DOC = fs.existsSync(path.join(ROOT, 'docs', 'store-single-purpose.md')) ? fs.readFileSync(path.join(ROOT, 'docs', 'store-single-purpose.md'), 'utf8') : '';
+const DOC = fs.existsSync(path.join(ROOT, 'docs', 'build-profiles.md')) ? fs.readFileSync(path.join(ROOT, 'docs', 'build-profiles.md'), 'utf8') : '';
 const { h, makeDocument } = require('./lib/mini-dom.js');
 
 let pass = 0;
@@ -356,7 +356,7 @@ section('the record', () => {
   check('...and says the GitHub build is unchanged', /GitHub build is unchanged/.test(DOC));
   const purpose = 'WardenOne helps readers browse with more control: it blocks threats and trackers, defends privacy, warns about risky actions, offers optional page display controls for readability, and releases resources held by eligible idle tabs.';
   check('the public purpose record states the Store purpose', DOC.replace(/^> ?/gm, '').replace(/\s+/g, ' ').includes(purpose));
-  check('the README points at the Store package and the record', /build-store-package\.js/.test(README) && /store-single-purpose\.md/.test(README));
+  check('the README points at the Store package and the record', /build-store-package\.js/.test(README) && /build-profiles\.md/.test(README));
   check('the CHANGELOG records it', /Store package/.test(CHANGELOG) && /build-store-package/.test(CHANGELOG));
   const trackedIgnore = spawnSync('git', ['ls-files', '--error-unmatch', '.gitignore'], { cwd: ROOT, encoding: 'utf8' });
   check('ignore rules stay local', trackedIgnore.status !== 0);

@@ -1,0 +1,9 @@
+#!/bin/sh
+if [ -x "C:/Program Files/nodejs/node.exe" ]; then
+  exec "C:/Program Files/nodejs/node.exe" tools/check-repository-hygiene.js
+fi
+if command -v node >/dev/null 2>&1; then
+  exec node tools/check-repository-hygiene.js
+fi
+printf "%s\n" "Node.js is required to check private-file publication rules." >&2
+exit 1

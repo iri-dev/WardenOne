@@ -12,7 +12,7 @@ const background = read('background.js');
 const settings = read('settings.js');
 const settingsData = vm.runInNewContext(read('settings-data.js') + '\nSETTINGS_DATA');
 const readme = read('README.md');
-const audit = read('docs/readme-control-audit.md');
+const audit = read('docs/controls.md');
 
 function registry(name) {
   const at = background.indexOf('const ' + name + ' = ');
@@ -77,7 +77,7 @@ sameKeys(inventoryRows(section('## Settings mode and value controls', '## Other 
   settingsControls, 'Settings mode and value inventory');
 
 const pageIds = [...pagesSource.matchAll(/^  \{ id: '([^']+)', title:/gm)].map((match) => match[1]);
-sameKeys(inventoryRows(section('## Settings navigation cross-check', '## Verification')),
+sameKeys(inventoryRows(section('## Settings pages', '## References')),
   pageIds, 'Settings navigation inventory');
 
 const slug = (heading) => heading.toLowerCase()

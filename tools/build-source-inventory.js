@@ -127,7 +127,7 @@ function creditsBlock(inv) {
     'Published licenses and written permissions are separate permission grants; no personal reply is needed when the applicable license covers the use.',
     'The inventory records exact addresses, local processing, evidence and any specific scope exception.',
     '',
-    '[' + inv.sources.length + ' runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)',
+    '[' + inv.sources.length + ' runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md)',
     '', '| Source | Runtime feeds | License or permission |', '| --- | --- | --- |'];
   for (const { source, count } of groups.values()) lines.push('| [' + source.name + '](' + source.home + ') | ' + count + ' | ' + basis(source) + ' |');
   lines.push('', 'Build-only inputs (not daily runtime downloads):', '');
@@ -151,7 +151,7 @@ function notices(inv) {
   const lines = ['<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WardenOne — Third-party notices</title><style>body{max-width:70rem;margin:3rem auto;padding:0 1.5rem;font:16px/1.65 system-ui;color:#172033;background:#fafbff}a{color:#1548a5}section{border-top:1px solid #ccc;padding:1rem 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 monospace}h1,h2{line-height:1.2}</style></head><body>',
     '<h1>Third-party protection sources</h1>',
     '<p>WardenOne uses independently maintained filtering and threat-intelligence lists to identify advertisements, trackers, phishing sites, scams and malicious domains. These sources remain the work of their respective maintainers; WardenOne does not claim ownership of their data.</p>',
-    '<p>Published licenses, separate written permissions and unresolved usage questions are recorded below. The <a href="https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md">source review</a> identifies the specific exceptions. Those feeds remain configured; they are not described as cleared for redistribution.</p>',
+    '<p>Published licenses, separate written permissions and unresolved usage questions are recorded below. The <a href="https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md">source review</a> identifies the specific exceptions. Those feeds remain configured; they are not described as cleared for redistribution.</p>',
     '<p>Runtime lists are downloaded directly by your browser and parsed, normalized, deduplicated and capped into local domain, URL or selector rules. They are not bundled as raw feeds. Packaged rules are selected, converted and supplemented by WardenOne. Attribution does not imply endorsement. Review date: ' + esc(inv.checkedAt) + '.</p>',
     '<p><a href="CREDITS.md">Additional code, media and data credits</a> · <a href="LICENSE">WardenOne GPL license</a> · <a href="https://github.com/iri-dev/WardenOne">Source, build scripts and filter-source snapshots</a></p>'];
   for (const s of profiles) {

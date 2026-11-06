@@ -5,7 +5,7 @@ uses upstream filter lists and filtering techniques credited below. The
 respective maintainers retain ownership of their data. Published licenses and
 separate written permissions provide the bases recorded below. Specific scope
 exceptions, rather than generic verification labels, are documented in the
-[source review](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md).
+[source review](https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md).
 The extension includes offline attribution and license notices in
 `THIRD_PARTY_NOTICES.html`, available from Settings → About WardenOne.
 
@@ -263,7 +263,7 @@ WardenOne uses independently maintained protection lists. Their maintainers reta
 Published licenses and written permissions are separate permission grants; no personal reply is needed when the applicable license covers the use.
 The inventory records exact addresses, local processing, evidence and any specific scope exception.
 
-[43 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)
+[43 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md)
 
 | Source | Runtime feeds | License or permission |
 | --- | --- | --- |
@@ -271,7 +271,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [EasyList Dutch](https://github.com/easylist/easylistdutch) | 1 | GPL-3.0-or-later OR CC-BY-SA-3.0-or-later |
 | [Fanboy’s Annoyance and Social Blocking lists](https://easylist.to/) | 2 | CC-BY-3.0 |
 | [EasyList and EasyPrivacy](https://easylist.to/) | 2 | GPL-3.0-or-later OR CC-BY-SA-3.0-or-later |
-| [malware-filter Phishing hosts](https://gitlab.com/malware-filter/phishing-filter) | 1 | CC-BY-SA-4.0; Specific upstream/use-scope exception — see source review |
+| [malware-filter Phishing hosts](https://gitlab.com/malware-filter/phishing-filter) | 1 | CC-BY-SA-4.0 |
 | [malware-filter URLhaus hosts and online URLs](https://gitlab.com/malware-filter/urlhaus-filter) | 2 | MIT OR CC0-1.0 |
 | [malware-filter VN Badsite hosts](https://gitlab.com/malware-filter/vn-badsite-filter) | 1 | MIT OR CC0-1.0 |
 | [Peter Lowe ad and tracking servers](https://pgl.yoyo.org/adservers/) | 1 | Written permission (2026-10) |
@@ -288,7 +288,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [Emerging Malicious Domain Blocklist](https://github.com/manic-code/Emerging-Malicious-Domain-Blocklist) | 1 | MIT |
 | [MetaMask eth-phishing-detect](https://github.com/MetaMask/eth-phishing-detect) | 1 | LicenseRef-DBAD-1.2 |
 | [Phishing.Database](https://github.com/mitchellkrogza/Phishing.Database) | 1 | MIT |
-| [OpenPhish Community Feed](https://openphish.com/) | 1 | LicenseRef-OpenPhish-Terms; Specific upstream/use-scope exception — see source review |
+| [OpenPhish Community Feed](https://github.com/openphish/public_feed/) | 1 | LicenseRef-OpenPhish-Terms; Written permission (2026-11-03) |
 | [PhishDestroy Destroylist](https://github.com/phishdestroy/destroylist) | 1 | MIT |
 | [uBlock-Origin-dev-filter domains](https://github.com/quenhus/uBlock-Origin-dev-filter) | 1 | Unlicense |
 | [malicious-hash MalwareBazaar and URLhaus SHA-256 feeds](https://github.com/romainmarcoux/malicious-hash) | 2 | MIT; Written permission (2026-10-24) |
@@ -324,7 +324,7 @@ Bundled and derived material:
 | `domain-utils-isolated.js` | Byte-identical copy of domain-utils.js for the isolated execution world | GPL-3.0-or-later; MPL-2.0 covers the marked PSL data |
 | `spotify-silent-1s.mp4` | uBlock Origin noop-1s.mp4 | GPL-3.0 |
 | `rules.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
-| `rules-download-landings.json` | Owner-reported deceptive download landing family; evidence in docs/redirect-chain-stop-audit.md | GPL-3.0-or-later (WardenOne curation) |
+| `rules-download-landings.json` | Owner-reported deceptive download landing family, curated into local rules | GPL-3.0-or-later (WardenOne curation) |
 | `rules-trackers.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
 | `grabber-extra.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
 | `malware-hashes.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |

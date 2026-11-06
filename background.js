@@ -16824,7 +16824,7 @@ function networkRulePatternHost(pattern) {
 }
 
 function remoteListBlockAllowed(host, pattern, sourceKind, sourceUrl) {
-  /* Source-specific domain exclusions create no allow rules. Evidence: docs/security-feed-exceptions.md. */
+  /* Source-specific domain exclusions create no allow rules; the evidence is kept in the private review record. */
   if (sourceUrl === 'https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt'
       && (host === 'fileditch.com' || host === 'www.fileditch.com')) return false;
   if (!pattern && sourceUrl === 'https://raw.githubusercontent.com/durablenapkin/scamblocklist/master/hosts.txt'
@@ -16928,7 +16928,7 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
 }
 
 /* Suppress only conflicting single-feed verdicts for exact names and www, never all subdomains.
-   Other protections and user rules still apply. Evidence and review dates: docs/security-feed-exceptions.md. */
+   Other protections and user rules still apply. Evidence and review dates are kept in the private review record. */
 const FEED_FALSE_POSITIVE_DOMAINS = new Set(['steamrip.com', 'support.metamask.io']);
 function isFeedFalsePositiveDomain(host) {
   const d = String(host || '').toLowerCase();

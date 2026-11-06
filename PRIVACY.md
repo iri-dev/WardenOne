@@ -262,7 +262,7 @@ Third-party maintainers retain ownership and credit. Published licenses and scop
 written permissions are recorded separately in that inventory. Attribution and
 license texts are included in the extension’s **Settings → About → Licenses & credits**
 page and in [CREDITS.md](https://github.com/iri-dev/WardenOne/blob/main/CREDITS.md).
-The [source review](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)
+The [source review](https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md)
 identifies specific upstream scope exceptions; public availability alone is not
 treated as permission to redistribute a feed. These notices add no background requests.
 
