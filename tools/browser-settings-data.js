@@ -75,9 +75,12 @@ async function run() {
       }
       let state;
       try {
-        state = await value(`(() => { const dialog=document.querySelector('#import-review');
+        state = await value(`(async () => { const dialog=document.querySelector('#import-review');
+          const locks=await navigator.locks.query().catch(()=>null);
           return {visibility:document.visibilityState,backup:(document.querySelector('[data-custom=result-backup] .msg')||{}).textContent,
-            review:dialog?{open:dialog.open,value:dialog.returnValue}:null,errors:window.__errors}; })()`);
+            review:dialog?{open:dialog.open,value:dialog.returnValue}:null,errors:window.__errors,
+            toast:(document.querySelector('#toast')||{}).textContent,loaded,
+            locksHeld:locks&&locks.held.map(lock=>lock.name),locksWaiting:locks&&locks.pending.map(lock=>lock.name)}; })()`);
       } catch (_) {}
       throw new Error('Timed out waiting for ' + label + (state ? ': ' + JSON.stringify(state) : ''));
     }

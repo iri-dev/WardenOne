@@ -551,6 +551,9 @@ async function run() {
        clamps to it, and a wheel pointed into an end does not move the page at all. */
     const maxScroll = await value('document.scrollingElement.scrollHeight - innerHeight');
     assert(maxScroll > 200, 'the popup is too short to test scroll restoration: ' + maxScroll);
+    /* A scroll from a script is not a person taking over, so a section filling in late would put
+       the page back on its restored anchor and record that position instead of this one. */
+    await value("window.dispatchEvent(new WheelEvent('wheel'))");
     await value(`scrollTo(0, ${Math.floor(maxScroll / 2)})`);
     await until("scrollY > 0 && JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))?.y === Math.round(scrollY)", 'scrolled position to record');
     const savedPosition = await value("JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))");
