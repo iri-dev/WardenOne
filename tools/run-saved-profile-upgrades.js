@@ -8,7 +8,7 @@ const { readZip, extract } = require('./lib/review-archive.js');
 
 const root = path.resolve(__dirname, '..');
 const oldestRef = '42448d1823c0de7c35884c772af9a68012b3ba71';
-const publishedRef = '273c43a0051d6c3fe12c6871944ed7e8822d8af3';
+const publishedRef = '5137313e1f5eef26a0152df382acbf5ed9953d48';
 const outAt = process.argv.indexOf('--out');
 const refAt = process.argv.indexOf('--candidate-ref');
 const out = path.resolve(outAt >= 0 ? process.argv[outAt + 1] : path.join(root, 'tmp', 'saved-profile-upgrades'));
