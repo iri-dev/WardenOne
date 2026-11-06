@@ -62,8 +62,8 @@ async function run() {
       if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
       return result.result.value;
     };
-    const until = async (session, expression, label) => {
-      const deadline = Date.now() + 15000;
+    const until = async (session, expression, label, timeoutMs = 15000) => {
+      const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
         try { if (await evaluate(session, expression)) return; } catch (_) {}
         await sleep(100);
@@ -163,9 +163,10 @@ async function run() {
           && document.title === 'Logger visit fixture'`, state.name + ' direct visit');
       } else if (state.visit === 'warning') {
         const warningUrl = `chrome-extension://${extension.id}/ip-logger-warning.html`;
+        /* The worker answers this once it is free; a fresh install keeps it parsing lists. */
         await until(visitTab, `location.href === ${JSON.stringify(warningUrl)}
           && document.getElementById('status')?.textContent === 'Blocked before connecting'`,
-        state.name + ' warning page');
+        state.name + ' warning page', 90000);
       } else {
         const deadline = Date.now() + 5000;
         while (!blocked && Date.now() < deadline) await sleep(100);

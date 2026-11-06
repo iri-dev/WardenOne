@@ -230,9 +230,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* How long a page may take to signal __done. Generous, because the known-regression variant can
    make the churn page many times slower, and that slowness is the result being measured. */
 const RUN_TIMEOUT_MS = 90000;
-async function fetchJson(url) {
-  const res = await fetch(url);
-  return res.json();
+/* A request can die without settling: written, never answered, its socket half closed. Nothing else
+   ends a run waiting here, so each try gets a limit and a new connection. A refused connection is
+   not retried, because the callers poll for exactly that. */
+async function fetchJson(url, timeoutMs = 20000) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+      return await res.json();
+    } catch (error) {
+      if (attempt >= 3 || error.name !== 'TimeoutError') throw error;
+      console.warn('[harness] ' + url + ' was not answered in ' + timeoutMs + ' ms; trying again');
+    }
+  }
 }
 
 class Cdp {
@@ -323,7 +333,9 @@ async function launch(edge, variant, extensionDir, port, profileDir, extraArgs) 
   ];
   if (process.env.WARDENONE_HEADLESS === '1') args.push('--headless=new');
   // Chrome 121's native GPU backend crashes on the Windows CI image; keep WebGL available in software.
-  if (process.env.WARDENONE_SOFTWARE_GL === '1') args.push('--use-gl=angle', '--use-angle=swiftshader');
+  // There every animated frame is CPU work, above the priority of the extension's Idle worker: the
+  // onboarding page opened by a fresh install took 11 of 12 cores for a minute and starved it.
+  if (process.env.WARDENONE_SOFTWARE_GL === '1') args.push('--use-gl=angle', '--use-angle=swiftshader', '--force-prefers-reduced-motion');
   if (variant === 'off') args.push('--disable-extensions');
   else args.push('--disable-extensions-except=' + extensionDir, '--load-extension=' + extensionDir);
   if (Array.isArray(extraArgs)) args.push(...extraArgs);
@@ -363,6 +375,24 @@ async function extensionReady(cdp, port, expectedVersion, browserContextId, poll
   const wakeAt = Date.now() + 8000;
   let lastWorkerError = '';
   let wakeTarget = null;
+  /* A worker that stops while it is being attached never answers and the browser sends no detach,
+     so this wait has to notice for itself. A worker that is only slow keeps the whole deadline. */
+  const workerAnswer = (targetId, method, params, sessionId) => new Promise((resolve, reject) => {
+    let timer = null;
+    let done = false;
+    const finish = (settle, value) => { done = true; clearTimeout(timer); settle(value); };
+    const watch = async () => {
+      try {
+        const { targetInfos } = await cdp.send('Target.getTargets');
+        if (done) return;
+        if (!targetInfos.some((t) => t.targetId === targetId)) finish(reject, new Error('the worker stopped before answering ' + method));
+        else if (Date.now() > deadline) finish(reject, new Error('the worker did not answer ' + method));
+        else timer = setTimeout(watch, pollIntervalMs);
+      } catch (error) { if (!done) finish(reject, error); }
+    };
+    timer = setTimeout(watch, pollIntervalMs);
+    cdp.send(method, params, sessionId).then((value) => finish(resolve, value), (error) => finish(reject, error));
+  });
   for (;;) {
     const { targetInfos } = await cdp.send('Target.getTargets');
     const inContext = (target) => browserContextId === undefined || target.browserContextId === browserContextId;
@@ -371,8 +401,8 @@ async function extensionReady(cdp, port, expectedVersion, browserContextId, poll
       const { sessionId } = await cdp.send('Target.attachToTarget', { targetId: w.targetId, flatten: true });
       let manifest = null;
       try {
-        await cdp.send('Runtime.enable', {}, sessionId);
-        const r = await cdp.send('Runtime.evaluate', { expression: 'JSON.stringify({ name: chrome.runtime.getManifest().name, version: chrome.runtime.getManifest().version, id: chrome.runtime.id })', returnByValue: true }, sessionId);
+        await workerAnswer(w.targetId, 'Runtime.enable', {}, sessionId);
+        const r = await workerAnswer(w.targetId, 'Runtime.evaluate', { expression: 'JSON.stringify({ name: chrome.runtime.getManifest().name, version: chrome.runtime.getManifest().version, id: chrome.runtime.id })', returnByValue: true }, sessionId);
         manifest = JSON.parse((r && r.result && r.result.value) || 'null');
       } catch (error) { manifest = null; lastWorkerError = String(error.message || error); }
       if (manifest && manifest.name === 'WardenOne') {
@@ -998,7 +1028,7 @@ function mustFinish(run, name) {
   return Promise.resolve().then(run).finally(() => { settled = true; });
 }
 
-module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, overheadFailures, LONGTASK_SCRIPT, Cdp, launch, killBrowser, extensionReady, releaseWorker, closeExtensionTabs, freePort, edgePath, mustFinish };
+module.exports = { parseArgs, quantile, median, p90, summarise, applyRegression, REGRESSIONS, PAGES, MEASURED_PAGES, aggregate, deltas, markdown, overheadFailures, LONGTASK_SCRIPT, Cdp, launch, killBrowser, extensionReady, releaseWorker, closeExtensionTabs, freePort, edgePath, mustFinish, fetchJson };
 
 if (require.main === module) {
   main().catch((e) => { console.error('perf profile: ' + (e && e.stack || e)); process.exit(2); });

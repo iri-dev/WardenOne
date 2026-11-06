@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The IP logger warning no longer says “Block not confirmed” after a block that really happened. This could appear when the browser was busy, when WardenOne checked its records while the page was still opening, or after several logger visits in a few minutes. Reloading the warning or coming back to it now keeps the result, and if the browser refuses the check the page says it could not check instead of warning of exposure.
 - New beacon events immediately flash their count in the corner badge, and the panel opens with recorded rule IDs and destinations without a loading screen. Saved beacon controls load independently of network totals, and delayed state reads cannot overwrite newer choices.
 - Beacon controls keep waiting for slower browser rule writes and show their progress, instead of falsely reporting a save failure after eight seconds and discarding the later confirmation.
 - The badge is slightly shorter and lets you block or unblock each recorded beacon destination for the current site. Both choices are saved in the firewall and remain available after reload. Recommendation labels distinguish listed trackers from site services and unconfirmed destinations; the new Beacon firewall column also supports managing and backing up those decisions.

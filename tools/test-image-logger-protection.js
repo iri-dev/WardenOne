@@ -547,16 +547,19 @@ async function testBackground() {
   let matched = [];
   let enabled = ['grabbers'];
   let feedbackError = false;
+  let feedbackReads = 0;
   const timers = [];
   const sandbox = {
     chrome: {
       runtime: { id: 'wo', getURL: (name) => 'chrome-extension://session-id/' + name },
       webRequest: {
         onBeforeRequest: { addListener(fn) { listeners.before = fn; } },
+        onBeforeRedirect: { addListener(fn) { listeners.redirect = fn; } },
         onErrorOccurred: { addListener(fn) { listeners.error = fn; } },
       },
       declarativeNetRequest: {
         getMatchedRules: async () => {
+          feedbackReads++;
           if (feedbackError) throw new Error('quota');
           return { rulesMatchedInfo: matched };
         },
@@ -574,6 +577,7 @@ async function testBackground() {
     GRABBER_TRACKER_ROUTE_RULE_ID: 172,
     GRABBER_NAV_RULE_ID: 741000,
     loadPackagedGrabberDomains: async () => {},
+    registerListener: (name, register) => register(),
     queueHistory(entry) { history.push(entry); },
     setTimeout(fn, delay) {
       if (delay < 1000) return setTimeout(fn, 0);
@@ -582,7 +586,7 @@ async function testBackground() {
     clearTimeout(timer) { timer.canceled = true; },
     URL, Date, Map, Set, Number, Math, String,
   };
-  vm.runInNewContext(observer + '\nthis.navStatus = grabberNavigationStatus; this.noteCandidate = noteGrabberImageCandidate; this.resetEvidence = () => { DNR_FEEDBACK_SNAPSHOT = null; DNR_FEEDBACK_READS.length = 0; };', sandbox);
+  vm.runInNewContext(observer + '\nthis.navStatus = grabberNavigationStatus; this.noteCandidate = noteGrabberImageCandidate; this.readEvidence = readMatchedRuleEvidence; this.resetEvidence = () => { DNR_FEEDBACK_SNAPSHOT = null; DNR_FEEDBACK_READS.length = 0; };', sandbox);
   async function runTimers() {
     for (const timer of timers.splice(0)) if (!timer.canceled) await timer.fn();
   }
@@ -685,26 +689,106 @@ async function testBackground() {
   assert.equal((await sandbox.navStatus({ ...sender, tab: { id: 17 } })).status, 'blocked',
     'a navigation event handled late by a busy worker is matched by its request time');
 
+  const stalledAt = Date.now() - 45000;
+  listeners.before({ tabId: 18, url: 'https://grabify.link/stalled', timeStamp: stalledAt });
+  matched = [{ rule: { rulesetId: 'grabber_navigation', ruleId: 168 }, tabId: 18, timeStamp: stalledAt + 2 }];
+  sandbox.resetEvidence();
+  assert.equal((await sandbox.navStatus({ ...sender, tab: { id: 18 } })).status, 'blocked',
+    'a worker stalled past any wall-clock limit still confirms the block it can prove');
+
+  const abandonedAt = Date.now() - 45000;
+  listeners.before({ tabId: 19, url: 'https://grabify.link/abandoned', timeStamp: abandonedAt });
+  matched = [{ rule: { rulesetId: 'grabber_navigation', ruleId: 168 }, tabId: 19, timeStamp: Date.now() }];
+  sandbox.resetEvidence();
+  assert.equal((await sandbox.navStatus({ ...sender, tab: { id: 19 } })).status, 'observed_unconfirmed',
+    'a match from a different moment cannot confirm an old request');
+
+  /* The read starts after the request but lands before commit, when Chrome has not yet filed the
+     match under the tab; a later read holds it. */
+  const racedAt = Date.now() - 5;
+  listeners.before({ tabId: 20, url: 'https://grabify.link/raced', timeStamp: racedAt });
+  matched = [];
+  sandbox.resetEvidence();
+  await sandbox.readEvidence({}, 'background');
+  matched = [{ rule: { rulesetId: 'grabber_navigation', ruleId: 168 }, tabId: 20, timeStamp: racedAt + 2 }];
+  await new Promise((resolve) => setTimeout(resolve, 2));
+  assert.equal((await sandbox.navStatus({ ...sender, tab: { id: 20 } })).status, 'blocked',
+    'a read begun before the warning page asked cannot deny a block');
+
   feedbackError = true;
   sandbox.resetEvidence();
   listeners.before({ tabId: 15, url: 'https://grabify.link/?secret=PRIVATE' });
   const quota = await sandbox.navStatus({ ...sender, tab: { id: 15 } });
-  assert.equal(quota.status, 'observed_unconfirmed', 'match-feedback errors never claim a block or disabled protection');
+  assert.equal(quota.status, 'not_checked', 'a refused read says it could not check, never a block or disabled protection');
+
+  /* Exactly what Chrome 121 and Edge 156 reported for a rule redirect. Edge redirects to a session host. */
+  const stopped = (tabId, overrides = {}) => ({ tabId, requestId: 'r' + tabId, url: 'https://grabify.link/x?token=PROOFSECRET',
+    redirectUrl: 'chrome-extension://session-id/ip-logger-warning.html', statusCode: 307, fromCache: false, ...overrides });
+  const visit = (tabId, url = 'https://grabify.link/x?token=PROOFSECRET') => listeners.before({ tabId, url, requestId: 'r' + tabId });
+  const historyBefore = history.length;
+  const readsBefore = feedbackReads;
+  visit(21);
+  listeners.redirect(stopped(21));
+  const proven = await sandbox.navStatus({ ...sender, tab: { id: 21 } });
+  assert.equal(proven.status, 'blocked', 'the redirect record confirms a block when the read budget is spent');
+  assert.equal(proven.host, 'grabify.link');
+  assert.equal(feedbackReads, readsBefore, 'the redirect record spends no read');
+  assert.equal(history.length, historyBefore + 1, 'the confirmed visit reaches Activity once');
+  assert.equal(history.at(-1).type, 'blocked_grabber_navigation');
+  assert(!JSON.stringify(history).includes('PROOFSECRET'));
+  visit(22);
+  listeners.redirect(stopped(22, { redirectUrl: 'chrome-extension://wo/ip-logger-warning.html' }));
+  assert.equal((await sandbox.navStatus({ ...sender, tab: { id: 22 } })).status, 'blocked', 'the stable extension host is also ours');
+
+  /* A connected server can send every one of these; only the absent ip separates them. */
+  let tabId = 30;
+  for (const [imitation, overrides] of [
+    ['a server copying the internal status', { ip: '203.0.113.9' }],
+    ['a plain server redirect', { statusCode: 302, ip: '203.0.113.9' }],
+    ['a redirect served from cache', { statusCode: 301, fromCache: true, ip: '203.0.113.9' }],
+    ['a cached redirect with no address', { fromCache: true }],
+    ['another status without an address', { statusCode: 302 }],
+    ['a different extension page', { redirectUrl: 'chrome-extension://session-id/popup.html' }],
+    ['the same page of another extension', { redirectUrl: 'chrome-extension://other/ip-logger-warning.html' }],
+    ['an ordinary web page of that name', { redirectUrl: 'https://session-id/ip-logger-warning.html' }],
+    ['an unreadable target', { redirectUrl: 'not a url' }],
+    ['a different request in the tab', { requestId: 'other' }],
+    ['a different host than the attempt', { url: 'https://other.example/' }],
+  ]) {
+    tabId += 1;
+    visit(tabId);
+    listeners.redirect(stopped(tabId, overrides));
+    assert.equal((await sandbox.navStatus({ ...sender, tab: { id: tabId } })).status, 'not_checked', imitation + ' is not proof');
+  }
+  feedbackError = false;
+  sandbox.resetEvidence();
+  matched = [];
+  tabId += 1;
+  visit(tabId, 'https://not-a-logger.example/');
+  listeners.redirect(stopped(tabId, { url: 'https://not-a-logger.example/' }));
+  assert.equal((await sandbox.navStatus({ ...sender, tab: { id: tabId } })).status, 'observed_unconfirmed',
+    'an unknown host is not claimed as a blocked logger');
+  listeners.redirect(stopped(99));
+  assert.equal(listeners.redirect({ tabId: 99 }), undefined, 'a redirect with no attempt is ignored');
 }
 
-function warningPageRig(result) {
+function warningPageRig(result, { lastError = null, state = null, sendThrows = false } = {}) {
   const nodes = new Map();
   for (const id of ['back', 'activity', 'status', 'explanation', 'host', 'host-row']) {
     nodes.set(id, { textContent: '', hidden: id === 'host-row', addEventListener() {} });
   }
+  nodes.asked = 0;
+  nodes.history = { length: 2, state, back() {}, replaceState(value) { this.state = value; } };
   const sandbox = {
     document: { getElementById: (id) => nodes.get(id) },
-    chrome: { runtime: { lastError: null, getURL: (name) => 'chrome-extension://wo/' + name,
+    chrome: { runtime: { lastError, getURL: (name) => 'chrome-extension://wo/' + name,
       sendMessage(message, callback) {
+        if (sendThrows) throw new Error('Extension context invalidated.');
+        nodes.asked++;
         assert.equal(message.kind, 'grabber-navigation-status');
         callback(result);
       } } },
-    history: { length: 2, back() {} }, location: { href: '' },
+    history: nodes.history, location: { href: '' },
   };
   vm.runInNewContext(read('ip-logger-warning.js'), sandbox);
   return nodes;
@@ -723,6 +807,26 @@ function warningPageRig(result) {
   assert.equal(uncertain.get('host-row').hidden, true);
   const unavailable = warningPageRig({ status: 'protection_unavailable' });
   assert.equal(unavailable.get('status').textContent, 'Network protection unavailable');
+  for (const [name, rig] of [['a refused read', warningPageRig({ status: 'not_checked' })],
+    ['no reply', warningPageRig(undefined)], ['a closed port', warningPageRig({ status: 'blocked' }, { lastError: { message: 'closed' } })],
+    ['a refused sender', warningPageRig({ ok: false, error: 'Not allowed from this context.' })],
+    ['an invalidated page', warningPageRig(null, { sendThrows: true })]]) {
+    assert.equal(rig.get('status').textContent, 'Could not check', name + ' is not reported as a failed block');
+    assert(!/exposed/.test(rig.get('explanation').textContent), name + ' does not warn of exposure it knows nothing about');
+    assert.equal(rig.get('host-row').hidden, true);
+    assert.equal(rig.history.state, null, name + ' is not remembered');
+  }
+  assert.equal(blocked.history.state.host, 'grabify.link', 'a confirmed block stays with its history entry');
+  const reloaded = warningPageRig({ status: 'observed_unconfirmed' }, { state: blocked.history.state });
+  assert.equal(reloaded.get('status').textContent, 'Blocked before connecting', 'reload and Back keep a confirmed block');
+  assert.equal(reloaded.get('host').textContent, 'grabify.link');
+  assert.equal(reloaded.asked, 0, 'a remembered block does not ask again');
+  const hostless = warningPageRig({ status: 'blocked' });
+  const hostlessAgain = warningPageRig({ status: 'observed_unconfirmed' }, { state: hostless.history.state });
+  assert.equal(hostlessAgain.get('host-row').hidden, true, 'a block with no host shows none after reload');
+  assert.equal(uncertain.history.state, null, 'an unconfirmed answer is asked again on reload');
+  assert.equal(warningPageRig({ status: 'blocked', host: 'x' }, { state: { wardenOneBlocked: 'true' } }).asked, 1,
+    'only the exact remembered shape is trusted');
   assert(!/your IP address has already been sent/i.test(source), 'fallback overlay must not claim exposure as fact');
   console.log('image-logger navigation, image warning, confirmation and privacy tests pass');
 })().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

@@ -5318,6 +5318,7 @@ async function readMatchedRuleEvidence(filter, priority) {
 }
 
 const GRABBER_NAV_ATTEMPTS = new Map();
+const GRABBER_NAV_MATCH_SKEW_MS = 1500;
 const GRABBER_NAV_LOGGED = new Map();
 const GRABBER_IMAGE_LOGGED = new Map();
 const GRABBER_IMAGE_CHECKED = new Map();
@@ -5410,9 +5411,28 @@ chrome.webRequest.onBeforeRequest.addListener((details) => {
   const host = grabberHostFromUrl(details.url);
   if (!host) return;
   /* A busy worker can run this seconds after the DNR match; the request stamp keeps them comparable. */
-  GRABBER_NAV_ATTEMPTS.set(details.tabId, { host, at: Number(details.timeStamp) || Date.now() });
+  GRABBER_NAV_ATTEMPTS.set(details.tabId, { host, at: Number(details.timeStamp) || Date.now(), requestId: details.requestId });
   if (GRABBER_NAV_ATTEMPTS.size > 200) GRABBER_NAV_ATTEMPTS.delete(GRABBER_NAV_ATTEMPTS.keys().next().value);
 }, { urls: ['<all_urls>'], types: ['main_frame'] });
+
+/* The browser's own record that a request ended at this warning without connecting. `ip` exists
+   only once a server has answered, so a server can copy the status line but not this absence. */
+function grabberRedirectStoppedRequest(details) {
+  if (details.statusCode !== 307 || details.ip || details.fromCache) return false;
+  try {
+    const target = new URL(String(details.redirectUrl || ''));
+    const page = new URL(chrome.runtime.getURL('ip-logger-warning.html'));
+    return target.protocol === page.protocol && target.pathname === page.pathname
+      && (target.host === page.host || target.host === chrome.runtime.id);
+  } catch (_) { return false; }
+}
+registerListener('IP-logger redirect proof', () => {
+  chrome.webRequest?.onBeforeRedirect?.addListener((details) => {
+    const attempt = details && GRABBER_NAV_ATTEMPTS.get(details.tabId);
+    if (attempt && attempt.requestId === details.requestId && attempt.host === grabberHostFromUrl(details.url)
+        && grabberRedirectStoppedRequest(details)) attempt.stopped = true;
+  }, { urls: ['<all_urls>'], types: ['main_frame'] });
+});
 
 async function grabberNavigationStatus(sender) {
   const tabId = sender && sender.tab && sender.tab.id;
@@ -5421,20 +5441,30 @@ async function grabberNavigationStatus(sender) {
   if (tabId == null || sender.url !== warningUrl || sender.frameId !== 0) {
     return { status: 'observed_unconfirmed' };
   }
+  const askedAt = Date.now();
   const attempt = GRABBER_NAV_ATTEMPTS.get(tabId);
-  const evidence = await readMatchedRuleEvidence({ tabId, minTimeStamp: Date.now() - 20000,
-    requiredAt: attempt ? attempt.at : 0 }, 'event');
+  /* The redirect record costs no read, so the budget cannot turn a real block into a doubt. */
+  const stopped = !!attempt && attempt.stopped === true;
+  /* Chrome files a navigation's match under its tab only at commit. This page asks after commit,
+     so a read begun before it asked can lack a block that really happened. The match is paired
+     with its request by their own times: how late a busy worker gets here says nothing about it. */
+  const evidence = stopped ? { ok: true, matches: [] } : await readMatchedRuleEvidence({ tabId,
+    minTimeStamp: attempt ? attempt.at - GRABBER_NAV_MATCH_SKEW_MS : askedAt - 20000,
+    requiredAt: attempt ? askedAt : 0 }, 'event');
   const navMatch = evidence.ok && evidence.matches.find((item) => grabberRuleIsNavigation(item && item.rule)
-    && (!attempt || Number(item.timeStamp) >= attempt.at - 1500));
-  if (!navMatch) return { status: attempt && await grabberNetworkProtectionUnavailable(attempt.host)
-    ? 'protection_unavailable' : 'observed_unconfirmed' };
+    && (!attempt || Math.abs(Number(item.timeStamp) - attempt.at) <= GRABBER_NAV_MATCH_SKEW_MS));
+  const unproven = evidence.ok ? 'observed_unconfirmed' : 'not_checked';
+  if (!navMatch && !stopped) return { status: attempt && await grabberNetworkProtectionUnavailable(attempt.host)
+    ? 'protection_unavailable' : unproven };
   await loadPackagedGrabberDomains();
-  const logKey = tabId + '|' + navMatch.rule.rulesetId + '|' + navMatch.rule.ruleId + '|' + navMatch.timeStamp;
+  const logKey = tabId + '|' + (navMatch
+    ? navMatch.rule.rulesetId + '|' + navMatch.rule.ruleId + '|' + navMatch.timeStamp : 'redirect|' + attempt.at);
   const previous = GRABBER_NAV_LOGGED.get(logKey);
-  const trackerRoute = navMatch.rule.rulesetId === 'grabber_navigation' && navMatch.rule.ruleId === GRABBER_TRACKER_NAV_RULE_ID;
-  const validAttempt = attempt && Date.now() - attempt.at < 20000
+  const trackerRoute = navMatch ? navMatch.rule.rulesetId === 'grabber_navigation' && navMatch.rule.ruleId === GRABBER_TRACKER_NAV_RULE_ID
+    : !!attempt && attempt.host === GRABBER_TRACKER_HOST;
+  const validAttempt = attempt
     && (trackerRoute ? attempt.host === GRABBER_TRACKER_HOST : knownGrabberHost(attempt.host));
-  if (!validAttempt && !previous) return { status: 'observed_unconfirmed' };
+  if (!validAttempt && !previous) return { status: unproven };
   const host = validAttempt ? attempt.host : previous.host;
   GRABBER_NAV_ATTEMPTS.delete(tabId);
   if (!previous) {
