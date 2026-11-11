@@ -141,9 +141,9 @@ const COPY = {
   blockFirstPartyTrackers: ['First-party trackers', 'risk', 'Catches known analytics paths served from a site’s own domain.'],
   blockCnameTrackers: ['Block CNAME-cloaked trackers', 'risk', 'On by default. Blocks over 100,000 known disguised tracker addresses from a packaged list, and strips cookies from the few that sign-in or site tools rely on; can be turned off for one site.'],
   trackerLearner: ['Local tracker learner', '', 'Learns from repeated third-party activity across your sites. Choose its learning mode below. Observations stay on this device; known tracker blocking works separately.'],
-  trackerLearnerAuto: ['Learning mode', '', 'Automatic tracker protection learns from browser evidence and blocks learned trackers until you unblock them. Switching to review stops new automatic decisions; saved blocks stay. Open Learned trackers to search your history, review evidence or unblock a domain.'],
+  trackerLearnerAuto: ['Learning mode', '', 'Automatic by default: learns from browser evidence and blocks learned trackers until you unblock them. Switching to review stops new automatic decisions; saved blocks stay. Open Learned trackers to search your history, review evidence or unblock a domain.'],
   socialWidgetGuard: ['Click to load social embeds', '', 'Facebook, X, Instagram and TikTok embeds wait for your click.'],
-  trackerCacheProtection: ['Block cache-tag tracking', 'adv', 'Stops trackers rebuilding an ID from your browser cache.'],
+  trackerCacheProtection: ['Block cache-tag tracking', '', 'On by default. Stops known trackers rebuilding an ID from your browser cache. Repeated tracker responses can use more bandwidth.'],
   stripTrackingParams: ['Strip tracking from addresses', 'rec', 'Removes utm, fbclid and friends before the site receives them, when you open a link or a site rewrites its address.'],
   cleanCopyLinks: ['Clean links you copy', '', 'Copies links without their tracking codes, so pastes come out clean.'],
   unshimLinks: ['Remove click-tracking pings', '', 'Stops links reporting your click to another address.'],
@@ -272,7 +272,7 @@ const PAGES = [
     G('i-fingerprint', 'Fingerprinting', 'Make it harder for sites to recognise your browser or device.', ['blockFingerprintScripts', 'fingerprintProbeDetection', 'clientHintProtection', 'antiFingerprintNoise', 'blockFraudVendorScripts', 'sendPrivacySignals']),
     G('i-mail', 'Email & sign-in', 'Private inboxes, and logins that still finish.', ['mailTrackingShield', 'loginCompatibility']) ] },
   { id: 'ads', title: 'Ads & clutter', icon: 'i-ban', nav: 1, desc: 'AdShield: ads on pages and in players, and the junk in search results.', groups: [
-    G('i-ban', 'Ads', 'Network blocking plus page-level fixes for sites that dodge it.', ['adShield', 'scriptletEngine']),
+    G('i-ban', 'Ads', 'Network blocking plus page-level fixes for sites that dodge it.', ['adShield', 'antiAdblockShield', 'scriptletEngine']),
     G('i-twitch', 'Twitch', typeof TWITCH_REPLAY === 'object' ? TWITCH_REPLAY.sub : 'Pre-rolls and steadier playback.',
       sw('twitchAdBlock', 'twitchSteadyPlayback').concat(typeof TWITCH_REPLAY === 'object' ? TWITCH_REPLAY.items : [])),
     G('i-search-x', 'Search results', 'Sponsored results, AI answers and spam.', ['blockSponsoredSearchResults', 'blockSearchAiAnswers', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults']) ] },
@@ -872,16 +872,19 @@ function aboutPage() {
     '<p class="about-tagline">A browser extension that helps block ads and trackers, warns about phishing and scams, checks risky downloads, and gives you control over privacy and page behaviour.</p>' +
     '<p class="about-maker">Built by <a href="' + PROJECT_LINKS.maker + '" target="_blank" rel="noopener noreferrer">iri.dev</a> 💜</p></div></section>' +
     '<section class="info-card"><h3>WardenOne updates</h3><p class="about-build-status" id="wo-build-status" role="status" aria-live="polite">Checking the official WardenOne release…</p>' +
-    '<p id="wo-build-detail"></p><ol class="about-build-steps"><li>Download the ZIP from the official GitHub release and unzip it.</li>' +
-    '<li>Replace the contents of your installed WardenOne folder. Keep that folder at the same path.</li>' +
-    '<li>Open your browser’s Extensions page and press Reload on WardenOne.</li></ol>' +
-    '<div class="about-build-actions"><a class="btn primary" href="https://github.com/iri-dev/WardenOne/releases/latest" target="_blank" rel="noopener noreferrer">Open official release</a>' +
-    '<button class="btn" id="wo-build-check" type="button">Check again</button></div></section>' +
+    '<p id="wo-build-detail"></p><div id="wo-build-manual">' +
+    '<div class="about-build-actions"><a class="btn primary" id="wo-build-release" href="https://github.com/iri-dev/WardenOne/releases/latest" target="_blank" rel="noopener noreferrer">Open official release</a>' +
+    '<button class="btn" id="wo-build-check" type="button">Check again</button></div>' +
+    '<ol class="about-build-steps"><li>Download the ZIP from the official release.</li>' +
+    '<li><label>Verify the downloaded ZIP <input id="wo-build-zip" type="file" accept=".zip,application/zip" disabled></label>' +
+    '<p id="wo-build-verification" role="status" aria-live="polite"></p></li>' +
+    '<li>Unzip it and replace the contents of your WardenOne folder at the same path.</li>' +
+    '<li>Open your browser’s Extensions page and press Reload on WardenOne.</li></ol></div></section>' +
     '<section class="info-card"><h3>What WardenOne is</h3><p>WardenOne brings browser protection and wellbeing tools together in one place. You can choose which protections run, see what happened on a site, and change a setting when a page needs it. It works on your device without an account or telemetry.</p></section>' +
     '<section class="info-card"><h3>Project</h3><div class="info-links">' +
     infoLink(PROJECT_LINKS.home, 'Official website', 'News and the current WardenOne download.', 'i-globe') +
     infoLink(PROJECT_LINKS.repo, 'GitHub repository', 'Explore the source and project history.', 'i-code') +
-    infoLink(PROJECT_LINKS.releases, 'Check for updates', 'See the latest published WardenOne build.', 'i-refresh') +
+    infoLink(PROJECT_LINKS.releases, 'Release history', 'Browse published WardenOne builds.', 'i-refresh') +
     infoLink(PROJECT_LINKS.support, 'Report an issue', 'Open the project’s feedback forms.', 'i-alert') +
     '</div></section>' +
     '<section class="info-card"><h3>Privacy & open source</h3><p>WardenOne is open source under the GNU GPL v3 or later.</p><div class="info-links">' +
@@ -1130,7 +1133,7 @@ const SEARCH_ALIASES = {
   memoryShield: 'memory ram slow speed',
   blockGeolocation: 'location gps',
   blockCameraMic: 'camera webcam microphone mic',
-  safeSearch: 'safe search kids family',
+  safeSearch: 'safe search kids family youtube restricted mode administrator',
   clipboardGuard: 'clipboard',
   eyeshield: 'dark mode night mode',
   shortcuts: 'shortcuts hotkeys'
@@ -2631,6 +2634,9 @@ function listStatusHTML() {
     if (src && Number(src.total)) rows.push(['Sources reached', esc(src.succeeded + ' of ' + src.total) + (src.failed ? ' · ' + esc(plural(src.failed, 'source')) + ' couldn’t be reached' : ''), src.failed ? 'warn' : '']);
     const active = Number(meta.activeCount || meta.activeRuleCount || 0) || Number(meta.totalCount || meta.count || 0);
     if (active) rows.push(['Blocking', esc(fmtCount(active)) + ' domains', '']);
+    for (const metric of WO_LIST_COVERAGE.rows(meta.feedCoverage, meta.optionRuleSelection)) {
+      rows.push([metric.label, esc(fmtCount(metric.count)) + ' <em>· ' + esc(metric.definition) + '</em>', '']);
+    }
   } else {
     rows.push(['Last successful update', 'Not yet. The lists built into WardenOne are in use until the first update finishes.', 'warn']);
   }
@@ -2653,10 +2659,11 @@ async function updateLists(button) {
   const res = await Promise.race([ask({ kind: 'force-list-update' }), new Promise((resolve) => setTimeout(() => resolve({ ok: false, timeout: true }), 75000))]);
   button.disabled = false;
   button.innerHTML = label;
-  const meta = res.meta || {};
-  const count = Number(meta.activeCount || meta.activeRuleCount || 0) || Number(meta.totalCount || meta.count || 0);
+  const coverage = WO_LIST_COVERAGE.read(res.meta?.feedCoverage);
   if (res.timeout) setResult('lists', 'This is taking longer than expected. It carries on in the background, and this page updates when it finishes.', 'warn');
-  else if (res.ok) setResult('lists', 'Updated' + (count ? '. Blocking ' + fmtCount(count) + ' domains.' : '.'), 'ok');
+  else if (res.ok) setResult('lists', coverage
+    ? 'Updated. ' + fmtCount(coverage.coveredDomains) + ' feed hostnames covered.'
+    : 'Updated.', 'ok');
   else if (res.skipped) setResult('lists', res.error === 'WardenOne is disabled' ? 'WardenOne is paused, so nothing was fetched.' : 'Nothing was fetched because “' + info('autoUpdateLists').name + '” is off.', 'warn');
   else setResult('lists', 'No new lists could be fetched' + (res.error ? ' (' + trimStop(res.error) + ')' : '') + '. The lists you already have stay in use.', 'err');
   void loadListStatus();
@@ -3181,8 +3188,30 @@ function downloadReport() {
 
 /* ---------- Filter lists you subscribe to, and your own rules: the worker parses both ---------- */
 let subs = { loading: true, lists: [], error: '' };
+/* The offerable lists ship as a packaged file, so showing them costs no network. Picking one is
+   what fetches it, through the same subscription as an address typed by hand. */
+/* Mirrors CUSTOM_LIST_MAX in background.js, which is where the limit is enforced; this copy only
+   decides whether to offer the button. tools/test-filter-catalog.js holds the two together. */
+const CUSTOM_LIST_MAX = 20;
+let catalog = { loaded: false, groups: [], lists: [] };
+async function loadFilterCatalog() {
+  if (catalog.loaded) return;
+  try {
+    const res = await fetch(chrome.runtime.getURL('filter-list-catalog.json'));
+    const doc = await res.json();
+    catalog = {
+      loaded: true,
+      groups: Array.isArray(doc && doc.groups) ? doc.groups : [],
+      lists: Array.isArray(doc && doc.lists) ? doc.lists.filter((l) => l && /^https:\/\//i.test(l.url)) : [],
+    };
+  } catch (_) {
+    catalog = { loaded: true, groups: [], lists: [] };
+  }
+}
+
 async function loadSubscriptions() {
   if (!hasChrome) return;
+  await loadFilterCatalog();
   const res = await ask({ kind: 'custom-lists-get' });
   subs = res.ok ? { loading: false, lists: Array.isArray(res.lists) ? res.lists : [], error: '' } : { loading: false, lists: [], error: res.error || 'no answer' };
   refreshCustom(['subscriptions']);
@@ -3214,7 +3243,29 @@ function subscriptionsHTML() {
     }).join('') + '</div>' : '<p class="r-desc">No subscriptions yet.</p>';
   return '<div class="wide-in"><div class="r-name"><span class="r-label">Filter lists you subscribe to</span></div><div class="r-desc">A country or niche list someone else maintains. Fetched over https and kept on this device; its rules share one limit with your own.</div><div class="r-act"></div></div>' +
     rows + '<div class="sub-add"><input type="url" data-sub-url spellcheck="false" autocomplete="off" placeholder="https://… the address of a filter list" aria-label="Address of a filter list to subscribe to">' +
-    '<button class="btn" data-act="sub-add">Subscribe</button></div>' + msgHTML(results.subs);
+    '<button class="btn" data-act="sub-add">Subscribe</button></div>' + catalogHTML() + msgHTML(results.subs);
+}
+function catalogHTML() {
+  if (!catalog.lists.length) return '';
+  const have = new Set(subs.lists.map((l) => String(l.url || '').toLowerCase()));
+  const groups = catalog.groups.filter((g) => catalog.lists.some((l) => l.group === g.id));
+  if (!groups.length) return '';
+  const room = Math.max(0, CUSTOM_LIST_MAX - subs.lists.length);
+  const body = groups.map((g) => '<div class="r-name"><span class="r-label">' + esc(g.title) + '</span></div>'
+    + '<div class="r-desc">' + esc(g.detail || '') + '</div><div class="sub-list">'
+    + catalog.lists.filter((l) => l.group === g.id).map((l) => {
+      const added = have.has(String(l.url).toLowerCase());
+      const act = added ? '<button class="btn" disabled>Added</button>'
+        : room ? '<button class="btn" data-act="sub-catalog-add" data-url="' + esc(l.url) + '">Add</button>'
+          : '<button class="btn" disabled title="Remove a list first.">No room</button>';
+      return '<div class="sub-row"><span class="sub-main"><b>' + esc(l.title || l.url) + '</b><small>'
+        + esc([l.detail, l.publisher].filter(Boolean).join(' · ')) + '</small></span>'
+        + '<span class="sub-act">' + act + '</span></div>';
+    }).join('') + '</div>').join('');
+  return '<details class="sub-catalog"><summary>Lists you can add (' + catalog.lists.length + ')</summary>'
+    + '<p class="r-desc">None of these is fetched until you add one. Each is someone else’s list, kept on '
+    + 'this device, sharing one rule limit with your own — so add what you will actually use rather than '
+    + 'everything. You can still paste any other address above.</p>' + body + '</details>';
 }
 async function subscriptionAction(act, button) {
   const box = $('[data-custom="subscriptions"]');
@@ -3236,6 +3287,15 @@ async function subscriptionAction(act, button) {
     button.disabled = false;
     if (res.ok && input) input.value = '';
     done(res, 'Subscribed. Its rules are in use now.');
+    return;
+  }
+  if (act === 'sub-catalog-add') {
+    const url = String(button.dataset.url || '');
+    if (!/^https:\/\//i.test(url)) { tell('That list has no https address.', 'err'); return; }
+    button.disabled = true;
+    button.textContent = 'Adding…';
+    tell('Fetching the list…', '');
+    done(await ask({ kind: 'custom-list-add', url }), 'Subscribed. Its rules are in use now.');
     return;
   }
   const list = subs.lists.find((l) => l.id === button.dataset.id);

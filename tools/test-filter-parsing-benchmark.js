@@ -50,8 +50,8 @@ const rules = plain(network.parseNetworkRules([
   '||conflict.example^$first-party,third-party', 'site.example##.ad',
 ].join('\n'), 100, 20));
 assert.deepStrictEqual(rules, [
-  { id: 100, priority: 1, action: { type: 'block' }, condition: { urlFilter: '||ads.example^', resourceTypes: ['script'], domainType: 'thirdParty' } },
-  { id: 101, priority: 2, action: { type: 'allow' }, condition: { urlFilter: '||cdn.example^', resourceTypes: ['xmlhttprequest'],
+  { __woRank: 2, id: 100, priority: 1, action: { type: 'block' }, condition: { urlFilter: '||ads.example^', resourceTypes: ['script'], domainType: 'thirdParty' } },
+  { __woRank: 0, id: 101, priority: 2, action: { type: 'allow' }, condition: { urlFilter: '||cdn.example^', resourceTypes: ['xmlhttprequest'],
     initiatorDomains: ['site.example'], excludedInitiatorDomains: ['private.site.example'] } },
 ]);
 assert.deepStrictEqual(plain(network.parseList('github.io\nco.uk\ntenant.github.io\n0.0.0.0 malicious.feed-fixture.net\n||path.example/a^$script')),

@@ -12,10 +12,11 @@ var WO_HISTORY = (() => {
     serial = run.catch(() => {});
     return run;
   };
+  const privateContext = () => typeof INCOGNITO_CONTEXT !== 'undefined' && INCOGNITO_CONTEXT === true;
   const context = async () => {
     const stored = await chrome.storage.local.get('wardenone_config');
     const config = stored && stored.wardenone_config || {};
-    const selected = typeof INCOGNITO_CONTEXT !== 'undefined' && INCOGNITO_CONTEXT ? 'off' : mode(config);
+    const selected = privateContext() ? 'off' : mode(config);
     return { config, mode: selected, area: selected === 'normal' ? chrome.storage.local : chrome.storage.session };
   };
   const read = (key, callback) => {
@@ -58,7 +59,9 @@ var WO_HISTORY = (() => {
     const drained = revoke();
     try {
       await drained;
-      await Promise.all([chrome.storage.local.remove(keys),
+      /* A private window's worker never writes history, and both storage areas may be shared
+         with the regular profile, so only the regular worker may delete these keys. */
+      if (!privateContext()) await Promise.all([chrome.storage.local.remove(keys),
         chrome.storage.session.remove([...keys, '__wardenone_hist_buffer'])]);
       if (task) await task();
     } finally { changing = false; }

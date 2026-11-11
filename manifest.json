@@ -20,6 +20,7 @@
     "management",
     "contentSettings",
     "contextMenus",
+    "clipboardWrite",
     "downloads",
     "notifications",
     "offscreen",
@@ -165,6 +166,30 @@
       "matches": [
         "https://open.spotify.com/*"
       ]
+    },
+    {
+      "resources": [
+        "redirect-resources/noop.js",
+        "redirect-resources/noop.txt",
+        "redirect-resources/noop.css",
+        "redirect-resources/noop.json",
+        "redirect-resources/noop.html",
+        "redirect-resources/noop-1x1.gif",
+        "redirect-resources/noop-2x2.png",
+        "redirect-resources/noop-3x2.png",
+        "redirect-resources/noop-32x32.png",
+        "redirect-resources/noop-0.1s.mp3",
+        "redirect-resources/noop-0.5s.mp3",
+        "redirect-resources/noop-1s.mp4",
+        "redirect-resources/noop-vast2.xml",
+        "redirect-resources/noop-vast3.xml",
+        "redirect-resources/noop-vast4.xml",
+        "redirect-resources/noop-vmap1.xml"
+      ],
+      "matches": [
+        "<all_urls>"
+      ],
+      "use_dynamic_url": true
     },
     {
       "resources": [

@@ -101,6 +101,29 @@ if (doc) {
 }
 
 // ---------------------------------------------------------------------------
+// The compilation limits are headroom, not a budget. A limit the feeds reach truncates silently,
+// and which rules survive then depends on the order the feeds happened to download in.
+// ---------------------------------------------------------------------------
+if (doc) {
+  const limits = {
+    scriptlets: Number((BG.match(/scriptletLimit: (\d+)/) || [])[1]),
+    procedural: Number((BG.match(/proceduralLimit: (\d+)/) || [])[1]),
+  };
+  for (const kind of ['scriptlets', 'procedural']) {
+    const limit = limits[kind];
+    const packed = Object.values(doc[kind] || {}).reduce((n, list) => n + list.length, 0);
+    check('the ' + kind + ' limit was readable from background.js', limit > 0);
+    check('the packaged ' + kind + ' store is not truncated', limit > 0 && packed < limit,
+      packed + ' pairs against a limit of ' + limit);
+    /* 15% spare is enough that a normal week of list growth does not start discarding rules
+       between releases, and small enough that the limit still bounds resident memory. */
+    check('the ' + kind + ' limit keeps at least 15% headroom', limit > 0 && packed <= limit * 0.85,
+      packed + ' pairs is ' + Math.round((packed / limit) * 100) + '% of the ' + limit + ' limit;'
+      + ' raise it in createCosmeticCompilation and rebuild cosmetic-rules.json');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 3. Behaviour: a cache written by an older build cannot supply commands.
 //    This is the migration path -- an upgrade keeps whatever was already in storage.
 // ---------------------------------------------------------------------------

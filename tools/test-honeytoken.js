@@ -34,7 +34,7 @@ function check(name, cond, extra) {
   console.log('  FAIL - ' + name + (extra !== undefined ? ' :: ' + JSON.stringify(extra) : ''));
 }
 
-function makePage(existing) {
+function makePage(existing, hostname = 'example.com') {
   const logs = [];
   const listeners = {};
   class Storage {
@@ -52,6 +52,7 @@ function makePage(existing) {
   const sandbox = {
     WO: { honeytokenMode: true },
     WO_TOP: true,
+    location: { hostname },
     window,
     Storage,
     log(type, detail) { logs.push({ type, detail }); },
@@ -64,6 +65,7 @@ function makePage(existing) {
   vm.runInContext(SLICE, sandbox);
   return {
     logs,
+    window,
     storage: sessionStorage,
     reads: () => logs.filter((l) => l.type === 'warned_honeytoken_read'),
     leave: () => (listeners.pagehide || []).forEach((fn) => fn({ type: 'pagehide' })),
@@ -89,6 +91,14 @@ check('a page with its own token keeps it', own.storage.getItem('access_token') 
 own.leave();
 check('its own token is never reported or removed', own.reads().length === 0 && own.storage.data.get('access_token') === 'the-sites-own-token',
   own.logs);
+
+const tiktok = makePage({}, 'www.tiktok.com');
+check('TikTok credential discovery sees missing global properties', tiktok.window.apiKey === undefined && tiktok.window.authToken === undefined);
+check('TikTok credential discovery raises no global decoy warning', tiktok.reads().length === 0, tiktok.logs);
+tiktok.storage.getItem('access_token');
+check('TikTok still reports reads of the session storage decoy', tiktok.reads().length === 1 && tiktok.reads()[0].detail.where === 'sessionStorage');
+const impersonator = makePage({}, 'tiktok.com.attacker.example');
+check('a similar-looking host still gets global decoys', typeof impersonator.window.authToken === 'string' && impersonator.reads().length === 1);
 
 console.log('');
 console.log(pass + ' passed, ' + fail + ' failed');

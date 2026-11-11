@@ -80,6 +80,37 @@ async function run() {
   assert.equal(await h.ctx.messageSenderStillCurrent(currentSender), false, 'same-origin replacement revokes old document authority');
   assert.equal({}.polluted, undefined);
   assert.equal(learned.length, 0);
+  {
+    const source = 'https://child.wardenone-audit.net/page';
+    const saved = { 'child.wardenone-audit.net': ['#first', '#second'], 'wardenone-audit.net': ['#inherited'], 'other.wardenone-audit.net': ['#unrelated'] };
+    const cases = [
+      { name: 'current top document', hostname: 'child.wardenone-audit.net', ok: true },
+      { name: 'foreign site', hostname: 'other.wardenone-audit.net' },
+      { name: 'parent site', hostname: 'wardenone-audit.net' },
+      { name: 'lookalike', hostname: 'child.wardenone-audit.net.evil.net' },
+      { name: 'missing site' }, { name: 'empty site', hostname: '' },
+      { name: 'non-string site', hostname: ['child.wardenone-audit.net'] },
+      { name: 'subframe', hostname: 'child.wardenone-audit.net', frameId: 1 },
+      { name: 'stale document', hostname: 'child.wardenone-audit.net', actualDocument: 'replacement' },
+      { name: 'navigated tab', hostname: 'child.wardenone-audit.net', actualUrl: 'https://child.wardenone-audit.net/new-page' },
+      { name: 'global clear remains private', kind: 'hidden-clear' },
+    ];
+    for (const [index, item] of cases.entries()) {
+      const sender = { id: tab.id, frameId: item.frameId || 0, documentId: 'current-document', url: source,
+        origin: 'https://child.wardenone-audit.net', tab: { id: 501 + index, url: source } };
+      h.ctx.tabsGet = async () => ({ id: sender.tab.id, url: item.actualUrl || source, incognito: false });
+      h.chrome.webNavigation.getFrame = async () => ({ documentId: item.actualDocument || 'current-document' });
+      h.chrome.storage.local._data.wardenone_hidden_elements = JSON.parse(JSON.stringify(saved));
+      const result = await new Promise(resolve => {
+        for (const listener of h.chrome.runtime.onMessage._l) listener({ kind: item.kind || 'hidden-clear-site', hostname: item.hostname }, sender, resolve);
+      });
+      assert.equal(result.ok, item.ok === true, item.name + ': ' + JSON.stringify(result));
+      const expected = JSON.parse(JSON.stringify(saved));
+      if (item.ok) delete expected['child.wardenone-audit.net'];
+      assert.deepEqual(JSON.parse(JSON.stringify(h.chrome.storage.local._data.wardenone_hidden_elements)), expected,
+        item.name + ': only the exact current site can be cleared');
+    }
+  }
   const offscreen = fs.readFileSync('offscreen.js', 'utf8');
   let soundListener;
   const sounds = [];

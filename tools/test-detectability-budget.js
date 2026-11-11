@@ -48,6 +48,7 @@ const GLOBALS = {
   __wardenOneTwitchAdblockDispose: 'Twitch ad blocker release hook for that replacement (test-guard-lifecycle pins the contract)',
   __wardenOneYouTubeReadyVersion: 'YouTube ad blocker version flag',
   __wardenOneYouTubeVersion: 'YouTube ad blocker version, read by its own fallback',
+  __wardenOneYouTubeArm: 'YouTube arm hand-off slot; deleted once the arm arrives or at DOMContentLoaded',
   /* Native surfaces the protections themselves rewrite: the point, not a side effect. */
   Function: 'Function.prototype.toString cloak for the fingerprint noise, per realm',
   Worker: 'Twitch worker runtime hook for the ad blocker',

@@ -16,6 +16,7 @@ const vm = require('vm');
 const ROOT = path.resolve(__dirname, '..');
 const CORE = fs.readFileSync(path.join(ROOT, 'eyeshield.js'), 'utf8');
 const SITES = fs.readFileSync(path.join(ROOT, 'eyeshield-sites.js'), 'utf8');
+const WOEyeShieldProfiles = require('../eyeshield-profiles.js');
 
 let failures = 0;
 function check(label, condition, extra) {
@@ -131,6 +132,7 @@ const messageListeners = [];
 const el = () => ({ style: { setProperty: noop, removeProperty: noop, getPropertyValue: () => '' }, setAttribute: noop, remove: noop, appendChild: noop, textContent: '' });
 const ctx = {
   console: { log() {}, warn() {}, error() {} },
+  WOEyeShieldProfiles,
   setTimeout, clearTimeout, setInterval, clearInterval, AbortController,
   MutationObserver: FakeMutationObserver,
   CSS: { escape: (s) => String(s).replace(/"/g, '\\"') },
@@ -177,6 +179,43 @@ let core = loadCore();
 check('the core loads with its internals reachable', !!(core && typeof core.themeFooter === 'function'));
 if (!core) process.exit(1);
 
+{
+  const doc = ctx.document;
+  const original = { ...doc };
+  const styles = new Map();
+  ctx.location.hostname = 'www.tiktok.com';
+  doc.documentElement = makeHtml({ 'data-theme': 'dark' });
+  doc.getElementById = id => styles.get(id) || null;
+  doc.head = { appendChild: node => styles.set(node.id, node) };
+  doc.createElement = () => ({
+    ...el(), attrs: {},
+    setAttribute(name, value) { this.attrs[name] = value; },
+    getAttribute(name) { return this.attrs[name] ?? null; },
+    remove() { styles.delete(this.id); },
+  });
+  const themeId = 'wardenone-eyeshield-theme';
+  for (const [mode, canvas, scheme] of [
+    ['light', '#ffffff', 'light'], ['dark', '#111316', 'dark'], ['ultra', '#000000', 'dark'],
+  ]) {
+    ctx.__wardenOneEyeShieldApplyConfig({ enabled: true, eyeShieldMode: mode });
+    const style = styles.get(themeId);
+    check('TikTok ' + mode + ' applies its palette without the generic remap', style?.attrs['data-wo-eyeshield-mode'] === mode
+      && styles.size === 1 && style.textContent.includes('--ui-page-flat-1:' + canvas)
+      && style.textContent.includes('color-scheme:' + scheme)
+      && !/(?:\[class\*=|--ui-image-overlay|\b(?:filter|display|visibility|position|opacity):)/.test(style.textContent));
+    check('TikTok ' + mode + ' leaves the site theme attribute in place', doc.documentElement.getAttribute('data-theme') === 'dark');
+    const chromeColors = style?.textContent.includes('[data-e2e="side-nav-utilities-get-coin"]')
+      && style.textContent.includes('[data-e2e="side-nav-utilities-get-app"]')
+      && style.textContent.includes('[data-e2e="tiktok-logo"] path:is([fill="#fff" i],[fill="#ffffff" i])')
+      && style.textContent.includes('--tux-v2-color-ui-text-1:');
+    check('TikTok ' + mode + ' scopes the sidebar label and wordmark repair to Light', chromeColors === (mode === 'light'));
+  }
+  ctx.__wardenOneEyeShieldApplyConfig({ enabled: true, eyeShieldMode: 'off' });
+  check('TikTok Normal removes its palette without a reload', styles.size === 0);
+  Object.assign(doc, original);
+  ctx.location.hostname = 'example.com';
+}
+
 function themeFor(host, mode, htmlAttrs) {
   ctx.location.hostname = host;
   ctx.document.documentElement = makeHtml(htmlAttrs || {});
@@ -186,6 +225,21 @@ function rules(css) {
   const out = [];
   css.replace(/([^{}]+)\{([^{}]*)\}/g, (_, sel, body) => { out.push({ sel: sel.trim(), body }); return ''; });
   return out;
+}
+
+for (const [mode, icon] of [['light', '#3c4043'], ['dark', '#f1f3f6'], ['ultra', '#ffffff']]) {
+  const page = { hostname: 'www.google.com', pathname: '/search' };
+  const startup = WOEyeShieldProfiles.paintPreload(ctx.document, page, mode).textContent;
+  const full = themeFor(page.hostname, mode).css;
+  const buttons = ':is(#searchform,form[role="search"]) .RNNXgb :is(.dRYYxd,.BKRPef,.y1yadf) :where(button,[role="button"])';
+  for (const [phase, css] of [['startup', startup], ['full', full]]) {
+    const sheet = rules(css);
+    check('Google ' + mode + ' ' + phase + ' keeps action buttons transparent',
+      sheet.some(rule => rule.sel === buttons && rule.body.includes('background-color:transparent !important')));
+    check('Google ' + mode + ' ' + phase + ' uses the same action glyph color',
+      sheet.some(rule => rule.sel === buttons + ' :where(svg,path)'
+        && rule.body.includes('color:' + icon + ' !important') && rule.body.includes('fill:currentColor !important')));
+  }
 }
 
 for (const [mode, chip, text, background] of [['light', '#f1f1f1', '#0f0f0f', '#ffffff'], ['dark', '#272727', '#f1f1f1', '#0f0f0f']]) {

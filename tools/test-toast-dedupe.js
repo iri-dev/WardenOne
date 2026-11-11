@@ -54,9 +54,10 @@ function check(name, condition, extra) {
         const key = type + '|' + (why || 'why:' + type) + '|sev|act';
         if (seen.has(key) && (!active.has(type) || clock - seen.get(key) < 30000)) return { shown: false, at: null };
         seen.set(key, clock);
-        const gap = lastAt ? Math.max(0, 900 - (clock - lastAt)) : 0;
-        const at = lastAt ? Math.max(clock, lastAt + 900) : clock;
-        lastAt = at;
+        const immediate = active.has(type) || type === 'warned_shortener';
+        const gap = immediate ? 0 : lastAt ? Math.max(0, Math.min(450, lastAt + 150 - clock)) : 0;
+        const at = clock + gap;
+        if (!immediate) lastAt = at;
         recentKey = key;
         shown.push({ key, at, delayed: gap > 0 });
         return { shown: true, at, delayed: gap > 0 };
@@ -122,16 +123,15 @@ function check(name, condition, extra) {
   }
 
   {
-    /* Distinct warnings arriving in the same instant are staggered, never dropped: dropping
-       one loses the only notice a person gets of it. */
+    /* Security warnings must not wait behind passive notices. */
     const p = makePage();
     const t0 = 1e6;
     const a = p.toast('warned_logger_api', 'x');
     const b = p.toast('warned_shortener', '');
     const c = p.toast('blocked_popup', 'y');
     check('a burst of different warnings is not dropped', p.shown.length === 3);
-    check('and they are spread out rather than stacked in one instant',
-      a.at === t0 && b.at === t0 + 900 && c.at === t0 + 1800, [a.at - t0, b.at - t0, c.at - t0].join(', '));
+    check('link warnings and confirmed action blocks appear immediately',
+      a.at === t0 && b.at === t0 && c.at === t0, [a.at - t0, b.at - t0, c.at - t0].join(', '));
     check('the first of a burst is not delayed', a.delayed === false);
   }
 
@@ -168,7 +168,7 @@ function check(name, condition, extra) {
   check('the wording is decided before the key is asked for',
     SRC.indexOf('const detailWhy=detail&&detail.why') < SRC.indexOf('const key=type+"|"+detailWhy'));
   check('a burst is staggered rather than dropped',
-    /return void setTimeout\(\(\)=>renderToast\(/.test(SRC));
+    /return void setTimeout\(\(\)=>\{\s*if\(generation===toastGeneration\)renderToast\(/.test(SRC));
   check('and navigation clears the stagger clock too',
     /resetToastMemory=\(\)=>\{[\s\S]{0,160}lastToastAt=0/.test(SRC));
 }

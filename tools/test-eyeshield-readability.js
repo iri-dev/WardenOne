@@ -52,6 +52,19 @@ assert(/style\.setProperty\('-webkit-text-fill-color', 'currentColor', 'importan
 assert(/style\.setProperty\('text-shadow', 'none', 'important'\)/.test(contrastBlock), 'contrast fixes should neutralize low-contrast text shadow');
 assert(/scheduleContrastGuard\(activeRemap\);/.test(source), 'late DOM rebuilds should re-run the readability guard');
 
+/* A surface is not always a background-color. Mozilla's feature cards and Google's AI panels paint
+   theirs with a gradient; reading only background-color walks straight past it, assumes the theme's
+   dark base and leaves white text sitting on a pale card. */
+assert(/function ewBgImageColor/.test(source), 'the effective background should understand gradient surfaces');
+assert(/const painted = ewBgImageColor\(cs\);\n\s*if \(painted\) return painted;/.test(source),
+  'the ancestor walk should fall back to a gradient surface when no background colour is painted');
+const gradientBlock = sliceBetween('function ewBgImageColor', 'function ewEffectiveBg');
+assert(/c\.a >= 0\.5/.test(gradientBlock), 'only a solid enough gradient stop counts as the surface');
+assert(/indexOf\('gradient'\) < 0/.test(gradientBlock), 'a url() background carries no colour we can read, so it is left alone');
+const gradientStops = 'linear-gradient(rgba(0, 0, 0, 0) 0px, rgb(34, 36, 42) 80px)'.match(/rgba?\([^)]*\)/g);
+assert(gradientStops && gradientStops.length === 2 && gradientStops[1] === 'rgb(34, 36, 42)',
+  'gradient stops are extracted in order so the solid end wins');
+
 const quotedUrl = 'url("/assets/white#fff-red.svg?fill=rgb(1,2,3)")';
 const mixed = 'linear-gradient(#fff, red, rgb(1, 2, 3)), ' + quotedUrl + ' "blue #000"';
 const mixedOut = replaceColors(mixed, 'dark', 'bg');

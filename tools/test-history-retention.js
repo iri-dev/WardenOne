@@ -106,8 +106,9 @@ const DAY = 24 * 60 * 60 * 1000;
     const r = realm();
     const seg = (s) => r.api.safeLogSegment(s);
     const CASES = [
-      ['a record id stays', '12345', '12345'],
-      ['an eight-digit id stays', '20260919', '20260919'],
+      ['a year or page number stays', '2026', '2026'],
+      ['a five-digit record id goes, it can name an account', '12345', '*'],
+      ['an eight-digit id goes', '20260919', '*'],
       ['a nine-digit number is an account or a phone, and goes', '415555121', '*'],
       ['a card number goes', '4111111111111111', '*'],
       ['a short token mixing letters and digits goes', 'x7k2p9', '*'],

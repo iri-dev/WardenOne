@@ -155,7 +155,12 @@ check('and at the same 250ms the other branch uses',
       setTimeout: (callback, delay) => state.timeouts.push({ callback, delay }),
     };
     vm.createContext(state);
-    vm.runInContext('const PLAYER_ROUTE_RE=/watch/;const PLAYER_PAGE_SELECTOR="video";const '
+    /* The shipped player-safe helpers, with no site rules: entering safe mode then clears the sheet. */
+    const safeStart = SRC.indexOf('playerSafeSelectors=list=>');
+    const safeEnd = SRC.indexOf('injectCss=selectors=>', safeStart);
+    vm.runInContext('const PLAYER_ROUTE_RE=/watch/;const PLAYER_PAGE_SELECTOR="video";'
+      + 'const PLAYER_SHELL_SELECTOR="[data-player]";let siteSelectors=[];const injectCss=()=>{};const '
+      + SRC.slice(safeStart, safeEnd).replace(/,\s*$/, '') + ';const '
       + SRC.slice(detectorStart, detectorEnd) + ';const ' + SRC.slice(batchStart, batchEnd)
       + ';const scriptletPlayerPage=force=>playerPageDetected(force);this.__detect=playerPageDetected;'
       + 'this.__observe=' + observer + ';', state, { filename: 'content.js:player-observer' });

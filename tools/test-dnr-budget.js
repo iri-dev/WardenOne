@@ -150,6 +150,12 @@ function assertQuotas(bg, verbose = false) {
 
 function runDynamic() {
   const bg = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+  /* The packed feed band is billed at its real size now, so the two constants describing it
+     must agree: LIST_DOMAIN_RULES_MAX caps how many rules the band builds, LIST_RULES_BUDGET
+     is what the dynamic-quota sum charges for it. A literal that drifted would hand the option
+     band budget the browser will not honour. */
+  assert.equal(numberConstant(bg, 'LIST_RULES_BUDGET'), numberConstant(bg, 'LIST_DOMAIN_RULES_MAX'),
+    'LIST_RULES_BUDGET must equal LIST_DOMAIN_RULES_MAX');
   const budgets = assertQuotas(bg, true);
   const dynamicBands = budgets.TOTAL_DYNAMIC_BUDGET.bands;
   const sessionBands = budgets.TOTAL_SESSION_BUDGET.bands;
@@ -174,7 +180,7 @@ function runDynamic() {
 
   // Every range belongs to an allocation. Missing a band defeats the quota check.
   const ranges = [...bg.matchAll(/const ([A-Z][A-Z0-9_]*)_RULE_BASE = \d+/g)].map((m) => m[1]);
-  const COVERED_ELSEWHERE = { IP_LOOKUP_BLOCK: 'SMALL_SESSION_RULES_BUDGET', DYNAMIC: 'MAX_DYNAMIC' };
+  const COVERED_ELSEWHERE = { IP_LOOKUP_BLOCK: 'SMALL_SESSION_RULES_BUDGET', DYNAMIC: 'LIST_RULES_BUDGET' };
   const unbudgeted = ranges.filter((prefix) => {
     if (COVERED_ELSEWHERE[prefix]) return !bands.includes(COVERED_ELSEWHERE[prefix]);
     return !bands.some((band) => band.startsWith(prefix));
@@ -183,12 +189,15 @@ function runDynamic() {
     'rule ranges missing a quota allocation: ' + unbudgeted.map((p) => p + '_RULE_BASE').join(', '));
 
   // A new feature must fail the gate before it can spend the last spare rules.
-  for (const name of ['MAX_DYNAMIC', 'ALLOWLIST_RULES_BUDGET', 'FIREWALL_RULES_BUDGET']) {
+  for (const name of ['LIST_RULES_BUDGET', 'OPTION_RULES_MAX', 'ALLOWLIST_RULES_BUDGET', 'FIREWALL_RULES_BUDGET']) {
     const oversized = bg.replace(new RegExp('const ' + name + ' = \\d+;'), 'const ' + name + ' = 30000;');
     assert.throws(() => assertQuotas(oversized), /quota|headroom/, name + ' growth escaped the gate');
   }
-  const nearlyFull = bg.replace(/const MAX_DYNAMIC = \d+;/, 'const MAX_DYNAMIC = '
-    + (numberConstant(bg, 'MAX_DYNAMIC') + MAX_DYNAMIC_RULES - budgets.TOTAL_DYNAMIC_BUDGET.total - 25) + ';');
+  /* Inflate a constant the dynamic sum actually charges for. MAX_DYNAMIC is only the width of
+     the legacy id sweep now, so growing it no longer moves the quota and this probe would pass
+     for the wrong reason. */
+  const nearlyFull = bg.replace(/const LIST_RULES_BUDGET = \d+;/, 'const LIST_RULES_BUDGET = '
+    + (numberConstant(bg, 'LIST_RULES_BUDGET') + MAX_DYNAMIC_RULES - budgets.TOTAL_DYNAMIC_BUDGET.total - 25) + ';');
   assert.throws(() => assertQuotas(nearlyFull), /headroom/, 'a legal quota with only 25 spare rules must fail');
   const unsafeNearlyFull = bg.replace(/const TOTAL_UNSAFE_DYNAMIC_BUDGET = [^;]+;/,
     'const TOTAL_UNSAFE_DYNAMIC_BUDGET = 4975;');

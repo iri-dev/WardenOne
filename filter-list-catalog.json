@@ -1,0 +1,42 @@
+{
+  "note": "Lists WardenOne can offer to subscribe to. Nothing here is fetched until the reader picks it; a chosen list then goes through the same My Rules subscription as an address typed by hand. tools/check-filter-catalog.js verifies every address still serves a filter list.",
+  "checkedAt": "2026-11-06",
+  "groups": [
+    { "id": "regional", "title": "Regional", "detail": "Ad and tracker rules for a language or country. Add the ones you browse in; the bundled lists already cover English-language sites." },
+    { "id": "annoyances", "title": "Annoyances", "detail": "Cookie notices, newsletter pop-ups, app-install banners and similar interruptions." },
+    { "id": "privacy", "title": "Extra privacy", "detail": "Wider tracker coverage than the bundled lists, at a higher chance of breaking something." },
+    { "id": "security", "title": "Security", "detail": "Phishing and malicious-host lists, on top of the ones WardenOne already carries." }
+  ],
+  "lists": [
+    { "id": "easylist-germany", "group": "regional", "title": "EasyList Germany", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/easylistgermany.txt", "detail": "German-language sites." },
+    { "id": "easylist-italy", "group": "regional", "title": "EasyList Italy", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/easylistitaly.txt", "detail": "Italian-language sites." },
+    { "id": "easylist-spanish", "group": "regional", "title": "EasyList Spanish", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/easylistspanish.txt", "detail": "Spanish-language sites." },
+    { "id": "easylist-portuguese", "group": "regional", "title": "EasyList Portuguese", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/easylistportuguese.txt", "detail": "Portuguese-language sites." },
+    { "id": "liste-fr", "group": "regional", "title": "Liste FR", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/liste_fr.txt", "detail": "French-language sites." },
+    { "id": "liste-ar", "group": "regional", "title": "Liste AR", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/Liste_AR.txt", "detail": "Arabic-language sites." },
+    { "id": "ruadlist", "group": "regional", "title": "RuAdList", "publisher": "RuAdList authors", "url": "https://easylist-downloads.adblockplus.org/advblock.txt", "detail": "Russian-language sites." },
+    { "id": "easylist-czechslovak", "group": "regional", "title": "EasyList Czech and Slovak", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/easylistczechslovak.txt", "detail": "Czech and Slovak sites." },
+    { "id": "easylist-lithuania", "group": "regional", "title": "EasyList Lithuania", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/easylistlithuania.txt", "detail": "Lithuanian-language sites." },
+    { "id": "latvian-list", "group": "regional", "title": "Latvian List", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/latvianlist.txt", "detail": "Latvian-language sites." },
+    { "id": "bulgarian-list", "group": "regional", "title": "Bulgarian List", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/bulgarian_list.txt", "detail": "Bulgarian-language sites." },
+    { "id": "rolist", "group": "regional", "title": "ROList", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/rolist.txt", "detail": "Romanian-language sites." },
+    { "id": "indian-list", "group": "regional", "title": "IndianList", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/indianlist.txt", "detail": "Indian sites and languages." },
+    { "id": "korean-list", "group": "regional", "title": "KoreanList", "publisher": "EasyList authors", "url": "https://easylist-downloads.adblockplus.org/koreanlist.txt", "detail": "Korean-language sites." },
+    { "id": "abpindo", "group": "regional", "title": "ABPindo", "publisher": "ABPindo authors", "url": "https://easylist-downloads.adblockplus.org/abpindo.txt", "detail": "Indonesian-language sites." },
+    { "id": "abpvn", "group": "regional", "title": "ABPVN", "publisher": "ABPVN authors", "url": "https://easylist-downloads.adblockplus.org/abpvn.txt", "detail": "Vietnamese-language sites." },
+    { "id": "adguard-japanese", "group": "regional", "title": "AdGuard Japanese", "publisher": "AdGuard", "url": "https://filters.adtidy.org/extension/ublock/filters/7.txt", "detail": "Japanese-language sites." },
+    { "id": "adguard-turkish", "group": "regional", "title": "AdGuard Turkish", "publisher": "AdGuard", "url": "https://filters.adtidy.org/extension/ublock/filters/13.txt", "detail": "Turkish-language sites." },
+    { "id": "adguard-french", "group": "regional", "title": "AdGuard French", "publisher": "AdGuard", "url": "https://filters.adtidy.org/extension/ublock/filters/16.txt", "detail": "French-language sites." },
+    { "id": "adguard-german", "group": "regional", "title": "AdGuard German", "publisher": "AdGuard", "url": "https://filters.adtidy.org/extension/ublock/filters/6.txt", "detail": "German-language sites." },
+    { "id": "adguard-dutch", "group": "regional", "title": "AdGuard Dutch", "publisher": "AdGuard", "url": "https://filters.adtidy.org/extension/ublock/filters/8.txt", "detail": "Dutch-language sites." },
+    { "id": "adguard-spanish-portuguese", "group": "regional", "title": "AdGuard Spanish and Portuguese", "publisher": "AdGuard", "url": "https://filters.adtidy.org/extension/ublock/filters/9.txt", "detail": "Spanish and Portuguese sites." },
+    { "id": "adguard-chinese", "group": "regional", "title": "AdGuard Chinese", "publisher": "AdGuard", "url": "https://filters.adtidy.org/extension/ublock/filters/224.txt", "detail": "Chinese-language sites." },
+    { "id": "fanboy-cookiemonster", "group": "annoyances", "title": "Fanboy's Cookiemonster", "publisher": "Fanboy and the EasyList authors", "url": "https://easylist-downloads.adblockplus.org/fanboy-cookiemonster.txt", "detail": "Cookie and consent notices. WardenOne's own consent handling covers many of these already." },
+    { "id": "adguard-annoyances", "group": "annoyances", "title": "AdGuard Annoyances", "publisher": "AdGuard", "url": "https://filters.adtidy.org/extension/ublock/filters/14.txt", "detail": "Pop-ups, in-page notices, widgets and app banners." },
+    { "id": "ubo-annoyances-cookies", "group": "annoyances", "title": "uBlock Origin Cookie Notices", "publisher": "uBlock Origin", "url": "https://ublockorigin.github.io/uAssets/filters/annoyances-cookies.txt", "detail": "Cookie banners uBlock Origin's maintainers curate separately from its ad rules." },
+    { "id": "ubo-annoyances-others", "group": "annoyances", "title": "uBlock Origin Other Annoyances", "publisher": "uBlock Origin", "url": "https://ublockorigin.github.io/uAssets/filters/annoyances-others.txt", "detail": "Chat widgets, app banners and similar interruptions." },
+    { "id": "adguard-url-tracking", "group": "privacy", "title": "AdGuard URL Tracking", "publisher": "AdGuard", "url": "https://filters.adtidy.org/extension/ublock/filters/17.txt", "detail": "Strips tracking parameters from addresses, alongside WardenOne's own link cleaning." },
+    { "id": "phishing-army", "group": "security", "title": "Phishing Army", "publisher": "Andrea Draghetti", "url": "https://phishing.army/download/phishing_army_blocklist_extended.txt", "detail": "Phishing hosts, refreshed daily." },
+    { "id": "spam404", "group": "security", "title": "Spam404", "publisher": "Spam404", "url": "https://raw.githubusercontent.com/Spam404/lists/master/adblock-list.txt", "detail": "Scam and spam hosts." }
+  ]
+}

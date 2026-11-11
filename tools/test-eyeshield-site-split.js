@@ -133,7 +133,7 @@ check('the catch-up injection carries the sites file into the top frame',
       'googlePaletteFor', 'scopedSelectors'].forEach((n) => { bag[n] = palette; });
     ['isYouTubeHost', 'isYouTubeMusicHost', 'isTwitchHost', 'isChatGPTHost', 'isGoogleHost',
       'isGitHubHost', 'isStackOverflowHost', 'isHackerNewsHost', 'isWikipediaHost', 'isRedditHost',
-      'isAmazonHost'].forEach((n) => { bag[n] = () => true; });
+      'isAmazonHost', 'isDuckDuckGoHost'].forEach((n) => { bag[n] = () => true; });
     bag.TWITCH_CHAT_NAME = 'chat';
     bag.TWITCH_NOT_CHAT_NAME = 'notchat';
     bag.NOT_SWATCH = ':not(.sw)';

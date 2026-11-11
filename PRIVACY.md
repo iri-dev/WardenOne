@@ -1,4 +1,4 @@
-# WardenOne — Privacy Policy
+# WardenOne Privacy Policy
 
 **Last updated: November 1, 2026**
 
@@ -28,7 +28,7 @@ unclear, contact us (see **Contact** below).
   memory, for at most 30 minutes or until the worker restarts. Raw values, parameter
   names and visited-site lists are not stored. Activity records only the destination
   hostname and a suspected-identifier summary, subject to your history controls.
-- The learner's **Automatic tracker protection** mode (opt-in under **Learning mode**) reads the browser's own cookie jar for
+- The learner's **Automatic tracker protection** mode (on by default under **Learning mode**) reads the browser's own cookie jar for
   a third-party site it sees on a page, to check whether that site keeps a cross-site,
   month-long, ID-shaped cookie. The values are judged in worker memory and never stored or
   sent anywhere; only a yes or no per site is kept, until the worker restarts. The learner
@@ -43,7 +43,7 @@ unclear, contact us (see **Contact** below).
   `storage.session`. Raw values and full request URLs are never persisted or sent anywhere.
   Closing the browser or clearing observations removes this correlation; worker suspension
   preserves it. Canvas observations contain no pixels, text or page-selected script addresses.
-  Review mode requires approval; automatic decisions remain opt-in.
+  Review mode requires approval for new blocks. Saved learning-mode choices survive upgrades.
 - Consent verification reads only the recognized consent manager's saved cookie
   after an opt-out action. Cookie values stay out of Activity; it records the
   manager, action, outcome and evidence type. Pending verification is canceled
@@ -59,23 +59,23 @@ unclear, contact us (see **Contact** below).
   the feature off restores the browser's own preference. Site exceptions follow
   each document's hostname, including embedded documents.
 - The only times data leaves your device are: (1) downloading public block-lists to keep
-  protection current, (2) a browser-release check when you open the popup — Update
+  protection current, (2) a browser-release check when you open the popup: Update
   Guardian asks Brave, Google or Microsoft (whichever makes your browser) for its latest
   Stable version, reusing the answer for up to six hours while the browser stays open (a
   restart, or **Check again**, asks afresh); it sends nothing about the pages you visit,
-  and it has no off switch — (3) re-requesting
-  third-party scripts a page has already loaded, so they can be checked for tampering — on
+  and it has no off switch, (3) re-requesting
+  third-party scripts a page has already loaded, so they can be checked for tampering, which is on
   by default, and it reaches no host the page has not already used, (4) an **opt-in**
   password-breach check that uses privacy-preserving k-anonymity, (5) an **opt-in**
   login-page age check whose button sends a site's domain to a public registration-data service,
-  (6) **opt-in** reputation look-ups that you must switch on yourself — and which, once on,
+  (6) **opt-in** reputation look-ups that you must switch on yourself, and which, once on,
   **send the addresses of pages you open** to the provider automatically, which is why they
-  are off by default and described in full below — (7) a WardenOne build check when the popup
-  opens; GitHub sees the installed public build ID only if a comparison is needed — (8) four things you start by pressing a
-  button — the site breach check, the extension checker, fetching a filter list you added
+  are off by default and described in full below, (7) a WardenOne build check when the popup
+  opens; GitHub sees the installed public build ID only if a comparison is needed, (8) four things you start by pressing a
+  button (the site breach check, the extension checker, fetching a filter list you added
   yourself, and the network filtering
   self-test, **which deliberately requests a favicon from named adult and malware-test
-  domains and can therefore show up in DNS or filter logs** — and (9) Twitch's own API,
+  domains and can therefore show up in DNS or filter logs**), and (9) Twitch's own API,
   while you are on Twitch, for the ad-blocking and rewind features. Each is described in
   detail below, and the full list of hosts is there rather than here.
 
@@ -92,11 +92,12 @@ account by WardenOne, and is **not** uploaded to us:
   Activity/History page). It records security events WardenOne itself acted on, not the pages
   you visited. Logged addresses keep the scheme, host and path, but drop the query string and
   fragment. Path segments that look like tokens or long identifiers are replaced with `*`.
-  Every segment after a sensitive route such as `reset`, `verify`, `invite` or `magic` is
-  redacted regardless of its shape. Nested event details are sanitized within depth, field
-  and size limits; content beyond those limits is dropped. Outside sensitive routes,
-  plain lowercase words and numbers of up to eight digits may remain, including names, short
-  account or order numbers, or secrets that have those shapes. The log keeps at most
+  Every segment after a sensitive route such as `reset`, `verify`, `invite`, `magic`,
+  `login`, `auth`, `oauth` or `sso` is redacted regardless of its shape. Nested event details
+  are sanitized within depth, field and size limits; content beyond those limits is dropped.
+  Outside sensitive routes, plain lowercase words and numbers of up to four digits may remain,
+  such as a year or a page number. That can still include a name, or a secret that has that
+  shape. The log keeps at most
   the last 200 events and nothing older than 30 days under normal retention.
   **Settings → Clean-up & backup → Activity and notification history** also offers
   browser-session storage or no saved history. These choices cover Activity and the
@@ -107,7 +108,7 @@ account by WardenOne, and is **not** uploaded to us:
   learner are separate datasets. **Clear observations** also clears tracker observations,
   Script Drift baselines and site counts, preserving approved blocks and firewall choices.
 - **Warning-page hand-off records, held in memory for as long as they are needed.** When
-  WardenOne stops a navigation — a forced redirect, a blocked page, a certificate failure —
+  WardenOne stops a navigation (a forced redirect, a blocked page, a certificate failure),
   the warning page has to know the exact address so it can show you where you were going
   and take you there if you choose to continue. That address is kept in the browser's
   *session* storage (memory only, gone when the browser closes), filed under a random
@@ -120,7 +121,7 @@ account by WardenOne, and is **not** uploaded to us:
   it went into browser history and session restore for as long as the tab lived. It no
   longer does. The related redirect-chain memory, used to explain a download that arrived
   through a chain, keeps only counts, the sites crossed and a fingerprint of the final
-  address — not the address — for ten minutes.
+  address, not the address itself, for ten minutes.
 - **Returning from a blocked download ad.** WardenOne keeps browser-provided source tab
   IDs and, when a reported download-ad destination is attempted, the source page address
   needed by the Back button. Memory-only session storage holds a maximum of 100 records.
@@ -129,12 +130,12 @@ account by WardenOne, and is **not** uploaded to us:
   its record. Source addresses are not put into the public warning URL or returned to
   the warning page.
 - Download-review records for the Download Guard: the file name, the grade and its reasons,
-  and the source address in the same form the activity log keeps — scheme, host and a path
-  with token-shaped parts starred, without the query string or fragment — for up to two hours,
+  and the source address in the same form the activity log keeps (scheme, host and a path
+  with token-shaped parts starred, without the query string or fragment), for up to two hours,
   at most 25 at a time. Chrome's own download list may retain the full source address. An
   earlier build kept the full address in these records, signed download links included.
-- The startup safety check's report: for each open tab it flagged, the host and the reason —
-  never the page title — for 24 hours. In a private window the report is kept in memory only
+- The startup safety check's report: for each open tab it flagged, the host and the reason,
+  never the page title, for 24 hours. In a private window the report is kept in memory only
   and is gone when the window closes; it never reaches the normal profile.
 - Two notes the optional "clear it when I leave" controls need, kept for the browser session
   only: which sites you accepted a cookie banner on, and which sites registered a service
@@ -148,14 +149,14 @@ account by WardenOne, and is **not** uploaded to us:
   faster and work offline.
 - **Two records that touch where you have been, kept as small as their job allows.**
   The tracker learner notices a third-party domain following you around, and to decide
-  whether to suggest a block, or automatically block it when the opt-in mode has seen it set an
+  whether to suggest a block, or automatically block it when automatic mode has seen it set an
   identifying cookie (judged in memory as the browser receives it; the value is never kept),
   it needs to know that the domain appeared on three different
   sites of yours. WardenOne's own verified observations can qualify in one browser session;
   page-only suggestions still need two. That is all it keeps durably: per tracker
   domain, a count of sites (never their names) and a 128-bit sketch keyed to your install
-  that can only answer "was this site already counted?" — held while the domain is still
-  gathering its three sites and dropped the moment it is proposed or decided — plus a count
+  that can only answer "was this site already counted?" (held while the domain is still
+  gathering its three sites and dropped the moment it is proposed or decided), plus a count
   of sessions, coalesced observations, fixed source categories, and first- and last-seen dates
   to the day. Valid older 32-bit sketches finish or expire in their original format so migration
   does not count the same sites again. A wider sketch reduces missed counts and also makes
@@ -244,7 +245,7 @@ cookies or browser history.
 
 To keep ad/tracker/malware/phishing blocking current, WardenOne periodically downloads
 **public filter lists** from their maintainers. These are ordinary downloads of rule
-files — **your browsing history is not sent**; the list host only sees the normal network
+files, and **your browsing history is not sent**; the list host only sees the normal network
 request (including your IP address, as with any website you load). No personal data is
 attached.
 
@@ -262,7 +263,7 @@ Third-party maintainers retain ownership and credit. Published licenses and scop
 written permissions are recorded separately in that inventory. Attribution and
 license texts are included in the extension’s **Settings → About → Licenses & credits**
 page and in [CREDITS.md](https://github.com/iri-dev/WardenOne/blob/main/CREDITS.md).
-The [source review](https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md)
+The [source review](https://github.com/iri-dev/WardenOne/blob/main/docs/source-rights-review.md)
 identifies specific upstream scope exceptions; public availability alone is not
 treated as permission to redistribute a feed. These notices add no background requests.
 
@@ -305,7 +306,7 @@ It never downloads or installs code. It only shows an update notice when GitHub 
 the installed commit is older; network errors and unrelated commit histories do not
 become update claims.
 
-### 2. Script tamper check — "Script Drift Guard" (on by default)
+### 2. Script tamper check: "Script Drift Guard" (on by default)
 
 Pages routinely load scripts from other companies, and one of the commonest ways a
 trusted site starts attacking its visitors is that one of those scripts is quietly
@@ -323,14 +324,14 @@ skipped. Turn it off with **Script drift guard** in the popup.
 reason: to recolour a page it needs the text of stylesheets the page loaded from other
 hosts, which a content script cannot read across origins, so the worker re-requested them.
 It no longer does. EyeShield now asks for that text from inside the page itself, the way
-the page's own scripts would — without credentials, and subject to the same cross-origin
-and private-network rules the browser applies to the page — so WardenOne's own permissions
+the page's own scripts would: without credentials, and subject to the same cross-origin
+and private-network rules the browser applies to the page. So WardenOne's own permissions
 are never used to fetch an address a page chose, and a host that does not let pages read
 its stylesheets simply keeps its own colours. The stylesheet text goes nowhere but that
 tab. Earlier versions of this policy did not mention the request at all.
 
 **What it keeps, exactly.** For each third-party script it has checked, WardenOne stores a
-record describing *the script* — its content hash, its size in bytes, the behaviour
+record describing *the script*: its content hash, its size in bytes, the behaviour
 indicators found in it, the outbound hosts written inside it, how many times it has
 changed, and when it was last seen and last checked. The record is filed under a hash of
 the script's address rather than the address itself, so the stored file is not a readable
@@ -339,18 +340,18 @@ seen, and at most 700 are kept.
 
 **What it does not keep:** which of *your* sites a script appeared on. An earlier version
 recorded up to eight first-party sites per script. Nothing ever read them, but together
-they amounted to a map of where you had been, so they are gone — and any that an older
+they amounted to a map of where you had been, so they are gone, and any that an older
 version already saved are deleted the first time the check runs after updating.
 
 ### 3. Site breach history check (opt-in, off by default, no API key needed)
 
-This checks **a website's own public breach record** — not your account, and not any password
+This checks **a website's own public breach record**, not your account, and not any password
 of yours. It tells you whether the site you are on has been breached in the past, so you can
 decide how much to trust it with.
 
 Nothing is sent until you click. With **Breach & site-history checks** enabled, pressing
-**Check breach history** in the popup sends the site's **registrable domain only** — `example.com`,
-never the full address, never the page path or query, never anything from the page itself — to
+**Check breach history** in the popup sends the site's **registrable domain only** (`example.com`,
+never the full address, never the page path or query, never anything from the page itself) to
 `haveibeenpwned.com`. Have I Been Pwned will also see your IP address, as it would for any
 request your browser makes.
 
@@ -364,14 +365,14 @@ Session Shield has a **Check password exposure** box. Nothing watches what you t
 pages; this only ever sees what you type into that one box, when you press that one button.
 
 An earlier version of this policy described a password lookup that **no part of the interface
-could reach**. That dead code was removed rather than wired up, and this section replaces it —
+could reach**. That dead code was removed rather than wired up, and this section replaces it,
 documented before the feature ships, as the previous version of this policy promised.
 
 What leaves your device is **five hexadecimal characters**, and nothing else:
 
 1. The password is hashed with SHA-1 **on your device**.
 2. The **first five characters** of that hash are sent to `api.pwnedpasswords.com`.
-3. That service returns **every** hash suffix in that bucket — hundreds of them, for hundreds
+3. That service returns **every** hash suffix in that bucket: hundreds of them, for hundreds
    of thousands of unrelated passwords.
 4. Your browser compares them **locally** and finds out whether one is yours.
 
@@ -382,7 +383,7 @@ prefix. The full password and the full hash never leave the machine.
 The request is sent **without cookies and without a referrer**, and asks for a **padded**
 response, so the size of the reply does not narrow down which prefix was requested.
 
-The result is shown on screen and **written nowhere** — not to history, not to storage, not to
+The result is shown on screen and **written nowhere**: not to history, not to storage, not to
 the badge. Close the popup and there is no record of it. WardenOne never learns your password,
 and never learns whether you have one that was breached beyond the moment it tells you.
 
@@ -393,8 +394,8 @@ needs an authenticated key and transmits the address itself; WardenOne does not 
 
 A login form on a domain registered days ago is one of the strongest phishing signals
 there is. If you switch this on, a page with a password field offers a **Check domain age**
-button. Only pressing it sends that site's registrable domain — `example.com`, never
-the full URL, page contents or what you type — to **`rdap.org`**, or your enabled
+button. Only pressing it sends that site's registrable domain (`example.com`, never
+the full URL, page contents or what you type) to **`rdap.org`**, or your enabled
 WhoisXML domain-age service. WardenOne uses the returned registration date to assess
 the sign-in page. Page scripts cannot start the manual domain-age request through
 the MAIN-world message bridge.
@@ -406,19 +407,19 @@ cached on your device (most recent 100 domains) so the same site is not looked u
 requests for IP addresses and private or local hostnames are never sent at all. Turn it
 on or off with **Login page age check** in the popup.
 
-### 5. Reputation providers (opt-in, off by default, most need your own API key)
+### 5. Reputation providers and the local OpenPhish feed
 
 WardenOne can optionally check a URL, domain, or file hash against third-party threat
 services **only if you enable automatic checks or explicitly start a check with your key**.
-Automatic checks are **off by default** for every provider: Google
+External URL, domain and hash submissions are **off by default**: Google
 Safe Browsing (`safebrowsing.googleapis.com`), VirusTotal (`www.virustotal.com`), urlhaus
 (`urlhaus-api.abuse.ch`), AbuseIPDB (`api.abuseipdb.com`), PhishTank
 (`checkurl.phishtank.com`), and WhoisXML (`www.whoisxmlapi.com`,
 `domain-reputation.whoisxmlapi.com`, `threat-intelligence.whoisxmlapi.com`).
 
-Most of those require you to supply your own API key. **OpenPhish is the exception**: it is
+Most of those require you to supply your own API key. **OpenPhish is the exception and is on by default**: it is
 used through its free public community feed, which needs no key, and it is fetched as a
-whole list from `raw.githubusercontent.com` rather than by asking about your URL — so no
+whole list from `raw.githubusercontent.com` rather than by asking about your URL, so no
 address of yours is sent to it. An earlier version of this policy said every provider
 required a key, which was not true of OpenPhish. Earlier builds also offered an optional
 OpenPhish token field; nothing ever read that token, the field no longer exists, and a
@@ -449,26 +450,30 @@ when a download begins. Earlier wording here said "the specific URL/domain/hash 
 evaluated is sent", which was true and still left the wrong impression. Precisely:
 
 - **Google Safe Browsing** and **urlhaus** receive the address of every page you open, as
-  **scheme, host and path** — `https://example.com/some/page`. The query string (everything
+  **scheme, host and path**, like `https://example.com/some/page`. The query string (everything
   from `?` on), the `#fragment` and any user name in the address are removed before the
   request is made. Provider URLs longer than 1,500 characters are skipped rather than
   shortened into a different address. The path is kept on purpose:
   a phishing page on a shared host is identified by its path, and a blocklist entry for it
-  is useless without one. That means a secret carried *in the path* — the token in a
-  password-reset link — does still travel; one carried in the query does not. Over a
+  is useless without one. That means a secret carried *in the path*, like the token in a
+  password-reset link, does still travel; one carried in the query does not. Over a
   browsing session, the list of pages you open is still a substantial part of your
   history, held by someone else. An earlier version of this policy said the query was sent
   too, and it was.
 - **PhishTank** and **WhoisXML** are held back during ordinary browsing and only fire when
   the address itself looks like a sign-in, payment or redirect page (words like *login*,
-  *verify*, *billing*, a `@` in the host, a cheap risky suffix, a `?redirect=` parameter —
+  *verify*, *billing*, a `@` in the host, a cheap risky suffix, a `?redirect=` parameter;
   the query is read on your device to make that decision, then removed), or when you
   explicitly ask about a link. PhishTank and WhoisXML Threat Intelligence then receive the
   same scheme, host and path; WhoisXML's domain age and domain reputation checks receive
   the registrable domain only. An earlier version of this policy said WhoisXML received the
   domain only, and its threat-intelligence check did not.
-- The right-click **Check with WardenOne** sends the same form — the address you selected,
-  without its query string — and the notice says so when something was cut.
+  - The right-click **Check this link** sends the same form: the address you selected,
+    without its query string. Its result tab identifies the source page and destination;
+    source-page contents are not sent to providers. Report addresses hide query values,
+    fragments and embedded credentials. Reports are held only in worker memory, capped
+    at 20, expire from use after ten minutes, and are cleared by the relevant WardenOne
+    data erase. A worker restart interrupts a report rather than persisting its addresses.
 - **AbuseIPDB** is only consulted when a site is reached by bare IP address, and receives
   that IP.
 - **VirusTotal URL reputation** receives the address of public HTTP(S) downloads when
@@ -487,25 +492,25 @@ evaluated is sent", which was true and still left the wrong impression. Precisel
 - **File Shield's VirusTotal button** runs only when you press it and sends a SHA-256 hash
   of the selected local file, never the file or its name.
 - No request introduces WardenOne. Beyond the address and your own key, a provider receives
-  nothing that names the extension or its version — with one exception it demands: Safe
+  nothing that names the extension or its version, with one exception it demands: Safe
   Browsing's API requires a client name and version in every request, and gets `wardenone`
   and the installed version. PhishTank lookups used to carry an `X-WardenOne-Client` header
   with the exact version, which PhishTank never asked for; it no longer does.
 - **OpenPhish** receives nothing, as described above.
 
-Navigation reputation answers are cached on your device so the same address is not sent twice — under a
+Navigation reputation answers are cached on your device so the same address is not sent twice, under a
 fingerprint of the address rather than the address itself, for between five minutes and
 twelve hours depending on the provider and the answer, so the cache is a lookup table and
 not a list of where you have been. `legal.twitch.tv` is the one address excluded
 outright. Those providers are independent
 data controllers with their own privacy policies; review theirs before enabling. WardenOne
-sends nothing to any of them until you do — and every one of them is off until you do.
+sends nothing to any of them until you do, and every one of them is off until you do.
 
 ### 6. Check an extension before you install it (you press the button)
 
 When you paste an extension's ID or Web Store link into the extension checker, WardenOne
-asks the Chrome Web Store (`chromewebstore.google.com`) for that listing's public page —
-with no cookies attached — to learn whether the listing still exists and what name it
+asks the Chrome Web Store (`chromewebstore.google.com`) for that listing's public page,
+with no cookies attached, to learn whether the listing still exists and what name it
 carries. Everything else about that check is answered from a list bundled inside
 WardenOne. Nothing is sent unless you ask for the check, and what is sent is the
 extension's ID, never anything about you.
@@ -522,7 +527,7 @@ test requests a favicon from two well-known adult sites
 (`testsafebrowsing.appspot.com`), plus two controls to prove the network is up at all
 (`www.google.com`, `www.cloudflare.com`). Nothing is rendered and no page is opened. But
 these are real network requests: they can appear in DNS logs, in your router or your
-employer's or school's monitoring, and in a family filter's report — the very systems the
+employer's or school's monitoring, and in a family filter's report: the very systems the
 test exists to detect. On a network where that matters to you, do not run it.
 
 ### 8. Twitch requests, on Twitch only
@@ -532,7 +537,7 @@ a Twitch page:
 
 - **Twitch ad blocking** asks for the stream's playback token the way the player does, so
   it can request an ad-free variant of the stream. To be accepted, that request carries
-  the same `Authorization` header the Twitch page itself is already using — read from the
+  the same `Authorization` header the Twitch page itself is already using. It's read from the
   page, sent only back to Twitch, and never stored or sent anywhere else. Cookies are not
   attached (`credentials: 'omit'`).
 - **Twitch rewind** asks whether the channel you are watching has an in-progress recording
@@ -546,17 +551,24 @@ both can be turned off there.
 ### 9. Filter lists you add yourself (you press the button)
 
 **My Rules** can subscribe to a filter list at an `https://` address you type. WardenOne
-fetches it when you add it and again when you press its update button — never on its own —
+fetches it when you add it and again when you press its update button, never on its own,
 from exactly the address you gave, without cookies. That list's host receives an ordinary
 request and your IP address, as it would if you opened the address yourself, and nothing
 else. Which host that is depends entirely on the address you chose, which is why it is
 described here rather than named. An earlier version of this policy left this out.
 
+The same section also offers a list of regional, annoyance, privacy and security filter
+lists to pick from, so you do not have to go looking for addresses. That catalogue ships
+inside WardenOne as `filter-list-catalog.json` and is only a list of names and addresses:
+reading it contacts nothing. Choosing one is the same user-started subscription described
+above, to the host named in that entry, and you can read every address in the file before
+choosing. Nothing in the catalogue is subscribed to by default.
+
 **That is the complete list of external endpoints WardenOne contacts.** The requests above
 cover public lists, browser and WardenOne build checks, script re-checks, Twitch while you
 use Twitch, checks you switched on, and actions you started. There is
 no background telemetry, no crash reporting, no usage analytics, and nothing whatsoever is
-sent to WardenOne's developer — there is no WardenOne server to send it to.
+sent to WardenOne's developer. There is no WardenOne server to send it to.
 
 ---
 
@@ -567,22 +579,22 @@ None are used to collect data about you. A per-permission justification is publi
 the store listing; in summary:
 
 - **Read/observe pages and network requests** (`declarativeNetRequest`, `webRequest`,
-  `webNavigation`, `scripting`, `activeTab`, `<all_urls>`) — to block malicious requests
+  `webNavigation`, `scripting`, `activeTab`, `<all_urls>`): to block malicious requests
   and detect redirect chains, grabbers, and unsafe navigations, on any site. Network
   request observation is read-only.
-- **Downloads** — to inspect and, when risky, pause/cancel a download (Download Guard).
-- **Cookies / content settings / browsing data** — to power cookie handling, per-site
+- **Downloads**: to inspect and, when risky, pause/cancel a download (Download Guard).
+- **Cookies / content settings / browsing data**: to power cookie handling, per-site
   JavaScript/location controls, and the user-initiated "Clean browsing data" and
   "Forget this site" tools.
-- **History** — used only by "Forget this site" to remove entries for a domain you choose;
+- **History**: used only by "Forget this site" to remove entries for a domain you choose;
   WardenOne does not continuously read or transmit your history.
-- **Management** — to **list** installed extension IDs, versions, permissions, install
+- **Management**: to **list** installed extension IDs, versions, permissions, install
   type and enabled state for the local Extension Security Centre. WardenOne compares
   exact IDs with its bundled on-device incident database and watches meaningful access
   changes. It cannot read or scan another extension's source package. It disables or
   requests Chrome-confirmed removal only when you press that extension's explicit
   button; it never installs, disables, or removes another extension automatically.
-- **Tabs / alarms / notifications / storage** — for the toolbar badge, the
+- **Tabs / alarms / notifications / storage**: for the toolbar badge, the
   startup safety check, the Memory Shield (sleeping idle tabs), scheduled list updates,
   security alerts, and saving your settings locally.
 
@@ -597,9 +609,9 @@ advertising, no data brokerage, and no third-party tracking introduced by Warden
 
 That is a different statement from "nothing leaves your device", and the two are kept
 apart on purpose. By default, nothing about the pages you visit leaves your device. The
-exceptions are the ones you switch on yourself — an enabled reputation provider is sent
+exceptions are the ones you switch on yourself: an enabled reputation provider is sent
 the address of every page you open, as scheme, host and path, for as long as it stays on
-(section 5) — and the checks you start by pressing a button (sections 6 to 8).
+(section 5), and the checks you start by pressing a button (sections 6 to 8).
 
 ---
 
@@ -611,7 +623,7 @@ including the **Limited Use** requirements.
 
 Concretely, and in the same terms that policy uses:
 
-- User data is used **only** to provide or improve the single purpose stated in the listing —
+- User data is used **only** to provide or improve the single purpose stated in the listing:
   protecting the person using the browser.
 - User data is **not** transferred to third parties except where a person has explicitly
   enabled an optional reputation or breach provider, at which point the request goes to the
@@ -638,7 +650,7 @@ published with the store listing. Continued use after an update constitutes acce
 
 ## Contact
 
-Questions or privacy requests: open an issue on the project's issue tracker —
+Questions or privacy requests: open an issue on the project's issue tracker at
 **<https://github.com/iri-dev/WardenOne/issues/new/choose>**
 
 The issue tracker is the support channel for WardenOne. It is public, so please do not

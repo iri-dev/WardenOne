@@ -53,6 +53,15 @@ function run(opts) {
     wardenManualNotice: async (title, message) => { notices.push({ title, message }); return true; },
     WO_MENU_COPY_LINK: 'wardenone-copy-clean-link',
     tabsQuery: async () => opts.tabs || [],
+    LOGIN_COMPAT_NEVER_BLOCK_DOMAINS: new Set(),
+    wardenOffscreenIdleTimer: 0, wardenOffscreenBusy: 0,
+    ensureWardenOffscreenDocument: async () => {},
+    scheduleWardenOffscreenClose() {},
+    sendWardenOffscreenMessage: async (payload) => {
+      if (opts.clipboardFails) return { ok: false };
+      clipboard.push(payload.text);
+      return { ok: true };
+    },
     chrome: {
       runtime: { lastError: null },
       scripting: {
@@ -75,6 +84,8 @@ function run(opts) {
   /* The MAIN-world stub calls func with `window` read from this context. */
   sandbox.window = {};
   vm.createContext(sandbox);
+  const rulesStart = BG.indexOf('const LINK_CLEAN_RULE_BASE =');
+  vm.runInContext(BG.slice(rulesStart, BG.indexOf('let __linkCleanRulesEnabled', rulesStart)), sandbox);
   vm.runInContext(BG.slice(bs, be), sandbox, { filename: 'background.js:copy-clean' });
   return {
     notices, clipboard,
@@ -104,6 +115,15 @@ const TAB = { id: 1, url: 'https://example.com/page' };
   check('a right-click on no link falls back to the page',
     r.clipboard[0] === 'https://example.com/read?p=2', 'got ' + r.clipboard[0]);
 
+  r = run({ pageCleaner: value => value });
+  await r.copy({ linkUrl: dirty }, TAB);
+  check('worker tracking rules still clean when the page engine is unavailable',
+    r.clipboard[0] === 'https://example.com/thing?id=7', 'got ' + r.clipboard[0]);
+  r = run({ pageCleaner: value => value });
+  await r.copy({ linkUrl: 'https://example.com/file?signature=keep&utm_source=fixture' }, TAB);
+  check('the fallback preserves signed addresses',
+    r.clipboard[0] === 'https://example.com/file?signature=keep&utm_source=fixture');
+
   /* Chrome never sends a page copy event for its top address bar. The explicit
      browser command therefore has to start from the active tab URL itself. */
   r = run({ tabs: [{ id: 7, url: dirty }] });
@@ -131,7 +151,7 @@ const TAB = { id: 1, url: 'https://example.com/page' };
   r = run({ clipboardFails: true });
   await r.copy({ linkUrl: dirty }, TAB);
   check('a refused clipboard is reported, not claimed as success',
-    /would not let it be copied/i.test(r.notices[0].message)
+    /clipboard write failed/i.test(r.notices[0].message)
       && /id=7/.test(r.notices[0].message),
     'and the cleaned link is still shown so it is not simply lost');
 
@@ -150,6 +170,30 @@ const TAB = { id: 1, url: 'https://example.com/page' };
   r = run({ pageCleaner: () => 'not a url at all' });
   await r.copy({ linkUrl: dirty }, TAB);
   check('a nonsense answer falls back to the original', r.clipboard[0] === dirty);
+
+  for (const forged of [
+    'https://example.com/login?id=7',
+    'http://example.com/thing?id=7',
+    'https://example.com:8443/thing?id=7',
+    'https://example.com/thing?id=replaced',
+    'https://attacker@example.com/thing?id=7',
+  ]) {
+    r = run({ pageCleaner: () => forged });
+    await r.copy({ linkUrl: dirty }, TAB);
+    check('page cleaner cannot change address identity or kept values: ' + forged,
+      r.clipboard[0] === dirty, 'got ' + r.clipboard[0]);
+  }
+  r = run({ pageCleaner: () => 'https://evil.example/path' });
+  const deceptive = 'https://not-evil.example/path?utm_source=fixture';
+  await r.copy({ linkUrl: deceptive }, TAB);
+  check('a hostname substring is not an embedded destination', r.clipboard[0] === deceptive);
+
+  for (const suffix of ['com', 'co.uk', 'com.co', 'co.za', 'ie']) {
+    r = run({});
+    await r.copy({ linkUrl: 'https://www.amazon.' + suffix + '/Product/dp/B08ABC1234/ref=share?tag=fixture&psc=1' }, TAB);
+    check('Amazon product cleaning survives destination validation: ' + suffix,
+      r.clipboard[0] === 'https://www.amazon.' + suffix + '/dp/B08ABC1234', 'got ' + r.clipboard[0]);
+  }
 
   /* Unwrapping is the one case where the host legitimately changes, so it has
      to keep working -- the destination was spelled out in the link already. */

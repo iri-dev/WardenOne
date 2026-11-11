@@ -15,7 +15,7 @@ function region(start, end) {
   assert(a >= 0 && b > a, start);
   return source.slice(a, b);
 }
-function world(store = {}) {
+function world(store = {}, verdict = { ok: true, hit: true, threats: ['MALWARE'] }) {
   let now = 1700000000000;
   const activeTabs = new Map();
   const calls = [], updates = [], history = [];
@@ -34,11 +34,12 @@ function world(store = {}) {
     INCOGNITO_CONTEXT: false,
     isLocalOrPrivateHost: host => host === '127.0.0.1' || host === 'localhost' || host.endsWith('.local'),
     isLocalTrustHost: () => false,
+    isNeverBlockDomain: host => /(^|\.)discord\.com$/i.test(String(host || '')),
     trustHostFromUrl: raw => new URL(raw).hostname,
     queueHistory: entry => history.push(entry),
     urlReputationConfig: async () => ({ enabled: true }),
     locallyBlockedReputationHost: async () => '',
-    urlReputationLookupUrl: async url => { calls.push(url); return { ok: true, hit: true, threats: ['MALWARE'] }; },
+    urlReputationLookupUrl: async url => { calls.push(url); return structuredClone(verdict); },
     tabsGet: async id => ({ id, ...activeTabs.get(id) }), tabsUpdate: async (...args) => updates.push(args),
     bumpBadge() {}, safeBrowsingThreatLabel: () => 'malware',
     safeBrowsingBlockPageUrl: async () => ORIGIN + 'safe-browsing-block.html?w=' + HANDLE,
@@ -179,6 +180,31 @@ async function run() {
   assert(source.includes('void clearSafeBrowsingBypass(tabId)'));
   assert(source.includes("if ((details.transitionQualifiers || []).includes('server_redirect')) handleSafeBrowsingNavigation(details)"));
   assert.match(fs.readFileSync('safe-browsing-block.html', 'utf8'), /exact address once, in this tab/);
+
+  /* Phishing kits point at discord.com/login?redirect_to=, so providers list that address and the real
+     login page inherits the verdict. On a host we already refuse to block from a feed, a hit that names
+     no threat type is somebody else's listing, not a verdict on the site. Named threats still stand. */
+  {
+    const DISCORD = 'https://discord.com/login?redirect_to=%2Fquest-home';
+    const named = world();
+    await named.navigate(31, DISCORD);
+    assert.equal(named.updates.length, 1, 'a named threat on a never-block host still blocks');
+
+    const typeless = world({}, { ok: true, hit: true, threats: [] });
+    await typeless.navigate(32, DISCORD);
+    assert.equal(typeless.updates.length, 0, 'a typeless reputation hit does not block the real Discord login');
+    assert.equal(typeless.history.filter(e => /safe_browsing|reputation/.test(e.type)).length, 0,
+      'and it raises no reputation warning');
+
+    const warned = world({}, { ok: true, warning: true, hit: false, provider: 'AbuseIPDB', score: 90 });
+    await warned.navigate(33, DISCORD);
+    assert.equal(warned.history.filter(e => /reputation|abuseipdb/.test(e.type)).length, 0,
+      'a score-only warning on a never-block host stays quiet too');
+
+    const ordinary = world({}, { ok: true, hit: true, threats: [] });
+    await ordinary.navigate(34, 'https://shared.example.com/tenant-b');
+    assert.equal(ordinary.updates.length, 1, 'the same typeless hit still blocks an ordinary host');
+  }
   console.log('[ok] reputation grants: exact URL, one use, original tab, expiry, replay/race/storage failures, worker restart and navigation checks');
 }
 run().catch(e => { console.error(e.stack || e); process.exitCode = 1; });

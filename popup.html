@@ -1355,7 +1355,7 @@
         <div class="tool-head" style="margin-bottom:4px;">
           <div>
             <div class="name" style="font-size:12px;">OpenPhish</div>
-            <div class="desc">Phishing intelligence feed. Uses the official keyless Community feed, downloaded to your device and matched locally; there is no key or token to paste.</div>
+            <div class="desc">On by default. Downloads the official keyless Community feed and matches URLs locally; your browsing addresses are never sent to OpenPhish.</div>
           </div>
           <label class="tg"><input type="checkbox" data-key="openPhish"><span class="track"></span><span class="knob"></span></label>
         </div>
@@ -1475,7 +1475,7 @@
       <label class="tg"><input type="checkbox" data-key="loginCompatibility"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">No persistent cookies</div><div class="desc">Wipes every cookie when you fully close the browser, so nothing tracks you across sessions. Logins still work while you browse (you may just re-sign-in next launch). For trackers, use Block third-party cookies. Opt-in.</div></div>
+      <div><div class="name">No persistent cookies</div><div class="desc">Wipes every cookie when you fully close the browser, so nothing tracks you across sessions. Logins still work while you browse (<strong>you may just re-sign-in next launch</strong>). For trackers, use Block third-party cookies. Opt-in.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockAllCookies"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1492,7 +1492,7 @@
       <label class="tg"><input type="checkbox" data-key="trackerLearner"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row" style="flex-direction:column;align-items:stretch;gap:6px;">
-      <div><div class="name" id="tracker-learning-mode-label">Learning mode</div><div class="desc" id="tracker-learning-mode-desc">WardenOne can learn from its own cookie, canvas, storage and matching URL-ID observations across three sites in one browser session. Automatic mode blocks learned trackers until you unblock them. Review mode requires approval; saved blocks stay.</div></div>
+      <div><div class="name" id="tracker-learning-mode-label">Learning mode</div><div class="desc" id="tracker-learning-mode-desc">Automatic by default: WardenOne learns from its own cookie, canvas, storage and matching URL-ID observations across three sites. Learned trackers stay blocked until you unblock them. Review mode requires approval for new blocks; saved blocks stay.</div></div>
       <select id="tracker-learning-mode" data-key="trackerLearnerAuto" data-config-bool aria-labelledby="tracker-learning-mode-label" aria-describedby="tracker-learning-mode-desc">
         <option value="false">Review suggestions</option>
         <option value="true">Automatic tracker protection</option>
@@ -1514,7 +1514,7 @@
     </div>
     </div>
     <div class="row">
-      <div><div class="name">Block tracker cache validators</div><div class="desc">Removes If-None-Match and ETag only on passive requests to WardenOne's known tracker hosts, preventing cache-tag respawning without disabling normal browser caching. Opt-in because repeated tracker responses can use more bandwidth.</div></div>
+      <div><div class="name">Block tracker cache validators</div><div class="desc">On by default. Removes If-None-Match and ETag only on passive requests to known tracker hosts, preventing cache-tag respawning while keeping normal browser caching. Repeated tracker responses can use more bandwidth.</div></div>
       <label class="tg"><input type="checkbox" data-key="trackerCacheProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1574,6 +1574,10 @@
     <div class="row">
 <div><div class="name">AdShield: General sites</div><div class="desc">Blocks ad-server requests and hides ad elements across the web (EasyList/uBlock-style filters: network + cosmetic + anti-adblock scriptlets).</div></div>
       <label class="tg"><input type="checkbox" data-key="adShield"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Remove ad blocker warnings</div><div class="desc">Gets rid of the &ldquo;you&rsquo;re using an ad blocker, please turn it off&rdquo; messages, and the blank pages some sites show instead. AdShield&rsquo;s filter rules already stop most sites noticing; this clears the ones that still get through. Logins, age checks and bot checks are never touched, and if a page is empty behind the message it is put back and this pauses itself on that site.</div></div>
+      <label class="tg"><input type="checkbox" data-key="antiAdblockShield" aria-label="Remove ad blocker warnings"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
 <div><div class="name" style="font-size:12px;">AdShield: YouTube</div><div class="desc">YouTube-specific AdShield engine (video ads) - blocks ad breaks and ad UI while keeping playback stable through YouTube updates.</div></div>
@@ -1809,7 +1813,7 @@
       <label class="tg"><input type="checkbox" data-key="adultHeuristics"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row" style="border-bottom:none;">
-      <div><div class="name">Force SafeSearch</div><div class="desc">Locks the Google, Bing, DuckDuckGo, Brave Search and Yahoo search engines into SafeSearch, and YouTube into Restricted Mode. The adult-site guard only fires when you <em>arrive</em> somewhere — explicit images and video render inside the results page itself, where there's no arrival to catch. This closes that gap. Off by default: it changes what search will show you.</div></div>
+      <div><div class="name">SafeSearch and YouTube Restricted Mode</div><div class="desc">Forces SafeSearch on Google, Bing, DuckDuckGo, Brave Search and Yahoo, and Moderate Restricted Mode on YouTube, which hides mature videos and comments. A video it hides says it is restricted by an administrator, error 151: that message comes from this switch. Off by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="safeSearch"><span class="track"></span><span class="knob"></span></label>
     </div>
     </div>

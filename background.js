@@ -42,7 +42,9 @@ importScripts('notification-manager.js');
 importScripts('config-lock.js');
 importScripts('upgrade-config.js');
 importScripts('site-recovery.js');
+importScripts('anti-adblock-shield.js');
 importScripts('tracking-redirects.js');
+importScripts('background-link-check.js');
 
 /* Restrict storage.local before registering handlers: content scripts must receive only bounded, secret-free config
    snapshots, never credentials or browsing records. */
@@ -752,15 +754,16 @@ const LOG_SEGMENT_MAX = 24;
 // Redact long digit runs and arbitrary mixed IDs, which can identify accounts or users (PRIV-08).
 const LOG_ROUTE_PART = '(?:[a-z]+|\\d{1,4}|[a-z]{1,6}\\d{1,3})';
 const LOG_ROUTE_WORD = new RegExp('^' + LOG_ROUTE_PART + '(?:[._~-]' + LOG_ROUTE_PART + ')*$');
-const LOG_SENSITIVE_ROUTE = /(?:^|[/._-])(?:reset|password|passwd|passcode|verify|verification|invite|invitation|magic|recover|recovery|otp|token|activate|activation|callback)(?:$|[/;._-])/i;
+const LOG_SENSITIVE_ROUTE = /(?:^|[/._-])(?:reset|password|passwd|passcode|verify|verification|invite|invitation|magic|recover|recovery|otp|token|activate|activation|callback|login|logon|signin|sign[._-]in|auth|oauth\d*|authorize|sso|saml|oidc|mfa|2fa|confirm|confirmation|unsubscribe)(?:$|[/;._-])/i;
 function safeLogSegment(segment) {
   if (!segment) return segment;
   let decoded = segment;
   // Percent-encoding would otherwise hide both the length and the shape of a secret.
   try { decoded = decodeURIComponent(segment); } catch (_) {}
   if (decoded.length > LOG_SEGMENT_MAX) return '*';
-  // Short numeric route elements survive only outside sensitive-route tails.
-  if (/^\d+$/.test(decoded)) return decoded.length <= 8 ? decoded : '*';
+  // Up to four digits (a year, a page, a version) survive outside sensitive-route tails;
+  // longer numbers can be account ids or sign-in codes.
+  if (/^\d+$/.test(decoded)) return decoded.length <= 4 ? decoded : '*';
   // Long unbroken runs can contain hex, base64 or JWT fragments.
   if (/[a-z0-9]{16,}/i.test(decoded)) return '*';
   // Retain route-like words, but redact mixed identifiers, addresses and unknown shapes.
@@ -1455,8 +1458,11 @@ const TARGETED_AD_SITES = ['playmogo.com', 'pawchive.pw'];
 /* MV3 wake listeners must register synchronously. The gate checks this filter
    against the bundled tracker rules; rule evidence still loads asynchronously. */
 const TARGETED_AD_REQUEST_PATTERNS = [
-  '*://*.dnhfi5nn2dt67.cloudfront.net/*', '*://*.blockadsnot.com/*', '*://*.xlxchtas.com/*',
+  '*://*.dnhfi5nn2dt67.cloudfront.net/*', '*://*.d2pf0ys5xus6n.cloudfront.net/*',
+  '*://*.blockadsnot.com/*', '*://*.xlxchtas.com/*',
   '*://*.ejfiynnbu.com/*', '*://*.gillyspencie.com/*', '*://*.briggie.org/*',
+  '*://*.oo.weldssantar.com/*', '*://*.zj.prabblenutrify.com/*',
+  '*://*.yb.hoodoescopses.com/*', '*://*.gf.gabbroscutum.cyou/*',
   '*://*.npilkasacdu.in/*', '*://*.excavatenearbywand.com/*', '*://*.phonydepth.com/*',
   '*://*.armvupzc.in/*', '*://*.onxgaladrj.in/*',
 ];
@@ -2649,8 +2655,9 @@ const DEFAULT_CONFIG = {
   adShield: true,
   googleSearchResultCleanup: false,
   blockSearchAiAnswers: false,
-  blockSponsoredSearchResults: false,
+  blockSponsoredSearchResults: true,
   scriptletEngine: true,
+  antiAdblockShield: true,
   twitchAdBlock: true,
   /* Twitch's Low Latency mode off unless the viewer chose it, while the ad blocker is on: see
      installSteadyPlaybackPreference in twitch-adblock.js. */
@@ -2671,7 +2678,7 @@ const DEFAULT_CONFIG = {
   deAmp: false,
   clientHintProtection: true,
   capReferrer: false,
-  trackerCacheProtection: false,
+  trackerCacheProtection: true,
   autoRejectConsent: true,
   removeConsentWalls: false,
   /* Webmail tracking pixels. On by default: the substitution is a transparent
@@ -2680,7 +2687,7 @@ const DEFAULT_CONFIG = {
      you opened their mail and not. */
   mailTrackingShield: true,
   trackerLearner: true,
-  trackerLearnerAuto: false,
+  trackerLearnerAuto: true,
   unshimLinks: true,
   socialWidgetGuard: true,
   blockSupercookies: true,
@@ -2728,7 +2735,7 @@ const DEFAULT_CONFIG = {
   abuseIpDb: false,
   abuseIpDbKey: '',
   // OpenPhish’s community feed is keyless. Migration removes the unused legacy token (BUG-09).
-  openPhish: false,
+  openPhish: true,
   phishTank: false,
   phishTankKey: '',
   whoisXml: false,
@@ -2960,7 +2967,9 @@ function sharedContentConfigSnapshot() {
       rev,
       overrides: sanitizeContentConfig(store && store.wardenone_config),
       appearance: ['light', 'dark', 'system'].includes(store && store.wardenone_theme) ? store.wardenone_theme : 'light',
-      learned: sanitizeLearnedForContent(store && store.wardenone_learned),
+      /* storage.local is the regular profile's: a private window must not read its learned sites. */
+      learned: typeof INCOGNITO_CONTEXT !== 'undefined' && INCOGNITO_CONTEXT === true ? {}
+        : sanitizeLearnedForContent(store && store.wardenone_learned),
       supplemental: sanitizeSupplementalLists(store && store[SUPPLEMENTAL_LIST_STORAGE_KEY]),
       searchJunkDomains: sanitizeSearchJunkForContent(seed.hosts.concat(searchJunkStoredHosts(store && store.wardenone_search_junk_domains))),
     });
@@ -3069,6 +3078,12 @@ try { DEFAULT_CONFIG.notificationSettings = wardenNotificationDefaultSettings();
 // Keep blockAllCookies and honeytokenMode expert-only; do not include them in either preset.
 const ONBOARDING_RECOMMENDED = {
   enabled: true,
+  elementZapper: true,
+  trackerLearner: true,
+  trackerLearnerAuto: true,
+  trackerCacheProtection: true,
+  openPhish: true,
+  blockSponsoredSearchResults: true,
   blockGesturelessNav: true,
   blockForcedPopups: true,
   strictPopupShield: true,
@@ -3118,7 +3133,6 @@ const ONBOARDING_MAX_PRIVACY = Object.assign({}, ONBOARDING_RECOMMENDED, {
   blockSuspiciousWebRTC: true,
   clientHintProtection: true,
   capReferrer: true,
-  trackerCacheProtection: true,
   deAmp: true,
 });
 
@@ -3221,6 +3235,10 @@ const MALWARE_LISTS = [
   // dnss-blocklist malicious aggregate -- malware, spyware, phishing, etc.
   'https://raw.githubusercontent.com/flinteger/dnss-blocklists/release/blocklists/malicious.domains.txt',
   'https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt',
+  /* oisd big: a false-positive-screened aggregate, refreshed hourly. Measured 2026-11-06 it carried 20,303
+     addresses no other configured feed had, 89% of which still resolved -- the highest live share of any
+     candidate. Its entries mean the domain and its subdomains, which is what a requestDomains condition does. */
+  'https://raw.githubusercontent.com/sjhgvr/oisd/main/domainswild2_big.txt',
 ];
 
 /* Download Guard data, not DNR rules (toggle: downloadReputation). Payload addresses name files
@@ -3388,21 +3406,42 @@ const SCRIPTLET_ALIASES = {
   'abort-current-inline-script': 'abort-current-script', 'acis': 'abort-current-script',
   'abort-on-property-read': 'abort-on-property-read', 'aopr': 'abort-on-property-read',
   'abort-on-property-write': 'abort-on-property-write', 'aopw': 'abort-on-property-write',
+  'abort-on-stack-trace': 'abort-on-stack-trace', 'aost': 'abort-on-stack-trace',
   'set-constant': 'set-constant', 'set': 'set-constant',
   'no-setTimeout-if': 'no-setTimeout-if', 'nostif': 'no-setTimeout-if', 'setTimeout-defuser': 'no-setTimeout-if', 'prevent-setTimeout': 'no-setTimeout-if',
   'no-setInterval-if': 'no-setInterval-if', 'nosiif': 'no-setInterval-if', 'setInterval-defuser': 'no-setInterval-if', 'prevent-setInterval': 'no-setInterval-if',
+  'adjust-settimeout': 'adjust-setTimeout', 'nano-stb': 'adjust-setTimeout', 'nano-settimeout-booster': 'adjust-setTimeout',
+  'adjust-setinterval': 'adjust-setInterval', 'nano-sib': 'adjust-setInterval', 'nano-setinterval-booster': 'adjust-setInterval',
   'no-fetch-if': 'no-fetch-if', 'prevent-fetch': 'no-fetch-if',
   'no-xhr-if': 'no-xhr-if', 'prevent-xhr': 'no-xhr-if',
+  /* No noeval/noeval-if entry on purpose. Defusing the dynamic-code builtin means assigning
+     window.eval, which turns every direct call in the page into an indirect one and moves it from
+     the caller's scope to the global scope. test-xss-behavior-guard.js enforces that; a broken
+     page costs more than the ~170 rules this drops. */
   'addEventListener-defuser': 'addEventListener-defuser', 'aeld': 'addEventListener-defuser', 'prevent-addEventListener': 'addEventListener-defuser',
   'no-window-open-if': 'no-window-open-if', 'nowoif': 'no-window-open-if', 'window.open-defuser': 'no-window-open-if', 'prevent-window-open': 'no-window-open-if',
   'remove-attr': 'remove-attr', 'ra': 'remove-attr',
   'remove-class': 'remove-class', 'rc': 'remove-class',
+  'set-attr': 'set-attr',
+  'spoof-css': 'spoof-css',
+  'remove-node-text': 'remove-node-text', 'rmnt': 'remove-node-text',
+  'replace-node-text': 'replace-node-text', 'rpnt': 'replace-node-text', 'sed': 'replace-node-text',
+  'href-sanitizer': 'href-sanitizer',
+  'remove-cookie': 'remove-cookie', 'cookie-remover': 'remove-cookie',
+  'popads-dummy': 'popads-dummy',
+  'prevent-popads-net': 'prevent-popads-net', 'popads.net': 'prevent-popads-net',
+  'nobab': 'bab-defuser', 'bab-defuser': 'bab-defuser', 'prevent-bab': 'bab-defuser',
+  'nofab': 'fuckadblock-defuser', 'fuckadblock.js-3.2.0': 'fuckadblock-defuser',
   'set-cookie': 'set-cookie',
   'set-local-storage-item': 'set-local-storage-item',
+  'set-session-storage-item': 'set-session-storage-item',
   'json-prune': 'json-prune',
   'nowebrtc': 'nowebrtc',
 };
-const SCRIPTLET_STORAGE_MUTATORS = new Set(['set-cookie', 'set-local-storage-item']);
+/* Writing a site cookie or storage key is a trust grant the hiding and defusing scriptlets do not
+   need. Removal is not: document.cookie cannot see an HttpOnly session cookie, so remove-cookie
+   cannot sign the reader out, and it stays out of this set. */
+const SCRIPTLET_STORAGE_MUTATORS = new Set(['set-cookie', 'set-local-storage-item', 'set-session-storage-item']);
 // External filter-list scriptlets that write site cookies/localStorage are a
 // bigger trust grant than cosmetic hiding or API defusing. Keep this empty by
 // default; add audited site domains here only if a specific compatibility fix is
@@ -3482,7 +3521,10 @@ function cosmeticGenericHideDomain(line) {
   return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain) && !domain.includes('..') ? domain : '';
 }
 
-const COSMETIC_PROCEDURAL_OPS = /:(?:-abp-contains|-abp-has|has|has-text|contains|matches-css(?:-before|-after)?|matches-attr|matches-path|min-text-length|upward|nth-ancestor|watch-attr|xpath|others|remove|style)\(/i;
+/* ":not(" is deliberately absent: on its own it is native CSS, and routing every ":not()" rule
+   through the JS evaluator would cost more than it buys. A ":not()" wrapping a procedural operator
+   still lands here because the inner operator matches, and the runtime parser handles the wrapper. */
+const COSMETIC_PROCEDURAL_OPS = /:(?:-abp-contains|-abp-has|-abp-properties|has|has-text|contains|if-not|if|matches-css(?:-before|-after)?|matches-attr|matches-prop|matches-path|matches-media|min-text-length|upward|nth-ancestor|watch-attr|xpath|others|remove|style)\(/i;
 
 function classifyCosmeticFilterLine(rawLine) {
   const line = rawLine.trim();
@@ -3527,7 +3569,13 @@ function createCosmeticCompilation() {
     generic: new Set(), specific: Object.create(null), exceptions: Object.create(null),
     genericHideExclusions: new Set(), procedural: Object.create(null), scriptlets: Object.create(null),
     count: 0, procCount: 0, scriptletCount: 0,
-    passiveLimit: ADSHIELD_COSMETIC_MAX, proceduralLimit: 12000, scriptletLimit: 12000,
+    /* Both limits count domain-by-rule pairs and both are meant to be headroom, not a budget: a
+       limit the feeds reach truncates silently, and which rules survive then depends on feed order.
+       The feeds behind docs/filter-source-snapshot.json.gz currently compile to ~28k scriptlet and
+       ~7.7k procedural pairs; test-cosmetic-provenance.js fails if either gets close. The packaged
+       store is read once and held for the worker's life, so raising these costs resident memory --
+       measure before moving them. */
+    passiveLimit: ADSHIELD_COSMETIC_MAX, proceduralLimit: 16000, scriptletLimit: 36000,
   };
 }
 
@@ -3871,8 +3919,19 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
     (scriptletsByDomain['*'] || []).forEach(pushScriptlet);
     candidates.forEach((d) => { (scriptletsByDomain[d] || []).forEach(pushScriptlet); });
   }
+  /* A page holding a player still gets the rules written for its own site; the page engine applies
+     them only where they cannot reach that player. A video in a Reddit thread or a news article
+     used to switch every rule off for the whole page. Generic rules stay off there, as before. */
+  let siteSelectors = [];
+  if (!videoPlatform) {
+    const site = new Set();
+    candidates.forEach((d) => { (specific[d] || []).forEach((s) => site.add(s)); });
+    candidates.forEach((d) => { (exceptions[d] || []).forEach((s) => site.delete(s)); });
+    (exceptions[''] || []).forEach((s) => site.delete(s));
+    siteSelectors = Array.from(site).slice(0, 2000);
+  }
   // Host-specific commands stay separate even when the selector buckets match.
-  const result = { ok: true, selectors, procedural: procRules, scriptlets };
+  const result = { ok: true, selectors, siteSelectors, procedural: procRules, scriptlets };
 
   // Answer the caller either way, but only memoise a result computed from data that is still
   // current. Otherwise a load that started before an allowlist edit would repopulate the host
@@ -3892,12 +3951,6 @@ function computeCosmeticForHost(rawHost, mem, playerPage) {
   return result;
 }
 
-function cosmeticForPlayerPage(rawHost, cfg) {
-  if (!normalizeAllowlistHost(rawHost)) return { ok: true, selectors: [], invalidHost: true };
-  if (cfg && cfg.adShield === false) return { ok: true, selectors: [], disabled: true };
-  return { ok: true, selectors: [], procedural: [], scriptlets: [] };
-}
-
 // Dynamic rule IDs live in a high range so they never collide with the static
 // rules.json (which uses 1..162).
 const DYNAMIC_RULE_BASE = 10000;
@@ -3911,6 +3964,13 @@ const LIST_DOMAINS_PER_RULE = 50000;
 /* Headroom over what the feeds hold: the full threat-intelligence feed took the total past 3M domains on
    2026-11-01, which the old ceiling of 60 would have quietly cut short. */
 const LIST_DOMAIN_RULES_MAX = 120;
+/* What the packed feed band actually costs against Chrome's dynamic quota. MAX_DYNAMIC stays
+   at its old width because the whole range is still swept as removeRuleIds to clear the
+   one-domain-per-rule sets older builds installed, and removing an id costs no quota. Billing
+   the budget for 18,000 rules that can no longer exist is what kept the option band at 4,000.
+   Kept a literal because tools/test-dnr-budget.js reads these by parsing, not by running the
+   file; it also asserts this equals LIST_DOMAIN_RULES_MAX so the two cannot drift apart. */
+const LIST_RULES_BUDGET = 120;
 const STATIC_RULE_COUNT = 135;
 // EasyList-compiled static ruleset (rules-adshield.json, generated by
 // tools/build-adshield-dnr.js -- rerun it to refresh from a newer EasyList).
@@ -3993,14 +4053,23 @@ async function packagedRulesetDomainStats(merged) {
 // Network filter-OPTION rules (uBlock $third-party/$script/domain=/@@) live in their
 // own ID band, separate from whole-domain blocks. Capped (Chrome's 30k dynamic-rule
 // ceiling is shared) and per-source-capped so one huge list can't eat the budget.
-const OPTION_RULE_BASE = 600000;
-const OPTION_RULES_MAX = 4000;
-const OPTION_RULES_PER_SOURCE_CAP = 2000;
+/* The widened band contains the old 600000 range so refresh and shutdown still remove it. */
+const OPTION_RULE_BASE = 590000;
+const OPTION_RULES_MAX = 20000;
+const OPTION_RULES_PER_SOURCE_CAP = 8000;
 const ACTIVE_OPTION_RULE_BUDGETS = {
-  adshield: 3200,
-  tracker: 500,
-  security: 300,
+  adshield: 15500,
+  tracker: 2500,
+  security: 2000,
 };
+/* $redirect and $csp get bands of their own so they cannot take slots from the block rules, and
+   so a budget change on one is readable on its own. Both actions count against Chrome's smaller
+   "unsafe" dynamic quota -- see TOTAL_UNSAFE_DYNAMIC_BUDGET below. */
+const REDIRECT_RULE_BASE = 610000;
+/* Leave room above the measured feed count and within Chrome's unsafe dynamic quota. */
+const REDIRECT_RULES_BUDGET = 900;
+const CSP_RULE_BASE = 620000;
+const CSP_RULES_BUDGET = 60;
 // Adaptive pools share the dynamic quota with the downloaded lists.
 const LEARNED_RULES_BUDGET = 2000;
 const TRACKER_RULES_BUDGET = 1000;
@@ -4043,7 +4112,8 @@ const FIREWALL_SESSION_RULES_BUDGET = 50;
 // Sites the reader blocked by hand. One rule per entry, so this is also the cap on
 // how many things the list can hold -- it is a hand-written list, not a feed.
 const USER_BLOCKLIST_RULES_BUDGET = 64;
-const TOTAL_DYNAMIC_BUDGET = MAX_DYNAMIC + OPTION_RULES_MAX + LEARNED_RULES_BUDGET + TRACKER_RULES_BUDGET + CNAME_RULES_BUDGET
+const TOTAL_DYNAMIC_BUDGET = LIST_RULES_BUDGET + OPTION_RULES_MAX + REDIRECT_RULES_BUDGET + CSP_RULES_BUDGET
+  + LEARNED_RULES_BUDGET + TRACKER_RULES_BUDGET + CNAME_RULES_BUDGET
   + GRABBER_FEED_RULES_BUDGET + MINER_FEED_RULES_BUDGET + NEVER_BLOCK_ALLOW_RULES_BUDGET
   + FINGERPRINT_SCRIPT_RULES_BUDGET + GOOGLE_SEARCH_ALLOW_RULES_BUDGET
   + USER_RULES_BUDGET + FIREWALL_RULES_BUDGET + USER_BLOCKLIST_RULES_BUDGET + HTTPS_DYNAMIC_RULES_BUDGET + TRACKING_REDIRECT_RULES_BUDGET + LINK_CLEAN_RULES_BUDGET;
@@ -4052,8 +4122,10 @@ const TOTAL_SESSION_BUDGET = ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET 
   + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET + FIREWALL_SESSION_RULES_BUDGET + TRACKER_COOKIE_ALIAS_RULES_BUDGET + TRACKING_REDIRECT_FALLBACK_BUDGET;
 // All other dynamic builders emit only safe actions. The grabber band has one redirect, the
 // tracker learner one automatic cookie removal; every firewall slot is conservatively reserved
-// for a cookie-header modification.
-const TOTAL_UNSAFE_DYNAMIC_BUDGET = FIREWALL_RULES_BUDGET + TRACKING_REDIRECT_RULES_BUDGET + 1;
+// for a cookie-header modification. The $redirect and $csp bands are unsafe by definition: one
+// rewrites the request, the other appends a response header.
+const TOTAL_UNSAFE_DYNAMIC_BUDGET = FIREWALL_RULES_BUDGET + TRACKING_REDIRECT_RULES_BUDGET
+  + REDIRECT_RULES_BUDGET + CSP_RULES_BUDGET + 1;
 // Keep room for migration cleanup and new protections without shrinking existing lists.
 const DNR_MIN_RULE_HEADROOM = 1000;
 // Chrome 121 supplies the larger safe-dynamic quota; the build checks the manifest floor.
@@ -4298,11 +4370,15 @@ const CLIENT_HINT_TRACKER_RULE_ID = 900004;
 const STRICT_REFERRER_RULE_ID = 900005;
 const TRACKER_CACHE_RULE_ID = 900006;
 const PRESSED_DOWNLOAD_REFERER_RULE_ID = 900009;
+const STRICT_REFERRER_CDN_OTHER_SITES_RULE_ID = 900010;
+const STRICT_REFERRER_CDN_NON_MEDIA_RULE_ID = 900011;
 const HEADER_SHIELD_RULE_IDS = [
   CLIENT_HINT_HIGH_ENTROPY_RULE_ID,
   CLIENT_HINT_TRACKER_RULE_ID,
   STRICT_REFERRER_RULE_ID,
   TRACKER_CACHE_RULE_ID,
+  STRICT_REFERRER_CDN_OTHER_SITES_RULE_ID,
+  STRICT_REFERRER_CDN_NON_MEDIA_RULE_ID,
 ];
 const HEADER_SHIELD_RESOURCE_TYPES = ALL_DNR_RESOURCE_TYPES;
 // A cross-site top-level navigation is classified as third-party to its initiator,
@@ -4359,6 +4435,7 @@ const ALLOWLIST_RULE_BASE = 800000;
 // adshield/learned/grabber false-positive can't break a FUNCTIONAL subresource on a major SaaS app.
 const NEVER_BLOCK_ALLOW_RULE_BASE = 745000;
 const NEVER_BLOCK_ALLOW_MAX = 200;
+
 
 // Compare desired bands before writing, while still reading installed rules to repair external loss (PERF-05).
 // Chrome may add fields: compare the fields we set, not browser-added metadata.
@@ -5318,7 +5395,6 @@ async function readMatchedRuleEvidence(filter, priority) {
 }
 
 const GRABBER_NAV_ATTEMPTS = new Map();
-const GRABBER_NAV_MATCH_SKEW_MS = 1500;
 const GRABBER_NAV_LOGGED = new Map();
 const GRABBER_IMAGE_LOGGED = new Map();
 const GRABBER_IMAGE_CHECKED = new Map();
@@ -5411,28 +5487,9 @@ chrome.webRequest.onBeforeRequest.addListener((details) => {
   const host = grabberHostFromUrl(details.url);
   if (!host) return;
   /* A busy worker can run this seconds after the DNR match; the request stamp keeps them comparable. */
-  GRABBER_NAV_ATTEMPTS.set(details.tabId, { host, at: Number(details.timeStamp) || Date.now(), requestId: details.requestId });
+  GRABBER_NAV_ATTEMPTS.set(details.tabId, { host, at: Number(details.timeStamp) || Date.now() });
   if (GRABBER_NAV_ATTEMPTS.size > 200) GRABBER_NAV_ATTEMPTS.delete(GRABBER_NAV_ATTEMPTS.keys().next().value);
 }, { urls: ['<all_urls>'], types: ['main_frame'] });
-
-/* The browser's own record that a request ended at this warning without connecting. `ip` exists
-   only once a server has answered, so a server can copy the status line but not this absence. */
-function grabberRedirectStoppedRequest(details) {
-  if (details.statusCode !== 307 || details.ip || details.fromCache) return false;
-  try {
-    const target = new URL(String(details.redirectUrl || ''));
-    const page = new URL(chrome.runtime.getURL('ip-logger-warning.html'));
-    return target.protocol === page.protocol && target.pathname === page.pathname
-      && (target.host === page.host || target.host === chrome.runtime.id);
-  } catch (_) { return false; }
-}
-registerListener('IP-logger redirect proof', () => {
-  chrome.webRequest?.onBeforeRedirect?.addListener((details) => {
-    const attempt = details && GRABBER_NAV_ATTEMPTS.get(details.tabId);
-    if (attempt && attempt.requestId === details.requestId && attempt.host === grabberHostFromUrl(details.url)
-        && grabberRedirectStoppedRequest(details)) attempt.stopped = true;
-  }, { urls: ['<all_urls>'], types: ['main_frame'] });
-});
 
 async function grabberNavigationStatus(sender) {
   const tabId = sender && sender.tab && sender.tab.id;
@@ -5441,30 +5498,20 @@ async function grabberNavigationStatus(sender) {
   if (tabId == null || sender.url !== warningUrl || sender.frameId !== 0) {
     return { status: 'observed_unconfirmed' };
   }
-  const askedAt = Date.now();
   const attempt = GRABBER_NAV_ATTEMPTS.get(tabId);
-  /* The redirect record costs no read, so the budget cannot turn a real block into a doubt. */
-  const stopped = !!attempt && attempt.stopped === true;
-  /* Chrome files a navigation's match under its tab only at commit. This page asks after commit,
-     so a read begun before it asked can lack a block that really happened. The match is paired
-     with its request by their own times: how late a busy worker gets here says nothing about it. */
-  const evidence = stopped ? { ok: true, matches: [] } : await readMatchedRuleEvidence({ tabId,
-    minTimeStamp: attempt ? attempt.at - GRABBER_NAV_MATCH_SKEW_MS : askedAt - 20000,
-    requiredAt: attempt ? askedAt : 0 }, 'event');
+  const evidence = await readMatchedRuleEvidence({ tabId, minTimeStamp: Date.now() - 20000,
+    requiredAt: attempt ? attempt.at : 0 }, 'event');
   const navMatch = evidence.ok && evidence.matches.find((item) => grabberRuleIsNavigation(item && item.rule)
-    && (!attempt || Math.abs(Number(item.timeStamp) - attempt.at) <= GRABBER_NAV_MATCH_SKEW_MS));
-  const unproven = evidence.ok ? 'observed_unconfirmed' : 'not_checked';
-  if (!navMatch && !stopped) return { status: attempt && await grabberNetworkProtectionUnavailable(attempt.host)
-    ? 'protection_unavailable' : unproven };
+    && (!attempt || Number(item.timeStamp) >= attempt.at - 1500));
+  if (!navMatch) return { status: attempt && await grabberNetworkProtectionUnavailable(attempt.host)
+    ? 'protection_unavailable' : 'observed_unconfirmed' };
   await loadPackagedGrabberDomains();
-  const logKey = tabId + '|' + (navMatch
-    ? navMatch.rule.rulesetId + '|' + navMatch.rule.ruleId + '|' + navMatch.timeStamp : 'redirect|' + attempt.at);
+  const logKey = tabId + '|' + navMatch.rule.rulesetId + '|' + navMatch.rule.ruleId + '|' + navMatch.timeStamp;
   const previous = GRABBER_NAV_LOGGED.get(logKey);
-  const trackerRoute = navMatch ? navMatch.rule.rulesetId === 'grabber_navigation' && navMatch.rule.ruleId === GRABBER_TRACKER_NAV_RULE_ID
-    : !!attempt && attempt.host === GRABBER_TRACKER_HOST;
-  const validAttempt = attempt
+  const trackerRoute = navMatch.rule.rulesetId === 'grabber_navigation' && navMatch.rule.ruleId === GRABBER_TRACKER_NAV_RULE_ID;
+  const validAttempt = attempt && Date.now() - attempt.at < 20000
     && (trackerRoute ? attempt.host === GRABBER_TRACKER_HOST : knownGrabberHost(attempt.host));
-  if (!validAttempt && !previous) return { status: unproven };
+  if (!validAttempt && !previous) return { status: 'observed_unconfirmed' };
   const host = validAttempt ? attempt.host : previous.host;
   GRABBER_NAV_ATTEMPTS.delete(tabId);
   if (!previous) {
@@ -5931,6 +5978,8 @@ function logRuleBases() {
     [LINK_CLEAN_RULE_BASE, 'Link cleaning'],
     [TRACKING_REDIRECT_RULE_BASE, 'Tracking redirect skipped'],
     [TRACKING_REDIRECT_FALLBACK_BASE, 'Original redirect continuation'],
+    [REDIRECT_RULE_BASE, 'Replaced with an empty file'],
+    [CSP_RULE_BASE, 'Page security policy'],
     [OPTION_RULE_BASE, 'A protection setting'],
     [DYNAMIC_RULE_BASE, 'Blocklist'],
   ].filter((p) => typeof p[0] === 'number');
@@ -5959,6 +6008,9 @@ function logAllowingRuleBases() {
     NEVER_BLOCK_ALLOW_RULE_BASE, ALLOWLIST_RULE_BASE, MEDIA_COMPAT_RULE_BASE,
     LOGIN_COMPAT_RULE_BASE, GOOGLE_SEARCH_ALLOW_RULE_BASE, SAFE_SEARCH_RULE_BASE, LINK_CLEAN_RULE_BASE,
     TRACKING_REDIRECT_RULE_BASE, TRACKING_REDIRECT_FALLBACK_BASE,
+    /* A $csp rule appends a response header and lets the request finish, so it is not a block.
+       A $redirect rule is: the request it names never reaches the network. */
+    CSP_RULE_BASE,
   ].filter((base) => typeof base === 'number'));
   return __logAllowingBases;
 }
@@ -7853,7 +7905,7 @@ async function noteTrackerObservation(tabUrl, detail, token, privacyEpoch = __tr
     const ready = entry.hits >= TRACKER_LEARN_MIN_HITS
       && trackerDistinctSiteCount(entry) >= TRACKER_LEARN_MIN_SITES
       && (distinctSessions >= TRACKER_LEARN_MIN_SESSIONS || trackerAutoEvidence(entry));
-    /* The opt-in authorizes durable blocks from browser evidence; page reports never qualify. */
+    /* Automatic mode requires browser evidence; page reports never qualify. */
     if (ready && cfg.trackerLearnerAuto === true && (wasCandidate || entry.state === 'proposed') && trackerAutoEligible(cfg, third, entry)) {
       const previous = JSON.parse(JSON.stringify(TRACKER_LEARNER));
       Object.assign(entry, { state: 'learned', automatic: 'block', fullBlock: true, approvedAt: day, learnedAt: day, proposedAt: entry.proposedAt || day, legacy: false,
@@ -8895,63 +8947,75 @@ function lookupDomainAge(domain, cfg) {
 
 async function lookupDomainAgeOnce(reg, cfg) {
   try {
-    if (cfg && cfg.enabled !== false && cfg.whoisXml === true && String(cfg.whoisXmlKey || '').trim()) {
-      const whois = await lookupWhoisXmlDomain(reg, cfg);
-      if (whois && whois.ok && typeof whois.ageDays === 'number') return whois;
-    }
-
-    const cached = await localGet(DOMAIN_AGE_CACHE_KEY);
-    const cache = (cached && cached[DOMAIN_AGE_CACHE_KEY] && typeof cached[DOMAIN_AGE_CACHE_KEY] === 'object') ? cached[DOMAIN_AGE_CACHE_KEY] : {};
-    const hit = cache[reg];
-    if (hit && hit.cachedAt && (Date.now() - hit.cachedAt) < DOMAIN_AGE_CACHE_MS) {
-      return Object.assign({ ok: true, domain: reg, cached: true }, hit.result || {});
-    }
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), DOMAIN_AGE_TIMEOUT_MS);
+    let cache = {};
     try {
-      const res = await fetch('https://rdap.org/domain/' + encodeURIComponent(reg), {
-        headers: { 'Accept': 'application/rdap+json' },
-        credentials: 'omit',
-        signal: controller.signal,
-      });
-      if (!res.ok) return { ok: false, status: res.status, domain: reg };
-      const type = String((res.headers && res.headers.get('content-type')) || '').toLowerCase();
-      if (type && !/json/.test(type)) return { ok: false, domain: reg, error: 'unexpected content type' };
-      let data;
-      try {
-        data = JSON.parse(await readResponseTextWithByteLimit(res, DOMAIN_AGE_MAX_BYTES));
-      } catch (e) {
-        return { ok: false, domain: reg, error: e && e.code === 'too_large' ? 'response too large' : 'unreadable response' };
-      }
-      if (!data || typeof data !== 'object') return { ok: false, noDate: true, domain: reg };
-      let created = null;
-      const events = Array.isArray(data.events) ? data.events : [];
-      for (const e of events) {
-        if (e.eventAction === 'registration' && e.eventDate) { created = e.eventDate; break; }
-      }
-      if (!created) return { ok: false, noDate: true, domain: reg };
-      const ageMs = Date.now() - new Date(created).getTime();
-      const ageDays = Math.max(0, Math.floor(ageMs / 86400000));
-      let risk, riskColor;
-      if (ageDays < 7) { risk = 'High'; riskColor = '#c0392b'; }
-      else if (ageDays < 30) { risk = 'Elevated'; riskColor = '#bd7a2a'; }
-      else if (ageDays < 90) { risk = 'Moderate'; riskColor = '#bd7a2a'; }
-      else { risk = 'Low'; riskColor = '#2e9e5b'; }
-      const result = { domain: reg, created, ageDays, risk, riskColor, provider: 'RDAP' };
-      cache[reg] = { cachedAt: Date.now(), result };
-      const entries = Object.entries(cache).sort((a, b) => (b[1].cachedAt || 0) - (a[1].cachedAt || 0));
-      while (entries.length > 100) {
-        const old = entries.pop();
-        if (old) delete cache[old[0]];
-      }
-      await localSet({ [DOMAIN_AGE_CACHE_KEY]: cache });
-      return Object.assign({ ok: true }, result);
-    } finally {
-      clearTimeout(timer);
+      const cached = await localGet(DOMAIN_AGE_CACHE_KEY);
+      if (cached && cached[DOMAIN_AGE_CACHE_KEY] && typeof cached[DOMAIN_AGE_CACHE_KEY] === 'object') cache = cached[DOMAIN_AGE_CACHE_KEY];
+    } catch (_) {}
+    const hit = cache[reg];
+    if (hit && hit.cachedAt && (Date.now() - hit.cachedAt) < DOMAIN_AGE_CACHE_MS
+        && hit.result && Number.isFinite(hit.result.ageDays)) {
+      return Object.assign({ ok: true, domain: reg, cached: true }, hit.result);
     }
+    if (cfg && cfg.enabled !== false && cfg.whoisXml === true && String(cfg.whoisXmlKey || '').trim()) {
+      try {
+        const whois = await lookupWhoisXmlDomain(reg, cfg);
+        if (whois && whois.ok && Number.isFinite(whois.ageDays)) return whois;
+      } catch (_) {}
+    }
+    let result = await fetchDomainAgeRdap(reg);
+    if (reputationTransientFailure(result)) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      result = await fetchDomainAgeRdap(reg);
+    }
+    if (!result.ok) return result;
+    cache[reg] = { cachedAt: Date.now(), result };
+    const entries = Object.entries(cache).sort((a, b) => (b[1]?.cachedAt || 0) - (a[1]?.cachedAt || 0));
+    while (entries.length > 100) delete cache[entries.pop()[0]];
+    try { await localSet({ [DOMAIN_AGE_CACHE_KEY]: cache }); } catch (_) {}
+    return result;
   } catch (e) {
     return { ok: false, domain: reg, error: String(e) };
+  }
+}
+
+async function fetchDomainAgeRdap(reg) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DOMAIN_AGE_TIMEOUT_MS);
+  try {
+    const res = await fetch('https://rdap.org/domain/' + encodeURIComponent(reg), {
+      headers: { 'Accept': 'application/rdap+json' },
+      credentials: 'omit',
+      signal: controller.signal,
+    });
+    if (!res.ok) return { ok: false, status: res.status, domain: reg };
+    const type = String((res.headers && res.headers.get('content-type')) || '').toLowerCase();
+    if (type && !/json/.test(type)) return { ok: false, domain: reg, error: 'unexpected content type' };
+    let data;
+    try {
+      data = JSON.parse(await readResponseTextWithByteLimit(res, DOMAIN_AGE_MAX_BYTES));
+    } catch (e) {
+      return { ok: false, domain: reg, error: e && e.code === 'too_large' ? 'response too large' : 'unreadable response' };
+    }
+    if (!data || typeof data !== 'object') return { ok: false, noDate: true, domain: reg };
+    let created = null;
+    const events = Array.isArray(data.events) ? data.events : [];
+    for (const e of events) {
+      if (e.eventAction === 'registration' && e.eventDate) { created = e.eventDate; break; }
+    }
+    if (!created || !Number.isFinite(new Date(created).getTime())) return { ok: false, noDate: true, domain: reg };
+    const ageMs = Date.now() - new Date(created).getTime();
+    const ageDays = Math.max(0, Math.floor(ageMs / 86400000));
+    let risk, riskColor;
+    if (ageDays < 7) { risk = 'High'; riskColor = '#c0392b'; }
+    else if (ageDays < 30) { risk = 'Elevated'; riskColor = '#bd7a2a'; }
+    else if (ageDays < 90) { risk = 'Moderate'; riskColor = '#bd7a2a'; }
+    else { risk = 'Low'; riskColor = '#2e9e5b'; }
+    return { ok: true, domain: reg, created, ageDays, risk, riskColor, provider: 'RDAP' };
+  } catch (e) {
+    return { ok: false, domain: reg, error: String(e) };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -10736,6 +10800,13 @@ function isTrustedPolicyReputationUrl(url) {
   }
 }
 
+function reputationTransientFailure(result) {
+  if (!result || result.ok !== false || result.rateLimited || result.cloudflare) return false;
+  const status = Number(result.status || 0);
+  return [408, 425, 500, 502, 503, 504].includes(status)
+    || (!status && /fetch|network|timeout|timed out|abort/i.test(String(result.error || '')));
+}
+
 async function urlReputationLookupUrl(url, opts) {
   const normalized = normalizeSafeBrowsingUrl(url);
   if (!normalized) return { provider: 'URL reputation', ok: false, enabled: false, error: 'Unsupported URL', url: String(url || '') };
@@ -10746,32 +10817,53 @@ async function urlReputationLookupUrl(url, opts) {
     return { provider: 'URL reputation', ok: true, enabled: true, hit: false, warning: false, trusted: true, url: normalized };
   }
 
+  const cfg = context === 'manual' ? Object.assign({}, state.cfg, {
+    downloadSafeBrowsing: state.safeBrowsingEnabled, urlHaus: state.urlHausEnabled, phishTank: state.phishTankEnabled,
+    openPhish: state.openPhishEnabled, abuseIpDb: state.abuseIpDbEnabled, whoisXml: state.whoisXmlEnabled,
+    whoisXmlReputation: state.whoisXmlReputationEnabled, whoisXmlThreatIntel: state.whoisXmlThreatIntelEnabled,
+  }) : state.cfg;
   const checks = [];
-  if (state.safeBrowsingEnabled) checks.push(safeBrowsingLookupUrl(normalized, { cfg: state.cfg, key: state.key }));
+  const add = (provider, run) => checks.push({ provider, run });
+  if (state.safeBrowsingEnabled) add('Google Safe Browsing', () => safeBrowsingLookupUrl(normalized, { cfg, key: state.key }));
   if (state.urlHausEnabled) {
-    checks.push(urlHausLookupUrl(normalized, { cfg: state.cfg, key: state.urlHausKey, context }));
+    add('URLhaus', () => urlHausLookupUrl(normalized, { cfg, key: state.urlHausKey, context }));
   }
   if (state.phishTankEnabled && shouldUsePhishTankForContext(normalized, context)) {
-    checks.push(phishTankLookupUrl(normalized, { cfg: state.cfg, key: state.phishTankKey }));
+    add('PhishTank', () => phishTankLookupUrl(normalized, { cfg, key: state.phishTankKey }));
   }
   if (state.openPhishEnabled) {
-    checks.push(openPhishLookupUrl(normalized, { cfg: state.cfg }));
+    add('OpenPhish', () => openPhishLookupUrl(normalized, { cfg }));
   }
   if (state.abuseIpDbEnabled && ipFromUrl(normalized)) {
-    checks.push(abuseIpDbLookupUrl(normalized, { cfg: state.cfg, key: state.abuseIpDbKey }));
+    add('AbuseIPDB', () => abuseIpDbLookupUrl(normalized, { cfg, key: state.abuseIpDbKey }));
   }
   if (state.whoisXmlReputationEnabled && shouldUseWhoisXmlReputationForContext(normalized, context)) {
-    checks.push(whoisXmlDomainReputationLookupUrl(normalized, { cfg: state.cfg, key: state.whoisXmlKey }));
+    add('WhoisXML Domain Reputation', () => whoisXmlDomainReputationLookupUrl(normalized, { cfg, key: state.whoisXmlKey }));
   }
   if (state.whoisXmlThreatIntelEnabled && shouldUseWhoisXmlReputationForContext(normalized, context)) {
-    checks.push(whoisXmlThreatIntelLookupUrl(normalized, { cfg: state.cfg, key: state.whoisXmlKey }));
+    add('WhoisXML Threat Intelligence', () => whoisXmlThreatIntelLookupUrl(normalized, { cfg, key: state.whoisXmlKey }));
   }
   if (state.whoisXmlEnabled && shouldUseWhoisXmlReputationForContext(normalized, context)) {
-    checks.push(whoisXmlDomainAgeLookupUrl(normalized, { cfg: state.cfg, key: state.whoisXmlKey }));
+    add('WhoisXML API', () => whoisXmlDomainAgeLookupUrl(normalized, { cfg, key: state.whoisXmlKey }));
   }
   if (!checks.length) return { provider: 'URL reputation', ok: true, enabled: false, hit: false, url: normalized };
 
-  const results = (await Promise.all(checks.map((check) => Promise.resolve(check).catch(() => null)))).filter(Boolean);
+  const notify = (name, ...args) => { try { if (typeof opts?.[name] === 'function') opts[name](...args); } catch (_) {} };
+  notify('onStart', checks.map(check => check.provider));
+  const results = await Promise.all(checks.map(async (check, index) => {
+    const run = async () => {
+      try { return await check.run() || { provider: check.provider, ok: false, error: 'No response' }; }
+      catch (error) { return { provider: check.provider, ok: false,
+        error: error?.name === 'TypeError' || error?.name === 'AbortError' ? 'Network request failed' : 'Provider check failed' }; }
+    };
+    let result = await run();
+    if (context === 'manual' && opts?.retryTransient === true && reputationTransientFailure(result)) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      result = await run();
+    }
+    notify('onResult', reputationResultPublic(result), index);
+    return result;
+  }));
   const hit = results.find((r) => r && r.ok && r.hit);
   const warning = results.find((r) => r && r.ok && r.warning);
   const ageWarning = results.find((r) => r && r.ok && r.provider === 'WhoisXML API' && r.warning);
@@ -11274,6 +11366,11 @@ async function handleSafeBrowsingNavigation(details) {
     const verdict = local === 'security'
       ? { ok: true, hit: true, provider: 'WardenOne local malware and scam list', threats: ['MALWARE_OR_SCAM'] }
       : await urlReputationLookupUrl(url, Object.assign({ context: 'page' }, state));
+    /* A never-block host is one we already refuse to block on a feed's say-so. A reputation hit there that
+       names no threat type is a listing for somebody else's URL on a shared host -- phishing kits point at
+       discord.com/login?redirect_to=, so the real login page inherits the listing. Named threats still stand. */
+    if (verdict && verdict.ok && (verdict.hit || verdict.warning) && isNeverBlockDomain(host)
+      && !(Array.isArray(verdict.threats) && verdict.threats.length)) return;
     if (verdict && verdict.ok && verdict.warning && !verdict.hit) {
       queueHistory({
         type: verdict.provider === 'AbuseIPDB' ? 'warned_abuseipdb_server' : 'warned_url_reputation',
@@ -12405,6 +12502,7 @@ const RECONCILE_COMPONENT_LABELS = {
   resourceSaver: 'Resource Saver injection',
   consentReject: 'consent auto-reject injection',
   consentWall: 'consent wall removal injection',
+  antiAdblockShield: 'Anti-Adblock Shield injection',
   mailShield: 'Mail Shield injection',
   minerDetect: 'cryptominer detector injection',
   searchJunk: 'search junk detector injection',
@@ -12592,6 +12690,7 @@ function refreshExtensionState() {
         cfg.stripTrackingParams !== false ? 1 : 0,
         cfg.unshimLinks !== false ? 1 : 0,
         cfg.adShield !== false ? 1 : 0,
+        cfg.antiAdblockShield !== false ? 1 : 0,
         cfg.blockTrackers !== false ? 1 : 0,
         cfg.blockCnameTrackers !== false ? 1 : 0,
         cfg.trackerLearner !== false ? 1 : 0,
@@ -12701,6 +12800,8 @@ function refreshExtensionState() {
       run('resourceSaver', () => reconcileResourceSaverInjection(cfg), resourceSaverScriptFiles(cfg).join(','));
       run('consentReject', () => reconcileConsentRejectInjection(cfg));
       run('consentWall', () => reconcileConsentWallInjection(cfg));
+      run('antiAdblockShield', () => reconcileAntiAdblockShieldInjection(cfg));
+      run('youtubeArm', () => reconcileYouTubeArmInjection(cfg));
       run('mailShield', () => reconcileMailShieldInjection(cfg));
       run('minerDetect', () => reconcileMinerDetectInjection(cfg));
       run('searchJunk', () => reconcileSearchJunkInjection(cfg));
@@ -13145,7 +13246,12 @@ async function reconcileEyeShieldInjection(cfgArg) {
   }
   const want = eyeShieldThemingActive(cfg);
   const bootstrap = eyeShieldUsesBootstrap(cfg);
-  const files = bootstrap ? ['eyeshield-bootstrap.js'] : eyeShieldScriptFiles(cfg);
+  /* The bootstrap has to ask this worker for the site's mode before EyeShield is injected, so send the
+     mode hint in with it: the bootstrap lays the holding colour down at document_start instead of the
+     page painting its own first. With no global mode there is no hint and nothing to lay down. */
+  const files = bootstrap
+    ? [eyeShieldPreloadFile(cfg), 'eyeshield-profiles.js', 'eyeshield-bootstrap.js'].filter(Boolean)
+    : eyeShieldScriptFiles(cfg);
   const scope = bootstrap ? { matches: ['<all_urls>'], excludeMatches: [] } : eyeShieldRegistrationScope(cfg);
   let core = null;
   let sites = null;
@@ -13464,6 +13570,84 @@ function injectConsentWallIntoOpenTabs() {
     });
   } catch (_) {}
 }
+/* yt-adblock-arm.js tells the YouTube engine it may act without waiting for the worker's reply.
+   Any allowlist entry or site exception touching a YouTube domain drops that domain's arm, which
+   only returns it to waiting for signed config; it can never arm a page the reader paused. */
+const YOUTUBE_ARM_SCRIPT_ID = 'wo-youtube-arm';
+const YOUTUBE_ARM_DOMAINS = ['youtube.com', 'youtube-nocookie.com', 'youtube.googleapis.com'];
+
+function youtubeArmMatches(cfg) {
+  const config = cfg && typeof cfg === 'object' ? cfg : {};
+  if (config.enabled === false || config.scriptletEngine === false) return [];
+  const touches = (domain, site) => {
+    const host = String(site || '').trim().toLowerCase().replace(/^www\./, '');
+    return !!host && (host === domain || host.endsWith('.' + domain) || domain.endsWith('.' + host));
+  };
+  const paused = Object.entries(config.siteOverrides || {})
+    .filter(([, flags]) => flags && typeof flags === 'object' && (flags.enabled === false || flags.scriptletEngine === false))
+    .map(([site]) => site)
+    .concat(activeAllowlist(config));
+  return YOUTUBE_ARM_DOMAINS
+    .filter((domain) => !paused.some((site) => touches(domain, site)))
+    .map((domain) => '*://*.' + domain + '/*');
+}
+
+async function reconcileYouTubeArmInjection(cfg) {
+  if (!chrome.scripting?.registerContentScripts) return;
+  try {
+    const matches = youtubeArmMatches(cfg);
+    const [current] = await chrome.scripting.getRegisteredContentScripts({ ids: [YOUTUBE_ARM_SCRIPT_ID] });
+    if (!matches.length) {
+      if (current) await chrome.scripting.unregisterContentScripts({ ids: [YOUTUBE_ARM_SCRIPT_ID] });
+      return;
+    }
+    const definition = {
+      id: YOUTUBE_ARM_SCRIPT_ID, matches, js: ['yt-adblock-arm.js'],
+      runAt: 'document_start', world: 'MAIN', allFrames: true, persistAcrossSessions: true,
+    };
+    if (current && JSON.stringify(current.matches) === JSON.stringify(matches) && current.world === 'MAIN'
+        && current.runAt === 'document_start' && current.allFrames && current.js?.join() === definition.js.join()) return;
+    if (current) await chrome.scripting.updateContentScripts([definition]);
+    else await chrome.scripting.registerContentScripts([definition]);
+  } catch (error) {
+    console.warn('[WardenOne] YouTube arm registration failed', error);
+    return false;
+  }
+}
+
+/* The shield runs everywhere the switch is on; which sites it then acts on is settled in the
+   page, where the wall is, exactly as the consent-wall script does it. Resolve the temporary
+   passes first so a site paused for an hour reads here the way it reads in the page. */
+function antiAdblockShieldOn(cfg) {
+  return cfg.enabled !== false && cfg.antiAdblockShield !== false;
+}
+
+function antiAdblockActiveFor(cfg, host) {
+  return WOAntiAdblockShield.activeForHost(Object.assign({}, cfg, { allowlist: activeAllowlist(cfg) }), host);
+}
+
+async function reconcileAntiAdblockShieldInjection(cfg) {
+  if (!chrome.scripting?.registerContentScripts) return;
+  try {
+    const id = 'wo-anti-adblock-shield';
+    const matches = antiAdblockShieldOn(cfg) ? ['<all_urls>'] : [];
+    const [current] = await chrome.scripting.getRegisteredContentScripts({ ids: [id] });
+    if (!matches.length) {
+      if (current) await chrome.scripting.unregisterContentScripts({ ids: [id] });
+      return;
+    }
+    const definition = { id, matches, js: ['anti-adblock-shield.js'], runAt: 'document_start', world: 'ISOLATED' };
+    if (current && JSON.stringify(current.matches) === JSON.stringify(matches)
+        && current.runAt === definition.runAt && current.world === definition.world && current.js?.join() === definition.js.join()
+        && !current.allFrames) return;
+    if (current) await chrome.scripting.updateContentScripts([definition]);
+    else await chrome.scripting.registerContentScripts([definition]);
+  } catch (error) {
+    console.warn('[WardenOne] Anti-Adblock Shield registration failed', error);
+    return false;
+  }
+}
+
 async function reconcileConsentWallInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
   let cfg = cfgArg;
@@ -13592,17 +13776,27 @@ function applyHeaderShieldRules(options) {
     }
 
     if (strictReferrer) {
+      const cdn = 'cloudatacdn.com';
+      const player = 'playmogo.com';
+      const action = { type: 'modifyHeaders', requestHeaders: [removeHeader('Referer')] };
+      const condition = { ...compatibilityExclusions, domainType: 'thirdParty', resourceTypes: HEADER_SHIELD_RESOURCE_TYPES };
+      // Preserve the browser's native referrer on Playmogo's media requests to its CDN.
       rules.push({
         id: STRICT_REFERRER_RULE_ID,
         priority: 2,
-        action: {
-          type: 'modifyHeaders',
-          requestHeaders: [{ header: 'Referer', operation: 'remove' }],
-        },
-        condition: Object.assign({
-          domainType: 'thirdParty',
-          resourceTypes: HEADER_SHIELD_RESOURCE_TYPES,
-        }, compatibilityExclusions),
+        action,
+        condition: { ...condition, excludedRequestDomains: [...condition.excludedRequestDomains, cdn] },
+      }, {
+        id: STRICT_REFERRER_CDN_OTHER_SITES_RULE_ID,
+        priority: 2,
+        action,
+        condition: { ...condition, requestDomains: [cdn], excludedInitiatorDomains: [...condition.excludedInitiatorDomains, player] },
+      }, {
+        id: STRICT_REFERRER_CDN_NON_MEDIA_RULE_ID,
+        priority: 2,
+        action,
+        condition: { ...condition, requestDomains: [cdn], initiatorDomains: [player],
+          resourceTypes: HEADER_SHIELD_RESOURCE_TYPES.filter(type => type !== 'media') },
       });
     }
 
@@ -15074,14 +15268,16 @@ function domainToRule(domain, id, sourceKind) {
 function finalizeOptionRule(rule, id, sourceKind) {
   const kind = remoteRuleSourceKind(sourceKind);
   const actionType = rule && rule.action && rule.action.type === 'allow' ? 'allow' : 'block';
-  const priority = kind === 'security'
-    ? (actionType === 'allow' ? 4000 : 3000)
-    : (actionType === 'allow' ? 2000 : 1100);
+  const priority = actionType === 'allow' ? 1900 : kind === 'security' ? 3000 : 1100;
+  const condition = Object.assign({}, (rule && rule.condition) || {});
+  if (kind !== 'security' && actionType === 'block' && rule.__woRedundantHost) {
+    condition.resourceTypes = LIST_RESOURCE_TYPES;
+  }
   return {
     id,
     priority,
     action: { type: actionType },
-    condition: Object.assign({}, (rule && rule.condition) || {}),
+    condition,
   };
 }
 
@@ -15092,6 +15288,8 @@ function remoteRuleSourceKind(value) {
 function isWardenOneDynamicRuleId(id) {
   return (id >= DYNAMIC_RULE_BASE && id < DYNAMIC_RULE_BASE + MAX_DYNAMIC)
     || (id >= OPTION_RULE_BASE && id < OPTION_RULE_BASE + OPTION_RULES_MAX)
+    || (id >= REDIRECT_RULE_BASE && id < REDIRECT_RULE_BASE + REDIRECT_RULES_BUDGET)
+    || (id >= CSP_RULE_BASE && id < CSP_RULE_BASE + CSP_RULES_BUDGET)
     || (id >= LEARNED_RULE_BASE && id < LEARNED_RULE_BASE + LEARNED_MAX)
     || (id >= TRACKER_RULE_BASE && id < TRACKER_RULE_BASE + TRACKER_RULE_MAX)
     || (id >= CNAME_RULE_BASE && id < CNAME_RULE_BASE + CNAME_RULES_BUDGET)
@@ -15130,6 +15328,7 @@ const SCRIPT_SHIELD_PLAYER_INFRA_HOSTS = [
   'vjs.zencdn.net', 'cdn.plyr.io', 'cdn.vidstack.io', 'cdn.dashjs.org',
   'content.jwplatform.com', 'ssl.p.jwpcdn.com', 'cdn.jwplayer.com',
   'player.vimeo.com', 'f.vimeocdn.com', 'www.youtube.com', 's.ytimg.com',
+  'static.doodcdn.io', // Video.js plugins used by Playmogo embeds
 ];
 
 // Skip Smart’s heuristic for known first-party application asset domains on separate site boundaries.
@@ -16482,7 +16681,7 @@ async function applySearchParamRules(cfg, readRules, submitRules) {
           priority: 12000,
           action: {
             type: 'modifyHeaders',
-            requestHeaders: [{ header: 'YouTube-Restrict', operation: 'set', value: 'Strict' }],
+            requestHeaders: [{ header: 'YouTube-Restrict', operation: 'set', value: 'Moderate' }],
           },
           condition: {
             requestDomains: SAFE_SEARCH_YT_DOMAINS,
@@ -16651,6 +16850,7 @@ async function applyNeverBlockAllowRules(enabled = true) {
     await writeDynamicRules({ removeRuleIds: mine.map((x) => x.id), addRules });
   } catch (e) { console.warn('[WardenOne] never-block allow rules failed', e); return false; }
 }
+
 /* The boot-time calls of these two appliers live below SERIALIZED_STATE_APPLIERS: called here,
    they ran before the wrappers existed, so a cold-start rebuild took the unqueued path and could
    interleave with the first queued write to the same rule range (MV3-07). */
@@ -16706,6 +16906,8 @@ const SERIALIZED_STATE_APPLIERS = [
   'reconcileResourceSaverInjection',
   'reconcileConsentRejectInjection',
   'reconcileConsentWallInjection',
+  'reconcileAntiAdblockShieldInjection',
+  'reconcileYouTubeArmInjection',
   'reconcileMailShieldInjection',
   'applyFirewallRules',
   'applyFirewallRulesFrom',
@@ -16813,6 +17015,21 @@ function validNetworkRuleScope(host) {
     label.length > 0 && label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label));
 }
 
+function acceptableNetworkRuleHost(host, checked) {
+  if (checked?.has(host)) return checked.get(host);
+  const valid = !!host && host.includes('.') && validNetworkRuleScope(host) && !isUnsafeFeedBlockTarget(host);
+  if (checked && checked.size < 20000) checked.set(host, valid);
+  return valid;
+}
+
+function networkRuleAnchor(pattern, checked) {
+  const domain = /^\|\|([a-z0-9.-]+)(\^$|(?::[0-9]{1,5})?\/)/i.exec(pattern);
+  const url = domain ? null : /^\|https?:\/\/([a-z0-9.-]+)(?::[0-9]{1,5})?\//i.exec(pattern);
+  const host = (domain || url)?.[1]?.toLowerCase();
+  return acceptableNetworkRuleHost(host, checked)
+    ? { host, bare: domain?.[2] === '^' } : null;
+}
+
 function networkRulePatternHost(pattern) {
   let p = String(pattern || '').trim().toLowerCase();
   if (!p) return '';
@@ -16824,7 +17041,7 @@ function networkRulePatternHost(pattern) {
 }
 
 function remoteListBlockAllowed(host, pattern, sourceKind, sourceUrl) {
-  /* Source-specific domain exclusions create no allow rules; the evidence is kept in the private review record. */
+  /* Source-specific domain exclusions create no allow rules. Evidence: docs/security-feed-exceptions.md. */
   if (sourceUrl === 'https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt'
       && (host === 'fileditch.com' || host === 'www.fileditch.com')) return false;
   if (!pattern && sourceUrl === 'https://raw.githubusercontent.com/durablenapkin/scamblocklist/master/hosts.txt'
@@ -16833,29 +17050,316 @@ function remoteListBlockAllowed(host, pattern, sourceKind, sourceUrl) {
   return !isNeverBlockDomain(host) && !isMediaCompatDomainLowercase(host) && !isMediaCompatFilter(pattern);
 }
 
-function parseNetworkRules(text, ruleStartId, maxRules) {
-  const rules = [];
-  let id = ruleStartId;
+/* ======================= $redirect and $csp =======================
+   Two filter-list options that neither block nor allow. They are compiled here rather than per
+   site, and they land in their own id bands so neither can crowd out the block rules.
+
+   $redirect serves an inert local file in place of the request. That is strictly kinder than a
+   block: a script tag that fails can trip an anti-adblock check or leave a loader waiting
+   forever, while an empty 200 lets the page carry on. redirect-resources/ holds the files and
+   tools/build-redirect-resources.js generates them.
+
+   $redirect-rule is deliberately NOT supported. It means "redirect only if some other rule
+   already blocks this", and DNR has no way to ask that question. Emitting it as a plain redirect
+   would stop requests uBlock lets through, so those lines are dropped instead.
+
+   The caps and priorities live here, beside the parser, because the test harnesses lift this
+   region on its own; the id bands have to stay up with the other budgets, which are summed before
+   this point. */
+const REDIRECT_RULES_PER_SOURCE_CAP = 600;
+const CSP_RULES_PER_SOURCE_CAP = 60;
+/* Above the downloaded blocklist (1000) and the feed block rules (1100), so a matching request is
+   answered with the inert file rather than failing, and below the compatibility and allowlist
+   bands at 1900 and up, which must still be able to let it through untouched. */
+const REDIRECT_RULE_PRIORITY = 1150;
+/* Beneath every block and allow band. Appending a header is not a verdict about the request, so
+   this rule must never be the one that decides whether it is allowed. */
+const CSP_RULE_PRIORITY = 100;
+const REDIRECT_RESOURCES = {
+  'noop.js': { path: '/redirect-resources/noop.js', types: ['script'] },
+  noopjs: { path: '/redirect-resources/noop.js', types: ['script'] },
+  'noop.txt': { path: '/redirect-resources/noop.txt', types: ['xmlhttprequest', 'other', 'csp_report'] },
+  nooptext: { path: '/redirect-resources/noop.txt', types: ['xmlhttprequest', 'other', 'csp_report'] },
+  empty: { path: '/redirect-resources/noop.txt', types: ['xmlhttprequest', 'other', 'csp_report'] },
+  'noop.css': { path: '/redirect-resources/noop.css', types: ['stylesheet'] },
+  noopcss: { path: '/redirect-resources/noop.css', types: ['stylesheet'] },
+  'noop.json': { path: '/redirect-resources/noop.json', types: ['xmlhttprequest', 'other'] },
+  noopjson: { path: '/redirect-resources/noop.json', types: ['xmlhttprequest', 'other'] },
+  'noop.html': { path: '/redirect-resources/noop.html', types: ['sub_frame'] },
+  noopframe: { path: '/redirect-resources/noop.html', types: ['sub_frame'] },
+  '1x1.gif': { path: '/redirect-resources/noop-1x1.gif', types: ['image'] },
+  '1x1-transparent.gif': { path: '/redirect-resources/noop-1x1.gif', types: ['image'] },
+  '2x2.png': { path: '/redirect-resources/noop-2x2.png', types: ['image'] },
+  '2x2-transparent.png': { path: '/redirect-resources/noop-2x2.png', types: ['image'] },
+  '3x2.png': { path: '/redirect-resources/noop-3x2.png', types: ['image'] },
+  '3x2-transparent.png': { path: '/redirect-resources/noop-3x2.png', types: ['image'] },
+  '32x32.png': { path: '/redirect-resources/noop-32x32.png', types: ['image'] },
+  '32x32-transparent.png': { path: '/redirect-resources/noop-32x32.png', types: ['image'] },
+  'noop-0.1s.mp3': { path: '/redirect-resources/noop-0.1s.mp3', types: ['media'] },
+  'noopmp3-0.1s': { path: '/redirect-resources/noop-0.1s.mp3', types: ['media'] },
+  'noop-0.5s.mp3': { path: '/redirect-resources/noop-0.5s.mp3', types: ['media'] },
+  'noop-1s.mp4': { path: '/redirect-resources/noop-1s.mp4', types: ['media'] },
+  'noopmp4-1s': { path: '/redirect-resources/noop-1s.mp4', types: ['media'] },
+  'noopvast-2.0': { path: '/redirect-resources/noop-vast2.xml', types: ['xmlhttprequest', 'other'] },
+  'noopvast-3.0': { path: '/redirect-resources/noop-vast3.xml', types: ['xmlhttprequest', 'other'] },
+  'noopvast-4.0': { path: '/redirect-resources/noop-vast4.xml', types: ['xmlhttprequest', 'other'] },
+  'noopvmap-1.0': { path: '/redirect-resources/noop-vmap1.xml', types: ['xmlhttprequest', 'other'] },
+  'noop-vmap1.0.xml': { path: '/redirect-resources/noop-vmap1.xml', types: ['xmlhttprequest', 'other'] },
+};
+
+/* A behavioural surrogate -- uBlock's google-ima.js, googlesyndication_adsbygoogle.js and the
+   rest -- stands in for a real SDK and has to imitate its API, not just return nothing. Those
+   names resolve to nothing here, so their rules are dropped rather than half-served. Adding one
+   means shipping the stub, declaring it above, and listing it in CREDITS.md. */
+const REDIRECT_SURROGATE_NAMES = new Set(['google-ima.js', 'googlesyndication_adsbygoogle.js',
+  'google-analytics_analytics.js', 'googletagservices_gpt.js', 'googletagmanager_gtm.js',
+  'amazon_apstag.js', 'fingerprint2.js', 'fingerprint3.js', 'fuckadblock.js-3.2.0', 'nofab.js',
+  'prebid-ads.js', 'scorecardresearch_beacon.js', 'outbrain-widget.js', 'chartbeat.js',
+  'ati-smarttag', 'gemius', 'metrika-yandex-tag', 'metrika-yandex-watch', 'popads.net.js',
+  'sensors-analytics.js', 'hd-main.js', 'click-to-load.html']);
+
+function redirectResourceFor(value) {
+  /* "$redirect=noopjs:10" carries uBlock's rule-priority suffix; the resource is the part
+     before it. */
+  const name = String(value || '').trim().split(':').slice(0, 1)[0]
+    || String(value || '').trim();
+  const direct = REDIRECT_RESOURCES[name];
+  if (direct) return direct;
+  const full = String(value || '').trim();
+  return REDIRECT_RESOURCES[full] || null;
+}
+
+/* The option half of one filter line, shared by the redirect and csp readers. Returns null for
+   anything whose scope cannot be reproduced exactly. */
+function modifierRuleScope(opts) {
+  const resourceTypes = [];
+  let domains = null;
+  let excludedDomains = null;
+  let domainType = null;
+  for (let o of opts) {
+    const neg = o[0] === '~';
+    if (neg) o = o.slice(1);
+    const [k, v] = o.split('=');
+    if (k === 'redirect' || k === 'redirect-rule' || k === 'csp' || k === 'important') continue;
+    if (k === 'third-party' || k === '3p' || k === 'first-party' || k === '1p') {
+      const wantsThirdParty = k === 'third-party' || k === '3p';
+      const requestedType = (wantsThirdParty !== neg) ? 'thirdParty' : 'firstParty';
+      if (domainType && domainType !== requestedType) return null;
+      domainType = requestedType;
+      continue;
+    }
+    if (UBO_IGNORABLE.has(k)) {
+      if (neg) return null;
+      continue;
+    }
+    if (k === 'domain') {
+      if (neg || !v || o.indexOf('=', o.indexOf('=') + 1) !== -1) return null;
+      const incl = [];
+      const excl = [];
+      for (let d of v.split('|')) {
+        d = d.trim().toLowerCase();
+        const excluded = d.startsWith('~');
+        const host = excluded ? d.slice(1) : d;
+        if (!validNetworkRuleScope(host)) return null;
+        (excluded ? excl : incl).push(host);
+      }
+      if (incl.length) domains = incl;
+      if (excl.length) excludedDomains = excl;
+      continue;
+    }
+    if (UBO_TYPE_MAP[k]) {
+      if (neg) return null;
+      resourceTypes.push(UBO_TYPE_MAP[k]);
+      continue;
+    }
+    return null;
+  }
+  return { resourceTypes, domains, excludedDomains, domainType };
+}
+
+function modifierLineParts(line) {
+  const dollar = line.indexOf('$');
+  if (dollar < 1) return null;
+  const pattern = line.slice(0, dollar).trim();
+  const optStr = line.slice(dollar + 1).trim();
+  if (!pattern || !optStr) return null;
+  if (/[^\x00-\x7F]/.test(pattern)) return null;
+  return { pattern, opts: optStr.split(',').map((o) => o.trim()).filter(Boolean) };
+}
+
+/* $csp appends a Content-Security-Policy header to a document response. It is the most
+   destructive thing a feed can ask for -- a wrong policy refuses the site's own scripts -- so the
+   reading here is deliberately narrow:
+     - only a bare ||host^ pattern, which is the document host,
+     - only main_frame and sub_frame,
+     - and any host or initiator an exception mentions, for any policy or path, is dropped
+       outright rather than matched policy by policy.
+   Upstream writes those exceptions because the injection broke that site; being coarser than
+   uBlock here can only mean injecting less. */
+function parseCspExemptions(lines) {
+  const hosts = new Set();
+  const initiators = new Set();
+  for (const line of lines) {
+    if (!line.startsWith('@@')) continue;
+    const parts = modifierLineParts(line.slice(2));
+    if (!parts) continue;
+    if (!parts.opts.some((o) => o === 'csp' || o.startsWith('csp='))) continue;
+    const host = networkRulePatternHost(parts.pattern);
+    if (host) hosts.add(host);
+    for (const o of parts.opts) {
+      if (!o.startsWith('domain=')) continue;
+      for (const d of o.slice('domain='.length).split('|')) {
+        const clean = d.trim().replace(/^~/, '').toLowerCase();
+        if (validNetworkRuleScope(clean)) initiators.add(clean);
+      }
+    }
+  }
+  return { hosts, initiators };
+}
+
+function cspPolicyAcceptable(policy) {
+  const value = String(policy || '').trim();
+  if (!value || value.length > 1000) return false;
+  /* A header value cannot carry a newline or a NUL; a directive name cannot be empty. */
+  if (/[\r\n\u0000]/.test(value) || /(?:^|;)\s*report-(?:uri|to)\b/i.test(value)) return false;
+  return /^[\x20-\x7E]+$/.test(value);
+}
+
+function parseModifierRules(text, maxRedirect, maxCsp) {
   const source = String(text || '');
+  const modifier = /(?:\$|,)[ \t]*(?:csp|redirect(?:-rule)?)[ \t]*(?:[=,]|\r?$)/m;
+  if (!modifier.test(source)) return { redirectRules: [], cspRules: [] };
+  const lines = [];
   let at = 0;
-  while (at <= source.length && rules.length < maxRules) {
+  while (at <= source.length) {
+    const end = source.indexOf('\n', at);
+    const line = source.slice(at, end < 0 ? source.length : end).trim();
+    at = end < 0 ? source.length + 1 : end + 1;
+    if (!line || line[0] === '!' || line[0] === '#' || line[0] === '[') continue;
+    if (!line.includes('$') || !modifier.test(line)) continue;
+    if (/#[@?$%]*#/.test(line)) continue;
+    lines.push(line);
+  }
+
+  const exemptions = parseCspExemptions(lines);
+  const excludedCspInitiators = Array.from(exemptions.initiators).slice(0, 200);
+  const redirectRules = [];
+  const cspRules = [];
+  const redirectExempt = new Set();
+  for (const line of lines) {
+    if (!line.startsWith('@@')) continue;
+    const parts = modifierLineParts(line.slice(2));
+    if (!parts || !parts.opts.some((o) => o === 'redirect' || o.startsWith('redirect='))) continue;
+    const host = networkRulePatternHost(parts.pattern);
+    if (host) redirectExempt.add(host);
+  }
+
+  for (const line of lines) {
+    if (line.startsWith('@@')) continue;
+    const parts = modifierLineParts(line);
+    if (!parts) continue;
+    const candidatePattern = parts.pattern;
+    if (/^\/.*\/[a-z]*$/i.test(candidatePattern)) continue;   // regex filters are not reproduced
+    if (candidatePattern.length < 2) continue;
+
+    const redirectOpt = parts.opts.find((o) => o === 'redirect' || o.startsWith('redirect='));
+    const redirectRuleOpt = parts.opts.find((o) => o === 'redirect-rule' || o.startsWith('redirect-rule='));
+    const cspOpt = parts.opts.find((o) => o === 'csp' || o.startsWith('csp='));
+
+    if (redirectRuleOpt && !redirectOpt) continue;             // conditional; see the note above
+
+    if (redirectOpt && redirectRules.length < maxRedirect) {
+      const resource = redirectResourceFor(redirectOpt.slice('redirect='.length));
+      const scope = resource ? modifierRuleScope(parts.opts) : null;
+      const patternHost = networkRulePatternHost(candidatePattern);
+      if (resource && scope && !redirectExempt.has(patternHost)) {
+        /* With no request type the resource's own default applies. With one, it is honoured as
+           written -- except that a navigation is refused outright rather than quietly retargeted
+           at subframes, which would apply the rule somewhere its author did not ask for. */
+        /* A redirect never answers a navigation: handing a document a local file would take the
+           reader somewhere they did not ask to go. */
+        const asked = scope.resourceTypes;
+        const explicit = asked.filter((type) => type !== 'main_frame');
+        const refusedNavigation = asked.length > 0 && explicit.length === 0;
+        const types = refusedNavigation ? [] : (asked.length ? explicit : resource.types)
+          .filter((type) => type !== 'main_frame');
+        if (types.length) {
+          const condition = { urlFilter: candidatePattern, resourceTypes: Array.from(new Set(types)) };
+          if (scope.domains) condition.initiatorDomains = scope.domains;
+          if (scope.excludedDomains) condition.excludedInitiatorDomains = scope.excludedDomains;
+          if (scope.domainType) condition.domainType = scope.domainType;
+          redirectRules.push({
+            __woModifier: 'redirect',
+            action: { type: 'redirect', redirect: { extensionPath: resource.path } },
+            condition,
+          });
+        }
+      }
+    }
+
+    if (cspOpt && cspRules.length < maxCsp) {
+      const policy = cspOpt.startsWith('csp=') ? cspOpt.slice('csp='.length) : '';
+      const host = networkRulePatternHost(candidatePattern);
+      const bare = /^\|\|[a-z0-9.-]+\^$/i.test(candidatePattern);
+      const scope = modifierRuleScope(parts.opts);
+      if (policy && bare && host && scope && cspPolicyAcceptable(policy)
+        && !exemptions.hosts.has(host) && !scope.domains && !scope.domainType) {
+        const condition = {
+          urlFilter: candidatePattern,
+          resourceTypes: ['main_frame', 'sub_frame'],
+        };
+        if (excludedCspInitiators.length) condition.excludedInitiatorDomains = excludedCspInitiators;
+        cspRules.push({
+          __woModifier: 'csp',
+          action: {
+            type: 'modifyHeaders',
+            responseHeaders: [{ header: 'content-security-policy', operation: 'append', value: policy }],
+          },
+          condition,
+        });
+      }
+    }
+  }
+  return { redirectRules, cspRules };
+}
+
+function finalizeModifierRule(rule, id) {
+  const condition = Object.assign({}, (rule && rule.condition) || {});
+  if (rule && rule.__woModifier === 'csp') {
+    /* Below every block and allow band on purpose. A header append is not a verdict about the
+       request, and it must never be the rule that decides one. */
+    return { id, priority: CSP_RULE_PRIORITY, action: rule.action, condition };
+  }
+  /* Above the blocklist and the feed block rules, so a matching request is answered with the
+     inert file instead of failing, and below the compatibility allows at 1900 and up. */
+  return { id, priority: REDIRECT_RULE_PRIORITY, action: rule.action, condition };
+}
+
+function* scanNetworkRules(text, ruleStartId, maxRules) {
+  const source = String(text || '');
+  if (!(maxRules > 0) || !/\|\||\|https?:\/\//i.test(source)) return [];
+  const ranks = [[], [], [], []];
+  const seen = new Set();
+  const checkedHosts = new Map();
+  let at = 0;
+  let lines = 0;
+  while (at <= source.length) {
+    if (++lines % LIST_PARSE_SLICE_LINES === 0) yield;
     const end = source.indexOf('\n', at);
     let line = source.slice(at, end < 0 ? source.length : end).trim();
     at = end < 0 ? source.length + 1 : end + 1;
-    if (!line || line[0] === '!' || line[0] === '#' || line[0] === '[') continue;
-    if (line.includes('##') || line.includes('#@#') || line.includes('#?#') || line.includes('#$#') || line.includes('#%#')) continue;
-    const candidatePattern = line.startsWith('@@') ? line.slice(2) : line;
-    if (/^\/.*\/[a-z]*(?:\$|$)/i.test(candidatePattern)) continue;
+    const isException = line.startsWith('@@');
+    if (isException) line = line.slice(2);
+    if (line[0] !== '|' || /#(?:#|@#|\?#|\$#|%#|\^#)/.test(line)) continue;
     const dollar = line.indexOf('$');
-    if (dollar === -1) continue;
-
-    let isException = false;
-    if (line.startsWith('@@')) { isException = true; line = line.slice(2); }
-
-    const pattern = line.slice(0, line.indexOf('$')).trim();
-    const optStr = line.slice(line.indexOf('$') + 1).trim();
-    if (!pattern || !optStr) continue;
-    const opts = optStr.split(',').map((o) => o.trim()).filter(Boolean);
+    const pattern = (dollar === -1 ? line : line.slice(0, dollar)).trim();
+    const optStr = dollar === -1 ? '' : line.slice(dollar + 1).trim();
+    if (pattern.length > 2048 || /[^\x21-\x7E]/.test(pattern) || (dollar !== -1 && !optStr)) continue;
+    const anchor = networkRuleAnchor(pattern, checkedHosts);
+    if (!anchor) continue;
+    const { host, bare: bareHost } = anchor;
+    if (bareHost && dollar === -1) continue;
+    const opts = optStr ? optStr.split(',').map((o) => o.trim()).filter(Boolean) : [];
 
     if (opts.some((o) => UBO_UNSUPPORTED.test(o.replace(/^~/, '').split('=')[0]))) continue;
 
@@ -16865,7 +17369,10 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
     for (let o of opts) {
       const neg = o[0] === '~';
       if (neg) o = o.slice(1);
-      const [k, v] = o.split('=');
+      const equals = o.indexOf('=');
+      const k = equals === -1 ? o : o.slice(0, equals);
+      const v = equals === -1 ? '' : o.slice(equals + 1);
+      if (equals !== -1 && k !== 'domain') { bad = true; break; }
       if (k === 'third-party' || k === '3p' || k === 'first-party' || k === '1p') {
         const wantsThirdParty = k === 'third-party' || k === '3p';
         const requestedType = (wantsThirdParty !== neg) ? 'thirdParty' : 'firstParty';
@@ -16878,13 +17385,13 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
         continue;
       }
       if (k === 'domain') {
-        if (neg || !v || o.indexOf('=', o.indexOf('=') + 1) !== -1) { bad = true; break; }
+        if (neg || !v || domains || excludedDomains || v.includes('=')) { bad = true; break; }
         const incl = [], excl = [];
         for (let d of v.split('|')) {
           d = d.trim().toLowerCase();
           const excluded = d.startsWith('~');
           const host = excluded ? d.slice(1) : d;
-          if (!validNetworkRuleScope(host)) { bad = true; break; }
+          if (!acceptableNetworkRuleHost(host, checkedHosts)) { bad = true; break; }
           (excluded ? excl : incl).push(host);
         }
         if (bad) break;
@@ -16907,28 +17414,46 @@ function parseNetworkRules(text, ruleStartId, maxRules) {
     // parser; domain-scoped exceptions still cover the common false-positive fixes.
     if (isException && !domains) continue;
 
-    let urlFilter = pattern;
-    if (!urlFilter || urlFilter.length < 2) continue;
-    if (/[^\x00-\x7F]/.test(urlFilter)) continue;
-
-    const condition = { urlFilter };
-    if (resourceTypes.length) condition.resourceTypes = Array.from(new Set(resourceTypes));
-    if (domains) condition.initiatorDomains = domains;
-    if (excludedDomains) condition.excludedInitiatorDomains = excludedDomains;
+    const condition = { urlFilter: pattern };
+    if (resourceTypes.length) condition.resourceTypes = Array.from(new Set(resourceTypes)).sort();
+    if (domains) condition.initiatorDomains = Array.from(new Set(domains)).sort();
+    if (excludedDomains) condition.excludedInitiatorDomains = Array.from(new Set(excludedDomains)).sort();
     if (domainType) condition.domainType = domainType;
 
-    rules.push({
-      id: id++,
+    const rank = (domains || excludedDomains) ? 0
+      : (!bareHost ? 1
+        : ((resourceTypes.length || domainType === 'firstParty') ? 2 : 3));
+
+    const bucket = ranks[rank];
+    if (bucket.length >= maxRules) continue;
+    const signature = JSON.stringify([condition, isException]);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    const rule = {
+      __woRank: rank,
+      id: at,
       priority: isException ? 2 : 1,
       action: { type: isException ? 'allow' : 'block' },
       condition,
-    });
+    };
+    if (rank === 3 && domainType === 'thirdParty') rule.__woRedundantHost = host;
+    bucket.push(rule);
   }
+  const rules = ranks.flat().slice(0, maxRules).sort((a, b) => a.id - b.id);
+  for (let i = 0; i < rules.length; i++) rules[i].id = ruleStartId + i;
   return rules;
 }
 
+function parseNetworkRules(text, ruleStartId, maxRules) {
+  const scan = scanNetworkRules(text, ruleStartId, maxRules);
+  for (;;) {
+    const step = scan.next();
+    if (step.done) return step.value;
+  }
+}
+
 /* Suppress only conflicting single-feed verdicts for exact names and www, never all subdomains.
-   Other protections and user rules still apply. Evidence and review dates are kept in the private review record. */
+   Other protections and user rules still apply. Evidence and review dates: docs/security-feed-exceptions.md. */
 const FEED_FALSE_POSITIVE_DOMAINS = new Set(['steamrip.com', 'support.metamask.io']);
 function isFeedFalsePositiveDomain(host) {
   const d = String(host || '').toLowerCase();
@@ -16939,7 +17464,7 @@ function isFeedFalsePositiveDomain(host) {
 // entry, or an exact ||hostname^ rule. URL paths, options, wildcards, and
 // exceptions are intentionally left to the network-rule parser so they can
 // never be broadened into a whole-domain block.
-function parseList(text) {
+function parseList(text, stats) {
   const domainRe = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
   const nonPublicTldRe = /^(?:arpa|corp|example|home|internal|intranet|invalid|lan|local|localdomain|localhost|test)$/;
   const out = [];
@@ -16982,6 +17507,7 @@ function parseList(text) {
     if (nonPublicTldRe.test(tld) || /(?:^|\.)example\.(?:com|net|org)$/.test(line)) return;
     if (isUnsafeFeedBlockTarget(line)) return;
     if (isFeedFalsePositiveDomain(line)) return; // one feed's disputed listing, not a safe verdict (see above)
+    if (stats) stats.acceptedEntries++;
     if (!seen.has(line)) {
       seen.add(line);
       out.push(line);
@@ -17043,14 +17569,14 @@ function parseList(text) {
 /* Yield between line-based feed slices while preserving parseList order and cross-slice deduplication. JSON feeds must
    remain whole. */
 const LIST_PARSE_SLICE_LINES = 4000;
-async function parseListInSlices(text) {
+async function parseListInSlices(text, stats) {
   const source = String(text || '');
   const trimmed = source.trim();
-  if (trimmed.startsWith('{') || /^\[\s*(?:["[{\]\d-]|true|false|null)/.test(trimmed)) return parseList(source);
+  if (trimmed.startsWith('{') || /^\[\s*(?:["[{\]\d-]|true|false|null)/.test(trimmed)) return parseList(source, stats);
   let next = 0;
   for (let i = 0; i < LIST_PARSE_SLICE_LINES; i++) {
     const end = source.indexOf('\n', next);
-    if (end < 0) return parseList(source);
+    if (end < 0) return parseList(source, stats);
     next = end + 1;
   }
   const out = [];
@@ -17066,7 +17592,7 @@ async function parseListInSlices(text) {
     }
     /* The leading comment keeps a slice that happens to open with "[" or "{" from being tried
        as JSON: parseList skips it like any other comment line. */
-    for (const host of parseList('!\n' + source.slice(at, complete ? end : end - 1))) {
+    for (const host of parseList('!\n' + source.slice(at, complete ? end : end - 1), stats)) {
       if (seen.has(host)) continue;
       seen.add(host);
       out.push(host);
@@ -17079,9 +17605,17 @@ async function parseListInSlices(text) {
 }
 
 async function compileRemoteNetworkSource(text, maxOptionRules) {
-  const domains = await parseListInSlices(text);
-  const optionRules = parseNetworkRules(text, 0, maxOptionRules);
-  return { domains, optionRules };
+  const stats = { acceptedEntries: 0 };
+  const domains = await parseListInSlices(text, stats);
+  const scan = scanNetworkRules(text, 0, maxOptionRules);
+  let step = scan.next();
+  while (!step.done) {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    step = scan.next();
+  }
+  const optionRules = step.value;
+  const { redirectRules, cspRules } = parseModifierRules(text, REDIRECT_RULES_PER_SOURCE_CAP, CSP_RULES_PER_SOURCE_CAP);
+  return { domains, optionRules, redirectRules, cspRules, acceptedDomainEntries: stats.acceptedEntries };
 }
 
 function getListMeta() {
@@ -17133,8 +17667,8 @@ function refreshListMetaCounts() {
     chrome.storage.local.get('wardenone_list_meta', (x) => {
       const oldMeta = x && x.wardenone_list_meta;
       if (!oldMeta) return;
-      const remoteCount = Number(oldMeta.remoteCount || oldMeta.count || 0);
-      const activeRuleCount = Number(oldMeta.activeRuleCount || Math.min(remoteCount, MAX_DYNAMIC));
+      const remoteCount = Number(oldMeta.remoteCount || 0);
+      const activeRuleCount = Number(oldMeta.activeRuleCount || 0);
       const meta = buildListMeta(Object.assign({}, oldMeta, { remoteCount, activeRuleCount }));
       localSet({ wardenone_list_meta: meta }).catch(() => {});
     });
@@ -17399,6 +17933,7 @@ function listIntegrityAlert(scope, url, reason, extra) {
 }
 
 function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, optionRules, seed, publisherUpdatedAt) {
+  const optionCompiler = 2;
   const domainCount = Array.isArray(domains) ? domains.length : 0;
   const optionRuleCount = Array.isArray(optionRules) ? optionRules.length : 0;
   const semanticSketch = listSemanticSketch(seed, domains, optionRules);
@@ -17420,21 +17955,25 @@ function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, o
       spikeFloor: LIST_SOURCE_SPIKE_FLOOR,
     });
     if (domainReason) reasons.push(domainReason);
-    const optionReason = listCountDriftReason(previous.optionRuleCount, optionRuleCount, 'option-rule count', {
-      minBaseline: 25,
-      dropRatio: 0.25,
-      spikeRatio: 4,
-      spikeFloor: 200,
-    });
-    if (optionReason) reasons.push(optionReason);
-    const semanticReason = listSemanticDriftReason(previous, hash, semanticSketch);
-    if (semanticReason) reasons.push(semanticReason);
+    if (previous.optionCompiler === optionCompiler) {
+      const optionReason = listCountDriftReason(previous.optionRuleCount, optionRuleCount, 'option-rule count', {
+        minBaseline: 25, dropRatio: 0.25, spikeRatio: 4, spikeFloor: 200,
+      });
+      if (optionReason) reasons.push(optionReason);
+      const semanticReason = listSemanticDriftReason(previous, hash, semanticSketch);
+      if (semanticReason) reasons.push(semanticReason);
+    } else if (previous.optionRuleCount === 0) {
+      const semanticReason = listSemanticDriftReason(previous, hash,
+        optionRuleCount ? listSemanticSketch(seed, domains, []) : semanticSketch);
+      if (semanticReason) reasons.push(semanticReason);
+    }
   }
   const record = {
     sha256: hash,
     byteLength,
     domainCount,
     optionRuleCount,
+    optionCompiler,
     semanticSketch,
     acceptedAt: Date.now(),
     publisherUpdatedAt: Number(publisherUpdatedAt) || 0,
@@ -17495,7 +18034,8 @@ async function fetchListSource(url, reason, integrity) {
   try {
     const text = fetched.text || '';
     const byteLength = fetched.byteLength || utf8ByteLength(text);
-    const { domains, optionRules } = await compileRemoteNetworkSource(text, OPTION_RULES_PER_SOURCE_CAP);
+    const compiled = await compileRemoteNetworkSource(text, OPTION_RULES_PER_SOURCE_CAP);
+    const { domains, optionRules } = compiled;
     const hash = await sha256TextHex(text);
     const verdict = evaluateListSourceIntegrity(
       url,
@@ -17522,7 +18062,7 @@ async function fetchListSource(url, reason, integrity) {
       };
     }
     if (WO_LIST_DEBUG) console.log('[WardenOne] fetched', domains.length, 'domains,', optionRules.length, 'option-rules from', url);
-    return { ok: true, url, domains, optionRules, integrityRecord: verdict.record };
+    return { ok: true, url, ...compiled, integrityRecord: verdict.record };
   } catch (e) {
     const err = String(e);
     if (/Integrity guard rejected source:/i.test(err)) {
@@ -17998,36 +18538,39 @@ async function listDomainRuleCoverage(listRules, buckets, merged, sourceCounts) 
   return counts;
 }
 
-function prioritizedOptionRuleCandidates(buckets) {
-  const out = [];
-  const seen = new Set();
-  const sourceBySignature = new Map();
-  const sourceRank = { adshield: 1, tracker: 2, security: 3 };
-  for (const kind of ['adshield', 'tracker', 'security']) {
-    for (const rule of (buckets[kind] || [])) {
-      const sig = JSON.stringify([rule && rule.condition, rule && rule.action && rule.action.type]);
-      const previous = sourceBySignature.get(sig);
-      if (!previous || sourceRank[kind] > sourceRank[previous]) sourceBySignature.set(sig, kind);
+function prioritizedOptionRuleCandidates(buckets, coveredHost = () => false) {
+  const kinds = ['security', 'tracker', 'adshield'];
+  const unique = new Set();
+  const spare = [[], [], [], []];
+  const selected = [];
+  let redundant = 0;
+  let eligible = 0;
+  for (const kind of kinds) {
+    const ranked = [[], [], [], []];
+    for (const rule of buckets[kind]) {
+      const signature = JSON.stringify([rule.condition, rule.action.type]);
+      if (unique.has(signature)) continue;
+      unique.add(signature);
+      if (rule.__woRedundantHost && coveredHost(rule.__woRedundantHost, kind)) {
+        redundant++;
+        continue;
+      }
+      const rank = rule.__woRank;
+      ranked[rank].push({ ...rule, __woSourceKind: kind });
+      eligible++;
+    }
+    let available = ACTIVE_OPTION_RULE_BUDGETS[kind];
+    for (let rank = 0; rank < ranked.length; rank++) {
+      const rules = ranked[rank];
+      const take = Math.min(available, rules.length);
+      selected.push(...rules.slice(0, take));
+      available -= take;
+      const remaining = OPTION_RULES_MAX - spare[rank].length;
+      spare[rank].push(...rules.slice(take, take + remaining));
     }
   }
-  const take = (items, limit) => {
-    const max = Math.max(0, Number(limit) || 0);
-    if (!Array.isArray(items) || !max) return;
-    for (const rule of items) {
-      if (out.length >= OPTION_RULES_MAX) break;
-      const sig = JSON.stringify([rule && rule.condition, rule && rule.action && rule.action.type]);
-      if (seen.has(sig)) continue;
-      seen.add(sig);
-      out.push(Object.assign({}, rule, { __woSourceKind: sourceBySignature.get(sig) || 'security' }));
-      if (out.length >= max) break;
-    }
-  };
-
-  take(buckets.adshield, ACTIVE_OPTION_RULE_BUDGETS.adshield);
-  take(buckets.tracker, ACTIVE_OPTION_RULE_BUDGETS.adshield + ACTIVE_OPTION_RULE_BUDGETS.tracker);
-  take(buckets.security, ACTIVE_OPTION_RULE_BUDGETS.adshield + ACTIVE_OPTION_RULE_BUDGETS.tracker + ACTIVE_OPTION_RULE_BUDGETS.security);
-  take([...(buckets.adshield || []), ...(buckets.tracker || []), ...(buckets.security || [])], OPTION_RULES_MAX);
-  return out.slice(0, OPTION_RULES_MAX);
+  for (const rules of spare) selected.push(...rules.slice(0, OPTION_RULES_MAX - selected.length));
+  return { rules: selected, eligible, redundant };
 }
 
 function remoteDomainRuleSourceKind(domain, buckets) {
@@ -18043,6 +18586,8 @@ function remoteListRuleIds() {
   const ids = [];
   for (let i = 0; i < MAX_DYNAMIC; i++) ids.push(DYNAMIC_RULE_BASE + i);
   for (let i = 0; i < OPTION_RULES_MAX; i++) ids.push(OPTION_RULE_BASE + i);
+  for (let i = 0; i < REDIRECT_RULES_BUDGET; i++) ids.push(REDIRECT_RULE_BASE + i);
+  for (let i = 0; i < CSP_RULES_BUDGET; i++) ids.push(CSP_RULE_BASE + i);
   return ids;
 }
 
@@ -18059,11 +18604,12 @@ async function remoteListFingerprint(rules) {
 
 /* A list write replaces both parts at once: each part's last rule present and the id after it empty show it
    is still installed. Older builds filled the ids past the end with one-domain rules. */
-async function remoteListRulesInstalled(listCount, optionCount) {
+async function remoteListRulesInstalled(listCount, optionCount, redirectCount, cspCount) {
   const expected = new Map();
-  for (const [base, count] of [[DYNAMIC_RULE_BASE, listCount], [OPTION_RULE_BASE, optionCount]]) {
+  for (const [base, count, capacity] of [[DYNAMIC_RULE_BASE, listCount, MAX_DYNAMIC], [OPTION_RULE_BASE, optionCount, OPTION_RULES_MAX],
+    [REDIRECT_RULE_BASE, redirectCount || 0, REDIRECT_RULES_BUDGET], [CSP_RULE_BASE, cspCount || 0, CSP_RULES_BUDGET]]) {
     if (count) expected.set(base + count - 1, true);
-    expected.set(base + count, false);
+    if (count < capacity) expected.set(base + count, false);
   }
   const found = new Set((await chrome.declarativeNetRequest.getDynamicRules({ ruleIds: [...expected.keys()] })).map((rule) => rule.id));
   return [...expected].every(([id, present]) => found.has(id) === present);
@@ -18113,6 +18659,7 @@ async function updateRemoteListsCore(reason) {
     && /^(startup|alarm)$/i.test(String(reason || ''))
     && previousUpdated > 0
     && previousRules > 0
+    && previousMeta.feedCoverage
     && Date.now() - previousUpdated < LIST_AUTO_MIN_INTERVAL_MS;
   if (skipFreshAutoUpdate) {
     return { ok: true, skipped: true, fresh: true, meta: previousMeta };
@@ -18151,6 +18698,8 @@ async function updateRemoteListsCore(reason) {
   const merged = new Set();
   const domainBuckets = { security: new Set(), tracker: new Set(), adshield: new Set() };
   const optionRuleBuckets = { security: [], tracker: [], adshield: [] };
+  const modifierRuleBuckets = { redirect: [], csp: [] };
+  const modifierSeen = { redirect: new Set(), csp: new Set() };
   const integrity = await loadListIntegrity();
   const acceptedIntegrityRecords = Object.create(null);
   const integrityAlerts = [];
@@ -18160,6 +18709,7 @@ async function updateRemoteListsCore(reason) {
   let rejectedSources = 0;
   const sourceFailures = [];
   const feedDomainCounts = [];
+  let acceptedDomainEntries = 0;
   for (let i = 0; i < sources.length; i += LIST_FETCH_CONCURRENCY) {
     const batch = sources.slice(i, i + LIST_FETCH_CONCURRENCY);
     const results = await Promise.all(batch.map((url) => fetchListSource(url, reason, integrity)));
@@ -18179,6 +18729,7 @@ async function updateRemoteListsCore(reason) {
         continue;
       }
       succeededSources++;
+      acceptedDomainEntries += result.acceptedDomainEntries || 0;
       const sourceKind = sourceKinds.get(result.url) || remoteListSourceKind(result.url);
       if (result.integrityRecord) acceptedIntegrityRecords[result.url] = result.integrityRecord;
       const domains = result.domains || [];
@@ -18194,13 +18745,34 @@ async function updateRemoteListsCore(reason) {
         }
       }
       feedDomainCounts.push({ url: result.url, count: merged.size - beforeSource, listedCount });
-      if (Array.isArray(result.optionRules) && result.optionRules.length && optionRuleBuckets[sourceKind].length < OPTION_RULES_MAX) {
+      if (Array.isArray(result.optionRules)) {
         for (const r of result.optionRules) {
-          if (optionRuleBuckets[sourceKind].length >= OPTION_RULES_MAX) break;
-          const pattern = String(r && r.condition && r.condition.urlFilter || '');
+          const pattern = r.condition.urlFilter;
           const patternHost = networkRulePatternHost(pattern);
-          if (r.action.type !== 'allow' && !remoteListBlockAllowed(patternHost, pattern, sourceKind)) continue;
+          if (sourceKind !== 'security' && r.condition.resourceTypes?.includes('main_frame')) continue;
+          if (r.action.type === 'allow') {
+            // Downloaded compatibility rules must stay below security blocks.
+            if (sourceKind === 'security') continue;
+          } else if (!remoteListBlockAllowed(patternHost, pattern, sourceKind, result.url)) continue;
           optionRuleBuckets[sourceKind].push(r);
+        }
+      }
+      /* $redirect and $csp answer a request instead of refusing it, but the never-block and
+         media-compatibility lists still decide whether WardenOne may touch it at all. */
+      for (const [kind, incoming, limit] of [
+        ['redirect', result.redirectRules, REDIRECT_RULES_BUDGET],
+        ['csp', result.cspRules, CSP_RULES_BUDGET],
+      ]) {
+        if (sourceKind === 'security' || !Array.isArray(incoming)) continue;
+        for (const r of incoming) {
+          if (modifierRuleBuckets[kind].length >= limit) break;
+          const pattern = r.condition.urlFilter;
+          const anchor = networkRuleAnchor(pattern);
+          if (!anchor || !remoteListBlockAllowed(anchor.host, pattern, sourceKind, result.url)) continue;
+          const signature = JSON.stringify([r.condition, r.action]);
+          if (modifierSeen[kind].has(signature)) continue;
+          modifierSeen[kind].add(signature);
+          modifierRuleBuckets[kind].push(r);
         }
       }
     }
@@ -18252,28 +18824,32 @@ async function updateRemoteListsCore(reason) {
   const listRules = await listDomainRules(domainBuckets, merged);
   const addRules = listRules.rules;
 
-  // dedup option-rules by condition+action signature, renumber into their band
-  const optionRulesRaw = prioritizedOptionRuleCandidates(optionRuleBuckets);
-  const optSeen = new Set();
-  const optionRules = [];
-  for (const r of optionRulesRaw) {
-    const sig = JSON.stringify([r.condition, r.action.type]);
-    if (optSeen.has(sig)) continue;
-    optSeen.add(sig);
-    optionRules.push(finalizeOptionRule(
-      r,
-      OPTION_RULE_BASE + optionRules.length,
-      r && r.__woSourceKind,
-    ));
-    if (optionRules.length >= OPTION_RULES_MAX) break;
+  const optionSelection = prioritizedOptionRuleCandidates(optionRuleBuckets, (host, kind) =>
+    listRules.complete && domainCoveredBy(host, (domain) =>
+      kind === 'security' ? domainBuckets.security.has(domain) : merged.has(domain)));
+  const optionRules = optionSelection.rules.map((rule, index) =>
+    finalizeOptionRule(rule, OPTION_RULE_BASE + index, rule.__woSourceKind));
+
+  /* Each modifier band is numbered on its own, so a redirect rule can never be handed an id the
+     block band is using. Deduplicated by condition and action for the same reason the option
+     rules are: the same line appears in several feeds. */
+  const modifierRules = [];
+  for (const [kind, base, limit] of [
+    ['redirect', REDIRECT_RULE_BASE, REDIRECT_RULES_BUDGET],
+    ['csp', CSP_RULE_BASE, CSP_RULES_BUDGET],
+  ]) {
+    modifierRuleBuckets[kind].slice(0, limit).forEach((rule, index) =>
+      modifierRules.push(finalizeModifierRule(rule, base + index)));
   }
+  const redirectRuleCount = modifierRules.filter((r) => r.id < CSP_RULE_BASE).length;
+  const cspRuleCount = modifierRules.length - redirectRuleCount;
 
   try {
     // remove the previous dynamic set, then add the fresh one (atomic-ish)
-    const desiredRules = addRules.concat(optionRules);
+    const desiredRules = addRules.concat(optionRules, modifierRules);
     const fingerprint = await remoteListFingerprint(desiredRules);
     const unchanged = !!fingerprint && fingerprint === (previousMeta && previousMeta.rulesFingerprint)
-      && await remoteListRulesInstalled(addRules.length, optionRules.length);
+      && await remoteListRulesInstalled(addRules.length, optionRules.length, redirectRuleCount, cspRuleCount);
     const replacement = await commitRemoteListRules(remoteListRuleIds(), desiredRules, unchanged);
     if (!replacement.applied) {
       return {
@@ -18306,8 +18882,19 @@ async function updateRemoteListsCore(reason) {
       packagedDomainCounts: packagedStats.contributions,
       packagedListedDomainCounts: packagedStats.listed,
       listRuleCount: addRules.length,
+      feedCoverage: {
+        acceptedEntries: acceptedDomainEntries,
+        listedDomains: remoteCount,
+        coveredDomains: coverage.total,
+        installedHostEntries: addRules.reduce((sum, rule) => sum + rule.condition.requestDomains.length, 0),
+        installedDomainRules: addRules.length,
+        installedOptionRules: optionRules.length,
+        installedRedirectRules: redirectRuleCount,
+        installedCspRules: cspRuleCount,
+      },
       rulesFingerprint: fingerprint,
       optionRuleCount: optionRules.length,
+      optionRuleSelection: { eligible: optionSelection.eligible, redundant: optionSelection.redundant, capacity: OPTION_RULES_MAX },
       sourceDomainCounts: {
         security: domainBuckets.security.size,
         adshield: domainBuckets.adshield.size,
@@ -18430,6 +19017,7 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'open-site-settings',
   'reset-site-permissions',
   'adshield-cosmetic',
+  'anti-adblock-result',
   /* The element zapper. It runs as an injected content script, so it reaches the
      worker as a tab sender like any other. It is deliberately NOT relayed by
      bridge.js, so a page's own script cannot reach it -- and even if it could,
@@ -18439,6 +19027,7 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   'hidden-add',
   'hidden-remove',
   'hidden-list',
+  'hidden-clear-site',
   /* The isolated bridge owns both watchdogs. Keeping them out of this table meant
      the generic sender gate rejected them before their deliberately tab-scoped
      handlers could run, so engine repair and navigation attribution were inert. */
@@ -18494,6 +19083,7 @@ const TAB_CONTEXT_RATE_LIMITS = {
   'badge-beacon-state': { max: 20, windowMs: 60000 },
   'badge-beacon-settings': { max: 6, windowMs: 60000 },
   'adult-arrival': { max: 20, windowMs: 60000 },
+  'anti-adblock-result': { max: 8, windowMs: 60000 },
   // One per page is all that is ever sent; the ceiling is only here because every
   // tab-allowed kind needs one.
   'consent-accepted': { max: 12, windowMs: 60000 },
@@ -18517,6 +19107,7 @@ const TAB_CONTEXT_RATE_LIMITS = {
   'hidden-add': { max: 30, windowMs: 60000 },
   'hidden-remove': { max: 30, windowMs: 60000 },
   'hidden-list': { max: 60, windowMs: 60000 },
+  'hidden-clear-site': { max: 6, windowMs: 60000 },
   'set-site-permission': { max: 3, windowMs: 60000 },
   /* The bridge sends at most five engine checks per document. Navigation signals
      can be frequent on media pages, so its worker-side ceiling matches the bridge. */
@@ -18696,17 +19287,22 @@ function normalizeWebOrigin(raw) {
   }
 }
 
-async function activeTabMatchesOrigin(rawOrigin) {
+async function activeTabForOrigin(rawOrigin) {
   const origin = normalizeWebOrigin(rawOrigin);
-  if (!origin) return '';
+  if (!origin) return null;
   const tabs = await tabsQuery({ active: true, lastFocusedWindow: true });
   for (const tab of tabs || []) {
     try {
       const url = tab && (tab.url || tab.pendingUrl);
-      if (url && new URL(url).origin === origin) return origin;
+      if (url && new URL(url).origin === origin) return { origin, tabId: tab.id };
     } catch (_) {}
   }
-  return '';
+  return null;
+}
+
+async function activeTabMatchesOrigin(rawOrigin) {
+  const match = await activeTabForOrigin(rawOrigin);
+  return match ? match.origin : '';
 }
 
 // SEC-11: custom-list fetches allow default ports only. Hostname checks cannot detect public names resolving to LAN
@@ -19171,7 +19767,7 @@ const CONTROL_KINDS = {
     'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk',
   'memoryShield', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment', 'memoryNeverPinned', 'throttleBackgroundTabs',
   ],
-  compatibility: ['loginCompatibility'],
+  compatibility: ['loginCompatibility', 'antiAdblockShield'],
 };
 
 // How many of the switches are ON. That is all this is: a count of settings, and the popup
@@ -19259,6 +19855,7 @@ function healthListCounts(meta, auxMeta, publisherSources) {
     auxTotal,
     sources: meta && meta.sources ? meta.sources : null,
     publisher: listPublisherSummary(publisherSources),
+    feedCoverage: meta?.feedCoverage || null,
   };
 }
 
@@ -20651,12 +21248,8 @@ async function addHiddenElement(hostname, selector) {
   return { ok: true, persisted: write.persisted, selectors: list };
 }
 
-/* Wipe every saved rule on every site.
-   Deliberately NOT in TAB_CONTEXT_ALLOWED_MESSAGES: the generic sender gate
-   refuses any kind missing from that table when the sender is a tab, so this one
-   is reachable only from an extension page. add/remove are safe from a tab
-   because each is pinned to that tab's own host; "all of them" has no host to be
-   pinned to, so a page must never be able to ask for it. */
+/* Only the private hidden-clear message may omit a host. The Zapper's hidden-clear-site
+   route validates a non-empty host against its current document before calling this helper. */
 async function clearHiddenElements(hostname) {
   const all = await readHiddenElements();
   let hosts;
@@ -21053,26 +21646,51 @@ try {
 /* ---- checks the reader asks for ------------------------------------------
    Reuse existing checks before navigation, always replying even when nothing is known. */
 
-/* Prefer the page toast for requested replies; system notifications can be hidden by OS settings.
-   Fall back to the system notification if injection is unavailable or there is no tab. */
+/* Requested replies must work on paused sites and pages opened before installation. */
+function renderWardenManualNotice(heading, message) {
+  try {
+    let view = window.__wardenOneManualResult;
+    if (!view || !view.host.isConnected) {
+      const host = document.createElement('div');
+      host.setAttribute('data-wardenone-manual-result', '');
+      host.style.cssText = 'all:initial!important;position:fixed!important;inset:16px 16px auto auto!important;margin:0!important;padding:0!important;border:0!important;width:min(390px,calc(100vw - 32px))!important;max-height:calc(100vh - 32px)!important;overflow:auto!important;z-index:2147483647!important;';
+      const shadow = host.attachShadow({ mode: 'closed' });
+      const card = document.createElement('section');
+      card.setAttribute('role', 'status');
+      card.setAttribute('aria-live', 'polite');
+      card.style.cssText = 'box-sizing:border-box;background:#faf2fe;color:#3d2a52;border:1px solid #d9bce9;border-left:4px solid #9d54c9;border-radius:14px;padding:16px;box-shadow:0 8px 28px #0005;font:14px/1.5 system-ui,sans-serif;overflow-wrap:anywhere;';
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = 'Close';
+      close.setAttribute('aria-label', 'Close WardenOne result');
+      close.style.cssText = 'float:right;margin:0 0 8px 12px;border:1px solid #d9bce9;border-radius:8px;padding:4px 8px;background:#efe0f7;color:#3d2a52;cursor:pointer;font:inherit;';
+      close.addEventListener('click', () => host.remove());
+      const title = document.createElement('strong');
+      title.style.cssText = 'display:block;margin-bottom:8px;';
+      const body = document.createElement('div');
+      body.style.cssText = 'white-space:pre-wrap;user-select:text;';
+      card.append(close, title, body);
+      shadow.append(card);
+      (document.documentElement || document.body).append(host);
+      try { host.popover = 'manual'; host.showPopover(); } catch (_) {}
+      view = { host, title, body };
+      window.__wardenOneManualResult = view;
+    }
+    view.title.textContent = 'WardenOne · ' + heading;
+    view.body.textContent = message;
+    return true;
+  } catch (_) { return false; }
+}
+
 async function wardenManualNotice(title, message, tab, id, documentId) {
-  const text = String(message || '').slice(0, 400);
+  const text = String(message || '').slice(0, 4000);
   const tabId = tab && typeof tab.id === 'number' ? tab.id : null;
   if (tabId !== null && /^https?:/i.test(String((tab && tab.url) || ''))) {
     try {
-      /* Run in the extension's own isolated world and handed to the bridge there, which signs
-         it: the engine's notice card believes only signed events, because a page can dispatch
-         on the same bus (bridge.js eventSigned). No bridge, or no key, and it falls through to
-         the system notification rather than going out unsigned. */
       const results = await chrome.scripting.executeScript({
         target: documentId ? { tabId, documentIds: [documentId] } : { tabId, frameIds: [0] },
-        func: (why, action) => {
-          try {
-            return typeof window.__wardenOneLocalNotice === 'function'
-              && window.__wardenOneLocalNotice('detected_manual_check', { why, action, severity: 'Notice' }) === true;
-          } catch (_) { return false; }
-        },
-        args: [title ? title + ' — ' + text : text, 'You asked for this check from the right-click menu.'],
+        func: renderWardenManualNotice,
+        args: [String(title || 'Result'), text],
       });
       if (results && results[0] && results[0].result === true) return true;
     } catch (_) { /* fall through to the tray */ }
@@ -21082,7 +21700,7 @@ async function wardenManualNotice(title, message, tab, id, documentId) {
     type: 'basic',
     iconUrl: 'icons/icon128.png',
     title: title || 'WardenOne check',
-    message: text,
+    message: text.slice(0, 400),
     priority: 1,
   }, 'manual_check');
 }
@@ -21214,42 +21832,49 @@ async function searchResultAges() {
   __searchAges = { at: Date.now(), ages };
   return ages;
 }
-async function wardenHostFindings(host, url, cfg) {
-  const lines = [];
-
-  /* Reputation first: it is the one that can say "do not open this". */
-  try {
-    const state = await urlReputationConfig(true);
-    if (state && state.enabled) {
-      const verdict = await urlReputationLookupUrl(normalizeSafeBrowsingUrl(url),
-        Object.assign({ context: 'manual' }, state));
-      if (verdict && verdict.hit) {
-        lines.push('Flagged by ' + ((verdict && verdict.provider) || 'URL reputation') + '.');
-      } else if (verdict && verdict.ok) {
-        lines.push('Not on any reputation list WardenOne can reach.');
+async function wardenHostFindings(host, url, cfg, onProgress) {
+  const groups = [['URL reputation: checking…'], ['Domain registration: checking…']];
+  let progress = Promise.resolve();
+  const publish = () => {
+    if (typeof onProgress !== 'function') return;
+    const lines = groups.flat();
+    progress = progress.then(() => onProgress(lines)).catch(() => {});
+  };
+  const reputation = async () => {
+    const lines = [];
+    try {
+      const state = await urlReputationConfig(true);
+      if (state && state.enabled) {
+        const verdict = await urlReputationLookupUrl(normalizeSafeBrowsingUrl(url),
+          Object.assign({ context: 'manual' }, state));
+        if (verdict && verdict.hit) lines.push('Flagged by ' + (verdict.provider || 'URL reputation') + '.');
+        else if (verdict && verdict.ok) lines.push('Not on any reputation list WardenOne can reach.');
+        else lines.push('The reputation lookup could not return a verdict. This address remains unverified.');
+        if (verdict && verdict.ok && reputationQueryUrl(url) !== normalizeSafeBrowsingUrl(url)) lines.push('Its query string was not sent.');
+      } else lines.push('URL reputation is off, so only the checks below ran.');
+    } catch (_) { lines.push('The reputation lookup did not answer.'); }
+    return lines;
+  };
+  const registration = async () => {
+    try {
+      const age = await lookupDomainAge(host, cfg);
+      if (age && age.ok && Number.isFinite(Number(age.ageDays))) {
+        const days = Math.max(0, Math.floor(Number(age.ageDays)));
+        return [days < 60
+          ? 'The domain is only ' + days + ' day' + (days === 1 ? '' : 's') + ' old.'
+          : 'The domain has existed for ' + Math.floor(days / 365) + ' year(s).'];
       }
-      /* The person selected this exact address; what left was less than that. Say so. */
-      if (verdict && verdict.ok && reputationQueryUrl(url) !== normalizeSafeBrowsingUrl(url)) {
-        lines.push('Its query string was not sent.');
-      }
-    } else {
-      lines.push('URL reputation is off, so only the checks below ran.');
-    }
-  } catch (_) { lines.push('The reputation lookup did not answer.'); }
-
-  /* Age is the cheap tell a blocklist cannot give you: a domain registered last
-     week that is asking for a password is the shape of phishing. */
-  try {
-    const age = await lookupDomainAge(host, cfg);
-    if (age && age.ok && Number.isFinite(Number(age.ageDays))) {
-      const days = Math.max(0, Math.floor(Number(age.ageDays)));
-      lines.push(days < 60
-        ? 'The domain is only ' + days + ' day' + (days === 1 ? '' : 's') + ' old.'
-        : 'The domain has existed for ' + Math.floor(days / 365) + ' year(s).');
-    }
-  } catch (_) {}
-
-  return lines;
+    } catch (_) {}
+    return ['Domain registration information was unavailable.'];
+  };
+  await Promise.all([reputation, registration].map(async (task, index) => {
+    groups[index] = await manualLinkWithin(task, [index === 0
+      ? 'The reputation lookup timed out. This address remains unverified.'
+      : 'The domain registration lookup timed out.']);
+    publish();
+  }));
+  await progress;
+  return groups.flat();
 }
 
 const MANUAL_CHECK_JOURNAL_KEY = 'wardenone_manual_check_jobs';
@@ -21337,16 +21962,98 @@ async function finishManualCheckJob(id) {
   });
 }
 
+function wardenTextAssessment(rawText) {
+  const raw = String(rawText || '');
+  const text = raw.slice(0, 16000).normalize('NFKC')
+    .replace(/[\u00ad\u180e\u200b-\u200d\u2060\ufeff]/g, '')
+    .replace(/[\u2010-\u2015\u2212]/g, '-').replace(/[\u2018\u2019]/g, "'");
+  const lines = [];
+  const requested = pattern => {
+    for (const hit of text.matchAll(new RegExp(pattern.source, 'gi'))) {
+      const before = text.slice(Math.max(0, hit.index - 80), hit.index);
+      if (!/\b(?:never|do\s+not|don't|should\s+not|must\s+not|avoid)\b[^.!?\n]{0,70}$/i.test(before)) return true;
+    }
+    return false;
+  };
+  const verification = /(?:verify|confirm|prove)(?:\s+that)?\s+you(?:'re|\s+are)?\s+(?:a\s+)?human|human\s+verification|complete\s+(?:the\s+)?captcha|not\s+a\s+robot/i;
+  const pasteStep = requested(/\b(?:paste|copy|press|open)\b[^.!?\n]{0,180}(?:powershell|terminal|command\s+prompt|run\s+dialog|devtools|developer\s+(?:tools|console)|win(?:dows)?\s*\+\s*r|ctrl\s*\+\s*v)|\bwin(?:dows)?\s*\+\s*r\b/);
+  if (verification.test(text) && pasteStep) lines.push('Possible ClickFix instructions: combines human verification with opening a command shell or pasting code. Do not run commands to complete a CAPTCHA.');
+  const commands = [
+    [/\b(?:powershell|pwsh)(?:\.exe)?\s+[^\r\n]{0,1200}?-(?:e|ec|en|enc|enco|encod|encode|encoded|encodedcommand)\s+\S/i,
+      'Contains an encoded PowerShell command. Encoding hides what it does; decode and inspect it before considering running it.'],
+    [/\b(?:curl|wget)\b[^\r\n]{0,1200}\|\s*(?:bash|sh|zsh)\b|\b(?:iwr|irm|invoke-webrequest)\b[^\r\n]{0,1200}\|\s*(?:iex|invoke-expression)\b|\b(?:iex|invoke-expression)\s*\(\s*(?:iwr|irm|invoke-webrequest)\b/i,
+      'Contains a command that downloads content and executes it. Installation guides can use this pattern too; inspect the downloaded code before running it.'],
+    [/\bmshta(?:\.exe)?\s+https?:|\bregsvr32(?:\.exe)?[^\r\n]{0,800}\/i:https?:|\b(?:rundll32|msiexec)(?:\.exe)?[^\r\n]{0,800}https?:/i,
+      'Contains a command that can load or install code from a remote address. Do not run it based only on a message or verification prompt.'],
+    [/\b(?:document\.cookie|localStorage|sessionStorage)\b[^\r\n]{0,600}\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\b|\b(?:fetch|XMLHttpRequest|sendBeacon|WebSocket)\b[^\r\n]{0,600}\b(?:document\.cookie|localStorage|sessionStorage)\b/i,
+      'Contains browser code that combines access to session data with a network request. Pasting it into a signed-in browser console could expose account data.'],
+  ];
+  for (const [pattern, message] of commands) if (pattern.test(text)) lines.push(message);
+  if (requested(/\b(?:send|share|give|tell|reply\s+with|provide)\b[^.!?\n]{0,90}\b(?:password|one[-\s]time\s+(?:code|password)|verification\s+code|2fa\s+code|seed\s+phrase|recovery\s+phrase|private\s+key)\b/)) {
+    lines.push('Requests a password, security code or wallet recovery secret. Sharing these with another person can give them access to your account or wallet.');
+  }
+  if (/\b(?:infected|virus|security\s+alert|computer\s+(?:is\s+)?blocked)\b/i.test(text)
+      && requested(/\b(?:call|contact)\b[^.!?\n]{0,100}\b(?:support|technician|microsoft|apple|windows)|\b(?:install|download|run)\b[^.!?\n]{0,80}\b(?:anydesk|teamviewer|rustdesk|remote\s+(?:access|support))\b/)) {
+    lines.push('Possible tech-support scam wording: combines an infection or lock warning with calling support or installing remote-access software. Verify the source independently.');
+  }
+  if (!lines.length) lines.push('No common scam instructions or dangerous-command patterns found in the selected text.');
+  lines.push('This is a security check of the wording, not a factual-accuracy or safety guarantee. Quoted examples and legitimate instructions can contain the same patterns.');
+  if (raw.length > 16000) lines.push('Checked the first 16,000 characters. Select a shorter passage to check the rest.');
+  const indicators = [], seen = new Set();
+  const pattern = /(?:https?:\/\/|www\.)[^\s<>"'`]+|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}\b|\b(?:\d{1,3}\.){3}\d{1,3}\b/gi;
+  for (const match of text.matchAll(pattern)) {
+    const value = match[0].replace(/[.,;:!?\])}]+$/, '');
+    const found = wardenIndicatorKind(value);
+    if (!found || !['url', 'domain', 'ip'].includes(found.kind)) continue;
+    const host = found.host || found.value;
+    if (!seen.has(host)) { seen.add(host); indicators.push({ host, kind: found.kind }); }
+    if (indicators.length >= 8) break;
+  }
+  return { lines, indicators };
+}
+
+async function runWardenTextCheck(rawText, tab) {
+  const assessment = wardenTextAssessment(rawText);
+  const local = '\n\nChecked locally. The selected text is not sent to an external service.';
+  const summary = assessment.lines.join('\n\n');
+  await wardenManualNotice('Selected text check', summary + local
+    + (assessment.indicators.length ? '\n\nChecking the addresses in this text against local security lists…' : ''), tab);
+  if (!assessment.indicators.length) return;
+  let job = null, delivered = false;
+  try {
+    job = await startManualCheckJob('text', tab);
+    const results = await Promise.all(assessment.indicators.map(async indicator => {
+      if (indicator.kind === 'ip' && !normalizeIpLiteral(indicator.host)) return indicator.host + ': private or reserved address; no public reputation lookup.';
+      try {
+        const rows = await manualLinkWithin(() => manualLinkLocalChecks(indicator.host), null, 1500);
+        if (!rows) return indicator.host + ': local list check did not finish. Select this address to retry it separately.';
+        return indicator.host + ': ' + rows.map(row => row.title + '. ' + row.detail).join(' ');
+      } catch (_) { return indicator.host + ': local list check unavailable.'; }
+    }));
+    delivered = await manualCheckNotice(job, 'Selected text check', summary + local + '\n\nAddresses found:\n' + results.join('\n\n'));
+  } catch (_) {
+    await wardenManualNotice('Selected text check', summary + local + '\n\nThe address checks could not start. Select an individual address to check it separately.', tab);
+  } finally {
+    if (job && delivered) await finishManualCheckJob(job.id).catch(() => {});
+  }
+}
+
 async function runWardenManualCheck(rawText, tab) {
+  if (!String(rawText || '').trim()) {
+    await wardenManualNotice('No text selected',
+      'Highlight the text you want to check, then right-click the selection and try again.', tab);
+    return;
+  }
   const found = wardenIndicatorKind(rawText);
   if (!found) {
-    await wardenManualNotice('Nothing to check',
-      'That is not a link, domain, IP address or file hash. Select one of those and try again.', tab);
+    await runWardenTextCheck(rawText, tab);
     return;
   }
   let job = null;
   let delivered = false;
   if (found.kind === 'url' || found.kind === 'domain' || found.kind === 'ip') {
+    await wardenManualNotice('Checking ' + found.value,
+      'Checking reputation and available records. Results will appear here as they finish.', tab);
     try { job = await startManualCheckJob(found.kind, tab); }
     catch (_) {
       await wardenManualNotice('Check could not start',
@@ -21368,7 +22075,8 @@ async function runWardenManualCheck(rawText, tab) {
     if (found.kind === 'url' || found.kind === 'domain') {
       const host = found.kind === 'url' ? found.host : found.value;
       const url = found.kind === 'url' ? found.value : 'https://' + found.value + '/';
-      const lines = await wardenHostFindings(host, url, cfg);
+      const lines = await wardenHostFindings(host, url, cfg,
+        update => manualCheckNotice(job, 'Checking ' + host, update.join('\n\n')));
       await notice(host, lines.join(' ') || 'Nothing known about ' + host + '.');
       return;
     }
@@ -21386,7 +22094,8 @@ async function runWardenManualCheck(rawText, tab) {
         return;
       }
 
-      const verdict = await abuseIpDbLookupIp(ip);
+      const verdict = await manualLinkWithin(() => abuseIpDbLookupIp(ip),
+        { enabled: true, ok: false, error: 'The reputation lookup timed out.' });
       if (!verdict || verdict.enabled === false) {
         await notice(ip,
           'A public address. Turn on AbuseIPDB and add a free key on the API keys page to look addresses up.');
@@ -21458,8 +22167,16 @@ async function describeWardenFrame(info, tab) {
   let pageHost = '';
   try { frameHost = new URL(frameUrl).hostname; } catch (_) {}
   try { pageHost = new URL(pageUrl).hostname; } catch (_) {}
+  if (!info || !info.frameId) {
+    await wardenManualNotice('Main page',
+      'You right-clicked the main page' + (pageHost ? ' on ' + pageHost : '')
+        + '. A frame is a page embedded inside another page, such as a video or advert. Right-click inside one to identify it.', tab);
+    return;
+  }
   if (!frameHost) {
-    await wardenManualNotice('Embedded frame', 'This frame has no address WardenOne can read.', tab);
+    await wardenManualNotice('Embedded frame', /^(about:blank|about:srcdoc|data:)/i.test(frameUrl)
+      ? 'This embedded frame has no separate website address. Its contents were supplied by the containing page.'
+      : 'This frame has no address WardenOne can read.', tab);
     return;
   }
   if (frameHost === pageHost) {
@@ -21625,24 +22342,17 @@ async function refreshWardenBlockMenuTitle(tab, info) {
   void refreshWardenNeverSleepMenuTitle(wardenTabHostname(source.tab, source.info));
 }
 
-/* The rule only takes effect on the next request, so a page already on screen
-   carries on regardless. Reloading is the difference between the setting being
-   applied and the setting appearing to be ignored. Delayed a beat so the toast
-   is on screen and readable before the navigation starts. */
+/* Reload only after verifying the browser rule, bypassing the site's cached shell. */
 function wardenReloadAfterSiteChange(tab) {
   const tabId = tab && typeof tab.id === 'number' ? tab.id : null;
   if (tabId === null) return;
   try {
-    setTimeout(() => {
-      /* Bypass cache after block/unblock so the main-frame request reaches DNR instead of a cached shell.
-         The site’s service worker was already cleared above. */
-      try { chrome.tabs.reload(tabId, { bypassCache: true }, () => { void chrome.runtime.lastError; }); } catch (_) {}
-    }, 1200);
+    chrome.tabs.reload(tabId, { bypassCache: true }, () => { void chrome.runtime.lastError; });
   } catch (_) {}
 }
 
-/* Clean one URL using the engine's own cleaner. Validate its page-replaceable answer: the destination host must match
-   the original or an embedded redirect target. */
+/* Clean one URL using the engine's own cleaner. Its page-replaceable answer may only remove tracking
+   from the original address or an explicitly embedded redirect target. */
 async function wardenCleanUrlViaPage(raw, tab) {
   const original = String(raw || '');
   if (!/^https?:\/\//i.test(original) || !tab || typeof tab.id !== 'number') return original;
@@ -21661,52 +22371,64 @@ async function wardenCleanUrlViaPage(raw, tab) {
     });
     cleaned = (out && out[0] && typeof out[0].result === 'string') ? out[0].result : '';
   } catch (_) { cleaned = ''; }
-  if (!cleaned || cleaned === original) return original;
+  if (!cleaned || cleaned === original) {
+    try { return linkCleanApply(linkCleanRules(), original).url; } catch (_) { return original; }
+  }
   try {
     const before = new URL(original);
     const after = new URL(cleaned);
     if (!/^https?:$/i.test(after.protocol)) return original;
-    const sameHost = after.hostname.toLowerCase() === before.hostname.toLowerCase();
-    /* Unwrapping is allowed, inventing a destination is not. */
-    const wasSpeltOut = original.toLowerCase().indexOf(after.hostname.toLowerCase()) >= 0;
-    if (!sameHost && !wasSpeltOut) return original;
-    /* Cleaning removes; it never adds. */
-    const kept = [...after.searchParams.keys()];
-    const had = new Set([...before.searchParams.keys()]);
-    if (sameHost && kept.some((k) => !had.has(k))) return original;
-    return cleaned;
+    const candidates = [before];
+    const seen = new Set([before.href]);
+    for (let index = 0; index < candidates.length && candidates.length < 8; index++) {
+      for (const value of candidates[index].searchParams.values()) {
+        try {
+          const embedded = /^https?:\/\//i.test(value) ? value : decodeURIComponent(value);
+          if (!/^https?:\/\//i.test(embedded)) continue;
+          const url = new URL(embedded);
+          if (!seen.has(url.href) && candidates.length < 8) { seen.add(url.href); candidates.push(url); }
+        } catch (_) {}
+      }
+    }
+    const matches = source => {
+      if (after.origin !== source.origin || after.username !== source.username || after.password !== source.password) return false;
+      let path = source.pathname;
+      if (/(^|\.)amazon\.(com|com\.au|com\.be|com\.br|com\.co|com\.mx|com\.tr|co\.jp|co\.uk|co\.za|ae|ca|cl|cn|de|eg|es|fr|ie|in|it|nl|ng|pl|sa|se|sg)$/i.test(source.hostname)) {
+        path = path.replace(/\/ref=[^/?#]*/gi, '');
+        const product = path.match(/\/(?:[^/?#]+\/)?(?:dp|gp\/product)\/([A-Z0-9]{10})(?:[/?#]|$)/i);
+        if (product) path = '/dp/' + product[1];
+      }
+      if (after.pathname !== source.pathname && after.pathname !== path) return false;
+      const directive = source.hash.indexOf(':~:');
+      const hash = directive >= 0 ? (directive > 1 ? source.hash.slice(0, directive) : '') : source.hash;
+      if (after.hash !== source.hash && after.hash !== hash) return false;
+      return [...after.searchParams.keys()].every(key =>
+        JSON.stringify(after.searchParams.getAll(key)) === JSON.stringify(source.searchParams.getAll(key)));
+    };
+    return candidates.some(matches) ? cleaned : original;
   } catch (_) { return original; }
 }
 
-/* The clipboard needs a document, which a service worker does not have. The
-   page has one, and a menu click is a user gesture there. execCommand is the
-   fallback because the async clipboard refuses when the page is not focused. */
+/* Copy in an extension document so a page copy handler cannot replace the address. */
 async function wardenWriteClipboard(text, tab) {
-  if (!tab || typeof tab.id !== 'number') return false;
+  const value = String(text || '');
+  if (!/^https?:\/\//i.test(value) || value.length > 65536) return false;
+  if (wardenOffscreenIdleTimer) { clearTimeout(wardenOffscreenIdleTimer); wardenOffscreenIdleTimer = 0; }
+  wardenOffscreenBusy++;
   try {
-    const out = await chrome.scripting.executeScript({
-      target: { tabId: tab.id, frameIds: [0] },
-      args: [String(text || '')],
-      func: async (value) => {
-        try {
-          await navigator.clipboard.writeText(value);
-          return true;
-        } catch (_) {}
-        try {
-          const box = document.createElement('textarea');
-          box.value = value;
-          box.setAttribute('readonly', '');
-          box.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;';
-          document.body.appendChild(box);
-          box.select();
-          const ok = document.execCommand('copy');
-          box.remove();
-          return !!ok;
-        } catch (_) { return false; }
-      },
-    });
-    return !!(out && out[0] && out[0].result === true);
+    await ensureWardenOffscreenDocument();
+    const payload = { target: 'wardenone-offscreen', type: 'copy-clean-link', text: value };
+    let result;
+    try { result = await sendWardenOffscreenMessage(payload); }
+    catch (error) {
+      if (!/Receiving end does not exist|Could not establish connection/i.test(String(error && error.message))) throw error;
+      await new Promise(resolve => setTimeout(resolve, 150));
+      await ensureWardenOffscreenDocument();
+      result = await sendWardenOffscreenMessage(payload);
+    }
+    return !!(result && result.ok === true);
   } catch (_) { return false; }
+  finally { wardenOffscreenBusy--; scheduleWardenOffscreenClose(); }
 }
 
 function wardenStrippedCount(before, after) {
@@ -21721,7 +22443,8 @@ function wardenStrippedCount(before, after) {
 
 async function copyWardenCleanLink(info, tab) {
   /* A right-click that was not on a link still has a page worth copying. */
-  const raw = String((info && (info.linkUrl || info.srcUrl)) || (info && info.pageUrl) || (tab && tab.url) || '');
+  const raw = [info && info.linkUrl, info && info.srcUrl, info && info.frameUrl,
+    info && info.pageUrl, tab && tab.url].find(value => /^https?:\/\//i.test(String(value || ''))) || '';
   if (!/^https?:\/\//i.test(raw)) {
     await wardenManualNotice('Nothing to copy', 'There is no web address here to clean.', tab);
     return;
@@ -21730,11 +22453,11 @@ async function copyWardenCleanLink(info, tab) {
   const wrote = await wardenWriteClipboard(cleaned, tab);
   if (!wrote) {
     await wardenManualNotice('Could not reach the clipboard',
-      'WardenOne cleaned the link but this page would not let it be copied. ' + cleaned, tab);
+      'The clipboard write failed. You can select and copy this address:\n' + cleaned, tab);
     return;
   }
   if (cleaned === raw) {
-    await wardenManualNotice('Copied', 'That link had nothing to strip. It is on your clipboard as it was.', tab);
+    await wardenManualNotice('Copied', 'That link had nothing to strip. On your clipboard:\n' + cleaned, tab);
     return;
   }
   const n = wardenStrippedCount(raw, cleaned);
@@ -21788,7 +22511,10 @@ async function wardenTabActionNoticeTarget() {
    right answer, because the tab you are looking at is the only one you can open
    this menu on. */
 async function wardenMenuTargetTab(tab) {
-  if (tab && typeof tab.id === 'number') return tab;
+  if (tab && typeof tab.id === 'number') {
+    if (tab.url) return tab;
+    return await tabsGet(tab.id) || tab;
+  }
   return await wardenTabActionNoticeTarget();
 }
 
@@ -21798,7 +22524,7 @@ async function wardenMenuTargetTab(tab) {
    already looking at. Only a refusal has something to add, and it always says
    which of the two guards stopped it. */
 async function runWardenTabSleep(tab) {
-  if (!MODULE_LOADED.memory) return;
+  if (!MODULE_LOADED.memory) throw new Error('Tab sleeping is unavailable in this build.');
   const target = await wardenMenuTargetTab(tab);
   const res = await memorySleepTabByHand(target || {});
   if (res && res.ok) return;
@@ -21808,7 +22534,7 @@ async function runWardenTabSleep(tab) {
 }
 
 async function runWardenTabClose(tab) {
-  if (!MODULE_LOADED.memory) return;
+  if (!MODULE_LOADED.memory) throw new Error('Tab closing is unavailable in this build.');
   const target = await wardenMenuTargetTab(tab);
   const res = await memoryCloseTabByHand(target || {});
   if (res && res.ok) return;
@@ -21855,6 +22581,7 @@ async function toggleWardenSiteBlock(tab, info) {
     return;
   }
   try {
+    await wardenManualNotice(host, 'Applying your site block setting…', tab);
     await securityStoresReady();
 
     /* A site already on a shipped blocklist is not ours to toggle: removing it
@@ -21980,14 +22707,21 @@ async function checkWardenMedia(info, tab) {
     ? 'Served by the site you are on.'
     : 'Served from ' + host + ', not by ' + (pageHost || 'this page') + '.');
 
+  await wardenManualNotice(host, lines[0] + '\nChecking reputation and available records…', tab);
+  const job = await startManualCheckJob('media', tab);
+  let delivered = false;
   try {
     const store = await localGet('wardenone_config');
     const cfg = Object.assign({}, DEFAULT_CONFIG, (store && store.wardenone_config) || {});
-    const findings = await wardenHostFindings(host, src, cfg);
+    const findings = await wardenHostFindings(host, src, cfg,
+      update => manualCheckNotice(job, host, lines[0] + '\n\n' + update.join('\n\n')));
     for (const line of findings) lines.push(line);
-  } catch (_) {}
-
-  await wardenManualNotice(host, lines.join(' '), tab);
+    delivered = await manualCheckNotice(job, host, lines.join(' '));
+  } catch (_) {
+    delivered = await manualCheckNotice(job, host, lines[0] + ' The reputation check did not finish.');
+  } finally {
+    if (delivered) await finishManualCheckJob(job.id).catch(() => {});
+  }
 }
 
 function startElementTool(tab, frameId) {
@@ -22016,27 +22750,54 @@ try {
   });
 } catch (_) {}
 
-try {
-  chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (!info) return;
+async function runWardenMenuAction(info, tab) {
+  if (!info) return;
+  try {
+    tab = await wardenMenuTargetTab(tab);
+    if (info.menuItemId === WO_MENU_SELECTION && !info.selectionText || info.menuItemId === WO_MENU_MEDIA && !info.srcUrl) {
+      try {
+        const out = await chrome.scripting.executeScript({
+          target: { tabId: tab.id, frameIds: [info.frameId || 0] },
+          func: () => {
+            const saved = window.__wardenOneMenuContext;
+            return saved && Date.now() - saved.at >= 0 && Date.now() - saved.at < 120000 ? saved : null;
+          },
+        });
+        const saved = out && out[0] && out[0].result;
+        if (saved && typeof saved === 'object') {
+          info = Object.assign({}, info, {
+            selectionText: info.selectionText || (typeof saved.selectionText === 'string' ? saved.selectionText.slice(0, 16000) : ''),
+            srcUrl: info.srcUrl || (typeof saved.srcUrl === 'string' ? saved.srcUrl.slice(0, 65536) : ''),
+            mediaType: info.mediaType || saved.mediaType,
+          });
+        }
+      } catch (_) {}
+    }
     if (info.menuItemId === WO_MENU_ZAP) { startElementTool(tab, info.frameId); return; }
     /* Fall back to the page when the clicked context has no more specific check target. */
     if (info.menuItemId === WO_MENU_LINK) {
-      void runWardenManualCheck(info.linkUrl || info.pageUrl || (tab && tab.url), tab);
+      await runWardenLinkCheck(info, tab);
       return;
     }
     if (info.menuItemId === WO_MENU_SELECTION) {
-      void runWardenManualCheck(info.selectionText, tab);
+      await runWardenManualCheck(info.selectionText, tab);
       return;
     }
-    if (info.menuItemId === WO_MENU_COPY_LINK) { void copyWardenCleanLink(info, tab); return; }
-    if (info.menuItemId === WO_MENU_MEDIA) { void checkWardenMedia(info, tab); return; }
-    if (info.menuItemId === WO_MENU_FRAME) { void describeWardenFrame(info, tab); return; }
-    if (info.menuItemId === WO_MENU_SLEEP_TAB) { void runWardenTabSleep(tab); return; }
-    if (info.menuItemId === WO_MENU_NEVER_SLEEP) { void toggleWardenNeverSleep(tab, info); return; }
-    if (info.menuItemId === WO_MENU_CLOSE_TAB) { void runWardenTabClose(tab); return; }
-    if (info.menuItemId === WO_MENU_BLOCK) { void toggleWardenSiteBlock(tab, info); return; }
-  });
+    if (info.menuItemId === WO_MENU_COPY_LINK) { await copyWardenCleanLink(info, tab); return; }
+    if (info.menuItemId === WO_MENU_MEDIA) { await checkWardenMedia(info, tab); return; }
+    if (info.menuItemId === WO_MENU_FRAME) { await describeWardenFrame(info, tab); return; }
+    if (info.menuItemId === WO_MENU_SLEEP_TAB) { await runWardenTabSleep(tab); return; }
+    if (info.menuItemId === WO_MENU_NEVER_SLEEP) { await toggleWardenNeverSleep(tab, info); return; }
+    if (info.menuItemId === WO_MENU_CLOSE_TAB) { await runWardenTabClose(tab); return; }
+    if (info.menuItemId === WO_MENU_BLOCK) { await toggleWardenSiteBlock(tab, info); return; }
+  } catch (error) {
+    await wardenManualNotice('Action could not finish',
+      String(error && error.message || 'WardenOne could not complete this action. Please try again.'), tab);
+  }
+}
+
+try {
+  chrome.contextMenus.onClicked.addListener((info, tab) => { void runWardenMenuAction(info, tab); });
 } catch (_) {}
 
 try {
@@ -22737,6 +23498,7 @@ async function eraseWardenOneSite(rawHost, dryRun) {
     return { ok: plan.ok, error: plan.error, site: plan.site, affected: plan.affected || [] };
   }
   __privacyEraseInProgress = true;
+  manualLinkEraseReports(plan.site);
   if (typeof WOIdentifierObserver !== 'undefined') WOIdentifierObserver.clear();
   try {
     if (typeof WO_CLEANER !== 'undefined') await WO_CLEANER.pauseAndDrain();
@@ -22796,6 +23558,7 @@ async function eraseWardenOneData(mode) {
   const pending = Object.assign({}, (local || {}).wardenone_pending_downloads || {}, (session || {}).wardenone_pending_downloads || {});
   if (Object.keys(pending).length) return { ok: false, error: 'Finish or cancel active Download Shield reviews before erasing WardenOne data.' };
   __privacyEraseInProgress = true;
+  manualLinkEraseReports();
   if (typeof WOIdentifierObserver !== 'undefined') WOIdentifierObserver.clear();
   try {
     if (typeof WO_CLEANER !== 'undefined') await WO_CLEANER.pauseAndDrain();
@@ -23124,6 +23887,30 @@ async function enableYoutubeForSite(msg, sender) {
   } catch (error) { return failure(String(error && error.message || 'Could not enable YouTube protection.')); }
 }
 
+async function recordAntiAdblockResult(msg, sender) {
+  if (Object.keys(msg).length !== 2 || !['detected', 'restored', 'rollback'].includes(msg.outcome)
+      || !await messageSenderStillCurrent(sender)) return { ok: false };
+  const url = new URL(sender.url);
+  if (url.protocol !== 'https:') return { ok: false };
+  const { wardenone_config: current, unreadable } = await localGet('wardenone_config');
+  if (unreadable || !current || !antiAdblockActiveFor(current, url.hostname)) return { ok: false };
+  let paused = false;
+  if (msg.outcome === 'rollback' && !INCOGNITO_CONTEXT) {
+    await updateStoredConfig(cfg => {
+      const now = Date.now();
+      const host = normalizeAllowlistHost(url.hostname);
+      const trials = WOSiteRecovery.active(cfg.siteRecoveryUntil, now, normalizeAllowlistHost);
+      if (trials[host] || Object.keys(trials).length >= 100 || !antiAdblockActiveFor(cfg, url.hostname)) return false;
+      cfg.siteRecoveryUntil = { ...trials, [host]: { key: 'antiAdblockShield', until: now + WOSiteRecovery.DURATION_MS } };
+      paused = true;
+      return cfg;
+    });
+  }
+  const type = msg.outcome === 'rollback' ? 'warned_anti_adblock_rollback' : 'anti_adblock_' + msg.outcome;
+  queueHistory({ type, detail: { rule: 'ad-block wall', paused }, url: url.origin, at: Date.now() });
+  return { ok: true, paused };
+}
+
 async function siteRecoveryAction(msg) {
   const tabId = msg.tabId;
   if (!Number.isInteger(tabId) || tabId < 0 || !['start', 'undo', 'status'].includes(msg.action)) return { ok: false, error: 'Invalid recovery request.' };
@@ -23222,6 +24009,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     respond(enableYoutubeForSite(msg, sender), sendResponse);
     return true;
   }
+  if (msg && msg.kind === 'anti-adblock-result') {
+    respond(recordAntiAdblockResult(msg, sender), sendResponse);
+    return true;
+  }
   if (msg && msg.kind === 'domain-age' && messageSenderIsTab(sender) && !messageSenderMatchesHost(sender, msg.domain)) {
     try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
     return true;
@@ -23230,7 +24021,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
     return true;
   }
-  if (msg && /^hidden-(add|remove|list)$/.test(msg.kind || '') && messageSenderIsTab(sender)
+  if (msg && /^hidden-(add|remove|list|clear-site)$/.test(msg.kind || '') && messageSenderIsTab(sender)
       && !messageSenderMatchesHost(sender, msg.hostname)) {
     try { sendResponse({ ok: false, error: 'Not allowed from this context.' }); } catch (_) {}
     return true;
@@ -24641,14 +25432,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'adshield-cosmetic' && msg.hostname) {
     (async () => {
       try {
-        let out;
-        if (msg.playerPage === true) {
-          const store = await localGet('wardenone_config');
-          out = cosmeticForPlayerPage(msg.hostname, store && store.wardenone_config);
-        } else {
-          const mem = await getCosmeticMem();
-          out = computeCosmeticForHost(msg.hostname, mem, false) || {};
-        }
+        const mem = await getCosmeticMem();
+        const out = computeCosmeticForHost(msg.hostname, mem, msg.playerPage === true) || {};
         /* The bridge owns hand-hidden rules via content-config-get/hidden-list.
            Only user filter text and subscriptions belong to the engine's sheet;
            a second copy of hand-hidden rules would survive Zapper undo. */
@@ -25098,6 +25883,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     respond(storeTransaction(HIDDEN_STORE_KEY, () => clearHiddenElements(msg.hostname)), sendResponse);
     return true;
   }
+  if (msg && msg.kind === 'hidden-clear-site') {
+    const host = typeof msg.hostname === 'string' && normalizeAllowlistHost(msg.hostname);
+    if (!host) { sendResponse({ ok: false, error: 'Invalid site.' }); return true; }
+    respond(storeTransaction(HIDDEN_STORE_KEY, async () => {
+      if (messageSenderIsTab(sender) && (!await messageSenderStillCurrent(sender, true)
+          || normalizeAllowlistHost(new URL(sender.url).hostname) !== host)) {
+        return { ok: false, error: 'Not allowed from this context.' };
+      }
+      return clearHiddenElements(host);
+    }), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'manual-link-check-read') {
+    sendResponse(manualLinkCheckRead(msg.id, sender, false));
+    return true;
+  }
+  if (msg && msg.kind === 'manual-link-check-retry') {
+    sendResponse(manualLinkCheckRead(msg.id, sender, true));
+    return true;
+  }
   /* Chrome has no "menu about to open" event, so the page reports the right-click
      and the title is rewritten before the menu paints. This is the moment the
      title is read; every other refresh is a guess about when that will be. */
@@ -25318,7 +26123,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       try {
         const u = new URL(msg.url);
         if (!/^https?:$/.test(u.protocol)) { sendResponse({ ok: false, error: 'Open a normal web page first.' }); return; }
-        const origin = await activeTabMatchesOrigin(u.origin);
+        const match = await activeTabForOrigin(u.origin);
+        const origin = match && match.origin;
         if (!origin) { sendResponse({ ok: false, error: 'Open the site first.' }); return; }
         const items = Array.isArray(msg.items) ? msg.items.slice(0, 60) : [];
         const wanted = { local: [], session: [], cookie: [] };
@@ -25331,20 +26137,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           else if (/^cookie/i.test(where)) wanted.cookie.push(key);
         }
         let cleared = 0;
-        const tabs = await tabsQuery({ active: true, lastFocusedWindow: true });
-        const tabId = tabs && tabs[0] && tabs[0].id;
+        /* Only the tab that passed the origin check, and only while its top document is still
+           that origin: the script checks again itself, since the tab can navigate meanwhile. */
+        const tabId = match.tabId;
         if (tabId != null && (wanted.local.length || wanted.session.length)) {
           try {
             const res = await chrome.scripting.executeScript({
-              target: { tabId },
+              target: { tabId, frameIds: [0] },
               world: 'MAIN',
-              func: (localKeys, sessionKeys) => {
+              func: (expectedOrigin, localKeys, sessionKeys) => {
+                if (location.origin !== expectedOrigin) return 0;
                 let n = 0;
                 for (const k of localKeys) { try { if (localStorage.getItem(k) !== null) { localStorage.removeItem(k); n++; } } catch (_) {} }
                 for (const k of sessionKeys) { try { if (sessionStorage.getItem(k) !== null) { sessionStorage.removeItem(k); n++; } } catch (_) {} }
                 return n;
               },
-              args: [wanted.local, wanted.session],
+              args: [origin, wanted.local, wanted.session],
             });
             cleared += Number((res && res[0] && res[0].result) || 0);
           } catch (_) {}
@@ -25492,9 +26300,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
           const CORE_FILES = ['engine-compat.js', 'content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'domain-utils-isolated.js', 'idn-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'protection-event-settings.js', 'badge-controls.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
-          CORE_FILES.push('rules-grabber-resources.json', 'rules-grabber-navigation.json',
+          CORE_FILES.push('background-link-check.js', 'link-check.html', 'link-check.js', 'rules-grabber-resources.json', 'rules-grabber-navigation.json',
             'rules-grabber-malware-navigation.json', 'rules-grabber-compat.json',
-            'rules-spotify-media.json', 'spotify-silent-1s.mp4', 'popup-diagnostics.js', 'popup-scroll-memory.js',
+            'rules-spotify-media.json', 'spotify-silent-1s.mp4', 'filter-list-catalog.json',
+            'redirect-resources/noop.js', 'redirect-resources/noop.txt', 'redirect-resources/noop.css',
+            'redirect-resources/noop.json', 'redirect-resources/noop.html',
+            'redirect-resources/noop-1x1.gif', 'redirect-resources/noop-2x2.png',
+            'redirect-resources/noop-3x2.png', 'redirect-resources/noop-32x32.png',
+            'redirect-resources/noop-0.1s.mp3', 'redirect-resources/noop-0.5s.mp3',
+            'redirect-resources/noop-1s.mp4', 'redirect-resources/noop-vast2.xml',
+            'redirect-resources/noop-vast3.xml', 'redirect-resources/noop-vast4.xml',
+            'redirect-resources/noop-vmap1.xml', 'popup-diagnostics.js', 'popup-scroll-memory.js',
             'popup-first-paint.js', 'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'upgrade-config.js', 'build-update.js', 'network-policy.js',
             'tracking-redirects.js', 'tracking-redirect.html', 'tracking-redirect-page.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them
@@ -25574,15 +26390,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       // 4. blocklist rules registered; if the core blocklist/adblock bands are
       // empty, re-fetch. A learned/tracker rule alone should not make repair pass.
       try {
-        /* The first list rule and the option band, not every rule: the lists hold over a million domains. */
-        const optionIds = remoteListRuleIds().filter((id) => id >= OPTION_RULE_BASE);
-        const dyn = await chrome.declarativeNetRequest.getDynamicRules({ ruleIds: [DYNAMIC_RULE_BASE].concat(optionIds) });
-        const listMeta = await getListMeta();
-        const listed = (dyn || []).some((r) => r.id === DYNAMIC_RULE_BASE);
-        const domainRules = listed ? Number(listMeta && listMeta.activeRuleCount) || 0 : 0;
-        const optionRules = (dyn || []).filter((r) => r.id >= OPTION_RULE_BASE && r.id < OPTION_RULE_BASE + OPTION_RULES_MAX).length;
-        const hasRules = listed || optionRules > 0;
-        report.checks.push({ name: 'Block rules registered (' + domainRules + ' domain, ' + optionRules + ' option)', ok: hasRules });
+        const ruleIds = [DYNAMIC_RULE_BASE, OPTION_RULE_BASE, 600000, REDIRECT_RULE_BASE, CSP_RULE_BASE];
+        const dyn = await chrome.declarativeNetRequest.getDynamicRules({ ruleIds });
+        const hasRules = (dyn || []).length > 0;
+        report.checks.push({ name: 'Downloaded filter rules registered', ok: hasRules });
         if (!hasRules) {
           await updateRemoteLists('repair');
           report.repaired.push('Re-fetched the blocklist');

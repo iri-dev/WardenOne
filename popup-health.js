@@ -219,6 +219,13 @@ function listMetaCount(meta) {
 function listMetaActiveCount(meta) {
   return Number((meta && (meta.activeCount || meta.activeRuleCount)) || 0);
 }
+/* Enforced domains lead; the larger known total is context, not the headline. */
+function listStatusText(meta) {
+  const count = listMetaCount(meta);
+  const activeCount = listMetaActiveCount(meta);
+  if (!count) return 'Blocking ' + fmtCount(162) + ' domains (built-in)';
+  return 'Blocking ' + fmtCount(activeCount && activeCount < count ? activeCount : count) + ' domains';
+}
 function listSourceBreakdown(meta) {
   const count = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
   const total = count(meta && meta.activeCount);
@@ -277,7 +284,7 @@ function listSourceBreakdown(meta) {
   if (detailedPackaged) rows.push(...packagedRows);
   else rows.push({ name: 'Built-in lists', count: null, addedCount: packaged });
   rows.push({ name: 'Locally learned domains', count: learned, addedCount: learned });
-  return { rows, note: 'List sizes overlap. “Added” is each source’s contribution to the unique total.'
+  return { rows, note: 'Downloaded “Added” counts covered names under the first feed that listed them. Built-in contributions exclude names already assigned to a feed or an earlier built-in list. Learned entries can overlap.'
     + (detailedFeeds ? ' ' + feedRows.length + ' downloaded feeds shown.' : '')
     + (rows.some(row => row.count === null) ? ' Update the blocklist to load full list sizes.' : '') };
 }
@@ -372,17 +379,12 @@ function renderListMeta() {
     const downloadCounts = (x && x.wardenone_download_threat_meta && x.wardenone_download_threat_meta.counts) || {};
     const statusEl = $('list-status');
     const updEl = $('list-updated');
-    const count = listMetaCount(meta);
-    const activeCount = listMetaActiveCount(meta);
     renderListSources(meta);
-    if (count) {
-      // Show enforced domains first, with the larger known total as context.
-      if (activeCount && activeCount < count) {
-        statusEl.textContent = 'Blocking ' + fmtCount(activeCount) + ' domains';
-      } else {
-        statusEl.textContent = 'Blocking ' + fmtCount(count) + ' domains';
-      }
+    statusEl.textContent = listStatusText(meta);
+    if (meta?.updated) {
       let line = 'Fetched ' + fmtAgo(meta.updated);
+      const count = listMetaCount(meta);
+      const activeCount = listMetaActiveCount(meta);
       if (activeCount && activeCount < count) line += ' - ' + fmtCount(count) + ' known in feeds';
       // Surface partial feed coverage.
       const s = meta.sources;
@@ -432,7 +434,6 @@ function renderListMeta() {
       if (payloadUrls || fileHashes) line += ' - downloads: ' + fmtCount(payloadUrls) + ' malware URLs, ' + fmtCount(fileHashes) + ' file hashes';
       updEl.textContent = line;
     } else {
-      statusEl.textContent = 'Blocking ' + fmtCount(162) + ' domains (built-in)';
       updEl.textContent = 'Auto-update runs daily - tap to fetch more';
       updEl.style.color = '';
       renderListPublishers(auxMeta && auxMeta.publisherSources, x && x.wardenone_adshield_cosmetic_publishers);

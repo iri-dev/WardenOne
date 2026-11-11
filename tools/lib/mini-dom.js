@@ -28,15 +28,16 @@ function splitTop(text, sep) {
 
 function parseCompound(text) {
   const parts = [];
-  const re = /([a-zA-Z][\w-]*)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:([\^$*]?=)"([^"]*)")?\]/g;
+  const re = /(:scope|\*)|([a-zA-Z][\w-]*)|#([\w-]+)|\.([\w-]+)|\[([\w-]+)(?:([\^$*]?=)"([^"]*)")?\]/g;
   let m;
   let consumed = 0;
   while ((m = re.exec(text))) {
     consumed += m[0].length;
-    if (m[1]) parts.push({ kind: 'tag', value: m[1].toUpperCase() });
-    else if (m[2]) parts.push({ kind: 'id', value: m[2] });
-    else if (m[3]) parts.push({ kind: 'class', value: m[3] });
-    else parts.push({ kind: 'attr', name: m[4], op: m[5] || '', value: m[6] });
+    if (m[1]) parts.push(m[1] === '*' ? { kind: 'any' } : { kind: 'scope' });
+    else if (m[2]) parts.push({ kind: 'tag', value: m[2].toUpperCase() });
+    else if (m[3]) parts.push({ kind: 'id', value: m[3] });
+    else if (m[4]) parts.push({ kind: 'class', value: m[4] });
+    else parts.push({ kind: 'attr', name: m[5], op: m[6] || '', value: m[7] });
   }
   if (consumed !== text.length) throw new Error('mini-dom: unsupported selector "' + text + '"');
   return parts;
@@ -138,8 +139,12 @@ class Element {
   removeEventListener(type, fn) { this.listeners = this.listeners.filter((l) => !(l.type === type && l.fn === fn)); }
   dispatchEvent(evt) { this.listeners.filter((l) => l.type === evt.type).forEach((l) => l.fn(evt)); return true; }
   descendants(out) { out = out || []; for (const c of this.children) { out.push(c); c.descendants(out); } return out; }
-  matchesCompound(parts) {
+  get attributes() { return Object.keys(this.attrs).map((name) => ({ name, value: String(this.attrs[name]) })); }
+  /* ":scope" is how a relative argument such as ":has(> .ad)" is made queryable, so the context
+     element has to travel with the match. */
+  matchesCompound(parts, scope) {
     for (const p of parts) {
+      if (p.kind === 'scope' && this !== scope) return false;
       if (p.kind === 'tag' && this.tagName !== p.value) return false;
       if (p.kind === 'id' && this.id !== p.value) return false;
       if (p.kind === 'class' && !this.className.split(/\s+/).includes(p.value)) return false;
@@ -154,18 +159,17 @@ class Element {
     }
     return true;
   }
-  matchesChain(chain, index) {
+  matchesChain(chain, index, scope) {
     const step = chain[index];
-    if (!this.matchesCompound(step.compound)) return false;
+    if (!this.matchesCompound(step.compound, scope)) return false;
     if (index === 0) return true;
-    const prev = chain[index - 1];
-    if (step.combinator === '>') return !!(this.parentElement && this.parentElement.matchesChain(chain, index - 1));
+    if (step.combinator === '>') return !!(this.parentElement && this.parentElement.matchesChain(chain, index - 1, scope));
     let n = this.parentElement;
-    while (n) { if (n.matchesChain(chain, index - 1)) return true; n = n.parentElement; }
+    while (n) { if (n.matchesChain(chain, index - 1, scope)) return true; n = n.parentElement; }
     return false;
   }
-  matches(selector) { return splitTop(selector, ',').some((s) => { const chain = parseComplex(s); return this.matchesChain(chain, chain.length - 1); }); }
-  querySelectorAll(selector) { return this.descendants().filter((el) => el.matches(selector)); }
+  matches(selector, scope) { return splitTop(selector, ',').some((s) => { const chain = parseComplex(s); return this.matchesChain(chain, chain.length - 1, scope); }); }
+  querySelectorAll(selector) { return this.descendants().filter((el) => el.matches(selector, this)); }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   closest(selector) { let n = this; while (n && n.nodeType === 1) { if (n.matches(selector)) return n; n = n.parentElement; } return null; }
 }

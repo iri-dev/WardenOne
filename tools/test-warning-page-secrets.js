@@ -384,7 +384,7 @@ const tick = () => new Promise((r) => setTimeout(r, 30));
   const WORD = { 1: 'one', 2: 'two', 3: 'three', 4: 'four', 5: 'five', 6: 'six', 8: 'eight', 12: 'twelve', 24: 'twenty-four' };
   check('the expiry it states is the one the code applies', ttlHours > 0 && policy.indexOf('expires after ' + WORD[ttlHours] + ' hours') !== -1,
     'code says ' + ttlHours + ' hours');
-  check('it says the mirror keeps a fingerprint, not the address', /a fingerprint of the final\s+address — not the address/.test(policy));
+  check('it says the mirror keeps a fingerprint, not the address', /a fingerprint of the final\s+address, not the address itself/.test(policy));
   check('and no longer implies stripping the fragment makes an address safe', !/fragment-stripped/.test(policy));
 
   console.log('');

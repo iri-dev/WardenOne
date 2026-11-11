@@ -305,6 +305,40 @@
   border-color: var(--wo-line);
 }
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-mode:hover { background: var(--wo-control-hover); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-button {
+  background: var(--wo-control);
+  border-color: var(--wo-line-strong);
+  color: var(--wo-text);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-button:hover,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-button[aria-expanded="true"] {
+  background: var(--wo-control-hover);
+  border-color: var(--wo-brand-text);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-button:disabled {
+  background: var(--wo-surface-muted);
+  border-color: var(--wo-line);
+  color: var(--wo-text-faint);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-menu {
+  background: var(--wo-surface-raised);
+  border-color: var(--wo-line-strong);
+  box-shadow: var(--wo-shadow);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-option { color: var(--wo-text-soft); }
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-option[aria-checked="true"] {
+  background: var(--wo-control);
+  color: var(--wo-brand-text);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-option:hover,
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-option:focus-visible {
+  background: var(--wo-control-hover);
+  color: var(--wo-text);
+}
+:root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-scope-button:focus-visible {
+  outline: 2px solid var(--wo-focus);
+  outline-offset: 2px;
+}
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-value:hover,
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-value:focus,
 :root[data-wardenone-page="popup"][data-wardenone-theme-resolved="dark"] .eyeshield-value.is-editing { background: var(--wo-surface-raised); color: var(--wo-brand-text); }

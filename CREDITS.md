@@ -11,7 +11,7 @@ The extension includes offline attribution and license notices in
 
 ## YouTube ad blocking
 
-- **AdGuard Filters** — <https://github.com/AdguardTeam/AdguardFilters>
+- **AdGuard Filters**: <https://github.com/AdguardTeam/AdguardFilters>
 
   WardenOne's YouTube engine (`yt-adblock.js`) is a clean re-implementation
   based on AdGuard's publicly published YouTube filter rules (JSON player-response
@@ -23,7 +23,7 @@ The extension includes offline attribution and license notices in
 
 ## Twitch ad blocking
 
-- **TwitchAdSolutions** (pixeltris) — <https://github.com/pixeltris/TwitchAdSolutions>
+- **TwitchAdSolutions** (pixeltris): <https://github.com/pixeltris/TwitchAdSolutions>
 
   WardenOne's Twitch stream ad blocker (`twitch-adblock.js`) is a smaller, clean
   re-implementation whose clean-stream strategy is informed by the project's VAFT
@@ -35,7 +35,7 @@ The extension includes offline attribution and license notices in
   copyright © 2020–present TwitchAdSolutions Contributors. The upstream project
   was archived on 5 March 2026; the attribution and license remain applicable.
 
-- **TwitchAdBlock** (scamorza), v2.0.5 — <https://github.com/scamorza/TwitchAdBlock/tree/v2.0.5>
+- **TwitchAdBlock** (scamorza), v2.0.5: <https://github.com/scamorza/TwitchAdBlock/tree/v2.0.5>
 
   WardenOne adapts its current `mobile_feed/android` identity, ordered alternate
   session search, compatible-rendition probing, `PROGRAM-DATE-TIME`-anchored HLS
@@ -73,7 +73,7 @@ The extension includes offline attribution and license notices in
   IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-- **TTV-AB** (GosuDRM) — <https://github.com/GosuDRM/TTV-AB>
+- **TTV-AB** (GosuDRM): <https://github.com/GosuDRM/TTV-AB>
 
   WardenOne's two-second, warning-time verified-playlist handoff is informed by
   TTV-AB's fresh-backup cache and revalidation work. WardenOne independently
@@ -85,7 +85,7 @@ The extension includes offline attribution and license notices in
   requirement**. Copyright © 2025 GosuDRM. Original repository:
   <https://github.com/GosuDRM/TTV-AB>.
 
-- **uBlock Origin uAssets** — <https://github.com/uBlockOrigin/uAssets>
+- **uBlock Origin uAssets**: <https://github.com/uBlockOrigin/uAssets>
 
   WardenOne adapts uAssets' narrowly content-scoped Twitch rule for the
   "allow ads / get Turbo" player overlay so that house promotion is hidden
@@ -109,7 +109,7 @@ The extension includes offline attribution and license notices in
   uBlock Origin and uAssets are distributed under the **GNU General Public
   License v3**.
 
-- **AdGuard Base filter** (AdGuard Team) —
+- **AdGuard Base filter** (AdGuard Team):
   <https://github.com/AdguardTeam/AdguardFilters>
 
   The technique of handing Spotify's player a silent clip from inside the
@@ -126,7 +126,7 @@ The extension includes offline attribution and license notices in
 
   AdGuard filters are distributed under the **GNU General Public License v3**.
 
-- **Spotify Web Ads Remover** (tomer8007) —
+- **Spotify Web Ads Remover** (tomer8007):
   <https://github.com/tomer8007/spotify-web-ads-remover>
 
   The technique of observing Spotify Web Player state-machine responses to
@@ -142,7 +142,7 @@ The extension includes offline attribution and license notices in
 
 ## Trackers & privacy
 
-- **EasyList & EasyPrivacy** — <https://github.com/easylist/easylist> ·
+- **EasyList & EasyPrivacy**: <https://github.com/easylist/easylist> ·
   <https://easylist.to/pages/licence.html>
 
   The tracker- and privacy-blocking rules bundled as `rules-easyprivacy.json`
@@ -156,7 +156,7 @@ The extension includes offline attribution and license notices in
 
 ## Search-result copycats
 
-- **uBlock-Origin-dev-filter** (quenhus) —
+- **uBlock-Origin-dev-filter** (quenhus):
   <https://github.com/quenhus/uBlock-Origin-dev-filter> ·
   <https://github.com/quenhus/uBlock-Origin-dev-filter/blob/main/LICENSE>
 
@@ -173,7 +173,7 @@ place, and always keep a one-click way to view them.
 
 ## Unicode security data
 
-- **Unicode Security Mechanisms, UTS #39** —
+- **Unicode Security Mechanisms, UTS #39**:
   <https://www.unicode.org/reports/tr39/> ·
   <https://www.unicode.org/Public/security/latest/confusables.txt>
 
@@ -212,11 +212,11 @@ place, and always keep a one-click way to view them.
 
 ## Site identity
 
-- **Public Suffix List** (Mozilla Foundation) — <https://publicsuffix.org/> ·
+- **Public Suffix List** (Mozilla Foundation): <https://publicsuffix.org/> ·
   <https://github.com/publicsuffix/list>
 
-  The private section of the list — the shared-hosting and platform suffixes
-  (github.io, webflow.io, `*.compute.amazonaws.com` and some 3,300 more) — is
+  The private section of the list, the suffixes for shared hosting and platforms
+  (github.io, webflow.io, `*.compute.amazonaws.com` and some 3,300 more), is
   generated into `psl-private.js` by `tools/build-psl.js` and read by the
   service worker to decide which hosts belong to one owner. Two tenants of one
   platform are never one site for the token-exfiltration blocker, the
@@ -232,26 +232,26 @@ WardenOne fetches the Phishing Army and flinteger domain feeds at runtime. The
 providers below contribute to those feeds; WardenOne does not contact them
 directly for these lists or package their source data in the extension.
 
-- **URLAbuse / NetSSR** — <https://urlabuse.com/> ·
+- **URLAbuse / NetSSR**: <https://urlabuse.com/> ·
   [CC BY 4.0 terms](https://urlabuse.com/public/html/terms.html). Phishing Army
   takes recent phishing reports, extracts domains, and includes them in its
   normalized feed; WardenOne imports that feed for local blocking. Credit does
   not imply URLAbuse endorsement.
-- **Phishunt** — <https://phishunt.io/> ·
+- **Phishunt**: <https://phishunt.io/> ·
   [CC0 feed terms](https://phishunt.io/tos/). Phishing Army uses its public feed.
-- **StalkPhish** — <https://stalkphish.com/>. Thomas Damonneville confirmed by
-  email to Iris that WardenOne may use its open data through Phishing Army,
+- **StalkPhish**: <https://stalkphish.com/>. Thomas Damonneville confirmed by
+  email to iri that WardenOne may use its open data through Phishing Army,
   provided the data is not resold. WardenOne fetches the Phishing Army feed at
   runtime and does not resell StalkPhish data.
-- **UT1 blacklist** (Université Toulouse Capitole) —
+- **UT1 blacklist** (Université Toulouse Capitole):
   <https://dsi.ut-capitole.fr/blacklists/> ·
   [CC BY-SA 4.0 terms](https://dsi.ut-capitole.fr/blacklists/download/LICENSE.pdf).
   flinteger lists UT1 malware and phishing domains as inputs.
-- **Mitchell Krog** —
+- **Mitchell Krog**:
   [Badd-Boyz-Hosts](https://github.com/mitchellkrogza/Badd-Boyz-Hosts) and
   [The Big List of Hacked Malware Web Sites](https://github.com/mitchellkrogza/The-Big-List-of-Hacked-Malware-Web-Sites),
   each with an MIT notice in its repository. flinteger lists both as inputs.
-- **Hosh** — [adblock-nocoin-list](https://github.com/hoshsadiq/adblock-nocoin-list) ·
+- **Hosh**: [adblock-nocoin-list](https://github.com/hoshsadiq/adblock-nocoin-list) ·
   [MIT notice](https://github.com/hoshsadiq/adblock-nocoin-list/blob/master/LICENSE).
   flinteger lists it as an input.
 
@@ -263,7 +263,7 @@ WardenOne uses independently maintained protection lists. Their maintainers reta
 Published licenses and written permissions are separate permission grants; no personal reply is needed when the applicable license covers the use.
 The inventory records exact addresses, local processing, evidence and any specific scope exception.
 
-[43 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md)
+[44 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md)
 
 | Source | Runtime feeds | License or permission |
 | --- | --- | --- |
@@ -275,7 +275,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [malware-filter URLhaus hosts and online URLs](https://gitlab.com/malware-filter/urlhaus-filter) | 2 | MIT OR CC0-1.0 |
 | [malware-filter VN Badsite hosts](https://gitlab.com/malware-filter/vn-badsite-filter) | 1 | MIT OR CC0-1.0 |
 | [Peter Lowe ad and tracking servers](https://pgl.yoyo.org/adservers/) | 1 | Written permission (2026-10) |
-| [Phishing Army](https://phishing.army/) | 1 | Written permission (2026-10); Specific upstream/use-scope exception — see source review |
+| [Phishing Army](https://phishing.army/) | 1 | Written permission (2026-10); An open question about how this source may be used, recorded in the source review |
 | [AdAway hosts](https://github.com/AdAway/adaway.github.io) | 1 | CC-BY-3.0 |
 | [AdGuard Base, Tracking Protection and Mobile Ads filters](https://github.com/AdguardTeam/AdguardFilters) | 3 | GPL-3.0 |
 | [1Hosts Lite](https://github.com/badmojr/1Hosts) | 1 | MPL-2.0 |
@@ -283,7 +283,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [Dandelion Sprout Anti-Malware domains](https://github.com/DandelionSprout/adfilt) | 1 | LicenseRef-Dandelicence-1.4 |
 | [Discord-AntiScam / DSP Project scam-links](https://github.com/Discord-AntiScam/scam-links) | 1 | Written permission (2026-10-15) |
 | [Scam Blocklist](https://github.com/durablenapkin/scamblocklist) | 1 | MIT |
-| [dnss-blocklists malicious domains](https://github.com/flinteger/dnss-blocklists) | 1 | Written permission (2026-10-16); Specific upstream/use-scope exception — see source review |
+| [dnss-blocklists malicious domains](https://github.com/flinteger/dnss-blocklists) | 1 | Written permission (2026-10-16); An open question about how this source may be used, recorded in the source review |
 | [HaGeZi Light, Pro and Threat Intelligence Feed](https://github.com/hagezi/dns-blocklists) | 3 | GPL-3.0; Written permission (2026-10-20) |
 | [Emerging Malicious Domain Blocklist](https://github.com/manic-code/Emerging-Malicious-Domain-Blocklist) | 1 | MIT |
 | [MetaMask eth-phishing-detect](https://github.com/MetaMask/eth-phishing-detect) | 1 | LicenseRef-DBAD-1.2 |
@@ -292,6 +292,7 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [PhishDestroy Destroylist](https://github.com/phishdestroy/destroylist) | 1 | MIT |
 | [uBlock-Origin-dev-filter domains](https://github.com/quenhus/uBlock-Origin-dev-filter) | 1 | Unlicense |
 | [malicious-hash MalwareBazaar and URLhaus SHA-256 feeds](https://github.com/romainmarcoux/malicious-hash) | 2 | MIT; Written permission (2026-10-24) |
+| [oisd big](https://oisd.nl) | 1 | GPL-3.0 |
 | [StevenBlack porn-only hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND CC-BY-4.0 |
 | [StevenBlack unified hosts](https://github.com/StevenBlack/hosts) | 1 | MIT AND upstream terms |
 | [Anti-Grabify](https://github.com/TMAFE/anti-grabify) | 1 | MPL-2.0 |
@@ -348,7 +349,7 @@ Bundled and derived material:
 
 ## Installed-extension incident data
 
-- **The Great Suspender security incident record** —
+- **The Great Suspender security incident record**:
   <https://github.com/greatsuspender/thegreatsuspender/issues/1263>
 
   WardenOne's bundled `extension-reputation.json` contains a manually curated factual
@@ -359,7 +360,7 @@ Bundled and derived material:
   historical incident rather than a current malware verdict, a blanket claim that
   every unknown extension is clean, or an assumption that a display name proves identity.
 
-- **Recognized official extension identities** —
+- **Recognized official extension identities**:
   [uBlock Origin](https://github.com/gorhill/uBlock),
   [Bitwarden](https://bitwarden.com/help/getting-started-browserext/),
   [1Password](https://support.1password.com/getting-started-browser/),
@@ -383,7 +384,7 @@ Bundled and derived material:
   not `known_safe`, does not override capability risk, and does not silence a later
   version or permission change.
 
-- **Version-scoped historical extension incidents** —
+- **Version-scoped historical extension incidents**:
   [MEGA 3.39.4](https://mega.nz/blog_47),
   [Web Developer 0.4.9](https://chrispederick.com/blog/2017/08/03/web-developer-for-chrome-compromised/), and
   [Copyfish 2.8.5](https://ui.vision/blog/chrome-extension-adware/)

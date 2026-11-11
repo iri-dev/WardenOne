@@ -4,11 +4,16 @@ const assert = require('assert/strict');
 const { loadBackground } = require('./test-message-rate-limits.js');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function run() {
-  for (const incognito of [false, true]) {
-    const h = loadBackground({ incognito }); await sleep(100);
+  for (const incognito of [false, true]) for (const openPhish of [undefined, false]) {
+    const h = loadBackground({ incognito });
+    if (openPhish === false) h.chrome.storage.local._data.wardenone_config = { openPhish: false };
+    await sleep(100);
     const requests = [];
     h.ctx.fetch = async (url, options) => {
       requests.push({ url, options });
+      if (url === 'https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt') {
+        return new Response('https://phishing-fixture.example/login\n', { headers: { 'content-type': 'text/plain' } });
+      }
       assert.equal(new URL(url).hostname, 'rdap.org', 'the explicit age check has one expected initial provider');
       return new Response(JSON.stringify({ events: [{ eventAction: 'registration', eventDate: '2000-01-01T00:00:00Z' }] }),
         { headers: { 'content-type': 'application/rdap+json' } });
@@ -20,14 +25,17 @@ async function run() {
     });
     const denied = await send({ kind: 'domain-age', domain: 'www.example.org' }, tab);
     assert.equal(denied.ok, false);
-    assert.equal((await send({ kind: 'safe-browsing-check', url: tab.url, context: 'link' }, tab)).enabled, false);
-    assert.deepEqual(requests, [], 'ordinary page messages with optional providers off disclose no checked hostname');
+    assert.equal((await send({ kind: 'safe-browsing-check', url: tab.url, context: 'link' }, tab)).enabled, openPhish !== false);
+    assert.equal(requests.length, openPhish === false ? 0 : 1, 'default OpenPhish downloads only its public feed; disabled providers stay silent');
+    assert(!JSON.stringify(requests).includes('example.org') && !JSON.stringify(requests).includes('SECRET'), 'page context never leaves for a locally matched feed');
+    assert(requests.every(request => request.options.credentials === 'omit'));
+    const feedRequests = requests.length;
     const ui = { id: h.chrome.runtime.id, url: h.chrome.runtime.getURL('popup.html') };
     const age = await send({ kind: 'domain-age', domain: 'www.example.org' }, ui);
     assert.equal(age.ok, true);
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].url, 'https://rdap.org/domain/example.org');
-    assert.equal(requests[0].options.credentials, 'omit');
+    assert.equal(requests.length, feedRequests + 1);
+    assert.equal(requests.at(-1).url, 'https://rdap.org/domain/example.org');
+    assert.equal(requests.at(-1).options.credentials, 'omit');
     assert(!JSON.stringify(requests).includes('SECRET'));
     assert.equal(!!h.chrome.storage.local._data.wardenone_domain_age_cache, !incognito,
       'private domain checks cannot write the normal profile cache');

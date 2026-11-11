@@ -87,23 +87,16 @@ check('no entry is scoped to a single context any more',
 /* Offered everywhere, so the link check has to cope with a click that was not on
    a link rather than doing nothing at all. */
 check('the link check falls back to the page when there is no link',
-  /runWardenManualCheck\(info\.linkUrl \|\| info\.pageUrl \|\| \(tab && tab\.url\), tab\)/.test(BG));
+  /runWardenLinkCheck\(info, tab\)/.test(BG)
+    && /info\?\.linkUrl \|\| info\?\.frameUrl \|\| info\?\.pageUrl \|\| tab\?\.url/.test(fs.readFileSync(path.join(ROOT, 'background-link-check.js'), 'utf8')));
 check('each entry is wired to a handler',
-  /WO_MENU_LINK\)/.test(BG) && /runWardenManualCheck\(info\.linkUrl/.test(BG)
+  /WO_MENU_LINK\)/.test(BG) && /runWardenLinkCheck\(info, tab\)/.test(BG)
     && /runWardenManualCheck\(info\.selectionText/.test(BG)
-    && /WO_MENU_FRAME\) \{ void describeWardenFrame\(info/.test(BG));
+    && /WO_MENU_FRAME\) \{ await describeWardenFrame\(info/.test(BG));
 
-/* ---- the answer has to be somewhere the reader looks -------------------- *
- * A Chrome system notification was the first attempt and it is the wrong
- * channel: on Windows those are routinely swallowed by focus assist, so the
- * check appeared to do nothing at all. The answer is WardenOne's own toast now,
- * raised through the same wo-event every other notice uses -- which also means
- * the Notification Centre governs its timing and it lands in history. */
-/* Handed to the bridge, which signs it: the engine's toast believes only signed events, because
-   a page can dispatch on the same bus (tools/test-main-world-key-isolation.js). */
-check('the answer is raised as a WardenOne toast',
-  /window\.__wardenOneLocalNotice\('detected_manual_check'/.test(BG)
-    && /new CustomEvent\('wo-event'/.test(fs.readFileSync(path.join(ROOT, 'bridge.js'), 'utf8')));
+check('requested results render independently of the page engine',
+  /func: renderWardenManualNotice/.test(BG)
+    && /host\.attachShadow\(\{ mode: 'closed' \}\)/.test(BG));
 check('the toast type exists in the engine, or showToast drops it',
   /detected_manual_check:\{/.test(fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8')));
 check('the tray is kept only as the fallback',
@@ -145,7 +138,7 @@ check('the tray is kept only as the fallback',
  * This branch used to admit it had no lookup. AbuseIPDB was already wired in for
  * page loads, so the work was routing, not a new provider. */
 check('an IP goes to the provider that already exists',
-  /const verdict = await abuseIpDbLookupIp\(ip\);/.test(BG));
+  /manualLinkWithin\(\(\) => abuseIpDbLookupIp\(ip\)/.test(BG));
 /* normalizeIpLiteral is the engine's own filter and rejects every private and
    reserved range. The regex that used to be here missed CGNAT, the TEST-NETs and
    multicast, and sending one of those spends a request to be told what we knew. */
@@ -189,7 +182,7 @@ check('the noun matches what was right-clicked',
 /* One set of questions, asked the same way by both checks. Two copies would
    drift the moment one of them gained a provider. */
 check('the media and link checks share one findings helper',
-  /async function wardenHostFindings\(host, url, cfg\)/.test(BG)
+  /async function wardenHostFindings\(host, url, cfg, onProgress\)/.test(BG)
     && (BG.match(/wardenHostFindings\(/g) || []).length >= 3);
 
 /* ---- block / unblock the current site ----------------------------------- *
@@ -241,9 +234,9 @@ check('the host comes from the sender tab, never from the message',
  * entry's refresh and the same toast channel, and each one is a place the same
  * mistakes could come back. */
 check('each tab action is wired to a handler',
-  /WO_MENU_SLEEP_TAB\) \{ void runWardenTabSleep\(tab\)/.test(BG)
-    && /WO_MENU_NEVER_SLEEP\) \{ void toggleWardenNeverSleep\(tab, info\)/.test(BG)
-    && /WO_MENU_CLOSE_TAB\) \{ void runWardenTabClose\(tab\)/.test(BG));
+  /WO_MENU_SLEEP_TAB\) \{ await runWardenTabSleep\(tab\)/.test(BG)
+    && /WO_MENU_NEVER_SLEEP\) \{ await toggleWardenNeverSleep\(tab, info\)/.test(BG)
+    && /WO_MENU_CLOSE_TAB\) \{ await runWardenTabClose\(tab\)/.test(BG));
 /* Never-sleep is per HOST. wardenSiteHostFromTab answers with the registrable
    domain, which is right for blocking a site and wrong here -- handing it to this
    entry would widen "keep my mail awake" to every Google property at once. */
@@ -284,7 +277,7 @@ check('and it admits when the shield that would have slept it is switched off',
   'a setting with no current effect has to say so');
 /* onClicked can arrive at a worker the click itself woke, with no tab attached. */
 check('a click with no tab falls back to the tab you are looking at',
-  /async function wardenMenuTargetTab\(tab\)[\s\S]{0,200}return await wardenTabActionNoticeTarget\(\);/.test(BG));
+  /async function wardenMenuTargetTab\(tab\)[\s\S]{0,300}return await wardenTabActionNoticeTarget\(\);/.test(BG));
 
 /* Media compatibility must preserve both explicit and learned security blocks. */
 {
@@ -418,13 +411,16 @@ function runtime() {
   const notices = [];
   const session = {};
   const tabs = new Map();
-  const region = kindSrc
+  const linkSource = fs.readFileSync(path.join(ROOT, 'background-link-check.js'), 'utf8');
+  const region = linkSource.slice(linkSource.indexOf('function manualLinkWithin('), linkSource.indexOf('function manualLinkSummary('))
+    + kindSrc
     /* "async function", not "function" -- slicing from the shorter string starts
        after the async keyword and produces a body with a bare await in it. */
-    + BG.slice(BG.indexOf('async function wardenManualNotice('),
+    + BG.slice(BG.indexOf('function renderWardenManualNotice('),
       BG.indexOf(NL + 'function startElementTool(tab, frameId) {'));
   const sandbox = {
-    URL, Set, Object, Array, Number, String, Math, Date, JSON, console, Boolean,
+    URL, Set, Object, Array, Number, String, Math, Date, JSON, console, Boolean, setTimeout, clearTimeout,
+    MANUAL_LINK_CHECK_TIMEOUT_MS: 30000,
     crypto: webcrypto,
     reputationCacheKey: async (url) => String(url),
     MALWARE_HASHES: new Set(['e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
@@ -453,7 +449,7 @@ function runtime() {
       } },
       scripting: {
         executeScript: async (opts) => {
-          notices.push({ via: 'toast', message: String((opts.args || [])[0] || ''), type: 'manual_check' });
+          notices.push({ via: 'toast', title: String((opts.args || [])[0] || ''), message: String((opts.args || [])[1] || ''), type: 'manual_check' });
           /* What the injected script returns when the bridge signed and raised the notice. */
           return [{ result: true }];
         },
@@ -465,6 +461,7 @@ function runtime() {
     },
     urlReputationConfig: async () => ({ enabled: true }),
     normalizeSafeBrowsingUrl: (u) => u,
+    reputationQueryUrl: (u) => u,
     urlReputationLookupUrl: async (url) => ({ ok: true, hit: /paypa1/.test(url), provider: 'Test provider' }),
     lookupDomainAge: async (host) => (host === 'brand-new.example'
       ? { ok: true, ageDays: 4 } : { ok: true, ageDays: 4000 }),
@@ -493,7 +490,7 @@ function runtime() {
         + JSON.stringify(current) + ')', sandbox);
     },
     frame: (frameUrl, pageUrl) => vm.runInContext('describeWardenFrame('
-      + JSON.stringify({ frameUrl }) + ',' + JSON.stringify({ id: 1, url: pageUrl }) + ')', sandbox),
+      + JSON.stringify({ frameUrl, frameId: 1 }) + ',' + JSON.stringify({ id: 1, url: pageUrl }) + ')', sandbox),
   };
 }
 
@@ -551,8 +548,9 @@ function runtime() {
     /only keeps SHA-256/.test((last() || {}).message || ''), JSON.stringify(last()));
 
   await r.ask('have a look at this');
-  check('prose is refused clearly',
-    /not a link, domain, IP address or file hash/.test((last() || {}).message || ''), JSON.stringify(last()));
+  check('prose receives a text security assessment',
+    /No common scam instructions/.test((last() || {}).message || '')
+      && /not sent to an external service/.test((last() || {}).message || ''), JSON.stringify(last()));
 
   await r.frame('https://ads.weird.xyz/f', 'https://news.example/story');
   check('a third-party frame names its real origin',
@@ -563,10 +561,10 @@ function runtime() {
   check('a same-site frame says so plainly',
     /belongs to the site you are on/.test((last() || {}).message || ''), JSON.stringify(last()));
 
-  /* Every branch answers. A check that goes quiet when it finds nothing is
-     indistinguishable from one that never ran. */
-  check('every question got exactly one answer', r.notices.length === 14,
-    r.notices.length + ' answers for 14 questions');
+  check('network lookups show progress before their answer',
+    r.notices.filter(n => /^Checking /.test(n.title)).length >= 6);
+  check('every question gets a final answer',
+    r.notices.filter(n => !/^Checking /.test(n.title)).length === 14);
   check('every answer is filed under the category that governs it',
     r.notices.every((n) => n.type === 'manual_check'));
   /* The toast is the answer, not the tray. If these start coming back as "tray"
@@ -579,7 +577,7 @@ function runtime() {
   const noTab = runtime();
   await noTab.ask('example.com', { id: 1, url: 'chrome://extensions' });
   check('a page that refuses injection still gets an answer',
-    noTab.notices.length === 1 && noTab.notices[0].via === 'tray',
+    noTab.notices.length >= 1 && noTab.notices.every(n => n.via === 'tray'),
     JSON.stringify(noTab.notices));
 
   /* ---- blocking a site actually blocks it -------------------------------- *
@@ -670,7 +668,7 @@ function runtime() {
 
     let r = build();
     await r.toggle({ id: 1, url: 'https://www.youtube.com/' }, { pageUrl: 'https://www.youtube.com/' });
-    check('blocking a site you are on records the block', blocked(r), r.notices[0]);
+    check('blocking a site you are on records the block', blocked(r), r.notices.at(-1));
 
     r = build();
     await r.toggle({ id: 1 }, { pageUrl: 'https://www.youtube.com/' });
@@ -679,7 +677,7 @@ function runtime() {
 
     r = build();
     await r.toggle(null, { pageUrl: 'https://www.youtube.com/feed/subscriptions' });
-    check('and when there is no tab object at all', blocked(r), r.notices[0]);
+    check('and when there is no tab object at all', blocked(r), r.notices.at(-1));
 
     /* The sandbox below stubs applyLearnedRules, so the shipped function's own
        contract is checked here: it has to hand its outcome back rather than
@@ -837,7 +835,7 @@ function runtime() {
     check('an entry that said "Block" re-asserts, never unblocks',
       !!r.sb.LEARNED['youtube.com'], 'this is the loop the reader was stuck in');
     check('and it says which state they are actually in',
-      /Already blocked/.test(r.notices[0] || ''), r.notices[0]);
+      /Already blocked/.test(r.notices.at(-1) || ''), r.notices.at(-1));
 
     r = build();
     await r.toggle(YT, YTI);
@@ -850,7 +848,7 @@ function runtime() {
     r.sb.LEARNED['youtube.com'] = { hits: 1, userBlocked: true };
     await r.toggle(YT, YTI);
     check('an entry that read "Unblock" unblocks',
-      !r.sb.LEARNED['youtube.com'], r.notices[0]);
+      !r.sb.LEARNED['youtube.com'], r.notices.at(-1));
 
     /* THE error page: worker evicted, so the in-memory offer is gone and the
        durable one may be too, but the site is plainly blocked. It must unblock
@@ -878,31 +876,31 @@ function runtime() {
     r = build({ applyFails: true, ruleLands: false });
     await r.toggle({ id: 1, url: 'https://www.youtube.com/' }, { pageUrl: 'https://www.youtube.com/' });
     check('a rule Chrome refused is reported, not announced as a block',
-      /Could not block youtube\.com/.test(r.notices[0] || '')
-        && /rule budget exceeded/.test(r.notices[0] || ''), r.notices[0]);
+      /Could not block youtube\.com/.test(r.notices.at(-1) || '')
+        && /rule budget exceeded/.test(r.notices.at(-1) || ''), r.notices.at(-1));
     check('and it does not reload a tab it has not blocked', !r.reloaded());
 
     r = build({ ruleLands: false });
     await r.toggle({ id: 1, url: 'https://www.youtube.com/' }, { pageUrl: 'https://www.youtube.com/' });
     check('a rule that wrote cleanly but is not live is caught too',
-      /NOT blocking yet/.test(r.notices[0] || ''), r.notices[0]);
+      /NOT blocking yet/.test(r.notices.at(-1) || ''), r.notices.at(-1));
 
     r = build();
     await r.toggle({ id: 1, url: 'https://www.youtube.com/' }, { pageUrl: 'https://www.youtube.com/' });
     check('and a rule that really is live is announced and reloaded',
-      /Blocked\. Reloading now/.test(r.notices[0] || '') && r.reloaded(), r.notices[0]);
+      /Blocked\. Reloading now/.test(r.notices.at(-1) || '') && r.reloaded(), r.notices.at(-1));
 
     r = build();
     await r.toggle({ id: 1, url: 'chrome://extensions' }, { pageUrl: 'chrome://extensions' });
     check('a page that really is not a site is still refused', !blocked(r));
     check('and the refusal names what it looked at',
-      /It saw: chrome:\/\/extensions/.test(r.notices[0] || ''),
-      'a refusal that describes nothing cost a round of guessing: ' + r.notices[0]);
+      /It saw: chrome:\/\/extensions/.test(r.notices.at(-1) || ''),
+      'a refusal that describes nothing cost a round of guessing: ' + r.notices.at(-1));
 
     r = build();
     await r.toggle({ id: 1 }, {});
     check('with nothing readable it says so plainly',
-      !blocked(r) && /no address for this page/.test(r.notices[0] || ''), r.notices[0]);
+      !blocked(r) && /no address for this page/.test(r.notices.at(-1) || ''), r.notices.at(-1));
   }
 
   /* Anything that had to await a shipped async helper. */

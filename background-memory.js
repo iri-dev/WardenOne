@@ -835,7 +835,6 @@ async function tabWorkInProgressReason(tab, cfg) {
   // could have seen.
   if (!/^https?:\/\//i.test(String(tab.url || tab.pendingUrl || ''))) return '';
   const live = await tabLiveState(tab.id);
-  if (!live.ok) return '';
   // Unconditional: there is no switch that means "close my video call for me".
   if (live.mediaActive) return 'this tab is using your camera or microphone';
   // This one follows the reader's own setting, because that switch is exactly the

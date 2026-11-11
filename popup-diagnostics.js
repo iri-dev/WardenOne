@@ -24,6 +24,7 @@ function diagnosticDate(value) {
 function buildDiagnosticsReport({ health, config, dnr, verification, browser, version, build, now }) {
   const h = health && health.ok === true ? health : null;
   const list = h && h.list || {};
+  const coverage = list.feedCoverage || {};
   const sources = list.sources || {};
   const publisher = list.publisher || {};
   const overrides = config && config.siteOverrides && typeof config.siteOverrides === 'object'
@@ -48,12 +49,16 @@ function buildDiagnosticsReport({ health, config, dnr, verification, browser, ve
     'Build commit: ' + (commit || 'Unavailable'),
     'Browser: ' + browserLabel,
     'Protection health: ' + level,
-    'Protections active: ' + (h ? diagnosticNumber(h.configuredShields) : 'Unknown')
+    'Protections enabled in settings: ' + (h ? diagnosticNumber(h.configuredShields) : 'Unknown')
       + '/' + (h ? diagnosticNumber(h.totalShields) : 'Unknown'),
     'Current page engine: ' + tabState,
     'Failed modules: ' + (h ? diagnosticNumber(h.componentFailures) : 'Unknown'),
-    'Rules loaded: ' + (h ? diagnosticNumber(list.active) : 'Unknown'),
-    'Dynamic DNR rules: ' + diagnosticNumber(dnr && dnr.dynamic),
+    'Feed hostnames covered at last refresh: ' + diagnosticNumber(coverage.coveredDomains),
+    'Hostnames in downloaded domain rules: ' + diagnosticNumber(coverage.installedHostEntries),
+    'Downloaded domain rules: ' + diagnosticNumber(coverage.installedDomainRules),
+    'Downloaded URL filter rules: ' + diagnosticNumber(coverage.installedOptionRules),
+    'Downloaded replacement rules: ' + diagnosticNumber(coverage.installedRedirectRules),
+    'Downloaded content policy rules: ' + diagnosticNumber(coverage.installedCspRules),
     'Session DNR rules: ' + diagnosticNumber(dnr && dnr.session),
     'Enabled static rulesets: ' + diagnosticNumber(dnr && dnr.staticSets),
     'Lists current: ' + diagnosticNumber(sources.succeeded)
@@ -95,10 +100,9 @@ function diagnosticChromeCall(fn) {
 async function prepareDiagnostics() {
   const tabs = await diagnosticChromeCall((done) => chrome.tabs.query({ active: true, currentWindow: true }, done));
   const tabId = tabs && tabs[0] && Number.isInteger(tabs[0].id) ? tabs[0].id : -1;
-  const [health, saved, dynamic, session, staticSets, browser] = await Promise.all([
+  const [health, saved, session, staticSets, browser] = await Promise.all([
     diagnosticChromeCall((done) => chrome.runtime.sendMessage({ kind: 'protection-health', tabId }, done)),
     diagnosticChromeCall((done) => chrome.storage.local.get(['wardenone_config', 'wardenone_last_verification'], done)),
-    diagnosticChromeCall((done) => chrome.declarativeNetRequest.getDynamicRules(done)),
     diagnosticChromeCall((done) => chrome.declarativeNetRequest.getSessionRules(done)),
     diagnosticChromeCall((done) => chrome.declarativeNetRequest.getEnabledRulesets(done)),
     diagnosticBrowser(navigator),
@@ -108,8 +112,7 @@ async function prepareDiagnostics() {
     health,
     config: saved && saved.wardenone_config,
     verification: saved && saved.wardenone_last_verification,
-    dnr: { dynamic: Array.isArray(dynamic) ? dynamic.length : null,
-      session: Array.isArray(session) ? session.length : null,
+    dnr: { session: Array.isArray(session) ? session.length : null,
       staticSets: Array.isArray(staticSets) ? staticSets.length : null },
     browser, version: manifest.version,
     build: typeof woSourceCommit === 'function' ? woSourceCommit() : '', now: Date.now(),

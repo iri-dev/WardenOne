@@ -147,6 +147,7 @@ function convertLine(line, stats) {
   const condition = { urlFilter: pattern };
   if (opts && opts.matchCase) condition.isUrlFilterCaseSensitive = true;
   if (opts && opts.domainType) condition.domainType = opts.domainType;
+  if (!exception && pattern === '/assets/ads/*' && !condition.domainType) condition.domainType = 'thirdParty';
   if (opts && opts.domains.length) condition.initiatorDomains = opts.domains;
   if (opts && opts.excludedDomains.length) condition.excludedInitiatorDomains = opts.excludedDomains;
 

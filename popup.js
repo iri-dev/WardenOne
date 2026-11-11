@@ -35,6 +35,7 @@ function syncConfigCheckboxes(key, checked) {
 }
 
 const KEYS = [
+  'antiAdblockShield',
   'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'blockPopupTricks', 'backTrapGuard', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'detectRedirectChains', 'blockMetaRefresh',
   'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'blockSuspiciousWebRTC', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine', 'twitchAdBlock', 'twitchSteadyPlayback', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'blockCnameTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'forcedDownloadProtection', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
   'mediaShield', 'fullscreenGuard', 'fakeWindowGuard', 'notificationAbuseGuard', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation', 'blockAutoplayMedia',
@@ -50,9 +51,10 @@ const KEYS = [
 const DEFAULTS = {
   historyMode: 'normal',
   enabled: true,
+  antiAdblockShield: true,
   blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true, backTrapGuard: true, clearCookiesOnLeave: false, clearServiceWorkersOnLeave: false, blockMetaRefresh: true,
   detectRedirectChains: true, warnGrabberDomains: true, blockGrabberResources: true,
-  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: false, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchSteadyPlayback: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, blockCnameTrackers: true, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, forcedDownloadProtection: false, __forcedDownloadOptInV1: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: false, phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
+  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: true, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchSteadyPlayback: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, blockCnameTrackers: true, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, forcedDownloadProtection: false, __forcedDownloadOptInV1: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: true, phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
   mediaShield: true, fullscreenGuard: true, fakeWindowGuard: true, notificationAbuseGuard: true, blockCameraMic: true, blockScreenCapture: true, blockGeolocation: true, blockAutoplayMedia: true, blockSuspiciousWebRTC: false,
   eyeShield: false, eyeShieldMode: 'off', eyeShieldBrightness: 100, eyeShieldBrightnessByHost: {},
   eyeShieldContrast: 100, eyeShieldContrastByHost: {}, eyeShieldSaturation: 100, eyeShieldSaturationByHost: {},
@@ -67,8 +69,8 @@ const DEFAULTS = {
   tabLimitGuard: false, tabLimitMax: 20, tabLimitClose: false, tabLimitMinIdleMinutes: 30, tabLimitWarn: true,
   blockAutoplay: false, throttleBackgroundTabs: false, killPrefetch: false, lazyLoadMedia: false, disableYouTubeAmbientMode: false, stopAnimatedVideoPreviews: false, pauseAnimatedImages: false,
   webglSaverMode: 'off', webglSaverBlockHosts: [], webglSaverAllowHosts: [],
-  deAmp: false, clientHintProtection: true, capReferrer: false, trackerCacheProtection: false, autoRejectConsent: true, removeConsentWalls: false, mailTrackingShield: true,
-  trackerLearner: true, trackerLearnerAuto: false, unshimLinks: true, cleanCopyLinks: true, socialWidgetGuard: true, blockSupercookies: true,
+  deAmp: false, clientHintProtection: true, capReferrer: false, trackerCacheProtection: true, autoRejectConsent: true, removeConsentWalls: false, mailTrackingShield: true,
+  trackerLearner: true, trackerLearnerAuto: true, unshimLinks: true, cleanCopyLinks: true, socialWidgetGuard: true, blockSupercookies: true,
   forgetMeMode: 'off', forgetMeList: [], forgetMeHistory: false, forgetMeAllConfirmedAt: 0,
   oneOpenPerGesture: true, stripTrackingParams: true, gestureWindowMs: 2400, allowlist: [],
   // host -> epoch ms at which its allowlisting lapses. Lets "allow this site" be
@@ -118,7 +120,7 @@ const SITE_OVERRIDE_SCOPE = {
     'blockGeolocation', 'silentMode', 'capReferrer', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
     'trackerLearner', 'unshimLinks', 'stripTrackingParams',
   ],
-  coordinated: ['blockForcedPopups', 'strictPopupShield', 'blockThirdPartyCookies', 'forcedDownloadProtection', 'sendPrivacySignals'],
+  coordinated: ['blockForcedPopups', 'strictPopupShield', 'blockThirdPartyCookies', 'forcedDownloadProtection', 'sendPrivacySignals', 'antiAdblockShield'],
   network: ['blockCnameTrackers'],
 };
 const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVERRIDE_SCOPE.mixed, SITE_OVERRIDE_SCOPE.coordinated, SITE_OVERRIDE_SCOPE.network));
@@ -1403,20 +1405,24 @@ function paintSiteOverrideIndicators(host) {
   const entry = siteOverridesFor(host);
   const youtube = /(^|\.)youtube(-nocookie)?\.com$/i.test(host || '');
   const keys = new Set(Object.keys(entry || {}));
-  if (youtube) keys.add('scriptletEngine');
+  /* The YouTube row says something only when the engine is off for the site, which is the one
+     case there is anything to do about. It used to print "On for youtube.com" with an
+     "Apply & reload" button while the engine was already running, which reads as a fault
+     report on a working protection. */
+  const youtubeOff = youtube && (config.scriptletEngine === false || entry?.scriptletEngine === false);
+  if (youtubeOff) keys.add('scriptletEngine');
   for (const key of keys) {
-    if ((!entry || entry[key] !== false) && !(youtube && key === 'scriptletEngine') || !SITE_OVERRIDE_KEYS.has(key)) continue;
+    if ((!entry || entry[key] !== false) && !(youtubeOff && key === 'scriptletEngine') || !SITE_OVERRIDE_KEYS.has(key)) continue;
     document.querySelectorAll('input[data-key="' + key + '"]').forEach(input => {
       const row = input.closest('.row');
       const content = row && row.querySelector('.name')?.parentElement;
       if (!content) return;
       const line = document.createElement('div'); line.className = 'site-override-state desc';
-      const yt = youtube && key === 'scriptletEngine';
-      const off = config[key] === false || entry?.[key] === false;
-      line.appendChild(document.createTextNode(yt ? (off ? 'Off for ' : 'On for ') + host + '. ' : 'Off on ' + host + '. '));
+      const yt = youtubeOff && key === 'scriptletEngine';
+      line.appendChild(document.createTextNode(yt ? 'Off for ' + host + '. ' : 'Off on ' + host + '. '));
       const restore = document.createElement('button'); restore.type = 'button'; restore.className = 'btn';
       restore.style.cssText = 'padding:2px 6px;font-size:10px;margin-left:3px;';
-      restore.textContent = yt ? (off ? 'Turn on & reload' : 'Apply & reload') : 'Restore here';
+      restore.textContent = yt ? 'Turn on & reload' : 'Restore here';
       restore.addEventListener('click', () => { restore.disabled = true; if (yt) enableYoutubeFromPopup(); else setSiteOverride(host, key, true); });
       line.appendChild(restore); content.appendChild(line);
     });
@@ -3055,17 +3061,15 @@ $('update-now').addEventListener('click', () => {
     }
 
     const meta = result && (result.meta || (result.count ? result : null));
-    const count = listMetaCount(meta);
-    const activeCount = listMetaActiveCount(meta);
     renderListSources(meta);
-    const blocking = (activeCount && activeCount < count) ? activeCount : count;
-    if (count) $('list-status').textContent = 'Blocking ' + fmtCount(blocking) + ' domains';
-    if (result && result.ok && count) {
+    if (meta) $('list-status').textContent = listStatusText(meta);
+    if (result && result.ok && meta) {
       updEl.textContent = '';
       const span = document.createElement('span');
       span.className = 'saved';
-      span.textContent = 'Fetched - blocking ' + fmtCount(blocking) + ' domains';
+      span.textContent = 'Fetched - ' + listStatusText(meta).replace(/^Blocking/, 'blocking');
       updEl.appendChild(span);
+      const count = listMetaCount(meta), activeCount = listMetaActiveCount(meta);
       if (activeCount && activeCount < count) updEl.appendChild(document.createTextNode(' - ' + fmtCount(count) + ' known in feeds'));
       const activeAdShield = Number(meta.activeDomainRuleCounts && meta.activeDomainRuleCounts.adshield);
       if (activeAdShield) updEl.appendChild(document.createTextNode(' - AdShield ' + fmtCount(activeAdShield)));
@@ -3075,8 +3079,8 @@ $('update-now').addEventListener('click', () => {
       if (auxTotal) updEl.appendChild(document.createTextNode(' - page lists +' + fmtCount(auxTotal)));
     } else if (result && result.skipped) {
       updEl.textContent = 'Auto-update is off. Turn it on to fetch remote lists.';
-    } else if (count) {
-      updEl.textContent = 'Kept existing blocklist (blocking ' + fmtCount(blocking) + ' domains).';
+    } else if (meta?.updated) {
+      updEl.textContent = 'Kept existing blocklist (' + listStatusText(meta).replace(/^Blocking/, 'blocking') + ').';
     } else {
       updEl.textContent = (result && result.error) ? result.error + ' (built-in rules still active)' : 'No new list reachable (built-in rules still active)';
     }
@@ -5937,6 +5941,8 @@ const SITE_DASH_EVENT_LABELS = {
   google_search_cleanup: 'Hid search clutter',
   scriptlet_mutator_blocked: 'Stopped a script setting a cookie',
   youtube_ads_removed: 'Removed ad breaks from YouTube’s player',
+  anti_adblock_restored: 'Cleared an ad blocker warning',
+  warned_anti_adblock_rollback: 'Put an ad blocker warning back: the page was empty behind it',
   purged_bounce_storage: 'Cleared a redirect tracker’s leftovers',
   cleaned_site_cookies: 'Cleared cookies after you left',
   cleaned_site_storage: 'Cleared tracking IDs as you left',

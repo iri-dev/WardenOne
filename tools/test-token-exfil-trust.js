@@ -82,6 +82,11 @@ const familyDestinations = [
   ['auth.nflxso.net', 'assets.nflximg.net'],
   ['x.com', 'pbs.twimg.com'],
   ['twitter.com', 't.co'],
+  ['www.tiktok.com', 'libraweb16-normal-useastred.tiktokw.eu'],
+  ['www.tiktok.com', 'mcs16-normal-useastred.tiktokw.eu'],
+  ['www.tiktok.com', 'mon16-normal-useastred.tiktokv.eu'],
+  ['www.tiktok.com', 'mcs-va.tiktokv.com'],
+  ['www.tiktok.com', 'mon.tiktokv.com'],
   ['discord.com', 'cdn.discordapp.net'],
   ['discordapp.com', 'discord.gg'],
   /* The originally reported case, kept as a regression even though it is now
@@ -125,6 +130,7 @@ const sessionPages = [
   'www.twitch.tv',
   'x.com',
   'twitter.com',
+  'www.tiktok.com',
   'discord.com',
   'discordapp.com',
   'app.slack.com',
@@ -147,6 +153,13 @@ for (const page of sessionPages) {
     `${page} must not receive a blanket foreign-destination exemption`,
   );
 }
+
+for (const [page, destination] of [
+  ['unrelated.example', 'mon.tiktokv.com'],
+  ['tiktok.com.attacker.example', 'mon.tiktokv.com'],
+  ['www.tiktok.com', 'mon.tiktokv.com.attacker.example'],
+  ['www.tiktok.com', 'tiktokw.eu.attacker.example'],
+]) assert.strictEqual(isTrustedDestination(page, destination), false, 'TikTok service trust must stay within the verified family');
 
 assert.strictEqual(
   isTrustedDestination('app.slack.com', 's3-alpha.figmausercontent.com'),

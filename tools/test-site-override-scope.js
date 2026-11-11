@@ -65,8 +65,17 @@ collect(pageReads, read('cryptominer-detect.js'), /\bo\.([A-Za-z0-9_]+)/g);
 collect(pageReads, BRIDGE, /\bbridgeConfig\.([A-Za-z0-9_]+)/g);
 collect(pageReads, BRIDGE, /\bclean\.([A-Za-z0-9_]+)/g);
 for (const f of ['yt-adblock.js', 'twitch-adblock.js', 'spotify-adblock.js', 'eyeshield.js', 'consent-reject.js', 'consent-wall.js',
-  'mail-shield.js', 'search-junk.js', 'twitch-rewind.js', 'twitch-vod-rewind.js', 'oauth-guard.js']) {
+  'mail-shield.js', 'search-junk.js', 'twitch-rewind.js', 'twitch-vod-rewind.js', 'oauth-guard.js',
+  'anti-adblock-shield.js']) {
   try { collect(pageReads, read(f), /\b(?:cfg|config|overrides|o|c|settings)\.([A-Za-z0-9_]+)/g); } catch (_) {}
+}
+const worker = read('background.js');
+/* The worker only decides whether the shield is registered at all; the per-site answer is the
+   page script's, which is why it is in the page-script list above. */
+const antiAdblockInjection = grabFn(worker, 'reconcileAntiAdblockShieldInjection');
+if (!antiAdblockInjection.includes('antiAdblockShieldOn(cfg)')
+    || !antiAdblockInjection.includes("js: ['anti-adblock-shield.js']")) {
+  throw new Error('the Anti-Adblock Shield injection no longer reads its switch');
 }
 for (const f of ['background.js', 'background-cname.js', 'background-downloads.js', 'background-startup.js', 'background-memory.js', 'background-extension-watch.js']) {
   try {
@@ -89,7 +98,7 @@ check('every page-resolved key has a page reader and no worker enforcement', pag
 const mixedWrong = [...MIXED].filter((k) => !pageReads.has(k) || !workerReads.has(k));
 check('every mixed key is read by a page-side script and by the worker', mixedWrong.length === 0, mixedWrong.join(', '));
 const coordinatedWrong = [...COORDINATED].filter((k) => !pageReads.has(k) || !workerReads.has(k));
-check('every coordinated key is read by a page-side script and by the worker', coordinatedWrong.length === 0, coordinatedWrong.join(', '));
+check('every coordinated key controls page behavior through a worker owner', coordinatedWrong.length === 0, coordinatedWrong.join(', '));
 const networkWrong = [...NETWORK].filter((key) => pageReads.has(key) || !workerEnforcementReads.has(key));
 check('every network key has a worker owner and no page reader', networkWrong.length === 0, networkWrong.join(', '));
 check('CNAME protection has its own network exception', NETWORK.has('blockCnameTrackers'));
@@ -170,8 +179,7 @@ check('Download Shield and Memory Shield are not offered', ['downloadDomainAge',
   let enables = 0; ctx.enableYoutubeFromPopup = () => { enables++; };
   ctx.config.scriptletEngine = true;
   ctx.api.paint('youtube.com');
-  check('YouTube always offers its on state and apply action', notices[0].children[0].textContent === 'On for youtube.com. '
-    && buttons[buttons.length - 1].textContent === 'Apply & reload');
+  check('an on YouTube engine is left to get on with it', notices.length === 0);
   ctx.config.siteOverrides['youtube.com'] = { scriptletEngine: false };
   ctx.api.paint('youtube.com');
   check('the global switch explains a local YouTube pause', input.checked && notices[0].children[0].textContent === 'Off for youtube.com. '

@@ -250,7 +250,7 @@ section('the worker source', () => {
   const alarm = between(BG, "if (alarm && alarm.name === 'wardenone-memory-sweep') {", 'getMemoryConfig()', 'the sweep alarm branch');
   check('the sweep alarm does nothing without the module', /if \(!MODULE_LOADED\.memory\) return;/.test(alarm));
   for (const name of ['runWardenTabSleep', 'runWardenTabClose', 'toggleWardenNeverSleep', 'refreshWardenNeverSleepMenuTitle']) {
-    check(name + ' returns before touching the module when it is absent', /^\s*if \(!MODULE_LOADED\.memory\) return;/m.test(grabFn(BG, name).split('\n').slice(1, 3).join('\n')), grabFn(BG, name).split('\n').slice(0, 3));
+    check(name + ' stops before touching an absent module', /^\s*if \(!MODULE_LOADED\.memory\) (?:return;|throw new Error\()/m.test(grabFn(BG, name).split('\n').slice(1, 3).join('\n')), grabFn(BG, name).split('\n').slice(0, 3));
   }
   const settings = between(BG, 'if (MODULE_LOADED.memory && n.tabLimitGuard', 'reconcileMemorySweepAlarm();', 'the settings guards');
   check('settings changes reach the module only when it loaded', /MODULE_LOADED\.memory && \(o\.memoryShield !== n\.memoryShield/.test(settings));

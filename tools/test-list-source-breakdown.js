@@ -121,4 +121,20 @@ result = worker.buildListMeta({ remoteCount: 20, activeRuleCount: 18, packagedDo
 assert.equal(result.activeCount, 22);
 assert.equal(result.activeLearnedCount, 2);
 assert.deepEqual(Array.from(result.activePackagedRulesets), ['base']);
+const coverage = require('../list-coverage.js');
+const installed = { acceptedEntries: 40, listedDomains: 20, coveredDomains: 18, installedHostEntries: 15,
+  installedDomainRules: 2, installedOptionRules: 9, installedRedirectRules: 1, installedCspRules: 0 };
+assert.deepEqual(coverage.rows(installed).map(row => row.count), [40, 20, 18, 15, 2, 9, 1, 0]);
+assert.deepEqual(coverage.rows({ activeRuleCount: 30 }), [], 'legacy totals cannot stand in for measured coverage');
+assert.deepEqual(coverage.rows({ ...installed, installedHostEntries: 19 }), [], 'impossible counts are not displayed');
+assert.deepEqual(coverage.rows(installed, { eligible: 12, redundant: 8, capacity: 10 }).slice(-3).map(row => row.count), [12, 8, 10]);
+/* The popup headline is the enforced domain count; feed coverage detail stays in Settings. */
+const headline = new Function('fmtCount', ['listMetaCount', 'listMetaActiveCount', 'listStatusText']
+  .map(name => health.match(new RegExp('function ' + name + '\\(meta\\) \\{[\\s\\S]*?\\n\\}'))[0]).join('\n')
+  + '\nreturn listStatusText;')(n => String(n));
+assert.equal(headline({ count: 3109274 }), 'Blocking 3109274 domains');
+assert.equal(headline({ totalCount: 3200000, activeCount: 3109274 }), 'Blocking 3109274 domains', 'enforced leads, not merely known');
+assert.equal(headline(null), 'Blocking 162 domains (built-in)');
+assert(!health.includes('feed hostnames covered at last update'));
+assert(fs.readFileSync('settings.js', 'utf8').includes('WO_LIST_COVERAGE.rows(meta.feedCoverage, meta.optionRuleSelection)'));
 console.log('[ok] source contributions, disabled lists, saved-data validation and popup refresh');

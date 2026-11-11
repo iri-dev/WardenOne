@@ -297,8 +297,21 @@
     } catch (_) { sealKey(); }
     return !keySealed;
   };
+  /* Chrome keeps the initial blank window when a frame or popup navigates to a page of the same
+     origin, so a same-origin ancestor or opener may have a listener on it before this bridge runs.
+     A key handed out while one can reach this window cannot mute or quieten a notice. */
+  let keySharedWithRelative = false;
+  const sameOriginRelatives = () => {
+    const others = [window.opener];
+    try {
+      for (let w = window; w !== window.top && others.length < 32;) { w = w.parent; others.push(w); }
+    } catch (_) { return null; }
+    return others;
+  };
   const deliverKey = () => {
     if (!keyOpen()) return false;
+    const relatives = sameOriginRelatives();
+    if (!relatives || sameOriginRelative(relatives)) keySharedWithRelative = true;
     try {
       document.dispatchEvent(new CustomEvent('wo-key', { detail: { token: TOKEN, key: KEY } }));
       return true;
@@ -536,7 +549,27 @@
      and refreshing on tab switches alone left the entry reading "(not a normal
      page)" on ordinary pages. A right-click is rare and this listener does
      nothing else, so it costs nothing between clicks. */
-  woOn(window, 'contextmenu', () => {
+  woOn(window, 'contextmenu', (event) => {
+    if (!event.isTrusted) return;
+    try {
+      const nodes = event.composedPath().filter(node => node && node.nodeType === 1).slice(0, 12);
+      let srcUrl = '', mediaType = '';
+      for (const node of nodes) {
+        if (/^(IMG|VIDEO|AUDIO)$/.test(node.tagName)) {
+          srcUrl = node.currentSrc || node.src || node.poster || '';
+          mediaType = node.tagName.toLowerCase() === 'img' ? 'image' : node.tagName.toLowerCase();
+        } else {
+          const background = getComputedStyle(node).backgroundImage;
+          const match = /^url\(["']?(.*?)["']?\)$/.exec(background);
+          if (match) { srcUrl = match[1]; mediaType = 'image'; }
+        }
+        if (srcUrl) break;
+      }
+      window.__wardenOneMenuContext = {
+        at: Date.now(), selectionText: String(window.getSelection() || '').slice(0, 16000),
+        srcUrl: String(srcUrl).slice(0, 65536), mediaType,
+      };
+    } catch (_) {}
     try {
       chrome.runtime.sendMessage({ kind: 'menu-opening', pageUrl: location.href },
         () => { void chrome.runtime.lastError; });
@@ -2491,9 +2524,18 @@
       // gate. learnedGrabberDomains and supplementalLists.* already came out of it at the
       // storage boundary, so they are merged by identity -- re-normalising them was the
       // bulk of the per-frame cost, paid again on every page load in every frame.
+      const pageHost = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
+      const pageSuffixes = new Set();
+      for (let suffix = pageHost; suffix;) {
+        pageSuffixes.add(suffix);
+        const dot = suffix.indexOf('.');
+        suffix = dot < 0 ? '' : suffix.slice(dot + 1);
+      }
+      /* Learned loggers come from this reader's own browsing and the page can read this message.
+         Their network rules block them everywhere, so only an entry naming this page goes out. */
       const grabberExtras = mergeNormalizedHostLists(1500,
         sanitizeBridgeHostList(raw.grabberDomainsExtra, 1500),
-        learnedGrabberDomains,
+        learnedGrabberDomains.filter((host) => pageSuffixes.has(host)),
         supplementalLists.grabberDomainsExtra);
       const adultExtras = mergeNormalizedHostLists(3000,
         sanitizeBridgeHostList(raw.adultDomainsExtra, 3000),
@@ -2505,14 +2547,7 @@
       if (grabberExtras.length) hostLists.grabberDomainsExtra = grabberExtras;
       // The engine checks adult hosts only against this page. Keep the original merged
       // order and cap, then send only entries that can match its hostname check.
-      const adultHost = String(location.hostname || '').replace(/^www\./, '').toLowerCase();
-      const adultSuffixes = new Set();
-      for (let suffix = adultHost; suffix;) {
-        adultSuffixes.add(suffix);
-        const dot = suffix.indexOf('.');
-        suffix = dot < 0 ? '' : suffix.slice(dot + 1);
-      }
-      const matchingAdults = adultExtras.filter((host) => adultSuffixes.has(host));
+      const matchingAdults = adultExtras.filter((host) => pageSuffixes.has(host));
       if (matchingAdults.length) hostLists.adultDomainsExtra = matchingAdults;
       if (paymentExtras.length) hostLists.trustedPaymentHostsExtra = paymentExtras;
       if (!Object.keys(hostLists).length) hostLists = null;
@@ -3023,6 +3058,8 @@
     let relayRequestSeqSeen = 0;
     const relayRequestSigned = (raw, body) => {
       const seq = Number(raw && raw.rseq);
+      /* Only the top frame's engine signs requests; a child frame's key may be a same-origin parent's. */
+      if (window !== window.top) return false;
       if (!KEY_PADS || !Number.isInteger(seq) || seq <= relayRequestSeqSeen) return false;
       if (!__woAuth.same(raw.rmac, __woAuth.hmac(KEY_PADS, 'bg-request\n' + seq + '\n' + __woAuth.canon(body, 0)))) return false;
       relayRequestSeqSeen = seq;
@@ -3058,7 +3095,7 @@
       if (msg.kind === 'toast-shown') {
         const type = String(msg.type || '');
         if (!/^[a-z_]{3,60}$/.test(type)) return null;
-        if (!relayRequestSigned(msg, { kind: 'toast-shown', type: msg.type })) return null;
+        if (keySharedWithRelative || !relayRequestSigned(msg, { kind: 'toast-shown', type: msg.type })) return null;
         return { kind: 'toast-shown', type };
       }
       if (msg.kind === 'mute-toast') {
@@ -3066,7 +3103,9 @@
         if (!/^[a-z_]{3,60}$/.test(type)) return null;
         const minutes = Number(msg.minutes);
         if (![60, 120, 480, 0].includes(minutes)) return null;
-        if (!relayRequestSigned(msg, { kind: 'mute-toast', type: msg.type, minutes: msg.minutes })) return null;
+        /* The mute buttons answer a real click, so a mute with no user activation is forged. */
+        if (!(navigator.userActivation && navigator.userActivation.isActive)) return null;
+        if (keySharedWithRelative || !relayRequestSigned(msg, { kind: 'mute-toast', type: msg.type, minutes: msg.minutes })) return null;
         return { kind: 'mute-toast', type, minutes };
       }
       return null;

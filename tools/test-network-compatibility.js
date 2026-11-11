@@ -547,7 +547,7 @@ test('remote-list commit cannot reinstall DNR rules after the master switch turn
   assert.strictEqual(stable.unchanged, true);
   assert.strictEqual(unchanged.state.updates.length, 0,
     'identical remote-list rules caused an unnecessary Chrome transaction');
-  assert(/const unchanged = !!fingerprint && fingerprint === \(previousMeta && previousMeta\.rulesFingerprint\)\s*&& await remoteListRulesInstalled\(addRules\.length, optionRules\.length\);\s*const replacement = await commitRemoteListRules\(remoteListRuleIds\(\), desiredRules, unchanged\);/.test(BACKGROUND),
+  assert(/const unchanged = !!fingerprint && fingerprint === \(previousMeta && previousMeta\.rulesFingerprint\)\s*&& await remoteListRulesInstalled\(addRules\.length, optionRules\.length, redirectRuleCount, cspRuleCount\);\s*const replacement = await commitRemoteListRules\(remoteListRuleIds\(\), desiredRules, unchanged\);/.test(BACKGROUND),
     'remote-list planner did not pass its fingerprint check to the guarded commit');
 });
 
@@ -795,6 +795,121 @@ test('trusted infrastructure covers hosts that are not siblings of the apex', ()
   ]) {
     assert(region.includes("'" + domain + "'"), domain + ' is unprotected: ' + why);
   }
+});
+
+
+test('an ad-block wall is told apart from an access gate and from a page that mentions one', () => {
+  const { looksLikeWall } = require('../anti-adblock-shield.js');
+  // Wordings taken off real walls, including the two YouTube variants that never put the
+  // words "ad blocker" in the sentence doing the blocking.
+  for (const text of [
+    'Ad blockers are not allowed on YouTube. Try YouTube Premium.',
+    'Video player will be blocked after 3 videos',
+    'Video playback is blocked unless YouTube is allowlisted or the ad blocker is disabled.',
+    'Video playback will be blocked unless YouTube is\nallowlisted or the ad\u00a0blocker is disabled.',
+    'Please disable your ad blocker to continue reading.',
+    'Werbeblocker erkannt. Bitte deaktivieren Sie ihn.',
+    'Nous avons d\u00e9tect\u00e9 un bloqueur de publicit\u00e9. Merci de le d\u00e9sactiver.',
+  ]) assert(looksLikeWall(text, false), text);
+  // A gate deciding who may watch is not a wall, even when it says the word, and stays put
+  // however much of the viewport it covers.
+  for (const text of ['Subscribe to watch this video', 'Sign in to confirm you\u2019re not a bot',
+    'Ad blockers are not allowed on YouTube. Verify\nthat you are human.', 'This video is members only.',
+    'Video playback is blocked unless YouTube is allowlisted or the ad blocker is disabled. Sign in to watch.']) {
+    assert(!looksLikeWall(text, false), text);
+    assert(!looksLikeWall(text, true), text + ' (covering)');
+  }
+  // Prose about ad blockers asks the reader for nothing, so it only counts once something is
+  // covering the viewport -- which an article body, held off by looksLikeContent, never is.
+  for (const text of ['How ad blockers work', 'The best ad blockers of 2026, ranked.']) {
+    assert(!looksLikeWall(text, false), text);
+    assert(looksLikeWall(text, true), text + ' (covering)');
+  }
+  assert(!looksLikeWall('Accept cookies to continue.', true));
+});
+
+test('only a blocked anti-adblock loader has its error stopped', () => {
+  const { isLoaderError } = require('../anti-adblock-shield.js');
+  class Script { constructor(src) { this.src = src; } }
+  class Img { constructor(src) { this.src = src; } }
+  const trusted = (target) => ({ isTrusted: true, target });
+  // The three publishers that rendered blank, by the loader each one used.
+  for (const src of ['https://html-load.com/themeBundle/abc.js', 'https://html-load.com/app.js',
+    'https://stg.html-load.com/themeBundle/x.js', 'https://content-loader.com/loader.js']) {
+    assert(isLoaderError(trusted(new Script(src)), Script), src);
+  }
+  assert(!isLoaderError(trusted(new Script('https://cdn.example.com/app.js')), Script), 'an ordinary script error passes');
+  assert(!isLoaderError(trusted(new Img('https://html-load.com/pixel.gif')), Script), 'a non-script resource passes');
+  assert(!isLoaderError(trusted(new Script('https://html-load.com.example.org/app.js')), Script), 'a lookalike host passes');
+  assert(!isLoaderError(trusted(new Script('https://nothtml-load.com/app.js')), Script), 'a suffix-only lookalike passes');
+  assert(!isLoaderError({ isTrusted: false, target: new Script('https://html-load.com/app.js') }, Script),
+    'a page-dispatched error cannot use this to silence anything');
+  assert(!isLoaderError(trusted(new Script('not a url')), Script));
+});
+
+test('Anti-Adblock Shield registration follows the master and its own switch', async () => {
+  const registry = new Map();
+  const scripting = {
+    async getRegisteredContentScripts({ ids }) { return ids.map(id => registry.get(id)).filter(Boolean); },
+    async registerContentScripts(rows) { for (const row of rows) registry.set(row.id, row); },
+    async updateContentScripts(rows) { for (const row of rows) registry.set(row.id, row); },
+    async unregisterContentScripts({ ids }) { for (const id of ids) registry.delete(id); },
+  };
+  const sandbox = {
+    chrome: { scripting }, WOAntiAdblockShield: require('../anti-adblock-shield.js'),
+    activeAllowlist: cfg => cfg.allowlist || [], hostMatchesSite: (host, site) => host === site || host.endsWith('.' + site),
+  };
+  vm.runInNewContext(sourceBetween('function antiAdblockShieldOn(', '\nasync function reconcileConsentWallInjection('), sandbox);
+  const id = 'wo-anti-adblock-shield';
+  await sandbox.reconcileAntiAdblockShieldInjection({});
+  const registration = registry.get(id);
+  assert.deepStrictEqual(Array.from(registration.matches), ['<all_urls>']);
+  assert.strictEqual(registration.runAt, 'document_start');
+  assert.strictEqual(registration.world, 'ISOLATED');
+  assert(!registration.allFrames);
+  // A paused site no longer changes the registration: the page script reads the same switches
+  // and stands down there, which is the only place the wall actually is.
+  await sandbox.reconcileAntiAdblockShieldInjection({ allowlist: ['mirror.co.uk'], siteOverrides: { 'youtube.com': { antiAdblockShield: false } } });
+  assert.deepStrictEqual(Array.from(registry.get(id).matches), ['<all_urls>']);
+  assert(!sandbox.WOAntiAdblockShield.activeForHost({ allowlist: ['mirror.co.uk'] }, 'www.mirror.co.uk'));
+  assert(!sandbox.WOAntiAdblockShield.activeForHost({ siteOverrides: { 'youtube.com': { antiAdblockShield: false } } }, 'www.youtube.com'));
+  assert(sandbox.WOAntiAdblockShield.activeForHost({ allowlist: ['mirror.co.uk'] }, 'www.techradar.com'));
+  await sandbox.reconcileAntiAdblockShieldInjection({ antiAdblockShield: false });
+  assert(!registry.has(id));
+  await sandbox.reconcileAntiAdblockShieldInjection({});
+  await sandbox.reconcileAntiAdblockShieldInjection({ enabled: false });
+  assert(!registry.has(id));
+});
+
+test('Anti-Adblock rollback derives the site from the current top document', async () => {
+  const current = { adShield: true, blockTrackers: true };
+  const history = [];
+  const recovery = require('../site-recovery.js');
+  const sandbox = {
+    URL, WOAntiAdblockShield: require('../anti-adblock-shield.js'), WOSiteRecovery: recovery, INCOGNITO_CONTEXT: false,
+    messageSenderStillCurrent: async sender => sender.frameId === 0 && sender.current === true,
+    localGet: async () => ({ wardenone_config: current }),
+    activeAllowlist: cfg => cfg.allowlist || [], hostMatchesSite: (host, site) => host === site || host.endsWith('.' + site),
+    normalizeAllowlistHost: host => host.replace(/^www\./, ''),
+    updateStoredConfig: async update => update(current), queueHistory: entry => history.push(entry),
+  };
+  vm.runInNewContext(sourceBetween('function antiAdblockShieldOn(', '\nasync function reconcileConsentWallInjection(')
+    + sourceBetween('async function recordAntiAdblockResult(', '\nasync function siteRecoveryAction('), sandbox);
+  const event = { kind: 'anti-adblock-result', outcome: 'rollback' };
+  const sender = { url: 'https://www.techradar.com/uk?private=value', frameId: 0, current: true };
+  for (const invalid of [{ ...sender, frameId: 1 }, { ...sender, current: false }, { ...sender, url: 'http://www.techradar.com/' }]) {
+    assert(!(await sandbox.recordAntiAdblockResult(event, invalid)).ok);
+  }
+  // Extra fields are a forged report, whatever they say.
+  assert(!(await sandbox.recordAntiAdblockResult({ ...event, host: 'www.youtube.com' }, sender)).ok);
+  assert((await sandbox.recordAntiAdblockResult(event, sender)).paused);
+  assert.strictEqual(current.siteRecoveryUntil['techradar.com'].key, 'antiAdblockShield');
+  assert(current.adShield && current.blockTrackers);
+  assert.strictEqual(history.length, 1);
+  assert.strictEqual(history[0].url, 'https://www.techradar.com');
+  const effective = recovery.effective(current, Date.now(), sandbox.normalizeAllowlistHost);
+  assert(!sandbox.antiAdblockActiveFor(effective, 'www.techradar.com'));
+  assert(sandbox.antiAdblockActiveFor(effective, 'www.tomshardware.com'));
 });
 
 void (async () => {

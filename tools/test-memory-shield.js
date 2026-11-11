@@ -1027,6 +1027,20 @@ async function testTabActionsByHand() {
   assert.strictEqual((await mute.sandbox.memorySleepTabByHand({ id: 1 })).ok, true,
     'an unreachable bridge blocked a sleep the reader asked for by name');
 
+  for (const flag of ['formDirty', 'mediaActive']) {
+    for (const action of ['memorySleepTabByHand', 'memoryCloseTabByHand']) {
+      const partial = loadMemoryShield({
+        config: { memoryShield: true }, tabs: [pageTab(1, { active: true }), pageTab(2)],
+        frames: [{ frameId: 0, documentId: 'main' }, { frameId: 4, documentId: 'unreachable' }],
+        liveReply: (_id, target) => target.frameId === 4 ? { __lastError: 'No receiver' }
+          : { formDirty: flag === 'formDirty', mediaActive: flag === 'mediaActive' },
+      });
+      assert.equal((await partial.sandbox[action]({ id: 1 })).ok, false,
+        action + ' must preserve confirmed ' + flag + ' when another frame is unreachable');
+      assert.equal(partial.state.removed.length + partial.state.discarded.length, 0);
+    }
+  }
+
   // A tab already asleep says so rather than reporting a second success.
   const asleep = loadMemoryShield({
     config: { memoryShield: true },

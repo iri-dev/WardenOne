@@ -29,7 +29,7 @@ vm.runInContext(`${groupSource}\n;globalThis.featureGroups = onboardingFeatureGr
 const data = context.settingsData;
 const categories = [
   { id: 'security', title: 'Scams and threats', icon: 'shield', intro: 'Warnings and blocks for phishing, scams, malicious sites, redirects and risky extensions.',
-    groups: ['Site, script and network threat detection', 'Threat blocklists and cryptomining', 'Script Shield', 'Pop-ups, redirects and page clutter', 'Adult-site safety and SafeSearch', 'Extension and permission monitoring', 'Watch-only activity'] },
+    groups: ['Site, script and network threat detection', 'Threat blocklists and cryptomining', 'Script Shield', 'Pop-ups, redirects and page clutter', 'Adult-site safety and SafeSearch', 'Security Centre', 'Watch-only activity'] },
   { id: 'signin', title: 'Sign-ins and sessions', icon: 'key', intro: 'Guards for passwords, session tokens, payment forms, the clipboard and the login flows scams imitate.',
     groups: ['Sessions, forms, clipboard and scams', 'Forget Me and logins'] },
   { id: 'downloads', title: 'Downloads and files', icon: 'download', intro: 'A review before a suspicious download continues, a local file inspector, and optional reputation providers.',

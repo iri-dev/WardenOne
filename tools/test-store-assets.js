@@ -92,9 +92,10 @@ if (pkg.dirty === true) {
 for (const ex of MANIFEST.excluded || []) {
   check('excluded ' + path.basename(String(ex.source || '')) + ' says why', typeof ex.why === 'string' && ex.why.length >= 20);
 }
-check('the popup is not a candidate while FEAT-02 and FEAT-05 are open',
+check('superseded popup captures remain excluded until replaced',
   !(MANIFEST.screenshots || []).some((s) => /popup|protection-health/.test(String(s.source)))
-  && (MANIFEST.excluded || []).some((e) => /FEAT-05/.test(e.why)) && (MANIFEST.excluded || []).some((e) => /FEAT-02/.test(e.why)),
+  && (MANIFEST.excluded || []).some((e) => e.reasonCode === 'bulk-toggle-wording')
+  && (MANIFEST.excluded || []).some((e) => e.reasonCode === 'protection-wording'),
   'the popup shows "Turn everything on" and "You\'re safe", both of which are open findings about the product, not the picture');
 
 /* ---- the site shows the current build ------------------------------------------- */

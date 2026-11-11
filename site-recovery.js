@@ -9,6 +9,7 @@
     autoRejectConsent: 'Cookie banner auto-reject',
     removeOverlays: 'Overlay removal',
     scriptletEngine: 'Scriptlet engine',
+    antiAdblockShield: 'Anti-Adblock Shield',
     stripTrackingParams: 'Link cleaning',
     blockAutoplayMedia: 'Autoplay blocking',
   });
@@ -20,6 +21,8 @@
     blocked_overlay: 'removeOverlays',
     blocked_overlay_ad_frame: 'removeOverlays',
     scriptlet_mutator_blocked: 'scriptletEngine',
+    anti_adblock_restored: 'antiAdblockShield',
+    warned_anti_adblock_rollback: 'antiAdblockShield',
     cleaned_history_url: 'stripTrackingParams',
     blocked_autoplay_media: 'blockAutoplayMedia',
   });

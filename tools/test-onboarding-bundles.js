@@ -27,6 +27,9 @@ const R = sandbox.R, M = sandbox.M;
 ok('recommended bundle is a non-empty object', R && typeof R === 'object' && Object.keys(R).length > 10);
 ok('max-privacy bundle is a non-empty object', M && typeof M === 'object' && Object.keys(M).length > Object.keys(R).length);
 ok('recommended keeps the safe baseline (enabled, adShield, blockTrackers)', R.enabled === true && R.adShield === true && R.blockTrackers === true);
+for (const key of ['elementZapper', 'trackerLearner', 'trackerLearnerAuto', 'trackerCacheProtection', 'openPhish', 'blockSponsoredSearchResults']) {
+  ok('recommended restores ' + key, R[key] === true);
+}
 
 // superset: every recommended key/value must survive in max
 const weakened = Object.keys(R).filter((k) => M[k] !== R[k]);

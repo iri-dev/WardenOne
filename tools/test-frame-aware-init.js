@@ -224,9 +224,19 @@ check('the refresh path and the config path share one applier',
   check('the top frame\'s signed config text leaves the lists out',
     !/adult\.example|grab\.example|pay\.example|learned\.example/.test(top.message.signedText), top.message.signedText);
   check('...and only relevant lists ride beside it under a MAC bound to the config\'s seq',
-    JSON.stringify(top.message.lists) === JSON.stringify({ grabberDomainsExtra: ['learned.example', 'grab.example'],
+    JSON.stringify(top.message.lists) === JSON.stringify({ grabberDomainsExtra: ['grab.example'],
       trustedPaymentHostsExtra: ['pay.example'] })
     && top.message.listsMac === 'config-lists:7:' + JSON.stringify(top.message.lists), JSON.stringify(top.message));
+  check('a learned logger from the reader\'s own browsing never reaches another site\'s page',
+    !JSON.stringify(top.message).includes('learned.example'), JSON.stringify(top.message));
+  for (const hostname of ['learned.example', 'www.learned.example', 'sub.learned.example']) {
+    const onLogger = run(true, hostname).message;
+    check('the learned logger the page itself is on still reaches the engine: ' + hostname,
+      JSON.stringify(onLogger.lists.grabberDomainsExtra) === JSON.stringify(['learned.example', 'grab.example']),
+      JSON.stringify(onLogger.lists));
+  }
+  check('a lookalike of a learned logger does not get it',
+    !JSON.stringify(run(true, 'notlearned.example').message).includes('"learned.example"'));
   for (const [hostname, expected] of [
     ['adult.example', 'adult.example'],
     ['sub.adult.example', 'adult.example'],

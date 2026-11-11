@@ -1230,6 +1230,11 @@ async function testFirstPartyAppCdnsStayLoadable() {
   assert(blanket && blanket.action.type === 'block', 'Smart mode installed no blanket rule');
   const exempt = Array.from(blanket.condition.excludedRequestDomains || []);
 
+  assert(exempt.includes('static.doodcdn.io'), 'Playmogo cannot load its Video.js plugin bundle in Smart mode');
+  for (const host of ['doodcdn.io', 'i.doodcdn.io']) {
+    assert(!exempt.includes(host), 'Playmogo player compatibility exempts an ad script host: ' + host);
+  }
+
   // The reported breakage, stated as the site that broke.
   assert(exempt.includes('pinimg.com'),
     'Pinterest app bundles (pinimg.com) are still caught by the blanket third-party script block');

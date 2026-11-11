@@ -103,7 +103,10 @@ async function run(options, server, hits) {
     const unblockRule = () => worker('getDynamicRulesInBand(TRACKER_RULE_BASE,TRACKER_RULE_MAX).then(rows=>rows.find(row=>row.action.type==="allow"&&row.priority===1900&&row.condition.requestDomains.includes("autotrack.test"))||null)');
 
     await launch();
-    await setConfig({ enabled: true, trackerLearner: true, trackerLearnerAuto: true });
+    const defaults = await worker('readFeedConfig().then(cfg=>({enabled:cfg.enabled,trackerLearner:cfg.trackerLearner,trackerLearnerAuto:cfg.trackerLearnerAuto,trackerCacheProtection:cfg.trackerCacheProtection,openPhish:cfg.openPhish,blockSponsoredSearchResults:cfg.blockSponsoredSearchResults,elementZapper:cfg.elementZapper}))');
+    assert(Object.values(defaults).every(value => value === true), 'fresh install protections are enabled: ' + JSON.stringify(defaults));
+    result.defaults = defaults;
+    result.checks.push('fresh install enables the reviewed protection defaults');
     assert(await worker('chrome.webRequest.onBeforeRequest.hasListener(trackerCookieListener)'), 'the cookie observer follows the switch');
     assert(await worker('chrome.webRequest.onHeadersReceived.hasListener(trackerSetCookieListener)'), 'the Set-Cookie observer follows the switch');
     assert(await worker('chrome.declarativeNetRequest.getSessionRules().then(rows=>rows.some(row=>row.id===THIRD_PARTY_COOKIE_RULE_ID))'), 'Block third-party cookies is on');

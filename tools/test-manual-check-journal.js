@@ -8,7 +8,7 @@ const vm = require('vm');
 const { createHash, webcrypto } = require('crypto');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'background.js'), 'utf8');
-const noticeSource = source.slice(source.indexOf('async function wardenManualNotice('),
+const noticeSource = source.slice(source.indexOf('function renderWardenManualNotice('),
   source.indexOf('/* What WardenOne can say about a host'));
 const journalSource = source.slice(source.indexOf('const MANUAL_CHECK_JOURNAL_KEY ='),
   source.indexOf('async function runWardenManualCheck('));
@@ -44,7 +44,7 @@ function worker(session, tabs, notices, opts) {
         if (!tab || target.documentIds && !target.documentIds.includes(tab.documentId)) {
           throw new Error('Document changed');
         }
-        notices.push({ via: 'toast', target, text: args[0] });
+        notices.push({ via: 'toast', target, text: args.join(' ') });
         return [{ result: true }];
       } },
     },

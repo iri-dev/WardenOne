@@ -67,7 +67,8 @@ async function run() {
     allowlist: ['safe.feed-fixture.net'], fuzzylist: ['brand.feed-fixture.net'] })), ['pixel.feed-fixture.net']);
   const large = Array.from({ length: 8500 }, (_, i) => i % 3 ? 'h' + i + '.feed-fixture.net' : rejected[i % rejected.length]).join('\n');
   assert.deepEqual(Array.from(await parser.parseListInSlices(large)), parse(large), 'sliced and synchronous parsing reject the same inputs');
-  const from = source.indexOf('function parseList(text)'), to = source.indexOf('\n}\n', from);
+  const from = source.indexOf('function parseList('), to = source.indexOf('\n}\n', from);
+  assert(from >= 0 && to > from, 'whole-host parser is available to the URL allocation fixture');
   let urlParses = 0;
   class CountingURL extends URL { constructor(value) { super(value); urlParses++; } }
   const context = vm.createContext({ URL: CountingURL, isUnsafeFeedBlockTarget: () => false, isFeedFalsePositiveDomain: () => false });

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-wardenone-page="link-check">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Link check — WardenOne</title>
+  <link rel="icon" href="icons/icon48.png">
+  <link rel="stylesheet" href="theme.css">
+  <script src="theme.js"></script>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:var(--wo-page-background);color:var(--wo-text);font:15px/1.6 system-ui,sans-serif;min-height:100vh}
+    main{max-width:1040px;margin:auto;padding:36px 24px 60px}header{display:flex;align-items:center;gap:13px;margin-bottom:25px}header img{width:42px;height:42px}
+    h1{font-size:26px;line-height:1.2;margin:0}header p{margin:4px 0 0;color:var(--wo-text-soft);font-size:13px}
+    .summary,.card{border:1px solid var(--wo-line);border-radius:17px;background:var(--wo-surface);padding:21px 24px;margin:18px 0;box-shadow:var(--wo-shadow-soft)}
+    .summary{border-left:5px solid var(--wo-violet)}.summary[data-state="danger"]{border-left-color:var(--wo-danger);background:var(--wo-danger-bg)}
+    .summary[data-state="caution"],.summary[data-state="partial"]{border-left-color:var(--wo-warning)}
+    h2{font-size:17px;line-height:1.5;margin:0 0 9px}.summary h2{font-size:21px}.muted,.detail{color:var(--wo-text-soft)}p{margin:8px 0}
+    .grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}.grid .card{margin:0}
+    dl{margin:0}dt{font-size:12px;font-weight:700;color:var(--wo-text-faint);margin:15px 0 4px}dd{margin:0;overflow-wrap:anywhere}code{font:13px/1.7 ui-monospace,monospace}
+    .finding{border-top:1px solid var(--wo-line);padding:15px 0}.finding:first-child{border-top:0;padding-top:4px}.finding:last-child{padding-bottom:0}
+    .finding h3{font-size:14px;margin:0 0 4px}.finding p{font-size:13px;margin:0}.finding[data-level="danger"] h3{color:var(--wo-danger)}
+    .finding[data-level="caution"] h3{color:var(--wo-warning)}.finding[data-level="pending"] h3:after{content:' · Checking…';font-weight:400;color:var(--wo-text-faint)}
+    .tag{font-size:11px;border:1px solid var(--wo-line);border-radius:5px;padding:1px 5px;margin-left:6px;color:var(--wo-text-faint)}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:22px}button{font:600 13px system-ui;cursor:pointer;border:1px solid var(--wo-line-strong);border-radius:9px;padding:10px 15px;background:var(--wo-control);color:var(--wo-text)}
+    button:hover{background:var(--wo-control-hover)}button:disabled{opacity:.55;cursor:wait}button:focus-visible{outline:2px solid var(--wo-focus);outline-offset:3px}
+    #status{min-height:24px;font-size:13px;color:var(--wo-text-soft)}footer{font-size:12px;color:var(--wo-text-faint);margin-top:24px;max-width:85ch}
+    @media(max-width:720px){main{padding:24px 15px}.grid{grid-template-columns:1fr}.card,.summary{padding:18px}}
+  </style>
+</head>
+<body>
+<main>
+  <header><img src="icons/icon48.png" alt=""><div><h1>Link check</h1><p>WardenOne · A result for the address you chose</p></div></header>
+  <section class="summary" id="summary" data-state="checking" aria-live="polite" aria-atomic="true">
+    <h2 id="verdict">Checking this address…</h2><p id="scope" class="muted">Loading the link and its source page.</p>
+  </section>
+  <div class="grid">
+    <section class="card"><h2>Where this link goes</h2><dl id="addresses"></dl><p id="relation" class="detail"></p></section>
+    <section class="card"><h2>What the address tells you</h2><div id="facts"></div></section>
+  </div>
+  <section class="card"><h2>Checks</h2><div id="checks" aria-live="polite"><p class="muted">Waiting for the check to start…</p></div></section>
+  <div class="actions"><button id="back" type="button" hidden>Back to source page</button><button id="retry" type="button" disabled>Run checks again</button><button id="copy" type="button" disabled>Copy results</button></div>
+  <p id="status" role="status"></p>
+  <footer>The selected destination is checked with local rules, public domain registration data and your available reputation providers. The source page is context only; its contents are not sent to providers. No score or absence of warnings guarantees that a site or file is safe.</footer>
+</main>
+<script src="link-check.js"></script>
+</body>
+</html>

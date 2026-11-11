@@ -174,7 +174,7 @@ async function refresh(r) {
       && main.includes(adguardTracking) && ![...distinct].some((u) => new URL(u).hostname === 'filters.adtidy.org'));
     console.log('  [info] ' + asked + ' reads of ' + distinct.size + ' addresses; ' + r.state.calls.length + ' requests, peak ' + r.state.peak + ' in flight');
     check('a default refresh reads ' + asked + ' sources across three pipelines, of which ' + distinct.size + ' are distinct',
-      asked === 42 && distinct.size === 39 && distinct.size <= unique.size, asked + ' / ' + distinct.size);
+      asked === 43 && distinct.size === 40 && distinct.size <= unique.size, asked + ' / ' + distinct.size);
     check('ThreatView is read once by the malware pipeline',
       main.includes('https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt')
       && r.state.calls.filter(url => url === 'https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt').length === 1);

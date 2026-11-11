@@ -478,7 +478,7 @@ check('both badge palettes use the shared theme tokens and appearance updates pr
     assert.equal(t.manager.setTheme(mode), true);
     assert.ok(t.pause('blocked_thirdparty_cookie') === pause, 'theme changes must not replace a pending action');
     const palette = t.root.adoptedStyleSheets[1].text;
-    assert.ok(palette.includes('color-scheme:' + mode));
+    assert.ok(palette.includes('.panel{color-scheme:' + mode));
     const shared = mode === 'dark' ? css.slice(css.indexOf(':root[data-wardenone-theme-resolved="dark"]')) : css;
     const tokens = [...palette.matchAll(/(--wo-[a-z-]+):([^;]+);/g)]; assert.ok(tokens.length >= 10);
     for (const [, key, value] of tokens) {
@@ -486,6 +486,9 @@ check('both badge palettes use the shared theme tokens and appearance updates pr
       assert.ok(expected, key); assert.equal(value.replace(/\s/g, ''), expected[1].replace(/\s/g, ''), mode + ': ' + key);
     }
   }
+  const controls = t.root.adoptedStyleSheets[0].text;
+  assert.match(controls, /\.panel,\.rules\{[^}]*scrollbar-width:thin;[^}]*scrollbar-color:var\(--wo-brand-text\) var\(--wo-surface-alt\)/);
+  assert.match(controls, /\.rules\{[^}]*scrollbar-gutter:stable;[^}]*padding-inline-end:8px/);
   assert.equal(t.manager.setTheme('invalid'), false);
   t.reply({ ok: true, key: 'blockThirdPartyCookies' }); assert.ok(t.button('Reload page to apply paused protections'));
 });

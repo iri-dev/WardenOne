@@ -649,24 +649,25 @@ hosts do not receive a publisher endorsement; disguises and malware findings ove
 <details>
 <summary><strong>Optional reputation providers, URL-content hashes and the URL scanner</strong></summary>
 
-If you want more you can turn on extra lookups. Each provider switch is off by default and can be
-enabled separately. Most need your own API key; OpenPhish uses a public feed instead. There's no
-hidden WardenOne reputation server behind any of them.
+OpenPhish is on by default: its public phishing feed is downloaded and matched locally, without
+sending it your browsing addresses. Extra lookups that send a URL, domain or hash to an outside
+service stay off until you enable them, and most need your own API key. Each provider has its own
+switch. There's no hidden WardenOne reputation server behind any of them.
 
-| Optional switch | What it checks |
+| Switch | What it checks |
 | --- | --- |
 | Download domain age | How recently a download source's domain was registered. |
 | Google Safe Browsing | Page and download URLs against Google's malware and phishing reports. |
 | VirusTotal reputation | Existing reports for download URLs. |
 | URLhaus | Page and download URLs associated with malware delivery. |
 | AbuseIPDB | Abuse reports for sites reached by a bare IP address. |
-| OpenPhish | Known phishing URLs in a community feed downloaded to your device. |
+| OpenPhish (on by default) | Known phishing URLs in a community feed downloaded to your device. |
 | PhishTank | Phishing reports for suspicious pages, links and downloads. |
 | WhoisXML API | Domain registration and age clues. |
 | WhoisXML Domain Reputation | A domain reputation score. |
 | WhoisXML Threat Intelligence | Threat indicators for suspicious URLs and downloads. |
 
-The [privacy policy](PRIVACY.md#5-reputation-providers-opt-in-off-by-default-most-need-your-own-api-key)
+The [privacy policy](PRIVACY.md#5-reputation-providers-and-the-local-openphish-feed)
 explains which checks run automatically and what each provider receives.
 
 The optional VirusTotal URL-content hash check is separate from its URL reputation check. For a
@@ -732,10 +733,10 @@ including downloads that otherwise look clean. Very long or local addresses are 
 ```mermaid
 flowchart TB
     Pick["File you hand it"] --> Format["Identify the real format from its signature"]
-    Format --> Parse["Parse the structure — never open, extract or run"]
+    Format --> Parse["Parse the structure, never open, extract or run"]
     Parse --> Inspect["Inspect what is inside: program imports · script lines · archive index · document actions"]
     Inspect --> Hash["Hash locally and compare with the malware hash feed and any signatures you added"]
-    Hash --> Report["Evidence-based report — findings, not a verdict"]
+    Hash --> Report["A report of what I found, not a verdict"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
     class Pick,Format,Parse,Inspect,Hash,Report warden
     linkStyle default stroke:#c45ca7
@@ -1091,7 +1092,7 @@ up evidence on your device over time.
 
 **Block trackers & ad analytics** blocks known trackers by default, independently of learning.
 The **Local tracker learner** has one on/off switch and a **Learning mode** selector.
-The default, **Review suggestions**, collects repeated third-party activity. After three of
+**Review suggestions** collects repeated third-party activity. After three of
 your sites it can show a suggestion under *Learned trackers* in one browser session when
 WardenOne observes the tracking behavior itself. Page-only claims still need two sessions.
 These suggestions need your approval before the learner blocks their requests. Each shows its
@@ -1100,7 +1101,7 @@ CNAME mapping are marked **corroborated**; page API/path observations remain **i
 page claims remain **unverified**. A page can influence a suggestion, including a mistaken one,
 but cannot turn it into a blocking rule.
 
-**Automatic tracker protection** is an opt-in learning mode. It looks for an unpartitioned
+**Automatic tracker protection** is the default learning mode. It looks for an unpartitioned
 third-party cookie with `SameSite=None`, at least a month remaining and an ID-shaped value,
 either in the browser's cookie jar or in the tracker's own `Set-Cookie` response, read before
 **Block third-party cookies** removes it from tracking pixels, so learning never needs that
@@ -1124,6 +1125,14 @@ Once learned, a block stays until you unblock the tracker or reset WardenOne, ev
 not appeared for a year. Switching to **Review suggestions** stops new automatic decisions
 and keeps saved blocks. Turning off the learner or WardenOne pauses its rules; resuming
 restores them. At most 20 new automatic decisions are made per day.
+
+**Block tracker cache validators** is also on by default. It removes ETag and If-None-Match only
+from passive third-party image and data requests to known tracker hosts. Normal site caching stays
+available; repeated tracker responses can use more bandwidth.
+
+Fresh installs use these defaults. Saved settings, including Review mode and explicit off choices,
+are preserved on upgrade. **Recommended** in Settings restores these protections and the already
+default-on Element Zapper and local tracker learner.
 
 **View learned tracker history** opens **Settings → Learned trackers**. Search domain names,
 filter blocked, unblocked or suggested trackers, review the evidence, and choose **Unblock**
@@ -1445,7 +1454,13 @@ site WardenOne blocked before, or a really new domain whose age is already cache
 Nothing gets hidden or moved around. Results never get sent to a reputation service just to draw a
 badge. Doing that for every result would tell some third party what you searched for, which would
 be a pretty silly thing for a privacy extension to do. If you want an online check on one link use
-**Check this link**.
+**Check this link**. It opens a WardenOne result tab with the page where you clicked,
+the destination, address details, local security-list findings, available reputation
+providers and the domain's registration age. Results appear as each provider finishes;
+a slow service cannot discard completed checks. Temporary network failures get one
+automatic retry. Unavailable checks explain the problem and remain visible.
+**Run checks again** retries a failed lookup, and
+**Copy results** copies the displayed report. The destination itself is not opened.
 
 <p align="center">
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
@@ -1813,6 +1828,10 @@ Network filtering, cosmetic rules and anti-adblock scriptlets, in the same forma
 EasyList, AdGuard and uBlock. Shipped rules, your own element removals and rules from custom lists
 are kept apart. So allowing one thing back doesn't undo something unrelated.
 
+## Remove ad blocker warnings
+
+Some sites notice an ad blocker and answer with a wall: you’re using an ad blocker, please turn it off. AdShield’s filter rules already stop most sites noticing. This switch handles what still gets through. It clears a wall that is actually covering the page, on any site, and it keeps a page readable when the script a site uses to spot ad blockers is blocked and the site’s own error handler would otherwise blank it. TechRadar, Tom’s Hardware and Mirror used to render nothing for that reason. Logins, age checks and bot checks are never touched. If a page turns out to be empty behind the wall, the wall goes back, WardenOne records it in Activity and pauses this switch for that site through Site Recovery. Use **Site controls** to pause it yourself. Ad and tracker filtering stays active either way.
+
 ## YouTube AdShield
 
 YouTube ads get removed by taking the ad schedule out of the player's data. Not by covering the ad
@@ -1907,6 +1926,9 @@ element and check the outline before clicking. Use `↑` to select a larger cont
 `↓` to narrow it down. Keep clicking to hide more items, then press **Done** or `Esc` to close
 the tool. `Ctrl+Z` restores the most recent removal while that page is still open.
 
+**Undo all on this site** is available inside the Zapper, including when you reopen it after
+a reload. Confirm **Undo all** to restore the site's saved Zapper removals and keep selecting.
+
 **1. Choose what to hide.** On [GitHub's Actions page](https://github.com/features/actions), the
 active Zapper outlines the developer newsletter section. The outline shows exactly what the next
 click will hide.
@@ -1956,6 +1978,17 @@ blocks the site everywhere.
 
 Copy clean link is there as well as the automatic link cleaning because Chrome's own **Copy link
 address** and the address bar are part of the browser itself. Page scripts can't step in there.
+It copies from WardenOne's own document, shows the address copied, and falls back to the current
+page when the clicked target has no web address. Clipboard access is write-only.
+
+Requested replies stay visible until you close them, including on paused pages. Selected-text
+checks scan ordinary sentences and paragraphs for scam instructions, requests to share secrets,
+and dangerous commands. This scan stays on your device; addresses found in the text use local
+security lists. It checks security signals rather than factual accuracy. Selecting a whole link,
+domain, IP address or file hash still runs its specific check. Link and image lookups show each
+completed result while other services are still working.
+Image checks identify the serving site, including CSS background images. If there is no media
+under the pointer, or you clicked the main page rather than an embedded frame, the result says so.
 
 Sleep this tab unloads the tab to free up memory and moves you to the next tab, so you're not left
 staring at a blank page. The tab stays in the strip and reloads when you click it. Both sleeping and
@@ -2118,8 +2151,7 @@ The popup keeps the mode pills and brightness slider in one card. Its scope chip
 the **All sites** default, custom settings for the current site, and turning EyeShield off there.
 Changes save automatically. Contrast, saturation, warmth and greyscale live under **More reading
 controls**; the sliders announce their values as percentages. Security warnings
-keep their keyboard and screen-reader support whether EyeShield's on or not. A spoken
-screen-reader pass remains pending.
+keep their keyboard and screen-reader support whether EyeShield's on or not. A spoken screen-reader pass remains pending.
 
 ## WardenOne Themes
 
@@ -2145,9 +2177,10 @@ first moment until the screen appears, so nothing explicit flashes up while sett
 
 ## SafeSearch & Restricted Mode
 
-Can enforce SafeSearch on Google, Bing, DuckDuckGo, Brave Search and Yahoo, plus YouTube's
-Restricted Mode. It's separate and off by default because it changes what search and video sites
-show you.
+This optional setting enforces SafeSearch on Google, Bing, DuckDuckGo, Brave Search and Yahoo, and
+Strict Restricted Mode on YouTube. YouTube may describe videos filtered by this setting as restricted
+by an administrator. Turn off **SafeSearch and YouTube Restricted Mode** and reload the watch page
+to stop WardenOne from applying the restriction. The setting is off by default.
 
 <p align="center">
   <img src="docs/divider-wardenone.svg" alt="" width="100%">
@@ -2251,7 +2284,7 @@ it can back up.
 My local copy is usually a good way ahead of what's pushed here.
 
 I build in VS Code with the extension loaded, and I'll happily sit with one thing for
-hours — edit, reload, hard-refresh, watch what the page actually does, go again. Almost
+hours: edit, reload, refresh properly, watch what the page actually does, go again. Almost
 none of that is worth a commit on its own, so I push once something is finished and I'm
 actually sure about it. The history goes quiet and then several commits land at once,
 which is usually just one long session finally ending. Probably more of those at 2am
@@ -2291,8 +2324,7 @@ included. It leaves out Twitch Rewind, which is really its own separate media to
 its files, manifest entries and settings, not just a line in the description.
 `node tools/build-store-package.js` builds that package from a commit, byte-for-byte reproducibly.
 The worker and popup read `build-profile.js` so they run fine without the parts that got left out.
-The public [build profile reference](docs/build-profiles.md) lists the included and omitted
-features. Nothing's been submitted yet. The
+The public [build profile reference](docs/build-profiles.md) lists included and omitted features. Nothing's been submitted yet. The
 tool's there so if it ever is, what goes up matches the record exactly.
 
 # Official source & authenticity
@@ -2300,6 +2332,8 @@ tool's there so if it ever is, what goes up matches the record exactly.
 **Website:** [iri-dev.github.io/WardenOne](https://iri-dev.github.io/WardenOne/)
 
 **Author:** [iri](https://github.com/iri-dev) (`iri-dev` on GitHub) · [iri-dev.github.io](https://iri-dev.github.io/)
+
+Please just call me iri, lowercase if you can (Iri is fine too). It started as a cute little nickname with my friends, and I love it so much that it’s simply who I am now 💜
 
 Releases only ever come from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne).
 WardenOne is never an executable installer. In August 2026 someone republished the project under

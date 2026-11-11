@@ -113,7 +113,7 @@ This reference maps the controls in WardenOne to their descriptions in the READM
 | `keystrokePressure` | Keystroke pressure detector | [Keystroke Pressure Detection](../README.md#keystroke-pressure-detection) |
 | `honeytokenMode` | Honeytoken mode | [Honeytoken Mode](../README.md#honeytoken-mode) |
 | `cryptominerCpuWatch` | Deep cryptominer detection | [Cryptojacking protection](../README.md#cryptojacking-protection) |
-| `safeSearch` | Force SafeSearch | [SafeSearch & Restricted Mode](../README.md#safesearch--restricted-mode) |
+| `safeSearch` | SafeSearch and YouTube Restricted Mode | [SafeSearch & Restricted Mode](../README.md#safesearch--restricted-mode) |
 | `backTrapGuard` | Stop back-button traps | [Redirect, Pop-up & Back-trap Protection](../README.md#redirect-pop-up--back-trap-protection) |
 
 ### Watch-only protections (3)
@@ -167,6 +167,7 @@ This reference maps the controls in WardenOne to their descriptions in the READM
 | Source key | Reader-facing control | README coverage |
 | --- | --- | --- | --- |
 | `loginCompatibility` | Login compatibility | [Consent protection](../README.md#consent-protection) |
+| `antiAdblockShield` | Remove ad blocker warnings | [Remove ad blocker warnings](../README.md#remove-ad-blocker-warnings) |
 
 ### Second-level controls (2)
 

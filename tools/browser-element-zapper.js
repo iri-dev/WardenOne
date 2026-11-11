@@ -48,13 +48,13 @@ async function run() {
     }]}).then(r=>({ok:r.ok}))`);
     assert(filters.ok, 'the user and subscribed cosmetic fixtures are saved');
     const url = 'http://' + host + ':' + server.address().port + '/';
-    const { targetId } = await cdp.send('Target.createTarget', { url });
-    const { sessionId: page } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+    let { targetId } = await cdp.send('Target.createTarget', { url });
+    let { sessionId: page } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
     await cdp.send('Runtime.enable', {}, page);
     await cdp.send('Page.enable', {}, page);
     await cdp.send('DOM.enable', {}, page);
     await until(page, "document.readyState==='complete'&&!!document.getElementById('second')");
-    const tabId = await evaluate(worker, `chrome.tabs.query({}).then(ts=>ts.find(t=>t.url===${JSON.stringify(url)}).id)`);
+    let tabId = await evaluate(worker, `chrome.tabs.query({}).then(ts=>ts.find(t=>t.url===${JSON.stringify(url)}).id)`);
     let fixtureSequence = 0;
     const loadFixture = async () => {
       const previousOrigin = await evaluate(page, 'performance.timeOrigin');
@@ -117,22 +117,22 @@ async function run() {
       await click(point);
       await until(page, `getComputedStyle(document.getElementById(${JSON.stringify(id)})).display==='none'`);
     };
-    const button = async (text) => {
+    const button = async (text, ready = 'Saved for this site. It will stay gone after a reload.') => {
       // CDP can inspect the closed shadow root without weakening the tool's page boundary.
       let node;
       for (const deadline = Date.now() + 5000; !node && Date.now() < deadline; await sleep(50)) {
         const { nodes } = await cdp.send('DOM.getFlattenedDocument', { depth: -1, pierce: true }, page);
         /* The save reply replaces the buttons; wait before measuring or pressing one. */
-        if (nodes.some((n) => n.nodeValue === 'Saved for this site. It will stay gone after a reload.')) {
+        if (!ready || nodes.some((n) => n.nodeValue === ready)) {
           node = nodes.find((n) => n.nodeName === 'BUTTON' && nodes.some((child) => child.parentId === n.nodeId && child.nodeValue === text));
         }
       }
-      assert(node, text + ' button exists after the save reply');
+      assert(node, text + ' button exists');
       const { object } = await cdp.send('DOM.resolveNode', { nodeId: node.nodeId }, page);
       await cdp.send('Runtime.callFunctionOn', { objectId: object.objectId, functionDeclaration: `function () {
         globalThis.__woZapperClick = null;
         this.addEventListener('click', (event) => {
-          globalThis.__woZapperClick = { text: this.textContent, trusted: event.isTrusted };
+          globalThis.__woZapperClick = { text: ${JSON.stringify(text)}, trusted: event.isTrusted };
         }, { once: true });
       }` }, page);
       await cdp.send('Runtime.releaseObject', { objectId: object.objectId }, page);
@@ -174,6 +174,60 @@ async function run() {
       assert(await evaluate(page, "getComputedStyle(document.getElementById('second')).display!=='none'"), 'undone element remains visible after reload');
       console.log('[ok] two Zapper selections, ' + finish + ', post-finish Ctrl+Z and reload persistence in ' + browser.Browser);
     }
+    /* Keep navigation-heavy fixtures from spending this scenario's per-tab message allowance. */
+    await cdp.send('Target.closeTarget', { targetId });
+    ({ targetId } = await cdp.send('Target.createTarget', { url }));
+    ({ sessionId: page } = await cdp.send('Target.attachToTarget', { targetId, flatten: true }));
+    await cdp.send('Runtime.enable', {}, page);
+    await cdp.send('Page.enable', {}, page);
+    await cdp.send('DOM.enable', {}, page);
+    await until(page, "document.readyState==='complete'&&!!document.getElementById('second')");
+    tabId = await evaluate(worker, `chrome.tabs.query({}).then(ts=>ts.find(t=>t.url===${JSON.stringify(url)}).id)`);
+    await evaluate(worker, `chrome.storage.local.set({wardenone_hidden_elements:{
+      [${JSON.stringify(host)}]:['#first','#second','.own-filter','.subscribed-filter'],
+      'other.wardenone-audit.net':['#unrelated']
+    }}).then(()=>true)`);
+    await loadFixture();
+    await until(page, "['first','second'].every(id=>getComputedStyle(document.getElementById(id)).display==='none')");
+    await until(page, "['.own-filter','.subscribed-filter'].every(s=>document.getElementById('wo-user-filter-hidden')?.textContent.includes(s))");
+    const originBeforeReset = await evaluate(page, 'performance.timeOrigin');
+    await evaluate(worker, `chrome.scripting.executeScript({target:{tabId:${tabId}},files:['element-picker.js']}).then(()=>true)`);
+    await button('Undo all on this site', '');
+    assert(await evaluate(worker, saved(4)), 'opening reset confirmation retains saved rules');
+    await button('Keep changes', '');
+    assert(await evaluate(worker, saved(4)), 'cancelling reset retains saved rules');
+    await button('Undo all on this site', '');
+    const screenshot = async suffix => {
+      if (!process.env.WARDENONE_ZAPPER_SCREENSHOT_PREFIX) return;
+      const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' }, page);
+      fs.writeFileSync(process.env.WARDENONE_ZAPPER_SCREENSHOT_PREFIX + suffix + '.png', Buffer.from(data, 'base64'));
+    };
+    await screenshot('-confirm');
+    await button('Undo all', '');
+    await until(worker, saved(0));
+    await until(page, "['first','second'].every(id=>getComputedStyle(document.getElementById(id)).display!=='none')");
+    const restored = await evaluate(page, filterState);
+    assert(restored.hidden.every(Boolean), 'site reset preserves hiding from user and subscribed filters: ' + JSON.stringify(restored));
+    assert.equal(await evaluate(page, 'performance.timeOrigin'), originBeforeReset, 'site reset does not reload the page');
+    assert(await evaluate(worker, "chrome.storage.local.get('wardenone_hidden_elements').then(x=>x.wardenone_hidden_elements['other.wardenone-audit.net'][0]==='#unrelated')"),
+      'site reset preserves other sites');
+    assert(await evaluate(page, "!!document.getElementById('wo-picker-root')"), 'the picker stays active after reset');
+    await screenshot('-restored');
+    await select('first');
+    await until(worker, saved(1));
+    await button('Undo all on this site');
+    await button('Undo all', '');
+    await until(worker, saved(0));
+    await until(page, "getComputedStyle(document.getElementById('first')).display!=='none'");
+    await select('first');
+    await until(worker, saved(1));
+    await key('z', 'KeyZ', 90, 2);
+    await until(worker, saved(0));
+    await until(page, "getComputedStyle(document.getElementById('first')).display!=='none'");
+    await select('first');
+    await until(worker, saved(1));
+    await button('Done');
+    console.log('[ok] in-picker site reset restores earlier saved removals, preserves other filters/sites and keeps selection and undo working');
     await evaluate(worker, 'updateStoredConfig(cfg=>Object.assign(cfg,{adShield:false})).then(()=>true)');
     await cdp.send('Page.reload', {}, page);
     await until(page, "document.readyState==='complete'&&getComputedStyle(document.getElementById('first')).display==='none'");

@@ -160,6 +160,7 @@ function checkContentBuild() {
   'popup.js',
   'popup-privacy-cleaner.js',
   'popup-health.js',
+  'list-coverage.js',
   'popup-scroll-memory.js',
   'popup-first-paint.js',
   'popup-diagnostics.js',
@@ -232,6 +233,7 @@ function checkContentBuild() {
   'tools/test-file-access-guard.js',
   'tools/test-speech-guard.js',
   'tools/test-media-shield-presence.js',
+  'tools/test-video-platform-compat.js',
   'tools/test-tracker-frame-guard.js',
   'tools/test-transport-shield.js',
   'tools/test-dns-rebind-guard.js',
@@ -304,6 +306,7 @@ function checkContentBuild() {
   'tools/test-learned-grabber-scope.js',
   'tools/test-manual-check-toast.js',
   'tools/test-manual-check-journal.js',
+  'tools/test-link-check.js',
   'tools/test-store-candidate.js',
   'tools/test-store-rights.js',
   'tools/test-blocked-site-list.js',
@@ -315,6 +318,7 @@ function checkContentBuild() {
   'tools/test-firewall-semantics.js',
   'tools/test-extension-check.js',
   'tools/test-badge-yield.js',
+  'tools/test-badge-lifecycle.js',
   'tools/test-media-scan-timing.js',
   'tools/test-autoplay-guard.js',
   'tools/test-hot-path-layout.js',
@@ -332,6 +336,8 @@ function checkContentBuild() {
   'tools/test-copy-clean-link.js',
   'tools/test-eyeshield-visited.js',
   'tools/test-eyeshield-readability.js',
+  'tools/test-eyeshield-spotify.js',
+  'tools/browser-eyeshield-spotify.js',
   'tools/test-eyeshield-yt-player.js',
   'tools/test-eyeshield-native-site-themes.js',
   'tools/test-eyeshield-preload-hint.js',
@@ -433,6 +439,10 @@ function checkContentBuild() {
   'tools/test-message-reachability.js',
   'tools/test-list-fetch-broker.js',
   'tools/test-cosmetic-parser-chunks.js',
+  'tools/test-procedural-selectors.js',
+  'tools/test-scriptlet-library.js',
+  'tools/test-redirect-resources.js',
+  'tools/test-filter-catalog.js',
   'tools/test-filter-parsing-benchmark.js',
   'tools/test-filter-compilation.js',
   'tools/test-privacy-baseline.js',
@@ -549,6 +559,7 @@ function checkContentBuild() {
   'tools/browser-forced-downloads.js',
   'tools/browser-reputation-bypass.js',
   'tools/browser-message-boundaries.js',
+  'tools/browser-link-check.js',
   'tools/browser-adversarial-dnr.js',
   'tools/browser-history-modes.js',
   'tools/audit-message-boundaries.js',
@@ -573,6 +584,10 @@ function checkContentBuild() {
   'tools/test-json-prune-stacking.js',
   'tools/test-owned-ui.js',
   'tools/test-context-checks.js',
+  'tools/test-context-menu-actions.js',
+  'tools/test-selected-text.js',
+  'tools/test-notification-latency.js',
+  'tools/browser-context-menu.js',
   'tools/test-stale-state.js',
   'tools/test-storage-prune-ladder.js',
   'tools/test-reconcile-one-list.js',
@@ -587,6 +602,7 @@ function checkContentBuild() {
   // behavioural test happened to read them -- and a test that regex-reads a file has not parsed it.
   // A syntax error in any of them shipped without the gate noticing.
   'anti-redirect.js',
+  'anti-adblock-shield.js',
   'fingerprint-realm.js',
   'cert-error.js',
   'consent-reject.js',
@@ -599,6 +615,8 @@ function checkContentBuild() {
   'build-profile.js',
   'build-update.js',
   'element-picker.js',
+  'background-link-check.js',
+  'link-check.js',
   'history.js',
   'hidden-elements.js',
   'logger.js',
@@ -614,6 +632,7 @@ function checkContentBuild() {
   'ip-logger-warning.js',
   'safe-browsing-block.js',
   'yt-adblock.js',
+  'yt-adblock-arm.js',
   'resource-saver.js',
   'animated-image-saver.js',
   'spotify-adblock.js',
@@ -794,6 +813,7 @@ checkCommand('engine watchdog tests', ['tools/test-engine-watchdog.js']);
 checkCommand('file access guard tests', ['tools/test-file-access-guard.js']);
 checkCommand('speech guard tests', ['tools/test-speech-guard.js']);
 checkCommand('Media Shield presence tests', ['tools/test-media-shield-presence.js']);
+checkCommand('Video platform compatibility tests', ['tools/test-video-platform-compat.js']);
 checkCommand('tracker frame guard tests', ['tools/test-tracker-frame-guard.js']);
 checkCommand('transport shield tests', ['tools/test-transport-shield.js']);
 checkCommand('DNS rebind guard tests', ['tools/test-dns-rebind-guard.js']);
@@ -827,6 +847,11 @@ checkCommand('stale-state tests', ['tools/test-stale-state.js']);
 checkCommand('storage prune ladder tests', ['tools/test-storage-prune-ladder.js']);
 checkCommand('cosmetic provenance tests', ['tools/test-cosmetic-provenance.js']);
 checkCommand('cosmetic source chunk tests', ['tools/test-cosmetic-parser-chunks.js']);
+checkCommand('procedural selector tests', ['tools/test-procedural-selectors.js']);
+checkCommand('scriptlet library tests', ['tools/test-scriptlet-library.js']);
+checkCommand('redirect resources match their generator', ['tools/build-redirect-resources.js', '--check']);
+checkCommand('$redirect and $csp tests', ['tools/test-redirect-resources.js']);
+checkCommand('filter list catalogue tests', ['tools/test-filter-catalog.js']);
 checkCommand('filter parsing benchmark tests', ['tools/test-filter-parsing-benchmark.js']);
 checkCommand('filter compilation tests', ['tools/test-filter-compilation.js']);
 checkCommand('privacy baseline tests', ['tools/test-privacy-baseline.js']);
@@ -988,6 +1013,7 @@ checkCommand('list integrity enforcement tests', ['tools/test-list-integrity-enf
 checkCommand('list publisher date tests', ['tools/test-list-publisher-dates.js']);
 checkCommand('adult gate tests', ['tools/test-adult-gate.js']);
 checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.js']);
+checkCommand('EyeShield Spotify control contrast', ['tools/test-eyeshield-spotify.js']);
 checkCommand('EyeShield YouTube player tests', ['tools/test-eyeshield-yt-player.js']);
 checkCommand('EyeShield native site theme tests', ['tools/test-eyeshield-native-site-themes.js']);
 checkCommand('EyeShield visited-link tests', ['tools/test-eyeshield-visited.js']);
@@ -1000,6 +1026,7 @@ checkCommand('YouTube compatibility-pause tests', ['tools/test-youtube-compat.js
 checkCommand('learned grabber scope tests', ['tools/test-learned-grabber-scope.js']);
 checkCommand('manual check toast tests', ['tools/test-manual-check-toast.js']);
 checkCommand('manual check journal tests', ['tools/test-manual-check-journal.js']);
+checkCommand('contextual link check tests', ['tools/test-link-check.js']);
 checkCommand('Store candidate attestation tests', ['tools/test-store-candidate.js']);
 checkCommand('Store release gate tests', ['tools/test-store-release-gate.js']);
 checkCommand('Store rights gate tests', ['tools/test-store-rights.js']);
@@ -1012,6 +1039,7 @@ checkCommand('site firewall', ['tools/test-firewall.js']);
 checkCommand('firewall decision semantics', ['tools/test-firewall-semantics.js']);
 checkCommand('check an extension', ['tools/test-extension-check.js']);
 checkCommand('badge yields to page controls', ['tools/test-badge-yield.js']);
+checkCommand('badge survives page updates', ['tools/test-badge-lifecycle.js']);
 checkCommand('media scan timing', ['tools/test-media-scan-timing.js']);
 checkCommand('autoplay guard tests', ['tools/test-autoplay-guard.js']);
 checkCommand('hot path layout', ['tools/test-hot-path-layout.js']);
@@ -1028,6 +1056,9 @@ checkCommand('privacy self-test', ['tools/test-privacy-test.js']);
 checkCommand('command palette', ['tools/test-command-palette.js']);
 checkCommand('copy clean link tests', ['tools/test-copy-clean-link.js']);
 checkCommand('right-click context checks', ['tools/test-context-checks.js']);
+checkCommand('right-click action and clipboard boundaries', ['tools/test-context-menu-actions.js']);
+checkCommand('selected text security checks', ['tools/test-selected-text.js']);
+checkCommand('notification latency and lookup progress', ['tools/test-notification-latency.js']);
 checkCommand('protection health tests', ['tools/test-protection-health.js']);
 checkCommand('diagnostics export tests', ['tools/test-diagnostics-export.js']);
 checkCommand('build identity tests', ['tools/test-build-identity.js']);

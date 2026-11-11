@@ -1,6 +1,6 @@
 /* WardenOne — Copyright (C) 2026 iri; GPL-3.0-or-later. See LICENSE. */
 'use strict';
-/* Opt-in automatic tracker learning: cross-site ID cookies seen by the browser, in the jar or in a
+/* Automatic tracker learning: cross-site ID cookies seen by the browser, in the jar or in a
    Set-Cookie that cookie blocking strips; durable resource blocking; every decision reversible. */
 const assert = require('assert/strict');
 const fs = require('fs');
@@ -48,6 +48,17 @@ const decision = (extra = {}) => ({ state: 'learned', automatic: 'block', fullBl
   firstSeen: NOW, lastSeen: NOW, hits: 3, sites: 3, sessions: 2, ...extra });
 
 async function promotion() {
+  const background = fs.readFileSync('background.js', 'utf8');
+  const defaults = vm.runInNewContext(background.slice(background.indexOf('const DEFAULT_CONFIG = {'),
+    background.indexOf('\n};', background.indexOf('const DEFAULT_CONFIG = {')) + 3) + '\nDEFAULT_CONFIG');
+  for (const stored of [undefined, {}, { trackerLearnerAuto: false }]) {
+    const fresh = rig();
+    fresh.context.DEFAULT_CONFIG = defaults;
+    fresh.state.local.wardenone_config = stored;
+    await followAcross(fresh);
+    assert.equal(fresh.api.learner().domains['tracker.example']?.state, stored?.trackerLearnerAuto === false ? undefined : 'learned',
+      'fresh and missing settings learn automatically; an explicit Review choice stays in review');
+  }
   const r = rig();
   await followAcross(r);
   const entry = r.api.learner().domains['tracker.example'];
@@ -297,7 +308,7 @@ async function followHeaders(r, header = ID_HEADER) {
 
 function wiring() {
   const background = fs.readFileSync('background.js', 'utf8');
-  assert(/\n  trackerLearnerAuto: false,\n/.test(background));
+  assert(/\n  trackerLearnerAuto: true,\n/.test(background));
   assert(/trackerLearnerAuto: 'trackerLearner',/.test(background));
   const popup = fs.readFileSync('popup.js', 'utf8'), html = fs.readFileSync('popup.html', 'utf8');
   assert(/<select[^>]*data-key="trackerLearnerAuto"[^>]*data-config-bool/.test(html));

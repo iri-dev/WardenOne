@@ -191,12 +191,58 @@ const clearFn = BG.slice(BG.indexOf("msg.kind === 'clear-exposed-tokens'"), BG.i
 const hardenFn = BG.slice(BG.indexOf("msg.kind === 'harden-site-cookies'"), BG.indexOf("msg.kind === 'cookie-audit'"));
 
 check('clearing only ever touches the tab the user is looking at',
-  /activeTabMatchesOrigin\(u\.origin\)/.test(clearFn));
+  /activeTabForOrigin\(u\.origin\)/.test(clearFn) && /const tabId = match\.tabId;/.test(clearFn)
+    && !/tabsQuery\(/.test(clearFn));
 check('clearing is bounded, so a hostile message cannot enqueue thousands of keys',
   /\.slice\(0, 60\)/.test(clearFn));
 check('clearing covers cookies as well as storage',
   /cookies\.remove/.test(clearFn) && /localStorage\.removeItem/.test(clearFn));
 check('clearing is recorded in the activity log', /gated_tokens_cleared/.test(clearFn));
+
+/* H-02: the tab checked is the tab cleared. The active tab changes between the check and the
+   script, and the checked tab itself navigates away; neither page may lose a key. */
+async function tokenClearTabSwap() {
+  const vm = require('vm');
+  const start = clearFn.indexOf('(async () => {');
+  const end = clearFn.lastIndexOf('return true;');
+  const helper = BG.slice(BG.indexOf('async function activeTabForOrigin('), BG.indexOf('// SEC-11: custom-list fetches'));
+  const pages = { 1: { origin: 'https://bank.example', keys: { sess: 'a' } }, 2: { origin: 'https://other.example', keys: { sess: 'b' } } };
+  const run = async (afterCheck) => {
+    let queries = 0;
+    const replies = [];
+    const store = (id) => ({ getItem: (k) => (k in pages[id].keys ? pages[id].keys[k] : null), removeItem: (k) => { delete pages[id].keys[k]; } });
+    const ctx = {
+      URL, Number, String, Array, Date, Promise, console,
+      normalizeWebOrigin: (raw) => { try { return new URL(raw).origin; } catch (_) { return ''; } },
+      tabsQuery: async () => { queries++; if (queries > 1) afterCheck(); return [{ id: queries === 1 ? 1 : 2, url: pages[queries === 1 ? 1 : 2].origin + '/' }]; },
+      queueHistory() {},
+      chrome: {
+        cookies: { remove: async () => null },
+        scripting: { executeScript: async ({ target, func, args }) => {
+          afterCheck();
+          const id = target.tabId;
+          const sandbox = { location: { origin: pages[id].origin }, localStorage: store(id), sessionStorage: store(id) };
+          vm.createContext(sandbox);
+          /* Chrome serialises the function into the page, so it is rebuilt there from its text. */
+          sandbox.a = args;
+          return [{ result: vm.runInContext('(' + func.toString() + ')(...a)', sandbox) }];
+        } },
+      },
+      msg: { kind: 'clear-exposed-tokens', url: 'https://bank.example/account', items: [{ where: 'sessionStorage', key: 'sess' }] },
+      sendResponse: (r) => replies.push(r),
+    };
+    vm.createContext(ctx);
+    vm.runInContext(helper + '\n' + clearFn.slice(start, end), ctx);
+    for (let i = 0; i < 20 && !replies.length; i++) await new Promise((r) => setImmediate(r));
+    return replies[0];
+  };
+  await run(() => {});
+  check('a switch to another tab after the check does not clear that other tab', pages[2].keys.sess === 'b');
+  check('...and the checked tab is the one cleared', pages[1].keys.sess === undefined);
+  pages[1].keys.sess = 'a';
+  await run(() => { pages[1].origin = 'https://elsewhere.example'; });
+  check('the checked tab navigating to another origin keeps its keys', pages[1].keys.sess === 'a' && pages[2].keys.sess === 'b');
+}
 
 check('hardening only ever touches the tab the user is looking at',
   /activeTabMatchesOrigin\(u\.origin\)/.test(hardenFn));
@@ -226,4 +272,5 @@ check('hiding is only offered where hiding is actually possible',
 check('the popup warns that the site can undo the hardening',
   /can undo it next time it sets the cookie/i.test(POPUP_JS));
 
-console.log('\n' + passed + ' passed, 0 failed');
+tokenClearTabSwap().then(() => console.log('\n' + passed + ' passed, 0 failed'))
+  .catch((error) => { console.error(error && error.stack || error); process.exitCode = 1; });

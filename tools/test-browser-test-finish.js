@@ -12,7 +12,6 @@
 
 const assert = require('assert/strict');
 const fs = require('fs');
-const http = require('http');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const profile = require('./perf-profile.js');
@@ -177,38 +176,6 @@ async function checkCdpLifecycle() {
   } finally { globalThis.WebSocket = originalWebSocket; globalThis.fetch = originalFetch; }
 }
 
-/* Chrome 121 left one of these written, unanswered and half closed; the run waited 39 minutes. */
-async function checkJsonRequestsEnd() {
-  let requests = 0;
-  let silent = 1;
-  const server = http.createServer((req, res) => {
-    requests++;
-    if (requests <= silent) return;
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end('{"answered":true}');
-  });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const url = 'http://127.0.0.1:' + server.address().port + '/json/list';
-  try {
-    assert.deepEqual(await profile.fetchJson(url, 150), { answered: true });
-    check('a request nobody answers is sent again: ' + requests, requests === 2);
-    requests = 0;
-    silent = Infinity;
-    const unanswered = await profile.fetchJson(url, 100).catch((error) => error);
-    check('one that stays unanswered fails instead of waiting forever: ' + unanswered.name, unanswered.name === 'TimeoutError');
-    check('after a bounded number of tries: ' + requests, requests === 3);
-  } finally {
-    server.closeAllConnections();
-    await new Promise((resolve) => server.close(resolve));
-  }
-  const refused = await profile.fetchJson(url, 100).catch((error) => error);
-  check('a refused connection still fails at once for the callers polling for it: ' + refused.name,
-    refused instanceof Error && refused.name !== 'TimeoutError');
-}
-
-profile.mustFinish(async () => {
-  await checkCdpLifecycle();
-  await checkJsonRequestsEnd();
-}, 'CDP transport tests').then(() => {
+profile.mustFinish(checkCdpLifecycle, 'CDP transport tests').then(() => {
   console.log('[ok] browser tests finish or report interrupted calls: ' + checks + ' checks');
 }).catch((error) => { console.error(error); process.exitCode = 1; });

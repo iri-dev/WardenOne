@@ -108,7 +108,7 @@ check('verify-repair leaves excluded and sleeping tabs alone',
 check('remote compatibility is separate from security evidence',
   /function networkRulePatternHost/.test(background)
     && /const patternHost = networkRulePatternHost\(pattern\)/.test(background)
-    && /remoteListBlockAllowed\(patternHost, pattern, sourceKind\)/.test(background)
+    && /remoteListBlockAllowed\(patternHost, pattern, sourceKind, result\.url\)/.test(background)
     && /remoteRuleSourceKind\(sourceKind\) === 'security'\) return true/.test(background),
   'compatibility filtering must not discard security rules');
 

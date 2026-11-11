@@ -249,13 +249,18 @@ function badgeCountFor(tabId) {
     !/allowTabMessageRate\([^)]*'rg-block',\s*\d+/.test(bg));
 }
 
-setTimeout(() => {
-  /* Everything that had to wait for the asynchronous badge recovery. */
+(async () => {
+  const deadline = Date.now() + 3000;
+  while (!vm.runInContext('badgeCountsReady', H.ctx)
+      || !DRIVEN_TAB_IDS.every(tabId => H.badge.some(entry => entry.tabId === tabId))) {
+    if (Date.now() >= deadline) break;
+    await new Promise(resolve => setImmediate(resolve));
+  }
   deferred.forEach((fn) => fn());
   if (failures) {
     console.error('[fail] message rate limit tests: ' + failures + ' failure(s)');
     process.exit(1);
   }
   console.log('[ok] message rate limit tests');
-}, 150);
+})().catch(error => { console.error(error); process.exitCode = 1; });
 }

@@ -119,6 +119,47 @@ async function run() {
       assert.equal(opened.panel.closed, true, name + ' keeps controls isolated');
       assert.equal(opened.panel.position, 'fixed', name + ' fixes panel position');
       assert(opened.panel.width > 0 && opened.panel.height > 0, name + ' paints the panel');
+      if (name === 'ordinary') {
+        const since = await evaluate(page, 'performance.timeOrigin');
+        await evaluate(extension.attachedSession, `(async () => {
+          const [tab] = await chrome.tabs.query({url:${JSON.stringify(url)}});
+          const events = Array.from({length: 16}, (_, i) => ({type: 'blocked_fixture_' + i, kind: 'action', count: 1}));
+          events.push({type: 'blocked_thirdparty_cookie', kind: 'action', count: 123});
+          await chrome.tabs.sendMessage(tab.id, {kind: 'badge-activity-update',
+            snapshot: {ok: true, since: ${since}, current: {total: 139, networkAvailable: true}, events}});
+        })()`);
+        const { root: dom } = await cdp.send('DOM.getDocument', {}, page);
+        const { nodeId } = await cdp.send('DOM.querySelector', { nodeId: dom.nodeId, selector: '#wo-badge-controls' }, page);
+        const { node } = await cdp.send('DOM.describeNode', { nodeId, depth: 1, pierce: true }, page);
+        const { object } = await cdp.send('DOM.resolveNode', { backendNodeId: node.shadowRoots[0].backendNodeId }, page);
+        const inspect = async () => (await cdp.send('Runtime.callFunctionOn', {
+          objectId: object.objectId, returnByValue: true, functionDeclaration: `function () {
+            const list = this.querySelector('.rules');
+            const css = getComputedStyle(list);
+            list.scrollTop = list.scrollHeight;
+            const scrolled = list.scrollTop > 0;
+            const button = list.querySelector('button[aria-label*="third-party cookies" i]');
+            if (button) button.scrollIntoView({block:'nearest'});
+            const box = list.getBoundingClientRect(), target = button?.getBoundingClientRect();
+            return { scheme: css.colorScheme, width: css.scrollbarWidth, colors: css.scrollbarColor, scrolled,
+              fit: list.scrollWidth === list.clientWidth && !!target && box.right - target.right >= 8,
+              hit: !!target && button.contains(this.elementFromPoint(target.x + target.width / 2, target.y + target.height / 2)) };
+          }`,
+        }, page)).result.value;
+        for (const [scheme, colors] of [
+          ['dark', 'rgb(225, 176, 243) rgb(44, 26, 55)'], ['light', 'rgb(111, 47, 138) rgb(244, 235, 251)'],
+        ]) {
+          await evaluate(extension.attachedSession, `chrome.storage.local.set({wardenone_theme: '${scheme}'})`);
+          let appearance;
+          for (const deadline = Date.now() + 10000; Date.now() < deadline; await sleep(100)) {
+            appearance = await inspect();
+            if (appearance?.scheme === scheme && appearance.hit) break;
+          }
+          assert.deepEqual(appearance, { scheme, width: 'thin', colors, scrolled: true, fit: true, hit: true },
+            scheme + ' scrollbar and right-edge controls');
+        }
+        console.log('[ok] overflowing activity rows and their controls remain visible in both badge themes');
+      }
       await click('document.getElementById("rg-badge-host").shadowRoot.getElementById("rg-b")');
       await until(page, '!document.getElementById("wo-badge-controls")');
       assert.equal((await evaluate(page, state)).legacy, 'none', name + ' closes');
@@ -153,6 +194,21 @@ async function run() {
       assert.equal(await evaluate(page, 'document.querySelector("main h1").textContent'), 'Page content');
       console.log('[ok] ' + name + ': badge toggle, layout isolation, playback and policy enforcement');
     }
+    await evaluate(page, `window.fixtureBadge=document.getElementById('rg-badge-host')`);
+    assert.equal(await evaluate(page, 'fixtureBadge.parentElement===document.documentElement'), true);
+    await evaluate(page, 'document.body.replaceWith(document.body.cloneNode(true))');
+    assert.equal(await evaluate(page, 'document.getElementById("rg-badge-host")===fixtureBadge&&fixtureBadge.isConnected'), true,
+      'body replacement preserves the existing badge');
+    await evaluate(page, 'fixtureBadge.remove()');
+    await until(page, 'fixtureBadge.isConnected');
+    assert.equal(await evaluate(page, 'document.getElementById("rg-badge-host")===fixtureBadge'), true,
+      'detachment restores the same badge');
+    await click('document.getElementById("rg-badge-host").shadowRoot.getElementById("rg-b")');
+    await until(page, 'document.getElementById("wo-badge-controls")?.getBoundingClientRect().height>0');
+    await click('document.getElementById("rg-badge-host").shadowRoot.getElementById("rg-b")');
+    await until(page, '!document.getElementById("wo-badge-controls")');
+    assert.equal(await evaluate(page, 'document.querySelectorAll("#rg-badge-host").length'), 1);
+    console.log('[ok] body replacement and badge detachment preserve working controls without duplicates');
     if (process.env.WARDENONE_BADGE_REAL_SITE === '1') {
       await cdp.send('Page.navigate', { url: 'https://nightmareproject.com/' }, page);
       await until(page, 'document.getElementById("rg-badge-host")?.shadowRoot?.getElementById("rg-b")');

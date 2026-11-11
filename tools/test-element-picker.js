@@ -145,7 +145,7 @@ const looksGenerated = loadLooksGenerated();
   const relayAt = BRIDGE.indexOf('const relayAllowedMessage');
   const relayEnd = BRIDGE.indexOf("woOn(document, 'wo-background-message'", relayAt);
   const pageRelay = relayAt < 0 || relayEnd < 0 ? '' : BRIDGE.slice(relayAt, relayEnd);
-  ['hidden-add', 'hidden-remove', 'hidden-list'].forEach((kind) => {
+  ['hidden-add', 'hidden-remove', 'hidden-list', 'hidden-clear-site'].forEach((kind) => {
     check(kind + ' is not relayed from the page world', pageRelay.indexOf(kind) < 0);
   });
 
@@ -153,14 +153,14 @@ const looksGenerated = loadLooksGenerated();
      allowlist and the ceilings both have to name them. */
   const allow = BG.slice(BG.indexOf('TAB_CONTEXT_ALLOWED_MESSAGES = new Set(['), BG.indexOf(']);', BG.indexOf('TAB_CONTEXT_ALLOWED_MESSAGES = new Set([')));
   const limits = BG.slice(BG.indexOf('const TAB_CONTEXT_RATE_LIMITS'), BG.indexOf('\n};', BG.indexOf('const TAB_CONTEXT_RATE_LIMITS')));
-  ['hidden-add', 'hidden-remove', 'hidden-list'].forEach((kind) => {
+  ['hidden-add', 'hidden-remove', 'hidden-list', 'hidden-clear-site'].forEach((kind) => {
     check(kind + ' is allowed from a tab', allow.indexOf("'" + kind + "'") >= 0,
       'it would be rejected before reaching its handler');
     check(kind + ' has a ceiling', limits.indexOf("'" + kind + "'") >= 0);
   });
 
   check('every one is pinned to the sender\'s own host',
-    /\^hidden-\(add\|remove\|list\)\$[\s\S]{0,160}messageSenderMatchesHost/.test(BG),
+    /\^hidden-\(add\|remove\|list\|clear-site\)\$[\s\S]{0,160}messageSenderMatchesHost/.test(BG),
     'a tab could otherwise write rules for a site it is not on');
 }());
 
@@ -569,6 +569,87 @@ const looksGenerated = loadLooksGenerated();
   check('the walk always terminates with something',
     /return parts\.length \? 'body > ' \+ parts\.join\(' > '\) : '';/.test(PICKER));
 })();
+
+(function pickerSiteReset() {
+  function harness() {
+    const requests = [], removed = [], lateRemovals = [];
+    const make = (tag, cls, text) => ({ tag, className: cls, textContent: text || '', children: [], listeners: {},
+      appendChild(node) { this.children.push(node); }, setAttribute() {},
+      addEventListener(type, listener) { this.listeners[type] = listener; },
+      click(isTrusted = true) { this.listeners.click({ isTrusted }); },
+    });
+    const entries = ['first', 'second'].map(selector => ({ selector, saveFinished: false, undoRequested: false,
+      element: { removeAttribute: name => removed.push([selector, name]) } }));
+    const context = { HOST: 'site.example', HOST_LABEL: 'site.example', ZAP_ATTR: 'data-wardenone-zapped',
+      undoState: { items: entries.slice() }, zapped: entries.map(entry => entry.element), lastSaved: ['first', 'second'],
+      zapCount: 2, latestSeq: 3, current: {}, ui: { isConnected: true }, el: make, frame() {}, stop() {},
+      keyHints: () => make('div'),
+      say(panel) { context.panel = panel; }, disarmGlobalUndoIfEmpty() {},
+      removeSavedSelector: (...args) => lateRemovals.push(args),
+      chrome: { runtime: { sendMessage(message, callback) { requests.push({ message, callback }); } } },
+    };
+    vm.createContext(context);
+    const start = PICKER.indexOf('  function hintPanel('), end = PICKER.indexOf('\n  say(hintPanel());', start);
+    const finish = PICKER.slice(PICKER.indexOf('  function finishZapperSave('), PICKER.indexOf('  function ensureZapStyle('));
+    const panel = PICKER.slice(PICKER.indexOf('  function zapPanel('), PICKER.indexOf('  /* Set as each rule is built'));
+    vm.runInContext('let undoAllConfirming=false,undoAllPending=false;' + PICKER.slice(start, end) + finish
+      + panel + ';this.open=()=>say(hintPanel());this.settledSave=finishZapperSave;', context);
+    const button = (label, node = context.panel) => {
+      if (node.tag === 'button' && node.textContent === label) return node;
+      for (const child of node.children) { const found = button(label, child); if (found) return found; }
+    };
+    context.open();
+    return { context, requests, entries, removed, lateRemovals, button, confirm() {
+      button('Undo all on this site').click(); button('Undo all').click();
+    } };
+  }
+  {
+    const t = harness();
+    assert(t.button('Undo all on this site'), 'the opening panel exposes site reset before any new zap');
+    t.button('Undo all on this site').click(false);
+    assert.equal(t.requests.length, 0, 'untrusted clicks cannot start a reset');
+    t.button('Undo all on this site').click();
+    assert.equal(t.requests.length, 0, 'opening confirmation does not change rules');
+    t.button('Keep changes').click();
+    assert.equal(t.context.undoState.items.length, 2);
+    assert.equal(t.removed.length, 0);
+    t.confirm();
+    assert.equal(t.requests[0].message.kind, 'hidden-clear-site');
+    assert.equal(t.requests[0].message.hostname, 'site.example');
+    assert(t.button('Undoing…').disabled, 'saving disables duplicate submissions');
+    t.requests[0].callback({ ok: false, error: 'Storage unavailable' });
+    assert.equal(t.context.undoState.items.length, 2, 'failure preserves undo history');
+    assert.equal(t.removed.length, 0, 'failure leaves local hiding intact');
+    assert(t.button('Undo all'), 'a failed reset can be retried');
+    t.button('Undo all').click(); t.requests[1].callback({ ok: true });
+    assert.equal(t.removed.length, 2);
+    assert.equal(t.context.undoState.items.length, 0);
+    assert.equal(t.context.zapCount, 0);
+    assert.equal(t.context.zapped.length + t.context.lastSaved.length, 0);
+    assert(t.button('Undo all on this site'), 'successful reset returns to the live picker');
+    t.context.settledSave(t.entries[0]);
+    assert.equal(t.lateRemovals.length, 0, 'late save replies cannot remove selections made after reset');
+  }
+  {
+    const t = harness(); t.confirm();
+    t.requests[0].callback({ ok: true, persisted: false });
+    assert.equal(t.context.undoState.items.length, 2, 'private-window writes cannot claim the saved rules were removed');
+    assert.equal(t.removed.length, 0);
+    assert(t.button('Undo all'), 'private-window refusal keeps the confirmation available');
+  }
+  {
+    const t = harness(); t.confirm();
+    const later = { selector: 'first-again', element: t.entries[0].element };
+    t.context.ui.isConnected = false;
+    t.context.undoState.items.push(later);
+    t.requests[0].callback({ ok: true });
+    assert.equal(t.context.undoState.items.length, 1, 'a reopened picker retains selections made after the reset request');
+    assert.equal(t.context.undoState.items[0], later);
+    assert.deepEqual(t.removed.map(value => value[0]), ['second'], 'a newly hidden copy of the same element keeps its mark');
+  }
+  check('the active Zapper panel also exposes site reset',
+    /function zapPanel[\s\S]*?addUndoAllButton\(row\)/.test(PICKER));
+}());
 
 /* ---- reset all ----------------------------------------------------------- */
 (function resetAll() {

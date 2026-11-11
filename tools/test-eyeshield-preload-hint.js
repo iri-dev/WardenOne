@@ -70,6 +70,12 @@ for (const mode of MODES) {
   check(file + ' is in the integrity list', BG.includes("'" + file + "'"));
 }
 
+{
+  const BOOT = read('eyeshield-bootstrap.js');
+  check('bootstrap and core paint the same registered hint', [BOOT, EYESHIELD].every(source =>
+    source.includes('WOEyeShieldProfiles.paintPreload(document, location, window.' + HINT + ')')));
+}
+
 /* The refresh early-out key must carry the mode. It encoded only eyeShieldThemingActive, so a
    change from dark to light with theming staying on produced an identical key and the whole
    refresh returned before reaching the reconciler: found live, in Edge, with the registration
@@ -178,22 +184,27 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
   {
     const w = worker();
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'dark', eyeShieldSites: { 'github.com': { mode: 'off' } } });
-    check('a site Off profile registers only the small frame bootstrap',
-      w.state.registered.length === 1 && JSON.stringify(filesOf(w)) === '["eyeshield-bootstrap.js"]'
+    /* The bootstrap waits on a worker round trip before EyeShield exists, which is long enough for the
+       page to paint its own colours. The hint rides along so the bootstrap can lay the holding colour
+       down at document_start; it stays one small registration. */
+    check('a site Off profile registers the small frame bootstrap, with the mode hint ahead of it',
+      w.state.registered.length === 1
+      && JSON.stringify(filesOf(w)) === '["eyeshield-preload-dark.js","eyeshield-profiles.js","eyeshield-bootstrap.js"]'
       && JSON.stringify(w.state.registered[0].matches) === '["<all_urls>"]');
   }
   {
     const w = worker();
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'off', eyeShieldSites: { 'youtube.com': { mode: 'custom', theme: 'dark' } } });
     check('a custom-only setup sends the bootstrap to every frame origin',
-      w.state.registered.length === 1 && JSON.stringify(filesOf(w)) === '["eyeshield-bootstrap.js"]'
+      w.state.registered.length === 1 && JSON.stringify(filesOf(w)) === '["eyeshield-profiles.js","eyeshield-bootstrap.js"]'
       && w.state.registered[0].allFrames === true && JSON.stringify(w.state.registered[0].matches) === '["<all_urls>"]');
   }
   {
     const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield-profiles.js', 'eyeshield.js'], matches: ['<all_urls>'] }] });
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'dark', eyeShieldSites: { 'github.com': { mode: 'off' } } });
-    check('adding Off swaps the core for the bootstrap and removes direct site themes',
-      w.state.updated.length === 1 && JSON.stringify(w.state.updated[0].js) === '["eyeshield-bootstrap.js"]'
+    check('adding Off swaps the core for the bootstrap, keeps the hint, and removes direct site themes',
+      w.state.updated.length === 1
+      && JSON.stringify(w.state.updated[0].js) === '["eyeshield-preload-dark.js","eyeshield-profiles.js","eyeshield-bootstrap.js"]'
       && w.state.unregistered.includes('wo-eyeshield-sites-dynamic'));
   }
   {
@@ -204,7 +215,7 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
       && w.state.registered.some((script) => script.id === 'wo-eyeshield-sites-dynamic') && w.state.injected);
   }
   {
-    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-bootstrap.js'], matches: ['<all_urls>'] }], omitSites: true });
+    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-profiles.js', 'eyeshield-bootstrap.js'], matches: ['<all_urls>'] }], omitSites: true });
     const profile = (theme) => ({ enabled: true, eyeShieldMode: 'off', eyeShieldSites: { 'youtube.com': { mode: 'custom', theme } } });
     await w.api.reconcileEyeShieldInjection(profile('off'));
     w.state.injected = false;
@@ -234,31 +245,39 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
   function page(o) {
     const calls = [];
     const appended = [];
+    const messages = [];
     const local = {
       getItem: (k) => { calls.push(['getItem', k]); return o.stored === undefined ? null : o.stored; },
       setItem: (k, v) => { calls.push(['setItem', k, v]); },
       removeItem: (k) => { calls.push(['removeItem', k]); if (o.storageThrows) throw new Error('SecurityError'); },
     };
     const win = { localStorage: local };
+    win.top = o.framed ? {} : win;
     if (o.hint !== undefined) win[HINT] = o.hint;
     const doc = {
       head: { appendChild: (el) => appended.push(el) },
       documentElement: { appendChild: (el) => appended.push(el) },
-      createElement: (tag) => ({ tag, id: '', textContent: '' }),
+      createElement: (tag) => ({ tag, id: '', textContent: '', remove() { appended.splice(appended.indexOf(this), 1); } }),
+      getElementById: (id) => appended.find((el) => el.id === id) || null,
     };
     const ctx = {
-      window: win, document: doc, location: { hostname: o.host || 'example.com' },
-      BASE_BG: { dark: '#16181a', ultra: '#000000', light: '#f7f8fb' }, PRELOAD_ID: 'wardenone-eyeshield-preload', LEGACY_MODE_CACHE_KEY: LEGACY_KEY,
-      String, RegExp,
+      window: win, document: doc, location: { hostname: o.host || 'example.com', pathname: o.pathname || '/' },
+      WOEyeShieldProfiles, LEGACY_MODE_CACHE_KEY: LEGACY_KEY,
+      String, RegExp, AbortController,
+      chrome: { runtime: {
+        sendMessage: (msg, cb) => { messages.push(msg); if (o.reply && msg.kind === 'eyeshield-bootstrap') cb(o.reply); },
+        onMessage: { addListener() {} },
+      } },
     };
-    vm.runInNewContext(block, ctx, { filename: 'eyeshield.js:anti-flash' });
-    return { calls, appended };
+    vm.runInNewContext(o.source || block, ctx, { filename: 'eyeshield-page.js' });
+    return { calls, appended, messages };
   }
   for (const mode of MODES) {
     const p = page({ hint: mode });
     check('hint ' + mode + ' paints the backdrop before config arrives', p.appended.length === 1 && p.appended[0].id === 'wardenone-eyeshield-preload'
       && p.appended[0].textContent.includes({ dark: '#16181a', ultra: '#000000', light: '#f7f8fb' }[mode])
-      && p.appended[0].textContent.includes('color-scheme:' + (mode === 'light' ? 'light' : 'dark')), p.appended);
+      && p.appended[0].textContent.includes('color-scheme:' + (mode === 'light' ? 'light' : 'dark'))
+      && p.appended[0].textContent.includes('html body{background-color:'), p.appended);
   }
   {
     const p = page({ hint: 'dark', stored: 'light' });
@@ -274,6 +293,48 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
   check('a hint the script does not recognise paints nothing', page({ hint: 'sepia' }).appended.length === 0);
   check('Discord keeps its own theme: no backdrop there', page({ hint: 'dark', host: 'discord.com' }).appended.length === 0);
   check('...nor on Spotify', page({ hint: 'light', host: 'open.spotify.com' }).appended.length === 0);
+  const boot = read('eyeshield-bootstrap.js');
+  for (const [mode, bg, text, link] of [
+    ['light', '#ffffff', '#202124', '#1a0dab'],
+    ['dark', '#111316', '#f1f3f6', '#8ab4ff'],
+    ['ultra', '#000000', '#ffffff', '#8ab4ff'],
+  ]) {
+    for (const [entry, source] of [['core', EYESHIELD], ['bootstrap', boot]]) {
+      const p = page({ source, hint: mode, host: 'www.google.co.uk', pathname: '/search' });
+      const css = p.appended[0]?.textContent || '';
+      check(entry + ': Google Search ' + mode + ' pairs background, text and link colors before config',
+        p.appended.length === 1 && css.includes('html body{background-color:' + bg)
+          && css.includes('--YLNNHc:' + text) && css.includes('--JKqx2:' + link));
+    }
+  }
+  const handoff = page({ source: boot + '\nwindow.' + HINT + ' = "ultra";\n' + EYESHIELD,
+    hint: 'light', host: 'www.google.com', pathname: '/search' });
+  check('the bootstrap and the core share one preload, updated to the resolved mode',
+    handoff.appended.length === 1 && handoff.appended[0].textContent.includes('--xhUGwc:#000000'));
+  check('a site with EyeShield off keeps no temporary theme after the worker replies',
+    page({ source: boot, hint: 'dark', host: 'www.google.com', pathname: '/search', reply: { ok: true, injected: false } }).appended.length === 0);
+  check('a similar Google hostname receives only the generic backdrop',
+    !page({ hint: 'light', host: 'www.google.com.example.org', pathname: '/search' }).appended[0]?.textContent.includes('--YLNNHc'));
+  for (const [entry, source] of [['core', EYESHIELD], ['bootstrap', read('eyeshield-bootstrap.js')]]) {
+    for (const mode of MODES) {
+      for (const host of ['tiktok.com', 'www.tiktok.com']) {
+        const p = page({ source, hint: mode, host });
+        check(entry + ': ' + host + ' requests its theme without painting a startup backdrop in ' + mode,
+          p.appended.length === 0 && p.messages.length === 1);
+      }
+    }
+    const other = page({ source, hint: 'ultra', host: 'tiktok.com.example.org' });
+    check(entry + ': a similar hostname still gets themed', other.appended.length === 1 && other.messages.length === 1);
+    for (const hint of MODES) {
+      const captcha = page({ source, hint, host: 'newassets.hcaptcha.com', framed: true });
+      check(entry + ': hCaptcha frames keep their native palette in ' + hint,
+        captcha.appended.length === 0 && captcha.messages.length === 0);
+    }
+    for (const [host, framed] of [['accounts.hcaptcha.com', false], ['hcaptcha.com.example.org', true]]) {
+      const p = page({ source, hint: 'ultra', host, framed });
+      check(entry + ': theming still applies on ' + host, p.appended.length === 1 && p.messages.length === 1);
+    }
+  }
   check('a frame whose storage throws still gets its backdrop and nothing escapes', (() => {
     try { return page({ hint: 'dark', storageThrows: true }).appended.length === 1; } catch (_) { return false; }
   })());

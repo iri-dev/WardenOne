@@ -131,8 +131,13 @@ function oddReleaseLinks(text) {
   const settings = job('browser-settings');
   check('the Settings page runs in Edge on a Windows runner, every suite',
     /runs-on: windows-2025/.test(settings)
-      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 18
+      && (settings.match(/WARDENONE_HEADLESS: '1'/g) || []).length === 23
       && /run: node tools\/browser-settings-data\.js/.test(settings)
+      && /run: node tools\/browser-anti-adblock\.js/.test(settings)
+      && /run: node tools\/browser-key-handoff\.js/.test(settings)
+      && /run: node tools\/browser-context-menu\.js/.test(settings)
+      && /run: node tools\/browser-eyeshield-spotify\.js/.test(settings)
+      && /run: node tools\/browser-link-check\.js/.test(settings)
       && /run: node tools\/browser-settings-arrange\.js/.test(settings)
       && /run: node tools\/browser-config-race\.js/.test(settings)
       && /run: node tools\/browser-audit-highs\.js/.test(settings)

@@ -134,13 +134,17 @@ const seen = (text, secret) => String(text || '').indexOf(secret) >= 0;
   const KEPT = [
     ['a static asset with a cache-buster', 'https://cdn.site.com/static/app.js?v=3', 'https://cdn.site.com/static/app.js?v=3'],
     ['an API route with paging and a sort word', 'https://site.com/api/v2/items?page=2&sort=newest', 'https://site.com/api/v2/items?page=2&sort=newest'],
-    ['a record id and a locale', 'https://site.com/orders/12345?lang=en-us&debug=true', 'https://site.com/orders/12345?lang=en-us&debug=true'],
+    ['a short page number and a locale', 'https://site.com/orders/1234?lang=en-us&debug=true', 'https://site.com/orders/1234?lang=en-us&debug=true'],
     ['a flag with no value', 'https://site.com/feed?compact', 'https://site.com/feed?compact='],
     ['a bare host', 'https://site.com/', 'https://site.com/'],
   ];
   for (const [label, url, want] of KEPT) {
     const out = r.redact(url);
     check('keeps ' + label, out.url === want && out.redacted === false, JSON.stringify(out));
+  }
+  {
+    const record = r.redact('https://site.com/orders/12345?lang=en-us&debug=true');
+    check('a longer record id goes but the locale stays', record.url === 'https://site.com/orders/*?lang=en-us&debug=true' && record.redacted === true, JSON.stringify(record));
   }
   {
     const out = r.redact('https://files.site.com/get/AbCdEf1234567890XyZ.pdf');

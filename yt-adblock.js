@@ -265,6 +265,38 @@
     });
   } catch (_) {}
 
+  /* yt-adblock-arm.js arrives with the browser's own injection, not a worker reply, so a busy or
+     sleeping worker can no longer let the page read its player data first and latch AdShield off
+     for the visit. Static and registered scripts may run in either order, hence both paths.
+     Refused once a page script could have run, exactly as the key hand-off is. */
+  function acceptArm() {
+    if (woYoutubeConfigured || __woAuth.pageCouldHaveRun(document)) return;
+    woYoutubeEnabled = true;
+    woYoutubeConfigured = true;
+    setMasterEnabled(woMasterEnabled);
+  }
+  /* The slot is only needed until document_start ends; leaving it would be one more marker. */
+  var armSlotLive = false;
+  function dropArmSlot() {
+    if (!armSlotLive) return;
+    armSlotLive = false;
+    try { delete window.__wardenOneYouTubeArm; } catch (_) {}
+  }
+  try {
+    if (Object.prototype.hasOwnProperty.call(window, "__wardenOneYouTubeArm")) {
+      delete window.__wardenOneYouTubeArm;
+      acceptArm();
+    } else {
+      Object.defineProperty(window, "__wardenOneYouTubeArm", {
+        configurable: true, enumerable: false,
+        get: function () { return undefined; },
+        set: function () { acceptArm(); dropArmSlot(); },
+      });
+      armSlotLive = true;
+      document.addEventListener("DOMContentLoaded", dropArmSlot, { once: true });
+    }
+  } catch (_) {}
+
   var host = "";
   try { host = String(location.hostname || "").replace(/^www\./, "").toLowerCase(); } catch (_) {}
   // `host` has already had a leading `www.` removed. Keep the desktop request

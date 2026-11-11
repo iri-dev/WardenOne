@@ -633,7 +633,7 @@
     adShield:!0,
     googleSearchResultCleanup:!1,
     blockSearchAiAnswers:!1,
-    blockSponsoredSearchResults:!1,
+    blockSponsoredSearchResults:!0,
     scriptletEngine:!0,
     twitchAdBlock:!0,
     twitchSteadyPlayback:!0,
@@ -663,7 +663,7 @@
     forceHttps:!1,
     downloadSafeBrowsing:!1,
     abuseIpDb:!1,
-    openPhish:!1,
+    openPhish:!0,
     phishTank:!1,
     urlHaus:!1,
     whoisXml:!1,
@@ -5662,6 +5662,10 @@
           "t.co"]
         },
         {
+          pages:["tiktok.com"],
+          destinations:["tiktokv.com","tiktokv.eu","tiktokw.eu"]
+        },
+        {
           /* Spotify is already covered by globalDestinations; keep that policy in one place. */
           pages:["discord.com",
           "discordapp.com"],
@@ -7820,7 +7824,8 @@
         16).toUpperCase():r.slice(0,
         32)
       };
-      ["apiKey",
+      /* TikTok probes the page's credential globals during startup. */
+      if(!/(^|\.)tiktok\.com$/i.test(location.hostname))["apiKey",
       "apiSecret",
       "authToken",
       "accessToken",
@@ -10052,8 +10057,44 @@
       "ytd-in-feed-ad-layout-renderer",
       "ytd-promoted-video-renderer",
       "ytd-compact-promoted-video-renderer"];
-      let styleEl=null;
+      let styleEl=null,
+      siteSelectors=[];
       const CHUNK=120,
+      /* On a player page only the site's own rules apply, and only those that reach neither the
+         largest player nor anything inside a player shell, the parts a hiding rule could break. */
+      playerSafeSelectors=list=>{
+        if(!Array.isArray(list)||!list.length)return[];
+        let main=null,
+        best=0;
+        try{
+          for(const el of document.querySelectorAll(PLAYER_PAGE_SELECTOR)){
+            const r=el.getBoundingClientRect(),
+            area=r.width*r.height;
+            area>best&&(best=area,
+            main=el)
+          }
+        }
+        catch(_){
+
+        }
+        return list.slice(0,
+        600).filter(sel=>{
+          try{
+            for(const el of document.querySelectorAll(sel)){
+              if(el.closest(PLAYER_SHELL_SELECTOR)||main&&(el.contains(main)||main.contains(el)))return!1
+            }
+            return!0
+          }
+          catch(_){
+            return!1
+          }
+
+        })
+      },
+      applyPlayerSafe=()=>{
+        const safe=playerSafeSelectors(siteSelectors);
+        safe.length?injectCss(safe):styleEl&&(styleEl.textContent="")
+      },
       injectCss=selectors=>{
         if(!selectors||!selectors.length)return;
         const list=Array.from(new Set(selectors)).slice(0,
@@ -10679,6 +10720,337 @@
       scMutatorBlocks={
         count:0
       },
+      scNoop=function(){
+
+      },
+      scDefineValue=(path,value)=>{
+        const parts=String(path||"").split("."),parent=scResolveParent(parts,!0);
+        if(!parent)return;
+        try{
+          Object.defineProperty(parent,parts[parts.length-1],{configurable:!1,get:()=>value,set:scNoop})
+        }
+        catch(_){
+          try{
+            parent[parts[parts.length-1]]=value
+          }
+          catch(_e){
+
+          }
+
+        }
+
+      },
+      /* uBlock empties the text of a matching node rather than preventing the script from running;
+         a MutationObserver cannot pre-empt synchronous parser execution. The win is against the
+         anti-adblock scripts that re-read their own source, and against late-inserted nodes. */
+      scNodeText=(nodeName,search,replacement)=>{
+        const want=String(nodeName||"").trim().toLowerCase();
+        if(!want)return;
+        const re=scSearchToRe(search),sel="#text"===want?null:want,
+        global=new RegExp(re.source,re.flags.includes("g")?re.flags:re.flags+"g"),
+        done=new WeakSet;
+        scAddSweeper(()=>{
+          if(!pageMutationScriptletRuntimeOn())return;
+          try{
+            if(sel){
+              for(const el of document.querySelectorAll(sel)){
+                if(done.has(el))continue;
+                const txt=el.textContent||"";
+                if(!txt||!re.test(txt))continue;
+                done.add(el);
+                el.textContent=null==replacement?"":txt.replace(global,replacement)
+              }
+              return
+            }
+            const walker=document.createTreeWalker(document.documentElement,NodeFilter.SHOW_TEXT);
+            let budget=5e3;
+            for(let n=walker.nextNode();n&&budget-- >0;n=walker.nextNode()){
+              const txt=n.nodeValue||"";
+              if(done.has(n)||!txt||!re.test(txt))continue;
+              done.add(n);
+              n.nodeValue=null==replacement?"":txt.replace(global,replacement)
+            }
+
+          }
+          catch(_){
+
+          }
+
+        })
+      },
+      /* Reading a stack trace costs far more than the call it guards, and the public lists hook
+         getters as hot as DOMTokenList.prototype.contains. Spend a bounded number of reads per
+         page and then stand down rather than taxing every later call. */
+      scStackBudget={
+        n:2e4
+      },
+      scStackHit=re=>{
+        if(scStackBudget.n<=0||!pageMutationScriptletRuntimeOn())return!1;
+        scStackBudget.n--;
+        try{
+          return re.test(String(new Error().stack||""))
+        }
+        catch(_){
+          return!1
+        }
+
+      },
+      scAbortOnStack=(path,needle)=>{
+        const parts=String(path||"").split("."),parent=scResolveParent(parts,!1);
+        if(!parent)return;
+        const leaf=parts[parts.length-1],re=scSearchToRe(needle);
+        let real;
+        try{
+          real=parent[leaf]
+        }
+        catch(_){
+          return
+        }
+        try{
+          if("function"==typeof real){
+            const guarded=function(){
+              if(scStackHit(re))throw new ReferenceError("WardenOne:aost:"+path);
+              return real.apply(this,arguments)
+            };
+            guarded.toString=()=>String(real);
+            parent[leaf]=guarded;
+            return
+          }
+          Object.defineProperty(parent,leaf,{configurable:!1,get(){
+            if(scStackHit(re))throw new ReferenceError("WardenOne:aost:"+path);
+            return real
+          },set(v){
+            real=v
+          }})
+        }
+        catch(_){
+
+        }
+
+      },
+      /* "?name" reads a query parameter, "text" the link text. A trailing /regex/ extracts a
+         capture group and "-base64" decodes it, which is how the search engines and affiliate
+         wrappers in the public lists carry the real destination. */
+      scHrefSource=(anchor,spec)=>{
+        const parts=String(spec||"").trim().split(/\s+/).filter(Boolean);
+        if(!parts.length)return"";
+        let value="";
+        const head=parts[0];
+        try{
+          if("?"===head[0]){
+            const name=head.slice(1);
+            value=new URL(anchor.getAttribute("href"),location.href).searchParams.get(name)||""
+          }
+          else if("text"===head)value=(anchor.textContent||"").trim();
+          else value=anchor.getAttribute(head)||""
+        }
+        catch(_){
+          return""
+        }
+        for(const extra of parts.slice(1)){
+          if("-base64"===extra){
+            try{
+              value=atob(value.replace(/-/g,"+").replace(/_/g,"/"))
+            }
+            catch(_){
+              return""
+            }
+            continue
+          }
+          const re=scSearchToRe(extra);
+          try{
+            const m=re.exec(value);
+            value=m?m[1]||m[0]:""
+          }
+          catch(_){
+            return""
+          }
+
+        }
+        return value
+      },
+      scHrefSanitizer=(selector,spec)=>{
+        if(!selector)return;
+        const done=new WeakSet;
+        scAddSweeper(()=>{
+          if(!pageMutationScriptletRuntimeOn())return;
+          try{
+            for(const a of document.querySelectorAll(selector)){
+              if(done.has(a))continue;
+              const value=scHrefSource(a,spec);
+              if(!value)continue;
+              let href;
+              try{
+                href=new URL(value,location.href)
+              }
+              catch(_){
+                continue
+              }
+              if("http:"!==href.protocol&&"https:"!==href.protocol)continue;
+              done.add(a);
+              a.setAttribute("href",href.href);
+              a.removeAttribute("ping")
+            }
+
+          }
+          catch(_){
+
+          }
+
+        })
+      },
+      /* Only cookies JavaScript can already read are in reach: a real session cookie is HttpOnly
+         and invisible here, so a mistaken pattern cannot sign the reader out. */
+      scRemoveCookie=(search,trigger)=>{
+        const re=scSearchToRe(search),hosts=[];
+        let host=location.hostname;
+        for(;host.includes(".");){
+          hosts.push(host);
+          host=host.slice(host.indexOf(".")+1)
+        }
+        const sweep=()=>{
+          if(!pageMutationScriptletRuntimeOn())return;
+          let removed=0;
+          try{
+            for(const pair of String(document.cookie||"").split(";")){
+              const name=pair.split("=")[0].trim();
+              if(!name||!re.test(name)||removed>=32)continue;
+              removed++;
+              for(const path of["/",location.pathname]){
+                document.cookie=name+"=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path="+path;
+                for(const d of hosts)document.cookie=name+"=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path="+path+"; domain="+d
+              }
+
+            }
+
+          }
+          catch(_){
+
+          }
+
+        };
+        sweep();
+        const events=String(trigger||"").trim().split(/\s+/).filter(Boolean);
+        for(const type of events)try{
+          addEventListener(type,sweep,{passive:!0})
+        }
+        catch(_){
+
+        }
+
+      },
+      scTimerBooster=(which,search,wantDelay,boost)=>{
+        const real=window[which];
+        if("function"!=typeof real)return;
+        const re=scSearchToRe(search),want=null==wantDelay||""===wantDelay||"*"===wantDelay?null:Number(wantDelay);
+        let factor=null==boost||""===boost?.05:Number(boost);
+        if(!isFinite(factor)||factor<.001)factor=.001;
+        if(factor>50)factor=50;
+        window[which]=function(fn,t){
+          try{
+            if(pageMutationScriptletRuntimeOn()){
+              const s="function"==typeof fn?fn.toString():String(fn);
+              if((null==want||Number(t)===want)&&re.test(s)){
+                const args=Array.prototype.slice.call(arguments);
+                args[1]=Number(t)*factor;
+                return real.apply(this,args)
+              }
+
+            }
+
+          }
+          catch(_){
+
+          }
+          return real.apply(this,arguments)
+        }
+
+      },
+      scSetAttr=(selector,name,value)=>{
+        if(!selector||!name||!/^[\w:-]+$/.test(name))return;
+        const copyFrom=/^\[([\w:-]+)\]$/.exec(String(value||""));
+        scAddSweeper(()=>{
+          if(!pageMutationScriptletRuntimeOn())return;
+          try{
+            for(const el of document.querySelectorAll(selector)){
+              const next=copyFrom?el.getAttribute(copyFrom[1]):String(value||"");
+              if(null!=next&&el.getAttribute(name)!==next)el.setAttribute(name,next)
+            }
+
+          }
+          catch(_){
+
+          }
+
+        })
+      },
+      /* Anti-adblock baits read back a style the page never applied. Report the value they want
+         without changing what the reader sees. */
+      scSpoofCss=(selector,prop,value)=>{
+        if(!selector||!prop)return;
+        const real=window.getComputedStyle;
+        if("function"!=typeof real)return;
+        const wanted=String(prop).trim().toLowerCase(),shown=String(value||"");
+        const guarded=function(el,pseudo){
+          const style=real.apply(this,arguments);
+          try{
+            if(!pageMutationScriptletRuntimeOn()||pseudo||!el||!el.matches||!el.matches(selector))return style
+          }
+          catch(_){
+            return style
+          }
+          return new Proxy(style,{get(target,key){
+            if("getPropertyValue"===key)return name=>String(name).trim().toLowerCase()===wanted?shown:target.getPropertyValue(name);
+            if("string"==typeof key&&key.toLowerCase()===wanted.replace(/-([a-z])/g,(_m,c)=>c.toUpperCase()).toLowerCase())return shown;
+            const got=target[key];
+            return"function"==typeof got?got.bind(target):got
+          }})
+        };
+        guarded.toString=()=>String(real);
+        try{
+          window.getComputedStyle=guarded
+        }
+        catch(_){
+
+        }
+
+      },
+      scPopAdsDummy=()=>{
+        scDefineValue("PopAds",!0);
+        scDefineValue("popns",!0)
+      },
+      scPreventPopAds=()=>{
+        for(const name of["PopAds","popns"])try{
+          Object.defineProperty(window,name,{configurable:!1,get(){
+            throw new ReferenceError("WardenOne:popads:"+name)
+          },set:scNoop})
+        }
+        catch(_){
+
+        }
+
+      },
+      /* BlockAdBlock and FuckAdBlock are the same bait object under two names: hand the page an
+         instance whose detection callbacks never fire. */
+      scAdBlockDetectorStub=names=>{
+        const Stub=function(){
+
+        };
+        Stub.prototype.setOption=function(){
+          return this
+        };
+        Stub.prototype.check=function(){
+          return!0
+        };
+        Stub.prototype.clearEvent=Stub.prototype.on=Stub.prototype.onDetected=Stub.prototype.onNotDetected=function(){
+          return this
+        };
+        for(const name of names){
+          scDefineValue(name,Stub);
+          scDefineValue(name.charAt(0).toLowerCase()+name.slice(1),new Stub)
+        }
+        scDefineValue("babasbm",scNoop)
+      },
       SCRIPTLET_LIB={
         "set-constant":a=>scSetConstant(a[0],
         scToken(a[1])),
@@ -10688,12 +11060,22 @@
         !0),
         "abort-current-script":a=>scAbortCurrentScript(a[0],
         a[1]),
+        "abort-on-stack-trace":a=>scAbortOnStack(a[0],
+        a[1]),
         "no-setTimeout-if":a=>scTimerDefuser("setTimeout",
         a[0],
         a[1]),
         "no-setInterval-if":a=>scTimerDefuser("setInterval",
         a[0],
         a[1]),
+        "adjust-setTimeout":a=>scTimerBooster("setTimeout",
+        a[0],
+        a[1],
+        a[2]),
+        "adjust-setInterval":a=>scTimerBooster("setInterval",
+        a[0],
+        a[1],
+        a[2]),
         "no-fetch-if":a=>scNoFetchIf(a[0]),
         "no-xhr-if":a=>scNoXhrIf(a[0]),
         "addEventListener-defuser":a=>scAeld(a[0],
@@ -10745,6 +11127,27 @@
 
           })
         },
+        "set-attr":a=>scSetAttr(a[0],
+        a[1],
+        a[2]),
+        "spoof-css":a=>scSpoofCss(a[0],
+        a[1],
+        a[2]),
+        "remove-node-text":a=>scNodeText(a[0],
+        a[1],
+        null),
+        "replace-node-text":a=>scNodeText(a[0],
+        a[1],
+        null==a[2]?"":a[2]),
+        "href-sanitizer":a=>scHrefSanitizer(a[0],
+        a[1]),
+        "remove-cookie":a=>scRemoveCookie(a[0],
+        "when"===a[1]?a[2]:""),
+        "popads-dummy":()=>scPopAdsDummy(),
+        "prevent-popads-net":()=>scPreventPopAds(),
+        "bab-defuser":()=>scAdBlockDetectorStub(["BlockAdBlock"]),
+        "fuckadblock-defuser":()=>scAdBlockDetectorStub(["FuckAdBlock",
+        "BlockAdBlock"]),
         "set-cookie":()=>{
           ++scMutatorBlocks.count<=10&&log("scriptlet_mutator_blocked",
           {
@@ -10755,6 +11158,12 @@
           ++scMutatorBlocks.count<=10&&log("scriptlet_mutator_blocked",
           {
             name:"set-local-storage-item"
+          })
+        },
+        "set-session-storage-item":()=>{
+          ++scMutatorBlocks.count<=10&&log("scriptlet_mutator_blocked",
+          {
+            name:"set-session-storage-item"
           })
         },
         "json-prune":a=>scJsonPrune(a[0],
@@ -10787,50 +11196,74 @@
           count:n
         })
       },
+      PROC_OP_RE=/^:(-abp-contains|-abp-has|-abp-properties|has-text|contains|has|if-not|if|matches-css-before|matches-css-after|matches-css|matches-attr|matches-prop|matches-path|matches-media|min-text-length|not|upward|nth-ancestor|watch-attr|xpath|others|remove|style)\(/,
+      PROC_MAP_OPS=new Set(["upward","nth-ancestor","xpath","others"]),
+      PROC_ACTION_OPS=new Set(["remove","style"]),
+      PROC_INERT_OPS=new Set(["watch-attr"]),
+      PROC_CANDIDATE_CAP=4e3,
+      procArgAt=(text,start)=>{
+        let p=start,depth=1,arg="",quote="";
+        for(;p<text.length;p++){
+          const ch=text[p];
+          if(quote){
+            arg+=ch;
+            if("\\"===ch&&p+1<text.length){arg+=text[p+1];p++;continue}
+            if(ch===quote)quote="";
+            continue
+          }
+          if('"'===ch||"'"===ch){quote=ch;arg+=ch;continue}
+          /* A "\(" inside a regular expression argument is not a nesting paren. Counting it is how
+             ":matches-css(background-image: /^url\(data:...)" used to go unparsed. */
+          if("\\"===ch&&p+1<text.length){arg+=ch+text[p+1];p++;continue}
+          if("("===ch)depth++;
+          else if(")"===ch&&(depth--,0===depth))return{arg:arg,end:p+1};
+          arg+=ch
+        }
+        return null
+      },
+      /* Operators bind to the rightmost compound, so a run only counts when it reaches the end of
+         the selector. ":is(a,:not(b)) .c:has-text(d)" must keep its whole native prefix as the base
+         rather than splitting at the ":not(" nested inside ":is(". */
+      procOpRunAt=(text,start)=>{
+        const ops=[];
+        let i=start;
+        for(;i<text.length;){
+          const m=PROC_OP_RE.exec(text.slice(i));
+          if(!m)break;
+          const found=procArgAt(text,i+m[0].length);
+          if(!found)break;
+          ops.push({op:m[1],arg:found.arg.trim()});
+          i=found.end;
+          for(;" "===text[i];)i++
+        }
+        return i>=text.length&&ops.length?ops:null
+      },
+      compileProcedural=text=>{
+        let i=0,depth=0,quote="",bracket=0;
+        for(;i<text.length;i++){
+          const ch=text[i];
+          if(quote){
+            if("\\"===ch){i++;continue}
+            if(ch===quote)quote="";
+            continue
+          }
+          if('"'===ch||"'"===ch){quote=ch;continue}
+          if("\\"===ch){i++;continue}
+          if("["===ch){bracket++;continue}
+          if("]"===ch){bracket&&bracket--;continue}
+          if(bracket)continue;
+          if("("===ch){depth++;continue}
+          if(")"===ch){depth&&depth--;continue}
+          if(0!==depth||":"!==ch)continue;
+          const ops=procOpRunAt(text,i);
+          if(!ops)continue;
+          return{base:text.slice(0,i).trim()||"*",ops:ops,leading:0===i}
+        }
+        return null
+      },
       parseProcedural=raw=>{
         try{
-          const ops=[],
-          opRe=/:(-abp-contains|-abp-has|has-text|contains|has|matches-css(?:-before|-after)?|matches-attr|matches-path|min-text-length|upward|nth-ancestor|watch-attr|xpath|remove|style)\(/g;
-          opRe.lastIndex=0;
-          let mm=opRe.exec(raw);
-          if(!mm)return null;
-          const firstIdx=mm.index,
-          base=raw.slice(0,
-          firstIdx).trim()||"*";
-          let idx=firstIdx;
-          for(;
-          idx<raw.length;
-          ){
-            opRe.lastIndex=idx;
-            const m2=opRe.exec(raw);
-            if(!m2||m2.index!==idx)break;
-            const opName=m2[1];
-            let p=opRe.lastIndex,
-            depth=1,
-            arg="";
-            for(;
-            p<raw.length&&depth>0;
-            ){
-              const ch=raw[p];
-              if("("===ch)depth++;
-              else if(")"===ch&&(depth--,
-              0===depth))break;
-              arg+=ch,
-              p++
-            }
-            for(ops.push({
-              op:opName,
-              arg:arg.trim()
-            }),
-            idx=p+1;
-            " "===raw[idx];
-            )idx++
-          }
-          return ops.length?{
-            base:base,
-            ops:ops
-          }
-          :null
+          return compileProcedural(String(raw||""))
         }
         catch(_){
           return null
@@ -10846,63 +11279,172 @@
         }
 
       },
-      reOrText=(arg,
-      hay)=>{
-        if(arg.length>1&&"/"===arg[0]&&arg.lastIndexOf("/")>0){
-          const last=arg.lastIndexOf("/");
+      procUnquote=v=>{
+        const s=String(v||"").trim();
+        return s.length>1&&('"'===s[0]&&'"'===s[s.length-1]||"'"===s[0]&&"'"===s[s.length-1])?s.slice(1,-1):s
+      },
+      /* Filter lists wrap a regular expression in quotes as often as they leave it bare, so unquote
+         before deciding whether the argument is a pattern or a literal. */
+      procRegex=arg=>{
+        const s=procUnquote(arg);
+        if(s.length>1&&"/"===s[0]&&s.lastIndexOf("/")>0){
+          const last=s.lastIndexOf("/");
           try{
-            return new RegExp(arg.slice(1,
-            last),
-            arg.slice(last+1)).test(hay)
+            return new RegExp(s.slice(1,last),s.slice(last+1))
           }
           catch{
-            return!1
+            return null
           }
 
         }
-        return hay.includes(arg.replace(/^["']|["']$/g,
-        ""))
+        return null
       },
-      matchOp=(el,
-      op,
-      arg)=>{
+      reOrText=(arg,hay)=>{
+        const re=procRegex(arg);
+        if(re)try{
+          return re.test(hay)
+        }
+        catch{
+          return!1
+        }
+        return hay.includes(procUnquote(arg))
+      },
+      /* A bare name, a quoted wildcard pattern or a /regex/ may appear on either side of the "="
+         in :matches-attr() and :matches-prop(). A wildcard is anchored so "data-*" does not match
+         "x-data-y". */
+      procPatternTest=(arg,value)=>{
+        const re=procRegex(arg);
+        if(re)try{
+          return re.test(value)
+        }
+        catch{
+          return!1
+        }
+        const plain=procUnquote(arg);
+        if(!plain.includes("*"))return value===plain;
+        const body=plain.split("*").map(part=>part.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join(".*");
+        try{
+          return new RegExp("^"+body+"$").test(value)
+        }
+        catch{
+          return!1
+        }
+
+      },
+      procSplitTop=(arg,sep)=>{
+        let depth=0,quote="",slash=!1;
+        for(let i=0;i<arg.length;i++){
+          const ch=arg[i];
+          if(quote){
+            if("\\"===ch)i++;
+            else if(ch===quote)quote="";
+            continue
+          }
+          if(slash){
+            if("\\"===ch)i++;
+            else if("/"===ch)slash=!1;
+            continue
+          }
+          if('"'===ch||"'"===ch){quote=ch;continue}
+          if("\\"===ch){i++;continue}
+          if("/"===ch&&0===depth){slash=!0;continue}
+          if("("===ch||"["===ch)depth++;
+          else if(")"===ch||"]"===ch)depth&&depth--;
+          else if(ch===sep&&0===depth)return[arg.slice(0,i),arg.slice(i+1)]
+        }
+        return[arg,null]
+      },
+      /* ":has(> .ad)" is the most common procedural shape in the public lists. A relative argument
+         is not a valid standalone selector, so scope it rather than letting querySelector throw and
+         silently drop the rule. */
+      procScoped=arg=>{
+        const trimmed=String(arg||"").trim();
+        return/^[>+~]/.test(trimmed)?":scope "+trimmed:trimmed
+      },
+      procPropValue=(el,path)=>{
+        let cur=el;
+        for(const part of String(path||"").split(".")){
+          if(null==cur)return;
+          cur=cur[part]
+        }
+        return cur
+      },
+      procSubtreeHas=(el,arg)=>{
+        const sub=compileProcedural(arg);
+        if(sub)return procSelect(sub,el).length>0;
+        try{
+          return!!el.querySelector(procScoped(arg))
+        }
+        catch{
+          return!1
+        }
+
+      },
+      /* Two spellings reach here: the legacy ":matches-css-before(prop: value)" and the current
+         ":matches-css(before, prop: value)". */
+      procMatchesCss=(el,op,arg)=>{
+        let pseudo="matches-css-before"===op?"::before":"matches-css-after"===op?"::after":null,
+        body=arg;
+        const head=procSplitTop(arg,",");
+        if(null!==head[1]){
+          const name=head[0].trim().toLowerCase();
+          if("before"===name||"after"===name){pseudo="::"+name;body=head[1]}
+        }
+        const pair=procSplitTop(body,":");
+        if(null===pair[1])return!1;
+        const prop=pair[0].trim();
+        if(!prop)return!1;
+        const want=pair[1].trim(),actual=getComputedStyle(el,pseudo).getPropertyValue(prop).trim();
+        return reOrText(want,actual)||actual===want
+      },
+      matchOp=(el,op,arg)=>{
         try{
           switch(op){
-            case"has-text":case"contains":case"-abp-contains":return reOrText(arg,
-            textOf(el));
-            case"has":case"-abp-has":try{
-              return!!el.querySelector(arg)
+            case"has-text":case"contains":case"-abp-contains":return reOrText(arg,textOf(el));
+            case"has":case"-abp-has":case"if":return procSubtreeHas(el,arg);
+            case"if-not":return!procSubtreeHas(el,arg);
+            case"not":{
+              const sub=compileProcedural(arg);
+              if(sub)return!procMatchesRule(sub,el);
+              try{
+                return!el.matches(arg)
+              }
+              catch{
+                return!1
+              }
+
+            }
+            case"matches-css":case"matches-css-before":case"matches-css-after":return procMatchesCss(el,op,arg);
+            case"-abp-properties":return procMatchesCss(el,"matches-css",arg);
+            case"matches-attr":{
+              const[rawName,rawVal]=procSplitTop(arg,"=");
+              if(null===rawVal){
+                const plain=procUnquote(rawName);
+                if(!procRegex(rawName)&&!plain.includes("*"))return el.hasAttribute(plain);
+                for(const attr of Array.from(el.attributes||[]))if(procPatternTest(rawName,attr.name))return!0;
+                return!1
+              }
+              for(const attr of Array.from(el.attributes||[]))if(procPatternTest(rawName,attr.name)&&procPatternTest(rawVal,attr.value))return!0;
+              return!1
+            }
+            case"matches-prop":{
+              const[rawName,rawVal]=procSplitTop(arg,"="),value=procPropValue(el,procUnquote(rawName));
+              if(null===rawVal)return void 0!==value;
+              return void 0!==value&&procPatternTest(rawVal,String(value))
+            }
+            case"matches-path":{
+              const raw=String(arg||"").trim(),negate="~"===raw[0],body=negate?raw.slice(1):raw,
+              hit=reOrText(body,location.pathname+location.search);
+              return negate?!hit:hit
+            }
+            case"matches-media":try{
+              return matchMedia(arg).matches
             }
             catch{
               return!1
             }
-            case"matches-css":case"matches-css-before":case"matches-css-after":{
-              const ci=arg.indexOf(":");
-              if(-1===ci)return!1;
-              const prop=arg.slice(0,
-              ci).trim(),
-              val=arg.slice(ci+1).trim(),
-              actual=getComputedStyle(el,
-              "matches-css-before"===op?"::before":"matches-css-after"===op?"::after":null).getPropertyValue(prop).trim();
-              return reOrText(val,
-              actual)||actual===val
-            }
-            case"matches-attr":{
-              const eq=arg.indexOf("=");
-              if(-1===eq)return el.hasAttribute(arg.replace(/["']/g,
-              ""));
-              const name=arg.slice(0,
-              eq).replace(/["']/g,
-              "").trim(),
-              want=arg.slice(eq+1).replace(/["']/g,
-              "").trim();
-              return(el.getAttribute(name)||"").includes(want)
-            }
-            case"matches-path":return reOrText(arg,
-            location.pathname+location.search);
             case"min-text-length":{
-              const n=parseInt(arg,
-              10);
+              const n=parseInt(arg,10);
               return isFinite(n)&&textOf(el).length>=n
             }
             default:return!1
@@ -10914,54 +11456,113 @@
         }
 
       },
-      NON_MATCH_OPS=new Set(["upward",
-      "nth-ancestor",
-      "remove",
-      "style",
-      "xpath",
-      "watch-attr",
-      "others"]),
-      resolveTarget=(el,
-      ops)=>{
-        let target=el;
-        for(const{
-          op:op,
-          arg:arg
+      /* uBlock counts ancestors from the parent, so ":upward(1)" is the parent and ":upward(sel)"
+         never resolves to the element itself. A node without that ancestor drops out rather than
+         clamping to the document root. */
+      procAncestor=(el,arg)=>{
+        if(/^\d+$/.test(arg)){
+          let n=parseInt(arg,10),target=el;
+          if(!(n>0&&n<=256))return null;
+          for(;n-- >0;){
+            target=target.parentElement;
+            if(!target)return null
+          }
+          return target
         }
-        of ops)if("upward"===op||"nth-ancestor"===op)if(/^\d+$/.test(arg)){
-          let n=parseInt(arg,
-          10);
-          for(;
-          n-- >0&&target.parentElement;
-          )target=target.parentElement
+        let target=el.parentElement;
+        for(;target;){
+          try{
+            if(target.matches(arg))return target
+          }
+          catch{
+            return null
+          }
+          target=target.parentElement
         }
-        else try{
-          const up=target.closest(arg);
-          up&&(target=up)
+        return null
+      },
+      procXpath=(node,arg)=>{
+        const out=[],expr=procUnquote(arg);
+        try{
+          const r=document.evaluate(expr,node||document,null,XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,null);
+          for(let i=0;i<r.snapshotLength;i++){
+            const n=r.snapshotItem(i);
+            n&&1===n.nodeType&&out.push(n)
+          }
+
         }
         catch(_){
 
         }
-        return target
+        return out
       },
-      applyStyleDecls=(target,
-      decls)=>{
+      procQuery=(base,root)=>{
+        try{
+          return Array.from((root||document).querySelectorAll(base)).slice(0,PROC_CANDIDATE_CAP)
+        }
+        catch{
+          return[]
+        }
+
+      },
+      procMapOp=(nodes,op,arg,rule,root,documentXpath)=>{
+        if("others"===op){
+          const keep=new Set(nodes);
+          return procQuery(root?procScoped(rule.base):rule.base,root).filter(el=>!keep.has(el))
+        }
+        if("xpath"===op){
+          if(documentXpath)return procXpath(null,arg);
+          const out=new Set;
+          for(const el of nodes)for(const hit of procXpath(el,arg))out.add(hit);
+          return Array.from(out)
+        }
+        const out=new Set;
+        for(const el of nodes){
+          const up=procAncestor(el,arg);
+          up&&out.add(up)
+        }
+        return Array.from(out)
+      },
+      /* Operators are a pipeline, not a conjunction over the original element: ":upward(2):has(.x)"
+         asks for ".x" inside the ancestor, not inside the node that matched first. */
+      procSelect=(rule,root)=>{
+        const documentXpath=rule.leading&&"xpath"===rule.ops[0].op;
+        let nodes=documentXpath?[]:procQuery(root?procScoped(rule.base):rule.base,root),first=!0;
+        for(const{op:op,arg:arg}of rule.ops){
+          if(PROC_ACTION_OPS.has(op)||PROC_INERT_OPS.has(op)){first=!1;continue}
+          if(PROC_MAP_OPS.has(op))nodes=procMapOp(nodes,op,arg,rule,root,first&&documentXpath);
+          else nodes=nodes.filter(el=>matchOp(el,op,arg));
+          first=!1;
+          if(!nodes.length)break
+        }
+        return nodes
+      },
+      procMatchesRule=(rule,el)=>{
+        try{
+          if("*"!==rule.base&&!el.matches(rule.base))return!1;
+          let nodes=[el];
+          for(const{op:op,arg:arg}of rule.ops){
+            if(PROC_ACTION_OPS.has(op)||PROC_INERT_OPS.has(op))continue;
+            if(PROC_MAP_OPS.has(op))nodes=procMapOp(nodes,op,arg,rule,null,!1);
+            else nodes=nodes.filter(n=>matchOp(n,op,arg));
+            if(!nodes.length)return!1
+          }
+          return!0
+        }
+        catch{
+          return!1
+        }
+
+      },
+      applyStyleDecls=(target,decls)=>{
         let did=!1;
         for(const d of String(decls).split(";")){
           const ci=d.indexOf(":");
           if(-1===ci)continue;
-          const prop=d.slice(0,
-          ci).trim();
-          let val=d.slice(ci+1).trim(),
-          prio="";
-          if(/!important$/i.test(val)&&(prio="important",
-          val=val.replace(/!important$/i,
-          "").trim()),
-          prop)try{
-            target.style.setProperty(prop,
-            val,
-            prio),
-            did=!0
+          const prop=d.slice(0,ci).trim();
+          let val=d.slice(ci+1).trim(),prio="";
+          if(/!important$/i.test(val)&&(prio="important",val=val.replace(/!important$/i,"").trim()),prop)try{
+            target.style.setProperty(prop,val,prio),did=!0
           }
           catch(_){
 
@@ -10970,29 +11571,19 @@
         }
         return did
       },
-      applyAction=(target,
-      ops)=>{
+      applyAction=(target,ops)=>{
         if(!target)return!1;
-        for(const{
-          op:op,
-          arg:arg
-        }
-        of ops){
+        for(const{op:op,arg:arg}of ops){
           if("remove"===op)try{
-            return target.remove(),
-            !0
+            return target.remove(),!0
           }
           catch(_){
             return!1
           }
-          if("style"===op)return applyStyleDecls(target,
-          arg)
+          if("style"===op)return applyStyleDecls(target,arg)
         }
         try{
-          if(target.style&&"none"!==target.style.display)return target.style.setProperty("display",
-          "none",
-          "important"),
-          !0
+          if(target.style&&"none"!==target.style.display)return target.style.setProperty("display","none","important"),!0
         }
         catch(_){
 
@@ -11004,53 +11595,9 @@
         let budget=PROC_BUDGET;
         for(const rule of procRules){
           if(budget<=0)break;
-          const xpathOp=rule.ops.find(o=>"xpath"===o.op);
-          if(xpathOp&&("*"!==rule.base||rule.ops.some(o=>!NON_MATCH_OPS.has(o.op))))continue;
-          if(rule.ops.some(o=>"others"===o.op))continue;
-          let candidates;
-          if(xpathOp){
-            candidates=[];
-            try{
-              const r=document.evaluate(xpathOp.arg,
-              document,
-              null,
-              XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
-              null);
-              for(let i=0;
-              i<r.snapshotLength;
-              i++){
-                const n=r.snapshotItem(i);
-                n&&1===n.nodeType&&candidates.push(n)
-              }
-
-            }
-            catch{
-              continue
-            }
-
-          }
-          else try{
-            candidates=document.querySelectorAll(rule.base)
-          }
-          catch{
-            continue
-          }
-          for(const el of candidates){
+          for(const el of procSelect(rule,null)){
             if(budget<=0)break;
-            let ok=!0;
-            for(const{
-              op:op,
-              arg:arg
-            }
-            of rule.ops)if(!NON_MATCH_OPS.has(op)&&!matchOp(el,
-            op,
-            arg)){
-              ok=!1;
-              break
-            }
-            ok&&applyAction(resolveTarget(el,
-            rule.ops),
-            rule.ops)&&budget--
+            applyAction(el,rule.ops)&&budget--
           }
 
         }
@@ -11135,8 +11682,9 @@
               {
                 why:res.allowlisted?"allowlisted":"disabled"
               });
+              siteSelectors=Array.isArray(res.siteSelectors)?res.siteSelectors:[];
               if(scriptletPlayerPage()){
-                adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):styleEl&&(styleEl.textContent=""),
+                adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):applyPlayerSafe(),
                 procRules=[],
                 collapseLeftovers(document),
                 log("adshield_player_safe_mode",
@@ -11186,7 +11734,7 @@
                   roots)){
                     /* Coalesce leftover scans to 250ms on churn-heavy video pages. The stylesheet already hides
                        these selectors, so the inline fallback does not need to run for every mutation batch. */
-                    adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):styleEl&&(styleEl.textContent=""),
+                    adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):applyPlayerSafe(),
                     procRules=[],
                     collapsePending||(collapsePending=!0,
                     setTimeout(()=>{
@@ -13225,7 +13773,7 @@
     if(WO.killPrefetch)try{
       const SPEC_REL=/^(prefetch|prerender|preload|dns-prefetch|preconnect|modulepreload)$/i,
       /* React 19 removes the links it rendered with an unguarded parentNode.removeChild, so taking one
-         out first crashed the page (ChatGPT stopped replying). Its own nodes are switched off in place. */
+         out first crashed the page (ChatGPT stopped replying). Kept for the speculationrules path. */
       reactOwned=el=>{
         try{
           return Object.keys(el).some(k=>0===k.indexOf("__react"))
@@ -13240,8 +13788,11 @@
           if(el&&"LINK"===el.tagName){
             const rel=(el.getAttribute("rel")||"").trim();
             if(!SPEC_REL.test(rel))return;
-            if(reactOwned(el))return void el.setAttribute("rel","wo-off-"+rel.toLowerCase());
-            return void(el.parentNode&&el.parentNode.removeChild(el))
+            /* Switch the link off in place; never take it out of the document. A page reads its own
+               link elements: Spotify's player reads href off <link rel="preload"
+               data-translations-url-for-locale>, so removing it threw on boot and the page showed
+               "Something went wrong". An unknown rel stops the speculative load just as well. */
+            return void el.setAttribute("rel","wo-off-"+rel.toLowerCase())
           }
           el&&"SCRIPT"===el.tagName&&/speculationrules/i.test(el.type||"")&&!reactOwned(el)&&el.parentNode&&el.parentNode.removeChild(el)
         }
@@ -21853,6 +22404,7 @@
       /* Deduplicate by type/target for the page lifetime, clearing on navigation.
          Remember every key so alternating A,B,A events cannot repeat A. */
       let lastToastAt=0,
+      toastGeneration=0,
       recentKey="",
       toastSeen=new Set();
       const OWNED_TOAST_TYPES=new Set(["blocked_safe_browsing_link","blocked_safe_browsing_form",
@@ -21919,7 +22471,8 @@
       const resetToastMemory=()=>{
         try{toastSeen.clear()}catch(_){}
         recentKey="",
-        lastToastAt=0
+        lastToastAt=0,
+        toastGeneration++
       };
       try{
         woOn(window,"popstate",resetToastMemory),
@@ -21954,27 +22507,33 @@
         /* Asking the same question twice is a reasonable thing to do, and the
         answer is not less true the second time. */
         if(!asked&&toastSeen.has(key))return;
-        /* Stagger distinct cards so a burst cannot push one off screen. Action
-           blocks can recur after 30 seconds; passive warnings stay once per page. */
+        /* Action blocks can recur after 30 seconds; passive warnings stay once per page. */
         toastSeen.add(key);
         if(ACTIVE_BLOCK_TOAST_TYPES.has(type))setTimeout(()=>toastSeen.delete(key),3e4);
         if(OWNED_TOAST_TYPES.has(type))__woEmit({type:"warning_toast",detail:{id:type}});
-        /* Report once when display is committed, before deferred rendering. The worker derives the host from the tab. */
-        try{
-          __woBackgroundRequest(__woSignedRequest({kind:"toast-shown",type:type}))
-        }
-        catch(_){
-
-        }
-        const gap=lastToastAt?Math.max(0,900-(now-lastToastAt)):0;
-        lastToastAt=(lastToastAt?Math.max(now,lastToastAt+900):now),
+        const immediate=asked||OWNED_TOAST_TYPES.has(type)||ACTIVE_BLOCK_TOAST_TYPES.has(type)||
+        ["dangerous_site","dangerous_link","password_exposure","clickfix_clipboard","suspicious_download","protection_failure"].includes(notificationRuleId(type)),
+        gap=immediate?0:lastToastAt?Math.max(0,Math.min(450,lastToastAt+150-now)):0,
+        generation=toastGeneration;
+        if(!immediate)lastToastAt=now+gap;
         recentKey=key;
-        if(gap>0)return void setTimeout(()=>renderToast(type,detail,info,detailWhy,severity,action,matched),gap);
+        if(gap>0)return void setTimeout(()=>{
+          if(generation===toastGeneration)renderToast(type,detail,info,detailWhy,severity,action,matched)
+        },gap);
         renderToast(type,detail,info,detailWhy,severity,action,matched)
       },
       renderToast=(type,detail,info,detailWhy,severity,action,matched)=>{
+        if("detected_manual_check"!==type){
+          const mode=notificationPreference(type).mode,
+          mute=WO.toastMutes&&Object.prototype.hasOwnProperty.call(WO.toastMutes,type)?Number(WO.toastMutes[type]):null;
+          if(!WO.enabled||!WO.showToasts||mode==="off"||mode==="history"||mute!==null&&(mute===0||mute>Date.now()))return
+        }
         const wrap=ensureHost();
         if(!wrap)return;
+        try{
+          __woBackgroundRequest(__woSignedRequest({kind:"toast-shown",type:type}))
+        }
+        catch(_){}
         const preference=notificationPreference(type),
         card=document.createElement("div");
         S(card,
@@ -22175,6 +22734,7 @@
       woOn(document,"wo-config-change",
       ()=>{
         if(!WO.enabled||!WO.showToasts)try{
+          toastGeneration++;
           toastHostEl&&toastHostEl.remove(),
           toastHostEl=null
         }
@@ -22204,6 +22764,7 @@
       badgeHost=null,
       badgeButton=null,
       badgePanel=null,
+      badgeReattachments=0,
       /* How far the badge currently sits above its home corner (px), see updateBadgeYield. */
       badgeLift=0,
       fadeT=null,
@@ -22318,8 +22879,36 @@
       badgeYieldState={at:0,sig:"",route:"",profile:!1,liftApplied:!1},
       /* How long a hover-driven answer stays good while the viewport is unchanged. */
       BADGE_YIELD_CACHE_MS=4000,
+      /* X stacks Grok and Chat in this corner, over a sticky rail whose every row is a link, so the
+         ordinary hit test reports each position occupied and the badge walks up the page. On X alone,
+         sit directly above that column instead: the rail behind it is what X's own buttons cover too. */
+      BADGE_X_HOST_RE=/(^|\.)(x|twitter)\.com$/i,
+      badgeXHost=BADGE_X_HOST_RE.test(String(location.hostname||"")),
+      badgeXFloatingTop=home=>{
+        try{
+          if(!home)return 0;
+          let top=0;
+          const nodes=document.querySelectorAll('button,[role="button"],a[href]');
+          for(let i=0;i<nodes.length&&i<400;i++){
+            const el=nodes[i],b=el.getBoundingClientRect();
+            if(b.width<40||b.width>96||b.height<40||b.height>96)continue;
+            if(b.right<home.left-16||b.left>home.right+96)continue;
+            if(b.bottom<home.top-320||b.top>home.bottom)continue;
+            if(!badgeAnchorOf(el))continue;
+            if(!top||b.top<top)top=b.top
+          }
+          return top
+        }
+        catch(_){
+          return 0
+        }
+
+      },
       /* Bound badge movement so it yields input rather than floating into the middle of the page. */
       BADGE_LIFT_MAX_RATIO=.45,
+      /* The ratio is the player's bound. Ordinary anchored controls get this tighter one: clearing a
+         toolbar takes well under it, and anything further leaves the corner altogether. */
+      BADGE_CONTROL_LIFT_MAX_PX=200,
       BADGE_LIFT_GAP=8,
       /* Use Twitch's stable chat classes and allow for the logged-out sign-up bar below the chat. */
       BADGE_TWITCH_CHAT_SELECTOR='[class~="chat-shell"],[class~="stream-chat"],[class~="video-chat"],[data-test-selector="chat-room-component-layout"]',
@@ -22577,8 +23166,13 @@
           else if(near&&!near.player)away=inert=!0;
           else if(under.kind||near){
             /* Try bounded positions above each anchored obstruction, including stacked controls.
-               If none fits, keep the badge visible but stop taking pointer input. */
-            const limit=(window.innerHeight||0)*BADGE_LIFT_MAX_RATIO,
+               If none fits, keep the badge visible but stop taking pointer input.
+               A player needs real clearance, so it keeps the full ratio. Ordinary page furniture does not:
+               a column of floating buttons (X stacks them bottom right) made the badge climb past each one
+               and park ~286px up, in the middle of the page beside the next button. Past the pixel bound
+               the corner belongs to the site and the badge gets out of the way instead. */
+            const player="player"===under.kind||near&&near.player,
+            limit=player?(window.innerHeight||0)*BADGE_LIFT_MAX_RATIO:Math.min((window.innerHeight||0)*BADGE_LIFT_MAX_RATIO,BADGE_CONTROL_LIFT_MAX_PX),
             BADGE_CLIMB_MAX=12,
             ups=[],
             propose=t=>{
@@ -22593,7 +23187,10 @@
             propose(under.anchor&&under.anchor.top),
             near&&propose(near.box.top-72),
             inert=!0;
-            for(let i=0;i<ups.length;i++){
+            const xTop=badgeXHost?badgeXFloatingTop(home):0,
+            xUp=xTop?Math.ceil(home.bottom-xTop+BADGE_LIFT_GAP):0;
+            if(xUp>0&&xUp<=limit){lift=xUp,inert=!1}
+            else for(let i=0;i<ups.length;i++){
               const up=ups[i];
               if(up<=0||up>limit)continue;
               const there=badgeShiftRect(home,
@@ -22610,7 +23207,6 @@
               inert=!1;
               break
             }
-
           }
           /* Hover never lowers a lifted badge beneath an arriving pointer. Forced resize, fullscreen or playback checks can
              return it home. */
@@ -22660,10 +23256,18 @@
       mount=()=>{
         if(!1!==WO.showBadge){
           if(!badgeHost||!document.documentElement.contains(badgeHost))try{
+            /* Page rerenders can detach the host. Keep its listeners and settled state, outside the managed body. */
+            if(badgeHost){
+              document.documentElement.appendChild(badgeHost),
+              alignBadge(),
+              updateBadgeYield(!0);
+              return
+            }
             /* Remove a previous copy's badge before building; its host and listener cannot be reused by this closure. */
             const stale=document.getElementById("rg-badge-host");
             stale&&stale!==badgeHost&&stale.remove();
             const host=badgeHost=document.createElement("div");
+            badgeReattachments=0,
             host.id="rg-badge-host",
             /* Reset and zero-size the fixed host so page CSS cannot make it a containing block or affect layout.
                Shadow DOM protects descendants, not the host’s transform/filter/contain properties. */
@@ -22672,7 +23276,7 @@
               mode:"open"
             });
             buildBadgeShadow(root),
-            (document.body||document.documentElement).appendChild(host);
+            document.documentElement.appendChild(host);
             const bEl=badgeButton=root.getElementById("rg-b"),
             pEl=badgePanel=root.getElementById("rg-p");
             bEl.setAttribute("role","button"),
@@ -22817,11 +23421,14 @@
                 updateBadgeYield(!0)
               };
               if(discordAppHost||badgeTwitchHost){
-                /* Recheck after SPA routes and a rendering delay; Twitch chat can mount without a playback event. */
+                /* Recheck after SPA routes and a rendering delay; Twitch chat can mount without a playback event.
+                   Every app host needs the delayed pass, not just Twitch: the route event fires while the old
+                   layout is still mounted, so the forced check measures the page being left. An unforced check
+                   never lowers the badge, so without these it keeps that position on the new page. */
                 const onRoute=()=>{
                   const before=badgeYieldState.route;
                   badgeRouteChanged(),
-                  badgeTwitchHost&&badgeYieldState.route!==before&&(setTimeout(recheckBadge,1500),setTimeout(recheckBadge,4000))
+                  badgeYieldState.route!==before&&(setTimeout(recheckBadge,1500),setTimeout(recheckBadge,4000))
                 };
                 woOn(window,"popstate",onRoute),
                 woOn(window,"hashchange",onRoute);
@@ -22936,6 +23543,13 @@
       });
       woOn(document,"wo-config-change",
       syncBadgeVisibility),
+      /* Reuse the mutation hub; cap repairs so a page repeatedly removing the badge cannot cause an observer loop. */
+      woObserve((muts,added,roots,structural)=>{
+        if(structural&&badgeHost&&!badgeHost.isConnected&&badgeReattachments<3){
+          badgeReattachments++,
+          syncBadgeVisibility()
+        }
+      }),
       document.body?syncBadgeVisibility():woOn(document,"DOMContentLoaded",
       syncBadgeVisibility)
     };

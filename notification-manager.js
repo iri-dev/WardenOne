@@ -289,8 +289,8 @@ async function ensureWardenOffscreenDocument() {
   if (!wardenOffscreenCreating) {
     wardenOffscreenCreating = chrome.offscreen.createDocument({
       url: 'offscreen.html',
-      reasons: ['AUDIO_PLAYBACK'],
-      justification: 'Play WardenOne notification sounds',
+      reasons: ['AUDIO_PLAYBACK', 'CLIPBOARD'],
+      justification: 'Play enabled notification sounds and copy addresses requested from WardenOne controls',
     }).catch(function (error) {
       /* Someone else won the race. That is the state we were asking for. */
       if (!/single offscreen document/i.test(String(error && error.message))) throw error;

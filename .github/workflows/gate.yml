@@ -189,6 +189,36 @@ jobs:
           WARDENONE_HEADLESS: '1'
         run: node tools/browser-player-ad-layers.js
 
+      - name: Lift an ad-block wall without touching an access gate in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-anti-adblock.js
+
+      - name: Refuse requests signed with an overheard bridge key in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-key-handoff.js
+
+      - name: Test the context menu actions in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-context-menu.js
+
+      - name: Test EyeShield on Spotify in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-eyeshield-spotify.js
+
+      - name: Test the link check page in Edge
+        if: success() || failure()
+        env:
+          WARDENONE_HEADLESS: '1'
+        run: node tools/browser-link-check.js
+
   # The manifest's minimum_chrome_version, proven in that Chrome rather than assumed: Chrome for
   # Testing at the minimum, pinned by version and SHA-256, runs the popup and Settings suites and
   # the page engine on a real page.

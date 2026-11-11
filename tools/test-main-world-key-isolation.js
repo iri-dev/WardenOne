@@ -247,8 +247,10 @@ check('the engine\'s notice card, page badge and risk score believe only signed 
 check('the media-active flag and the reload-loop panel need a signed report',
   /pageNoticeSigned\('media', e\.data, e\.data\.active \? '1' : '0'\)/.test(BRIDGE) && /pageNoticeSigned\('reload-loop', e\.data, ''\)/.test(BRIDGE));
 check('the permission-chain relay needs a signed signal', /!permissionChainGuardOn\(\) \|\| !permissionSignalSigned\(d\)\) return;/.test(BRIDGE));
-check('the worker hands the right-click answer to the bridge, and falls back to a system notification',
-  /window\.__wardenOneLocalNotice\('detected_manual_check'/.test(read('background.js')) && /results\[0\]\.result === true\) return true;/.test(read('background.js')));
+check('requested results stay isolated from the page and retain a delivery fallback',
+  /func: renderWardenManualNotice/.test(read('background.js'))
+    && /host\.attachShadow\(\{ mode: 'closed' \}\)/.test(read('background.js'))
+    && /results\[0\]\.result === true\) return true;/.test(read('background.js')));
 check('worker popup notices enter the top-frame signed bridge path',
   /kind: 'wo-blocked-action', type, detail:/.test(read('background.js'))
     && /msg\.kind === 'wo-blocked-action' && window === window\.top/.test(BRIDGE)
@@ -260,12 +262,15 @@ console.log('notice mutes');
   const relay = {
     TOKEN, KEY, Set, Object, String, Number, JSON, Uint8Array, Uint32Array, Math, Array,
     location: { hostname: 'shop.example' },
+    navigator: { userActivation: { isActive: true } },
   };
+  relay.window = relay; relay.window.top = relay;
   vm.createContext(relay);
   vm.runInContext([
     authBlock(BRIDGE, 'bridge.js'),
     'const KEY_PADS = KEY ? __woAuth.key(KEY) : null;',
     'const relaySamePageHost = () => true;',
+    'var keySharedWithRelative = false;',
     between(BRIDGE, '    let relayRequestSeqSeen = 0;', '    const postBackgroundReply', 'the relay\'s request check'),
     'this.allowed = relayAllowedMessage;',
   ].join('\n'), relay, { filename: 'bridge.js:relay' });
@@ -286,7 +291,30 @@ console.log('notice mutes');
   check('a forged "shown" that would quieten the page\'s own warnings is not', relay.allowed({ kind: 'toast-shown', type: 'warned_clickfix_correlated' }) === null);
   const shownAsMute = Object.assign(JSON.parse(JSON.stringify(e.request({ kind: 'toast-shown', type: 'blocked_popup' }))), { kind: 'mute-toast', minutes: 0 });
   check('and a "shown" signature does not pass as a mute', relay.allowed(shownAsMute) === null);
+  /* H-01: a same-origin parent or opener may have heard the key; the page then signs as the engine. */
+  relay.navigator.userActivation.isActive = false;
+  check('a signed mute with no user activation is refused',
+    relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'mute-toast', type: 'blocked_popup', minutes: 60 })))) === null);
+  relay.navigator.userActivation.isActive = true;
+  check('...and the same mute during a click still passes',
+    !!relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'mute-toast', type: 'blocked_popup', minutes: 60 })))));
+  vm.runInContext('keySharedWithRelative = true;', relay);
+  check('a key handed out while a same-origin relative could listen cannot mute',
+    relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'mute-toast', type: 'blocked_popup', minutes: 60 })))) === null);
+  check('...nor mark a notice as shown',
+    relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'toast-shown', type: 'blocked_popup' })))) === null);
+  vm.runInContext('keySharedWithRelative = false;', relay);
+  relay.window.top = {};
+  check('a child frame relays no signed request, whoever signed it',
+    relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'mute-toast', type: 'blocked_popup', minutes: 60 })))) === null
+    && relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'toast-shown', type: 'blocked_popup' })))) === null);
+  relay.window.top = relay;
 }
+check('the key hand-off marks itself shared when a same-origin ancestor or opener can reach this window',
+  BRIDGE.includes('if (!relatives || sameOriginRelative(relatives)) keySharedWithRelative = true;')
+  && BRIDGE.includes('const others = [window.opener];')
+  && BRIDGE.includes('for (let w = window; w !== window.top && others.length < 32;) { w = w.parent; others.push(w); }')
+  && BRIDGE.indexOf('const relatives = sameOriginRelatives();') > BRIDGE.indexOf('const deliverKey = () => {'));
 check('the notice card signs both requests and only a real click mutes',
   /__woBackgroundRequest\(__woSignedRequest\(\{kind:"mute-toast",type:type,minutes:minutes\}\)\)/.test(CONTENT)
     && /__woBackgroundRequest\(__woSignedRequest\(\{kind:"toast-shown",type:type\}\)\)/.test(CONTENT)

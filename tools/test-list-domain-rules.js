@@ -30,14 +30,15 @@ function load(overrides = {}) {
   const sandbox = { TextEncoder, crypto: globalThis.crypto, Uint8Array, Array, Set, Map, JSON, Promise, Number, String, Object,
     setTimeout: (callback) => { yields++; setImmediate(callback); }, installed: [] };
   sandbox.chrome = { declarativeNetRequest: { getDynamicRules: async ({ ruleIds }) => sandbox.installed.filter((rule) => ruleIds.includes(rule.id)) } };
-  const consts = ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'LIST_DOMAINS_PER_RULE', 'LIST_DOMAIN_RULES_MAX', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX']
+  const consts = ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'LIST_DOMAINS_PER_RULE', 'LIST_DOMAIN_RULES_MAX', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX', 'REDIRECT_RULE_BASE', 'REDIRECT_RULES_BUDGET', 'CSP_RULE_BASE', 'CSP_RULES_BUDGET']
     .map((name) => overrides[name] !== undefined ? 'const ' + name + ' = ' + overrides[name] + ';' : constant(name));
   vm.createContext(sandbox);
   vm.runInContext(resourceTypes.prelude(BG) + '\n' + consts.join('\n') + '\n'
     + ['sha256TextHex', 'remoteRuleSourceKind', 'domainToRule', 'remoteDomainRuleSourceKind', 'listDomainRules', 'listDomainRuleCoverage',
       'remoteListRuleIds', 'remoteListFingerprint', 'remoteListRulesInstalled'].map(fn).join('\n')
     + '\nthis.api = { listDomainRules, listDomainRuleCoverage, remoteListRuleIds, remoteListFingerprint, remoteListRulesInstalled, domainToRule,'
-    + ' SECURITY_RESOURCE_TYPES, RESOURCE_TYPES, LIST_RESOURCE_TYPES, DYNAMIC_RULE_BASE, LIST_DOMAINS_PER_RULE, LIST_DOMAIN_RULES_MAX };', sandbox);
+    + ' SECURITY_RESOURCE_TYPES, RESOURCE_TYPES, LIST_RESOURCE_TYPES, DYNAMIC_RULE_BASE, LIST_DOMAINS_PER_RULE, LIST_DOMAIN_RULES_MAX,'
+    + ' OPTION_RULE_BASE, OPTION_RULES_MAX, REDIRECT_RULE_BASE };', sandbox);
   return { api: sandbox.api, sandbox, yields: () => yields };
 }
 
@@ -134,8 +135,15 @@ enforcedBy.cache = new WeakMap();
 
   /* ---- replace by id, skip an unchanged write ----------------------------------------------------- */
   const ids = api.remoteListRuleIds();
-  ok(ids.includes(api.DYNAMIC_RULE_BASE) && ids.length === 18000 + 4000, 'the removal covers the whole list band and the option band');
-  const option = [{ id: 600000, priority: 1100, action: { type: 'block' }, condition: { urlFilter: '||x.example/ad' } }];
+  /* Every band the remote-list commit writes has to be swept, or a band dropped from the sweep
+     keeps whatever an older build installed in it. Derived from the constants so adding a band
+     fails here instead of leaving stale rules behind. */
+  const sweptBands = ['MAX_DYNAMIC', 'OPTION_RULES_MAX', 'REDIRECT_RULES_BUDGET', 'CSP_RULES_BUDGET']
+    .reduce((sum, name) => sum + Number((BG.match(new RegExp('const ' + name + ' = (\\d+);')) || [])[1]), 0);
+  ok(ids.includes(api.DYNAMIC_RULE_BASE) && ids.length === sweptBands,
+    'the removal covers the list, option, redirect and csp bands (' + ids.length + ' vs ' + sweptBands + ')');
+  ok(ids.includes(600000) && ids.includes(609499), 'the widened sweep clears the old option band');
+  const option = [{ id: api.OPTION_RULE_BASE, priority: 1100, action: { type: 'block' }, condition: { urlFilter: '||x.example/ad' } }];
   const fp = await api.remoteListFingerprint(rules.concat(option));
   ok(/^[0-9a-f]{64}$/.test(fp) && fp === await api.remoteListFingerprint(JSON.parse(JSON.stringify(rules.concat(option)))), 'the fingerprint is stable');
   const changed = JSON.parse(JSON.stringify(rules)); changed[0].condition.requestDomains.push('new.example');
@@ -147,6 +155,33 @@ enforcedBy.cache = new WeakMap();
   ok(!await api.remoteListRulesInstalled(rules.length, 1), 'a band missing its last rules is rewritten');
   sandbox.installed = rules.concat(option, [{ id: api.DYNAMIC_RULE_BASE + rules.length, priority: 1000, action: { type: 'block' }, condition: { requestDomains: ['legacy.example'] } }]);
   ok(!await api.remoteListRulesInstalled(rules.length, 1), 'an older build\'s one-domain rules past the end force a rewrite');
+  sandbox.installed = rules.concat([
+    { id: api.OPTION_RULE_BASE + api.OPTION_RULES_MAX - 1 },
+    { id: api.REDIRECT_RULE_BASE }, { id: api.REDIRECT_RULE_BASE + 1 },
+  ]);
+  ok(await api.remoteListRulesInstalled(rules.length, api.OPTION_RULES_MAX, 2),
+    'a full option band does not mistake its neighbouring redirect band for overflow');
+
+  {
+    const box = { OPTION_RULES_MAX: 4, ACTIVE_OPTION_RULE_BUDGETS: { security: 1, tracker: 1, adshield: 2 } };
+    vm.runInNewContext(fn('prioritizedOptionRuleCandidates'), box);
+    const rule = (pattern, rank, host) => ({ __woRank: rank, __woRedundantHost: host,
+      action: { type: 'block' }, condition: { urlFilter: pattern } });
+    const duplicate = rule('||cdn.example/path', 1);
+    const result = box.prioritizedOptionRuleCandidates({
+      adshield: [rule('||covered.example^', 3, 'covered.example'), rule('||missing.example^', 3, 'missing.example'), duplicate],
+      tracker: [rule('||tracker.example/path', 1)],
+      security: [duplicate, rule('||covered.example^', 3, 'covered.example')],
+    }, (host, kind) => host === 'covered.example' && kind !== 'security');
+    ok(result.rules.length === 4 && result.rules.find(item => item.condition.urlFilter === '||cdn.example/path').__woSourceKind === 'security',
+      'the strongest eligible duplicate owns the installed rule');
+    const onlyAds = box.prioritizedOptionRuleCandidates({
+      adshield: [rule('||covered.example^', 3, 'covered.example'), rule('||missing.example^', 3, 'missing.example'), duplicate],
+      tracker: [], security: [],
+    }, host => host === 'covered.example');
+    ok(onlyAds.redundant === 1 && onlyAds.eligible === 2 && onlyAds.rules[0].condition.urlFilter === '||cdn.example/path',
+      'an installed whole-host match saves a slot and path rules rank above uncovered hosts');
+  }
 
   /* ---- the worker never reads the list band back ---------------------------------------------- */
   const update = fn('updateRemoteListsCore');

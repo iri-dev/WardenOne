@@ -338,6 +338,8 @@
     'button:hover{color:#5d3f78;background:#f2e9f9;border-color:#e0cff0;}',
     'button.keep{color:#5d3f78;background:#f2e9f9;border-color:#e0cff0;}',
     'button.keep:hover{background:#eadcf6;border-color:#d7bfec;}',
+    'button:disabled{opacity:.55;cursor:wait;}',
+    'button:focus-visible{outline:2px solid #9d54c9;outline-offset:2px;}',
   ].join('');
   root.appendChild(style);
 
@@ -358,6 +360,8 @@
      can click three things faster than three round-trips finish. */
   let zapCount = 0;
   let latestSeq = 0;
+  let undoAllConfirming = false;
+  let undoAllPending = false;
 
   /* The last rectangle written. The pointer moves many times inside one element,
      so most frames ask for a box that is already exactly where it needs to be --
@@ -416,9 +420,10 @@
     return k;
   }
 
-  function hintPanel() {
+  function hintPanel(message) {
     const wrap = el('div');
     wrap.appendChild(el('div', 't', 'Point at what you want gone.'));
+    if (message) wrap.appendChild(el('div', 'n', message));
     wrap.appendChild(el('div', 'n', 'Click anything you do not want to see. Each one is hidden and remembered for ' + HOST_LABEL + '. Keep going for as long as you like, then press Done.'));
     wrap.appendChild(keyHints());
     /* A way out that does not require knowing about Esc. */
@@ -426,7 +431,79 @@
     const cancel = el('button', null, 'Cancel');
     cancel.addEventListener('click', stop);
     row.appendChild(cancel);
+    addUndoAllButton(row);
     wrap.appendChild(row);
+    return wrap;
+  }
+
+  function addUndoAllButton(row) {
+    const button = el('button', null, 'Undo all on this site');
+    button.addEventListener('click', (event) => {
+      if (event.isTrusted !== true || undoAllPending) return;
+      undoAllConfirming = true;
+      latestSeq++;
+      current = null;
+      frame(null);
+      say(undoAllPanel());
+    });
+    row.appendChild(button);
+  }
+
+  function undoAllPanel(error) {
+    const wrap = el('div');
+    wrap.appendChild(el('div', 't', 'Undo all Zapper changes on this site?'));
+    wrap.appendChild(el('div', 'n', 'Undo every Element Zapper change saved for ' + HOST_LABEL + ', including earlier visits.'));
+    if (error) {
+      const status = el('div', 'n warn', error);
+      status.setAttribute('role', 'alert');
+      wrap.appendChild(status);
+    }
+    const row = el('div', 'row');
+    const confirm = el('button', 'keep', 'Undo all');
+    const cancel = el('button', null, 'Keep changes');
+    confirm.addEventListener('click', (event) => {
+      if (event.isTrusted !== true || undoAllPending) return;
+      undoAllPending = true;
+      confirm.disabled = cancel.disabled = true;
+      confirm.textContent = 'Undoing…';
+      const undoEntries = new Set(undoState.items);
+      const finish = (result, errorMessage) => {
+        undoAllPending = false;
+        if (errorMessage || !result || result.ok !== true || result.persisted === false) {
+          const reason = errorMessage || result?.error || (result?.persisted === false
+            ? 'Saved changes cannot be removed in a private window. Open this site in a normal window to undo them.'
+            : 'Could not undo the saved changes. Please try again.');
+          if (ui.isConnected) say(undoAllPanel(reason));
+          return;
+        }
+        /* The worker clears after earlier saves. A reopened picker may already have new selections; retain those entries. */
+        undoState.items = undoState.items.filter(entry => !undoEntries.has(entry));
+        const retainedElements = new Set(undoState.items.map(entry => entry.element));
+        for (const entry of undoEntries) {
+          try { if (!retainedElements.has(entry.element)) entry.element.removeAttribute(ZAP_ATTR); } catch (_) {}
+        }
+        disarmGlobalUndoIfEmpty();
+        zapped.length = lastSaved.length = 0;
+        zapCount = 0;
+        latestSeq++;
+        undoAllConfirming = false;
+        if (ui.isConnected) say(hintPanel('Element Zapper changes saved for ' + HOST_LABEL + ' were undone.'));
+      };
+      try {
+        chrome.runtime.sendMessage({ kind: 'hidden-clear-site', hostname: HOST }, (result) => {
+          finish(result, chrome.runtime.lastError?.message);
+        });
+      } catch (error) { finish(null, String(error?.message || error)); }
+    });
+    cancel.addEventListener('click', () => {
+      if (undoAllPending) return;
+      undoAllConfirming = false;
+      say(zapCount ? zapPanel('Your Zapper changes were kept.', false, null) : hintPanel());
+    });
+    row.appendChild(confirm);
+    row.appendChild(cancel);
+    wrap.appendChild(row);
+    wrap.appendChild(keyHints());
     return wrap;
   }
 
@@ -444,6 +521,7 @@
   let moveRaf = 0;
   function trackPointer() {
     moveRaf = 0;
+    if (undoAllConfirming || undoAllPending) { frame(null); current = null; return; }
     const t = document.elementFromPoint(pointerX, pointerY);
     if (!t || t === ui || t === document.documentElement || t === document.body) { frame(null); current = null; return; }
     current = t;
@@ -498,6 +576,7 @@
       });
       row.appendChild(undo);
     }
+    addUndoAllButton(row);
     wrap.appendChild(row);
     return wrap;
   }
@@ -591,6 +670,7 @@
     if (ours(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
+    if (undoAllConfirming || undoAllPending) return;
     const t = current || document.elementFromPoint(e.clientX, e.clientY);
     if (!t || t === document.body || t === document.documentElement) return;
 
@@ -605,6 +685,7 @@
       hide.addEventListener('click', () => selectTarget(t));
       cancel.addEventListener('click', stop);
       row.appendChild(hide); row.appendChild(cancel);
+      addUndoAllButton(row);
       wrap.appendChild(row);
       say(wrap);
       return;
@@ -630,6 +711,12 @@
       stop();
       return;
     }
+    const undoKey = (e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z');
+    if (undoAllConfirming || undoAllPending) {
+      if (undoKey || e.key === 'Enter' && !ours(e)) { e.preventDefault(); e.stopImmediatePropagation(); }
+      return;
+    }
+    if (ours(e) && !undoKey) return;
     if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
       if (undoTargetIsEditable(e.target) || !undoOne()) return;
       e.preventDefault();

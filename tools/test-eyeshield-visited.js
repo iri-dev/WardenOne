@@ -176,7 +176,7 @@ check('the Google light sheet still restores :visited',
 /* Require a title-specific visited rule with :visited on its anchor. A generic descendant rule
    is insufficient under Chrome’s visited-colour restrictions. */
 [['dark', googleDark], ['light', googleLight]].forEach(([name, sheet]) => {
-  const colorsTitle = /(#search a h3|\.LC20lb|yuRUbf a h3)/.test(sheet);
+  const colorsTitle = /#search a h3,#rso a h3,#rhs a h3/.test(sheet);
   check('the Google ' + name + ' sheet still colours the result title',
     colorsTitle, 'if it stopped, the partner rule below is no longer needed');
   if (!colorsTitle) return;

@@ -708,4 +708,31 @@ const yieldCode = source.slice(start, end).replace(/\/\*[\s\S]*?\*\//g, '');
 assert(!/MutationObserver|setInterval|setTimeout|requestAnimationFrame|addEventListener|woOn\(/.test(yieldCode),
   'the yield logic is driven only by the discrete events already wired');
 
+/* An SPA fires its route event while the old layout is still mounted, so the forced check measures the
+   page being left. An unforced check never lowers the badge (lift<badgeLift is clamped), so without a
+   delayed second pass the badge keeps that position on the new page: a lift taken on a Discord server or
+   profile followed the badge onto Quests and parked it mid-screen. */
+assert(/badgeYieldState\.route!==before&&\(setTimeout\(recheckBadge,\s*\d+\),\s*setTimeout\(recheckBadge,\s*\d+\)\)/.test(source),
+  'a route change schedules delayed rechecks once the new layout has mounted');
+
+/* A player needs real clearance and keeps the ratio. Ordinary anchored furniture does not: X stacks
+   floating buttons over a sticky rail of links, and every position up to the bound is occupied, so the
+   badge climbed ~286px and parked mid-page beside a button. Past the bound the corner belongs to the
+   site and the badge stays home, inert. */
+assert(/BADGE_CONTROL_LIFT_MAX_PX=\d+/.test(source), 'a pixel bound for non-player lifts is declared');
+assert(/limit=player\?\(window\.innerHeight\|\|0\)\*BADGE_LIFT_MAX_RATIO:Math\.min\(\(window\.innerHeight\|\|0\)\*BADGE_LIFT_MAX_RATIO,BADGE_CONTROL_LIFT_MAX_PX\)/.test(source),
+  'the climb limit is the ratio for a player and the tighter pixel bound for anything else');
+assert(Number(/BADGE_CONTROL_LIFT_MAX_PX=(\d+)/.exec(source)[1]) >= 172,
+  'the bound still clears the tallest stacked control this suite exercises');
+
+/* X stacks Grok and Chat in the corner over a sticky rail of links, so every hit test says occupied and
+   the climb walks up the page. There it sits above that column instead, still inside the bound. */
+assert(/badgeXHost=BADGE_X_HOST_RE\.test/.test(source), 'the X placement is host-gated');
+assert(/if\(xUp>0&&xUp<=limit\)\{lift=xUp,inert=!1\}\s*else for\(/.test(source),
+  'the X placement is tried first and still respects the lift bound, with the general climb as the fallback');
+assert(/b\.width<40\|\|b\.width>96\|\|b\.height<40\|\|b\.height>96/.test(source),
+  'only floating-button sized elements count, so a full-width bar is not mistaken for the column');
+assert(!/badgeTwitchHost&&badgeYieldState\.route!==before/.test(source),
+  'the delayed route recheck is not limited to Twitch; every app host swaps layout after the route event');
+
 console.log('badge yield tests passed');

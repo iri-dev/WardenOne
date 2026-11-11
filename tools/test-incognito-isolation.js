@@ -168,8 +168,33 @@ vm.createContext(downloadSandbox);
 vm.runInContext(DOWNLOADS.slice(downloadPolicyStart, downloadPolicyEnd)
   + '\nthis.api={downloadStateGet,downloadStateSet};', downloadSandbox);
 
+async function snapshotLearned(incognito) {
+  const start = SOURCE.indexOf('function contentConfigInputKeys() {');
+  const end = SOURCE.indexOf('\nlet __contentConfigRefreshTimer', start);
+  assert(start >= 0 && end > start, 'the content snapshot builder moved');
+  const sandbox = {
+    Promise, Object, Array, String, Set, Date, INCOGNITO_CONTEXT: incognito,
+    localGet: async () => ({ wardenone_config: { enabled: true }, wardenone_learned: { 'sentinel-learned.example': { hits: 1 } } }),
+    SUPPLEMENTAL_LIST_STORAGE_KEY: 'sup',
+    sanitizeContentConfig: (c) => c, sanitizeSupplementalLists: () => ({}), sanitizeSearchJunkForContent: () => [],
+    sanitizeLearnedForContent: (raw) => Object.fromEntries(Object.keys(raw || {}).map((host) => [host, true])),
+    searchJunkSeed: async () => ({ hosts: [], ok: true, error: '' }), searchJunkStoredHosts: () => [],
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(SOURCE.slice(start, end) + '\nthis.api={sharedContentConfigSnapshot};', sandbox);
+  return JSON.parse(JSON.stringify((await sandbox.api.sharedContentConfigSnapshot()).learned));
+}
+
+async function checkPrivateSnapshot() {
+  assert.deepStrictEqual(await snapshotLearned(true), {},
+    'a private window snapshot read the regular profile learned sites');
+  assert.deepStrictEqual(await snapshotLearned(false), { 'sentinel-learned.example': true },
+    'the regular profile lost its learned sites');
+}
+
 Promise.all([
   checkPrivateSaveReplies(),
+  checkPrivateSnapshot(),
   downloadSandbox.api.downloadStateGet('wardenone_pending_downloads').then((value) => {
     assert(value.wardenone_pending_downloads[7], 'private pending review was not recovered from session storage');
   }),

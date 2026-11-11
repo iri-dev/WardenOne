@@ -119,7 +119,8 @@ async function run() {
   }
   const core = lift('updateRemoteListsCore');
   assert(core.includes("remoteListBlockAllowed(d, '', sourceKind, result.url)"));
-  assert(core.includes("r.action.type !== 'allow' && !remoteListBlockAllowed(patternHost, pattern, sourceKind)"));
+  assert(core.includes("if (r.action.type === 'allow')") && core.includes("if (sourceKind === 'security') continue;"));
+  assert(core.includes('else if (!remoteListBlockAllowed(patternHost, pattern, sourceKind, result.url)) continue;'));
   await api.login(false);
   assert.equal(state.session.length, 0);
   const beforeFailure = clone(state.rules);

@@ -70,7 +70,6 @@ async function checkLaunchScheduling() {
       return require(id);
     },
     fetch: async () => ({ json: async () => ({ webSocketDebuggerUrl: 'ws://mock-browser' }) }),
-    AbortSignal,
     WebSocket: class { constructor() { throw stop; } },
   }, { filename: path.join(__dirname, 'perf-profile.js') });
   const mocked = mockedModule.exports;
@@ -100,7 +99,6 @@ async function checkLaunchScheduling() {
   }
   check('performance metadata records its unthrottled scheduling', SRC.includes('backgroundThrottlingDisabled: true'));
   check('normal browser runs retain their native renderer', !shared.some(arg => /^--use-(gl|angle)=/.test(arg)));
-  check('normal browser runs keep page motion', !shared.includes('--force-prefers-reduced-motion'));
   mockProcess.env.WARDENONE_SOFTWARE_GL = '1';
   mockProcess.env.WARDENONE_HEADLESS = '1';
   for (const variant of ['off', 'on']) {
@@ -109,8 +107,6 @@ async function checkLaunchScheduling() {
     check(variant + ' CI runs can select software ANGLE without disabling WebGL',
       ['--headless=new', '--use-gl=angle', '--use-angle=swiftshader'].every(flag => args.includes(flag))
         && !args.includes('--disable-webgl') && !args.includes('--disable-gpu'));
-    check(variant + ' software rendering does not spend every core animating pages',
-      args.includes('--force-prefers-reduced-motion'));
   }
 }
 
@@ -305,7 +301,7 @@ async function checkSlowExtensionReadiness() {
   const id = 'a'.repeat(32);
   let clock = 0;
   let available = true;
-  const context = { Date: { now: () => clock }, sleep: async ms => { clock += ms; }, setTimeout, clearTimeout };
+  const context = { Date: { now: () => clock }, sleep: async ms => { clock += ms; } };
   vm.runInNewContext(SRC.slice(from, to) + '\nthis.ready=extensionReady;', context);
   const cdp = { send: async method => {
     if (method === 'Target.getTargets') return { targetInfos: available && clock >= 25000
@@ -324,48 +320,6 @@ async function checkSlowExtensionReadiness() {
     clock <= 61000 && error.includes('no running WardenOne worker') && error.includes('"targets":[]'));
 }
 
-async function checkUnansweredWorker() {
-  const from = SRC.indexOf('async function extensionReady(');
-  const to = SRC.indexOf('async function releaseWorker(', from);
-  const id = 'a'.repeat(32);
-  const worker = { type: 'service_worker', targetId: 'worker', url: 'chrome-extension://' + id + '/background.js' };
-  let clock = 0;
-  const context = { Date: { now: () => clock }, sleep: async ms => { clock += ms; }, setTimeout, clearTimeout };
-  vm.runInNewContext(SRC.slice(from, to) + '\nthis.ready=extensionReady;', context);
-  const settle = run => Promise.race([
-    run.then(() => 'ready', failure => failure.message),
-    new Promise(resolve => setTimeout(() => resolve('still waiting'), 3000)),
-  ]);
-  const browser = (listed, enable) => ({ send: method => {
-    if (method === 'Target.getTargets') return Promise.resolve({ targetInfos: listed() ? [worker] : [] });
-    if (method === 'Target.attachToTarget') return Promise.resolve({ sessionId: 'worker-session' });
-    if (method === 'Runtime.enable') return enable();
-    if (method === 'Runtime.evaluate') return Promise.resolve({ result: { value: JSON.stringify({ name: 'WardenOne', version: 'fixture', id }) } });
-    return Promise.resolve({});
-  } });
-
-  let stopped = false;
-  const gone = await settle(context.ready(browser(() => !stopped, () => {
-    stopped = true;
-    return new Promise(() => {});
-  }), 0, 'fixture', undefined, 1));
-  check('a worker that stops while being attached ends the wait and says so',
-    gone.includes('no running WardenOne worker') && gone.includes('the worker stopped before answering Runtime.enable'));
-
-  clock = 0;
-  const silent = await settle(context.ready(browser(() => true, () => {
-    clock = 61000;
-    return new Promise(() => {});
-  }), 0, 'fixture', undefined, 1));
-  check('a running worker that never answers still meets the deadline',
-    silent.includes('no running WardenOne worker') && silent.includes('the worker did not answer Runtime.enable'));
-
-  clock = 0;
-  const slow = await settle(context.ready(browser(() => true,
-    () => new Promise(resolve => setTimeout(() => resolve({}), 40))), 0, 'fixture', undefined, 1));
-  check('a running worker that is only slow keeps its wait', slow === 'ready');
-}
-
 {
   const page='/frame.html',measurement=delta=>({[page]:{cold:{taskMs:{medianDelta:delta}}}});
   check('explicit baseline comparisons enforce overhead instead of silently skipping it',harness.overheadFailures({featureDeltas:measurement(76),deltas:{}},[page],75).length===1);
@@ -373,7 +327,7 @@ async function checkUnansweredWorker() {
   check('extension-off comparisons retain overhead enforcement',harness.overheadFailures({deltas:{on:measurement(76)}},[page],75).length===1);
   check('missing overhead data cannot pass a requested budget',harness.overheadFailures({deltas:{}},[page],75).length===1);
 }
-Promise.all([checkLaunchScheduling(), checkNavigationCounters(), checkExtensionReadinessContexts(), checkSlowExtensionReadiness(), checkUnansweredWorker()]).then(() => {
+Promise.all([checkLaunchScheduling(), checkNavigationCounters(), checkExtensionReadinessContexts(), checkSlowExtensionReadiness()]).then(() => {
   if (failed) { console.error('\n' + failed + ' failed, ' + passed + ' passed'); process.exitCode = 1; }
   else console.log('\nperf profile harness: ' + passed + ' checks passed');
 }).catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

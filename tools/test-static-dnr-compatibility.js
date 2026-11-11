@@ -20,6 +20,10 @@ const ROOT = path.resolve(__dirname, '..');
 const rules = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules.json'), 'utf8'));
 const trackerRules = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules-trackers.json'), 'utf8'));
 const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'manifest.json'), 'utf8'));
+const adRules = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules-adshield.json'), 'utf8'));
+const assetsAds = adRules.find(rule => rule.action.type === 'block' && rule.condition.urlFilter === '/assets/ads/*');
+assert.equal(assetsAds?.condition.domainType, 'thirdParty', 'the generic asset path must leave first-party application code alone');
+assert(assetsAds.condition.excludedInitiatorDomains.includes('outlook.live.com'), 'the upstream Outlook exception still applies');
 
 const FUNCTIONAL_RESOURCE_TYPES = [
   'sub_frame',
@@ -192,11 +196,13 @@ for (const host of ['phonydepth.com', 'armvupzc.in']) {
 
 const playmogoPopunders = trackerRules.find((rule) => rule.id === 48);
 assert(playmogoPopunders && playmogoPopunders.action.type === 'block', 'the observed player ad loaders have a static rule');
-for (const host of ['dnhfi5nn2dt67.cloudfront.net', 'www.blockadsnot.com', 'www.xlxchtas.com',
-  'www.ejfiynnbu.com', 'dd.gillyspencie.com', 'briggie.org']) {
+for (const host of ['dnhfi5nn2dt67.cloudfront.net', 'd2pf0ys5xus6n.cloudfront.net',
+  'www.blockadsnot.com', 'www.xlxchtas.com', 'www.ejfiynnbu.com', 'dd.gillyspencie.com', 'briggie.org',
+  'oo.weldssantar.com', 'zj.prabblenutrify.com', 'yb.hoodoescopses.com', 'gf.gabbroscutum.cyou']) {
   assert(conditionMatches(playmogoPopunders, host, 'playmogo.com', 'script'));
   assert(!conditionMatches(playmogoPopunders, host, 'example.com', 'script'), 'other sites keep their scripts');
   assert(!conditionMatches(playmogoPopunders, host, 'playmogo.com', 'media'), 'the video stream stays available');
+  assert(!conditionMatches(playmogoPopunders, host, 'playmogo.com', 'main_frame'), 'direct navigation stays available');
   assert(!conditionMatches(playmogoPopunders, host + '.evil.example', 'playmogo.com', 'script'));
 }
 

@@ -45,6 +45,21 @@ const TABLES = [
   ['engine', booleanTable('src/content.js', 'DEFAULTS={', '\n  };')],
 ];
 
+const EXPECTED_ON = ['elementZapper', 'trackerLearner', 'trackerLearnerAuto', 'trackerCacheProtection', 'openPhish', 'blockSponsoredSearchResults'];
+for (const [name, table] of TABLES) {
+  for (const key of EXPECTED_ON) {
+    if (table.has(key)) check(name + ' enables ' + key + ' by default', table.get(key) === true);
+  }
+}
+
+const { migrateStoredConfig } = require('../upgrade-config.js');
+for (const key of EXPECTED_ON) {
+  const saved = { [key]: false };
+  migrateStoredConfig(saved, Object.fromEntries(TABLES[0][1]));
+  const effective = { ...Object.fromEntries(TABLES[0][1]), ...saved };
+  check('upgrade preserves an explicit off choice for ' + key, effective[key] === false);
+}
+
 TABLES.forEach(([name, t]) => {
   check(name + ' defaults were read', t.size > 50, t.size + ' boolean keys');
 });

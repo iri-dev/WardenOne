@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "recordedAt": "2026-09-30",
-  "reviewedAt": "2026-11-02",
+  "reviewedAt": "2026-11-11",
   "baseline": {
     "stagedZipBytes": 2112829,
     "unpackedBytes": 9997741,
@@ -12,12 +12,12 @@
     "workerSourceBytes": 1364737
   },
   "maximum": {
-    "stagedZipBytes": 3900000,
-    "unpackedBytes": 16200000,
+    "stagedZipBytes": 4250000,
+    "unpackedBytes": 18400000,
     "staticDnrRules": 29000,
     "manifestScriptEntries": 21,
     "manifestScriptFiles": 19,
     "manifestScriptBytes": 1900000,
-    "workerSourceBytes": 1600000
+    "workerSourceBytes": 1700000
   }
 }

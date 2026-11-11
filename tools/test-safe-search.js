@@ -47,8 +47,8 @@ check('every major engine is covered', ENGINES.length >= 5, ENGINES.length + ' e
 check('defaults OFF in background', /safeSearch:\s*false/.test(BG));
 check('defaults OFF in popup', /safeSearch:\s*false/.test(POPUP_JS));
 check('popup exposes the toggle', /data-key="safeSearch"/.test(POPUP_HTML));
-check('popup says it is off by default and why',
-  /Off by default: it changes what search will show you/i.test(POPUP_HTML));
+check('popup names YouTube Restricted Mode and explains the administrator message',
+  /SafeSearch and YouTube Restricted Mode[\s\S]{0,600}restricted by an administrator[\s\S]{0,250}Off by default\./i.test(POPUP_HTML));
 
 /* The rule band must not collide with its neighbours. */
 const base = num('SAFE_SEARCH_RULE_BASE');
@@ -118,7 +118,7 @@ check('duckduckgo rule ignores the homepage without a query',
 
 /* YouTube uses a request header, not a parameter. */
 check('YouTube is restricted via its documented request header',
-  /header:\s*'YouTube-Restrict',\s*operation:\s*'set',\s*value:\s*'Strict'/.test(applyBody));
+  /header:\s*'YouTube-Restrict',\s*operation:\s*'set',\s*value:\s*'Moderate'/.test(applyBody));
 check('YouTube rule targets the youtube domains',
   /SAFE_SEARCH_YT_DOMAINS\s*=\s*\['youtube\.com',\s*'youtube-nocookie\.com'\]/.test(BG));
 
@@ -195,4 +195,28 @@ check('rules are cleared when the extension is switched off, through the reconci
 check('rules use session storage, not dynamic',
   /getSessionRules\(\)/.test(applyBody) && /writeSessionRules\(change\)/.test(applyBody));
 
-console.log('\n' + passed + ' passed, 0 failed');
+async function verifyRestrictionLifecycle() {
+  const apply = new Function('SAFE_SEARCH_RULE_BASE', 'SAFE_SEARCH_RULE_MAX', tableSrc + '\n'
+    + "const SAFE_SEARCH_YT_DOMAINS = ['youtube.com', 'youtube-nocookie.com'];\n"
+    + googleConstSrc + '\n' + applyBody + '\n}\nreturn applySearchParamRules;')(base, max);
+  const unrelated = { id: base - 1 };
+  let installed = [unrelated];
+  const reconcile = cfg => apply(cfg, () => installed, async ({ removeRuleIds, addRules }) => {
+    installed = installed.filter(rule => !removeRuleIds.includes(rule.id)).concat(addRules);
+  });
+  const restricted = () => installed.some(rule => rule.action?.requestHeaders?.some(header => header.header === 'YouTube-Restrict'));
+  await reconcile({ googleWebResultsOnly: true });
+  check('web-only mode installs no YouTube restriction', !restricted());
+  await reconcile({ safeSearch: true });
+  check('explicit SafeSearch enables the YouTube restriction', restricted());
+  await reconcile({ safeSearch: false });
+  check('turning SafeSearch off removes the installed YouTube restriction', !restricted() && installed.includes(unrelated));
+  await reconcile({ safeSearch: true });
+  await reconcile({ enabled: false, safeSearch: true });
+  check('master off also removes the YouTube restriction', !restricted() && installed.includes(unrelated));
+}
+
+verifyRestrictionLifecycle().then(() => console.log('\n' + passed + ' passed, 0 failed')).catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

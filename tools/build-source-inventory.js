@@ -112,7 +112,7 @@ function basis(source) {
   const parts = [];
   if (source.license.id) parts.push(source.license.id);
   if (source.permission.status === 'granted') parts.push('Written permission (' + source.permission.date + ')');
-  if (source.compliance.issueIds.length) parts.push('Specific upstream/use-scope exception — see source review');
+  if (source.compliance.issueIds.length) parts.push('An open question about how this source may be used, recorded in the source review');
   return parts.join('; ');
 }
 

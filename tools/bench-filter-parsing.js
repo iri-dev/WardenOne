@@ -57,7 +57,8 @@ function loadNetworkParser(background, timer = setTimeout) {
     fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8'),
     region('const NEVER_BLOCK_PUBLIC_SUFFIXES', 'function isNeverBlockDomain('),
     region('const UBO_TYPE_MAP', '\nfunction getListMeta('),
-    'this.api = { parseList, parseListInSlices, parseNetworkRules, compileRemoteNetworkSource };',
+    'this.api = { parseList, parseListInSlices, parseNetworkRules, compileRemoteNetworkSource,'
+      + ' scanNetworkRules: typeof scanNetworkRules === "function" ? scanNetworkRules : null };',
   ].join('\n'), box, { filename: 'background.js:network-parser' });
   return box.api;
 }

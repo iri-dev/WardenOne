@@ -25,6 +25,7 @@ function harness(initialLocal, initialSession, options = {}) {
   const dynamic = [{ id: 100 }, { id: 101 }];
   const sessionRules = [{ id: 200 }];
   const timers = [];
+  const clearedLinkReports = [];
   let reloaded = false;
   const area = (state) => ({
     async get() { return Object.assign({}, state); },
@@ -64,6 +65,7 @@ function harness(initialLocal, initialSession, options = {}) {
     },
     TextEncoder,
     Date, URL,
+    manualLinkEraseReports: site => clearedLinkReports.push(site),
     siteIdentityBg(host) { return host.endsWith('.webflow.io') ? host : host.split('.').slice(-2).join('.'); },
     localGet: async () => Object.assign({}, local),
     localSet: (values) => sandbox.chrome.storage.local.set(values),
@@ -82,11 +84,11 @@ function harness(initialLocal, initialSession, options = {}) {
     + 'const PRIVACY_ERASE_REBUILD_KEY = "wardenone_erase_rebuild";'
     + 'const PRIVACY_ERASE_CONFIG_WRITE = Symbol("privacy erase config write");'
     + 'let __privacyEraseInProgress = false;'
-    + ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX'].map((name) => bg.match(new RegExp('\\nconst ' + name + ' = [^;]+;'))[0]).join('')
+    + ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX', 'REDIRECT_RULE_BASE', 'REDIRECT_RULES_BUDGET', 'CSP_RULE_BASE', 'CSP_RULES_BUDGET'].map((name) => bg.match(new RegExp('\\nconst ' + name + ' = [^;]+;'))[0]).join('')
     + bg.slice(bg.indexOf('\nfunction remoteListRuleIds('), bg.indexOf('\n}\n', bg.indexOf('\nfunction remoteListRuleIds(')) + 3)
     + bg.slice(start, end)
     + '\nglobalThis.__api = { inspectWardenOneData, eraseWardenOneData, eraseWardenOneSite, repairConfigAfterReset, repairOverwrittenConfig, stampConfigWrite, updateStoredConfig, preservedPrivacyConfig, policy: PRIVACY_STORE_POLICY };', sandbox);
-  return { api: sandbox.__api, local, session, dynamic, sessionRules, timers, historyStore: sandbox.WO_HISTORY, reloaded: () => reloaded };
+  return { api: sandbox.__api, local, session, dynamic, sessionRules, timers, clearedLinkReports, historyStore: sandbox.WO_HISTORY, reloaded: () => reloaded };
 }
 
 (async () => {
@@ -101,6 +103,7 @@ function harness(initialLocal, initialSession, options = {}) {
   const empty = harness({ wardenone_config: { enabled: true } }, {});
   const noChange = await empty.api.eraseWardenOneSite('no-record.example', false);
   assert.equal(noChange.ok, true);
+  assert.deepEqual(empty.clearedLinkReports, ['no-record.example'], 'site erasure also clears transient link reports');
   assert.equal(noChange.affected.length, 0);
   assert.equal(empty.historyStore.changing, false, 'erasing an absent site must resume history recording');
   const registered = policies.flatMap((policy) => Array.from(policy.keys));
@@ -134,6 +137,7 @@ function harness(initialLocal, initialSession, options = {}) {
 
   h = harness({ wardenone_history: [1], wardenone_config: cfg }, { wardenone_badge_counts: { 1: 2 } });
   assert.strictEqual((await h.api.eraseWardenOneData('settings')).ok, true);
+  assert.deepEqual(h.clearedLinkReports, [undefined], 'a full data reset clears transient link reports');
   assert.deepStrictEqual(Object.keys(h.local), ['wardenone_config']);
   assert.strictEqual(h.local.wardenone_config.enabled, false);
   assert.strictEqual(h.local.wardenone_config.downloadSafeBrowsingKey, undefined);

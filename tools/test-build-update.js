@@ -4,6 +4,7 @@
 const assert = require('assert/strict');
 const fs = require('fs');
 const vm = require('vm');
+const { createHash, webcrypto } = require('node:crypto');
 
 const source = fs.readFileSync('build-update.js', 'utf8');
 const popup = fs.readFileSync('popup.html', 'utf8');
@@ -32,7 +33,8 @@ function fixture({ installed = OLD, profile = 'full', latest = release(), compar
   const cache = {};
   const elements = Object.fromEntries([
     'wo-build-update', 'wo-build-update-open', 'wo-build-update-detail',
-    'wo-build-status', 'wo-build-detail', 'wo-build-check',
+    'wo-build-status', 'wo-build-detail', 'wo-build-check', 'wo-build-manual',
+    'wo-build-release', 'wo-build-zip', 'wo-build-verification',
   ].map((id) => [id, { hidden: true, textContent: '', dataset: {}, disabled: false,
     isConnected: true, onclick: null }]));
   let clock = now;
@@ -40,7 +42,7 @@ function fixture({ installed = OLD, profile = 'full', latest = release(), compar
   let compareAnswer = compare;
   const context = {
     WARDENONE_BUILD: { profile }, woSourceCommit: () => installed,
-    AbortController, TextDecoder, setTimeout, clearTimeout,
+    AbortController, TextDecoder, setTimeout, clearTimeout, crypto: webcrypto,
     Date: class extends Date { static now() { return clock; } },
     document: { getElementById(id) { return elements[id] || null; } },
     chrome: {
@@ -136,16 +138,45 @@ async function main() {
   assert.equal(local.requests.length, 0);
   await local.api.renderAbout();
   assert.match(local.elements['wo-build-detail'].textContent, /no packaged build ID/);
-  assert.equal(local.elements['wo-build-check'].disabled, true);
+  assert.equal(local.elements['wo-build-check'].disabled, false);
+  assert.equal((await local.api.check(true)).latest, NEW);
+  assert.equal(local.requests.length, 1, 'manual source-copy checks fetch release metadata without comparing a missing build ID');
   const store = fixture({ profile: 'store' });
   assert.equal((await store.api.check()).state, 'store');
   assert.equal(store.requests.length, 0);
+  await store.api.renderAbout();
+  assert.equal(store.elements['wo-build-manual'].hidden, true);
+
+  const bytes = Uint8Array.of(1, 2, 3, 4);
+  const digest = createHash('sha256').update(bytes).digest('hex');
+  const archive = release();
+  Object.assign(archive.assets[0], { size: bytes.length, digest: 'sha256:' + digest });
+  const verification = fixture({ latest: archive });
+  await verification.api.renderAbout();
+  const picker = verification.elements['wo-build-zip'];
+  const releaseLink = verification.elements['wo-build-release'];
+  const verificationStatus = verification.elements['wo-build-verification'];
+  assert.equal(picker.disabled, false);
+  assert(releaseLink.href.endsWith('/releases/tag/build-' + NEW));
+  picker.files = [{ size: bytes.length, arrayBuffer: async () => bytes.buffer }];
+  await picker.onchange();
+  assert.match(verificationStatus.textContent, /matches the published SHA-256/);
+  picker.files = [{ size: bytes.length, arrayBuffer: async () => Uint8Array.of(0, 0, 0, 0).buffer }];
+  await picker.onchange();
+  assert.match(verificationStatus.textContent, /does not match/);
+  assert.equal(verification.requests.length, 2, 'the verification reads the ZIP on-device');
+  assert.equal(await verification.api.verifyArchive({ size: 64 * 1024 * 1024 + 1,
+    arrayBuffer: async () => { throw new Error('large files should not be read'); } },
+  { size: 64 * 1024 * 1024 + 1, sha256: digest }), false);
+  const conflict = fixture({ latest: { ...archive, body: 'ZIP SHA-256: `' + 'f'.repeat(64) + '`' } });
+  await conflict.api.renderAbout();
+  assert.equal(conflict.elements['wo-build-zip'].disabled, true, 'conflicting published digests prevent verification');
 
   assert.match(popup, /id="wo-build-update"[^>]*hidden/);
   assert.match(popup, /<script src="build-update\.js"><\/script>/);
   assert.match(settings, /<script src="build-update\.js"><\/script>/);
   assert.match(settingsCode, /void WO_BUILD_UPDATE\.renderAbout\(\)/);
-  assert.match(settingsCode, /Keep that folder at the same path/);
+  assert.match(settingsCode, /WardenOne folder at the same path/);
   assert.match(settingsCode, /press Reload on WardenOne/);
   console.log('[ok] WardenOne build update checks');
 }

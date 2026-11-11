@@ -145,6 +145,24 @@ function makeHarness() {
     referrer.condition.excludedRequestDomains.includes('login.example') &&
       referrer.condition.excludedRequestDomains.includes('pay.example') &&
       referrer.condition.excludedInitiatorDomains.includes('login.example'));
+  const referrerRules = strictUpdate.addRules.filter(rule => headerNames(rule.action.requestHeaders).includes('referer'));
+  const matches = (domains, host) => (domains || []).some(domain => host === domain || host.endsWith('.' + domain));
+  const stripsReferer = (site, host, type) => referrerRules.some(({ action, condition }) =>
+    action.type === 'modifyHeaders' && action.requestHeaders.some(header => header.operation === 'remove')
+    && condition.resourceTypes.includes(type)
+    && (!condition.initiatorDomains || matches(condition.initiatorDomains, site))
+    && (!condition.requestDomains || matches(condition.requestDomains, host))
+    && !matches(condition.excludedInitiatorDomains, site) && !matches(condition.excludedRequestDomains, host));
+  for (const [site, host, type, strips] of [
+    ['playmogo.com', 'jm305k.cloudatacdn.com', 'media', false],
+    ['www.playmogo.com', 're511lo.cloudatacdn.com', 'media', false],
+    ['playmogo.com', 're511lo.cloudatacdn.com', 'script', true],
+    ['playmogo.com', 're511lo.cloudatacdn.com', 'main_frame', true],
+    ['playmogo.com', 'cloudatacdn.com.attacker.example', 'media', true],
+    ['playmogo.com.attacker.example', 're511lo.cloudatacdn.com', 'media', true],
+    ['unrelated.example', 're511lo.cloudatacdn.com', 'media', true],
+    ['login.example', 're511lo.cloudatacdn.com', 'media', false],
+  ]) check('Referer policy for ' + [site, host, type].join(' '), stripsReferer(site, host, type) === strips);
   check('cache defense removes both request and response validators',
     cache && headerNames(cache.action.requestHeaders).includes('if-none-match') &&
       headerNames(cache.action.responseHeaders).includes('etag'));
@@ -158,7 +176,7 @@ function makeHarness() {
   await h.api.applyHeaderShieldRules({ clientHints: false, strictReferrer: false, trackerCache: false });
   const disabled = h.updates.at(-1);
   check('turning Header Shield off removes every owned rule',
-    disabled.addRules.length === 0 && disabled.removeRuleIds.join(',') === '900003,900004,900005,900006');
+    disabled.addRules.length === 0 && disabled.removeRuleIds.join(',') === '900003,900004,900005,900006,900010,900011');
 
   const raced = makeHarness();
   const enable = raced.api.applyHeaderShieldRules({ clientHints: true, strictReferrer: true, trackerCache: true });
@@ -167,17 +185,18 @@ function makeHarness() {
   const raceFinal = raced.updates.at(-1);
   check('rapid setting changes cannot leave stale Header Shield rules installed',
     raceFinal && raceFinal.addRules.length === 0 &&
-      raceFinal.removeRuleIds.join(',') === '900003,900004,900005,900006');
+      raceFinal.removeRuleIds.join(',') === '900003,900004,900005,900006,900010,900011');
 
   check('fresh installs use conservative Client Hint protection',
     /clientHintProtection:\s*true/.test(between(BACKGROUND, 'const DEFAULT_CONFIG =', '// ---- Onboarding protection bundles')));
-  check('strict referrer and cache-validator modes stay off by default',
+  check('strict referrer stays off and tracker cache defense is on by default',
     /capReferrer:\s*false/.test(between(BACKGROUND, 'const DEFAULT_CONFIG =', '// ---- Onboarding protection bundles')) &&
-      /trackerCacheProtection:\s*false/.test(between(BACKGROUND, 'const DEFAULT_CONFIG =', '// ---- Onboarding protection bundles')));
-  check('Turn everything on does not silently opt into extra cache bandwidth',
+      /trackerCacheProtection:\s*true/.test(between(BACKGROUND, 'const DEFAULT_CONFIG =', '// ---- Onboarding protection bundles')));
+  check('Turn everything on preserves an explicit tracker cache choice',
     /MANUAL_ONLY_TOGGLES[^\n]*trackerCacheProtection/.test(POPUP));
-  check('Maximum privacy explicitly enables the two strict modes',
-    /const ONBOARDING_MAX_PRIVACY[\s\S]*?capReferrer:\s*true,[\s\S]*?trackerCacheProtection:\s*true,/.test(BACKGROUND));
+  check('Recommended enables cache defense and Maximum privacy adds strict referrers',
+    /const ONBOARDING_RECOMMENDED[\s\S]*?trackerCacheProtection:\s*true,/.test(BACKGROUND) &&
+      /const ONBOARDING_MAX_PRIVACY[\s\S]*?capReferrer:\s*true,/.test(BACKGROUND));
   check('the popup exposes and explains all three Header Shield controls',
     ['clientHintProtection', 'capReferrer', 'trackerCacheProtection'].every((key) => POPUP_HTML.includes('data-key="' + key + '"')) &&
       POPUP_HTML.includes('navigator.userAgentData') && POPUP_HTML.includes('more bandwidth'));

@@ -3,11 +3,11 @@
   "note": "Generated from runtime constants, embedded build provenance and docs/source-licensing.json. Edit policy metadata, not this file. Counts include optional configured feeds; license and permission counts can overlap.",
   "checkedAt": "2026-11-05",
   "summary": {
-    "runtimeFeeds": 43,
-    "publishers": 27,
-    "publishedLicenseCoveredFeeds": 37,
+    "runtimeFeeds": 44,
+    "publishers": 28,
+    "publishedLicenseCoveredFeeds": 38,
     "writtenPermissionFeeds": 11,
-    "resolvedFeeds": 41,
+    "resolvedFeeds": 42,
     "unresolvedFeeds": 2,
     "buildOnlyInputs": 11,
     "redistributedArtifacts": 27
@@ -1969,6 +1969,69 @@
       "checkedAt": "2026-10-25"
     },
     {
+      "url": "https://raw.githubusercontent.com/sjhgvr/oisd/main/domainswild2_big.txt",
+      "purposes": [
+        "Malware and phishing domains"
+      ],
+      "toggles": [
+        "blockMalwareSites"
+      ],
+      "kind": "fetched",
+      "policyId": "oisd",
+      "name": "oisd big",
+      "publisher": "Stephan van Ruth / oisd",
+      "home": "https://oisd.nl",
+      "license": {
+        "type": "published-license",
+        "id": "GPL-3.0",
+        "url": "https://github.com/sjhgvr/oisd/blob/main/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "The publisher's FAQ answers \"Under which license are the oisd lists distributed?\" with GNU General Public License v3.0 and links the repository licence. Direct download and local processing follow those terms; no personal permission reply is inferred or required."
+      },
+      "attribution": "oisd big, compiled by Stephan van Ruth. The lists it aggregates remain the work of their own maintainers, enumerated with per-entry licence links at https://oisd.nl/includedlists/big.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "GPL-3.0 terms govern the published compilation; retain notices and provide corresponding source when conveying covered derivatives.",
+          "The compilation aggregates roughly 300 upstream lists, enumerated by the publisher at https://oisd.nl/includedlists/big with a licence link per entry. Several of those entries are labelled CC BY-NC-SA 4.0 and a few carry custom or unstated terms, so upstream conditions travel with individual records and are not settled by the compilation licence alone.",
+          "WardenOne is free of charge and fetches the feed at runtime, so no upstream record is redistributed in the package."
+        ],
+        "implementation": [
+          "Direct runtime download; raw oisd data is not bundled or mirrored.",
+          "Source, author, licence and local-processing notices in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped.",
+          "The complete GPL-3.0 text is already bundled in LICENSE."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://oisd.nl/faq",
+          "finding": "The FAQ's licence entry asks \"Under which license are the oisd lists distributed?\" and answers \"GNU General Public License v3.0\", linking https://github.com/sjhgvr/oisd/blob/main/LICENSE. Checked 6 November 2026. The site states no attribution requirement, no noncommercial condition and no restriction on third-party use, mirroring or runtime fetching."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/sjhgvr/oisd/main/LICENSE",
+          "documentSha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+          "finding": "Verbatim unmodified GPLv3 text with no added terms; Git blob f288702d2fa16d3cdf0035b15a9fcbc552cd88e7 was checked on 6 November 2026. The repository's README is a single line pointing at https://oisd.nl."
+        },
+        {
+          "url": "https://oisd.nl/includedlists/big",
+          "finding": "The publisher enumerates the lists aggregated into oisd big, each with homepage and licence links. Entries labelled CC BY-NC-SA 4.0 include MajkiIT polish-ads-filter, d3ward's d3Host List and the Official Polish Filters; B Tasker and Spam404 carry custom or indirect licence links. The page records no upstream permission and makes no compliance claim of its own."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/sjhgvr/oisd/main/domainswild2_big.txt",
+          "finding": "The feed header names the licence link, the maintainer, the oisd.nl homepage, a one-hour expiry and the syntax \"Domains (wildcards) without *.\", and states that a listed domain and its subdomains should be blocked. 232,734 entries at 4.3 MB when checked on 6 November 2026, within the 18 MB per-source cap."
+        }
+      ],
+      "checkedAt": "2026-11-06"
+    },
+    {
       "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/alternates/porn-only/hosts",
       "purposes": [
         "Supplemental domain lists"
@@ -3087,7 +3150,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "7f1dc36bd827cb57457da4d758c185e2532e012dd5ebbf5394f83a515fb82a54"
+      "sha256": "32be475e5c6d1175980f5b5080c0adc5bfaabfdd34b91205df80ee6dbc5ca954"
     },
     {
       "file": "rules-easyprivacy.json",
@@ -3127,7 +3190,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "194518e2a597f72ae22dacc1bbb443b38284cf9626a1949cd9436641df38dbd5"
+      "sha256": "36e6b18ea522f24ef821c96e88c38a3f0dc7dfaa8f7d99350937e3f5ecb3b8ac"
     },
     {
       "file": "psl-private.js",
@@ -3279,7 +3342,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "b3a17cc0ace18cd5d953a9ef2b6f9ba62a8aae9b43dbed190e80c1d63ecf90a5"
+      "sha256": "c44701ef0c826827d3c91981aee7a9ea962ff83f43e603413f63a86af070c68d"
     },
     {
       "file": "grabber-extra.json",
@@ -3626,7 +3689,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "4d71feb091939787445e77a066bb84b9267ff2233c697962aabe504abcb22308"
+      "sha256": "ef0b7ee03361fec180c4e8760a2e4d60c4b8826521c49c0a0dc20b888063fa42"
     },
     {
       "file": "tracker-catalog.json",

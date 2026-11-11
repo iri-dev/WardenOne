@@ -44,6 +44,7 @@ const CODE = shipped.map(stripComments).join('\n');
    rather than a silent pass, because "it has no namespace" is exactly how an unused
    permission hides. */
 const NO_NAMESPACE = {
+  clipboardWrite: 'offscreen.js uses document.execCommand to copy an address explicitly requested by the user',
   activeTab: 'temporary user-invoked access; overlap with broad host access is recorded in the focused audit',
   declarativeNetRequestFeedback: 'gates declarativeNetRequest.getMatchedRules and onRuleMatchedDebug',
   webRequest: 'observational listeners live on chrome.webRequest, checked below',

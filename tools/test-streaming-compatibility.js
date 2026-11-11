@@ -119,10 +119,9 @@ function loadCosmeticComputer() {
   installEngineAmbient(sandbox);
   vm.runInContext(
     sourceBetween(BACKGROUND, 'function computeCosmeticForHost', '\n// Dynamic rule IDs')
-      + '\nthis.__compute = computeCosmeticForHost; this.__player = cosmeticForPlayerPage;',
+      + '\nthis.__compute = computeCosmeticForHost;',
     sandbox,
   );
-  sandbox.__compute.player = sandbox.__player;
   return sandbox.__compute;
 }
 
@@ -416,8 +415,8 @@ test('scoped ad/tracker exceptions cannot outrank security blocks', () => {
     'scoped tracker allow cannot rescue a host-level tracker block');
   assert(securityHostBlock.priority > adAllow.priority && securityHostBlock.priority > trackerAllow.priority,
     'ad/tracker exception can override a security or malware host block');
-  assert(securityAllow.priority > securityHostBlock.priority,
-    'explicit scoped security exception cannot override its security host block');
+  assert(securityAllow.priority < securityHostBlock.priority,
+    'downloaded exceptions cannot override security blocks regardless of source kind');
   assert(adOptionBlock.priority > adHostBlock.priority,
     'scoped ad option block lost precedence over a broad ad host block');
   assert(trackerOptionBlock.priority > trackerHostBlock.priority,
@@ -507,19 +506,36 @@ test('player-page cosmetic responses omit every list-driven mutation and popup s
     'player mode still returned a list popup matcher that can alter player control flow');
 });
 
-test('player-page fast path matches the full cosmetic response without loading list data', () => {
-  const plain = (value) => JSON.parse(JSON.stringify(value));
-  for (const [host, cfg] of [
-    ['youtube.com', { adShield: true }],
-    ['embed.player.example', { adShield: true }],
-    ['disabled.example', { adShield: false }],
-    ['', { adShield: true }],
-  ]) {
-    const compute = loadCosmeticComputer();
-    const mem = mutationHeavyCosmeticMemory(host);
-    mem.cfg = cfg;
-    assert.deepStrictEqual(plain(compute.player(host, cfg)), plain(compute(host, mem, true)), host || 'invalid host');
-  }
+test('player pages keep their own site rules apart from the generic ones', () => {
+  /* A video in a Reddit thread made the whole page a player page and cleared every rule,
+     so Reddit's own ad rules never applied. The site's rules come back separately, for the
+     page engine to apply away from the player; generic rules stay off. */
+  const compute = loadCosmeticComputer();
+  const host = 'embed.player.example';
+  const player = compute(host, mutationHeavyCosmeticMemory(host), true);
+  assert.deepStrictEqual(Array.from(player.siteSelectors || []), ['.site-ad-slot'],
+    'player mode lost the rules written for this site');
+  assert(!Array.from(player.siteSelectors || []).includes('.generic-ad-slot'), 'generic rules reached a player page');
+  const ordinary = compute('ordinary.example', mutationHeavyCosmeticMemory('ordinary.example'), false);
+  assert.deepStrictEqual(Array.from(ordinary.siteSelectors || []), ['.site-ad-slot'],
+    'ordinary pages carry the same site rules for when a player appears later');
+  const youtube = compute('youtube.com', mutationHeavyCosmeticMemory('youtube.com'), true);
+  assert.deepStrictEqual(Array.from(youtube.siteSelectors || []), [], 'YouTube and Twitch keep their own vetted path');
+  const disabled = loadCosmeticComputer();
+  const mem = mutationHeavyCosmeticMemory('off.example');
+  mem.cfg = { adShield: false };
+  assert.deepStrictEqual(Array.from(disabled('off.example', mem, true).siteSelectors || []), [], 'AdShield off returns no rules');
+});
+
+test('the page engine applies site rules on player pages only away from the player', () => {
+  const fn = CONTENT.slice(CONTENT.indexOf('playerSafeSelectors=list=>'), CONTENT.indexOf('applyPlayerSafe=()=>'));
+  assert(/querySelectorAll\(PLAYER_PAGE_SELECTOR\)/.test(fn), 'the main player is not located');
+  assert(/el\.closest\(PLAYER_SHELL_SELECTOR\)/.test(fn) && /el\.contains\(main\)\|\|main\.contains\(el\)/.test(fn),
+    'a rule touching the player or its shell is not dropped');
+  const branches = CONTENT.match(/adShieldVideoPlatform\?injectCss\(SAFE_VIDEO_AD_SELECTORS\):applyPlayerSafe\(\)/g) || [];
+  assert.strictEqual(branches.length, 2, 'both player-page paths use the player-safe site rules');
+  assert(!/adShieldVideoPlatform\?injectCss\(SAFE_VIDEO_AD_SELECTORS\):styleEl&&\(styleEl\.textContent=""\)/.test(CONTENT),
+    'a player-page path still clears every rule');
 });
 
 test('ordinary pages retain generic, specific, procedural and scriptlet protection', () => {
@@ -598,9 +614,8 @@ test('content requests carry player mode through to background cosmetic computat
     "if (msg && msg.kind === 'adshield-cosmetic' && msg.hostname)",
     '\n  // ---- Check an extension before installing it ----',
   );
-  assert(/if \(msg\.playerPage === true\)\s*\{[\s\S]*?cosmeticForPlayerPage\(msg\.hostname,/.test(handler)
-    && /else\s*\{\s*const mem = await getCosmeticMem\(\);\s*out = computeCosmeticForHost\(msg\.hostname, mem, false\)/.test(handler),
-  'background cosmetic handler must skip the full list only on detected player pages');
+  assert(/const out = computeCosmeticForHost\(msg\.hostname, mem, msg\.playerPage === true\)/.test(handler),
+    'background cosmetic handler must compute player pages in player mode');
   assert(!handler.includes('hiddenSelectorsForHost') && handler.includes('const bundle = await userFilterBundle()'),
     'player fast path must keep custom filters separate from bridge-owned hand-hidden rules');
 });

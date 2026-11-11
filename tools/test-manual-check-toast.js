@@ -113,8 +113,8 @@ check('each is wired to a handler',
     && /info\.menuItemId === WO_MENU_FRAME/.test(BG));
 check('they all report through wardenManualNotice',
   /async function wardenManualNotice\(title, message, tab, id, documentId\)/.test(BG));
-check('which raises exactly the type showToast now lets through',
-  /window\.__wardenOneLocalNotice\('detected_manual_check'/.test(BG)
+check('requested replies have an independent renderer while signed notices remain supported',
+  /func: renderWardenManualNotice/.test(BG)
     && /LOCAL_NOTICE_TYPES = new Set\(\[[^\]]*'detected_manual_check'/.test(BRIDGE));
 check('and the engine has copy for that type',
   /detected_manual_check:\{[\s\S]{0,200}?title:"WardenOne check"/.test(MIN));

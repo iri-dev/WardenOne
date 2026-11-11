@@ -70,7 +70,9 @@ const DIGEST = grabFn(BG, 'function urlDigest53(text) {');
 const WHOIS_ERR = grabFn(BG, 'function firstString() {') + grabFn(BG, 'function whoisXmlErrorText(data) {');
 const WHOIS_DOMAIN = grabFn(BG, 'async function fetchWhoisXmlDomain(domain, apiKey) {');
 const WHOIS_CONSTS = between(BG, 'const WHOISXML_TIMEOUT_MS = ', '\nfunction registrableDomainBg', 'the WhoisXML constants');
-const MANUAL = grabFn(BG, 'async function wardenHostFindings(host, url, cfg) {');
+const MANUAL = grabFn(BG, 'async function wardenHostFindings(host, url, cfg, onProgress) {');
+const LINK_BG = fs.readFileSync(path.join(ROOT, 'background-link-check.js'), 'utf8');
+const WITHIN = grabFn(LINK_BG, 'function manualLinkWithin(');
 const REPUTATION_CONFIG = grabFn(BG, 'async function urlReputationConfig(manual) {');
 
 function providerSandbox() {
@@ -93,6 +95,7 @@ function providerSandbox() {
     WHOISXML_REPUTATION_ENDPOINT: 'https://domain-reputation.whoisxmlapi.com/api/v2',
     WHOISXML_THREAT_ENDPOINT: 'https://threat-intelligence.whoisxmlapi.com/api/v1',
     DEFAULT_CONFIG: { enabled: true },
+    MANUAL_LINK_CHECK_TIMEOUT_MS: 30000,
     chrome: { storage: { session: { get: async () => ({}), set: async () => {} } } },
     localGet: async (key) => {
       const out = {};
@@ -117,7 +120,7 @@ function providerSandbox() {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
-  vm.runInContext([DIGEST, WHOIS_CONSTS, WHOIS_ERR, PROVIDERS, WHOIS_DOMAIN, REPUTATION_CONFIG, MANUAL,
+  vm.runInContext([DIGEST, WHOIS_CONSTS, WHOIS_ERR, PROVIDERS, WHOIS_DOMAIN, REPUTATION_CONFIG, WITHIN, MANUAL,
     'globalThis.api = { urlReputationLookupUrl, normalizeSafeBrowsingUrl, reputationQueryUrl, reputationCacheKey,'
     + ' isReputationCacheKey, safeBrowsingLookupUrl, phishTankLookupUrl, urlHausLookupUrl, whoisXmlThreatIntelLookupUrl,'
     + ' checkSafeBrowsingUrl, fetchPhishTankUrl, fetchUrlHausUrl, fetchWhoisXmlDomain, fetchWhoisXmlThreatIntel,'

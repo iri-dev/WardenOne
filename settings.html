@@ -467,6 +467,11 @@
   .sub-main small { display: block; margin-top: 1px; font-size: 12px; color: var(--ink-soft); font-weight: 400; }
   .sub-main small.warn { color: var(--warn); }
   .sub-act { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: none; }
+  .sub-catalog { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); padding: 8px 12px; }
+  .sub-catalog > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .sub-catalog > summary:focus-visible { outline: 2px solid var(--line-2); outline-offset: 2px; border-radius: 4px; }
+  .sub-catalog .sub-list { background: var(--surface); }
+  .sub-catalog .r-name { margin-top: 10px; }
   .sub-add { display: flex; gap: 8px; margin-top: 8px; }
   .sub-add input { flex: 1; min-width: 0; max-width: 520px; height: 28px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--raised); padding: 0 10px; font-size: 12.5px; }
   .check { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; padding-left: calc(var(--name-col) + 14px); font-size: 12.5px; }
@@ -636,6 +641,7 @@
 
 <script src="build-profile.js"></script>
 <script src="build-update.js"></script>
+<script src="list-coverage.js"></script>
 <script src="eyeshield-profiles.js"></script>
 <script src="protection-event-settings.js"></script>
 <script src="notification-schema.js"></script>

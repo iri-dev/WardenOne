@@ -1,6 +1,9 @@
 {
-  "note": "The Chrome Web Store screenshot candidates, and where each one came from. Every image in this folder except the promo tile is generated from these entries by tools/build-store-assets.py, which letterboxes a capture from docs/screenshots into a 1280x800 frame and draws the caption into it. Text inside a screenshot is a claim about the package, so a capture is only eligible here if nothing in it is contradicted by the build it will be submitted with; the excluded list says why the obvious ones are not here yet. tools/test-store-assets.js fails the gate if this folder and this file disagree.",
-  "frame": { "width": 1280, "height": 800 },
+  "note": "Public image build inputs for tools/build-store-assets.py. Frames are generated from the named captures with the captions below; the package identity records which source they describe.",
+  "frame": {
+    "width": 1280,
+    "height": 800
+  },
   "captured": "2026-09-10",
   "package": {
     "version": "1.0.3",
@@ -43,15 +46,18 @@
   "excluded": [
     {
       "source": "docs/screenshots/01-popup-master-switch.png",
-      "why": "Shows the 'Turn everything on' button while FEAT-05 is open: the button leaves five visible protections off, so the screenshot would repeat a claim the package does not meet."
+      "why": "Replace this superseded capture before using it in the public listing; its bulk-toggle wording does not describe the current controls.",
+      "reasonCode": "bulk-toggle-wording"
     },
     {
       "source": "docs/screenshots/02-protection-health.png",
-      "why": "Shows 'You're safe' while FEAT-02 is open: the health line does not yet verify the current tab's engine."
+      "why": "Replace this superseded capture before using it in the public listing; its protection wording does not describe the current controls.",
+      "reasonCode": "protection-wording"
     },
     {
       "source": "docs/screenshots/10-permissions-explained.png",
-      "why": "Captured while the page still said 16 browser permissions; the manifest declares 18. Recapture after the counter fix."
+      "why": "Replace this superseded capture with one showing the current manifest permission count.",
+      "reasonCode": "permission-count"
     }
   ]
 }

@@ -29,6 +29,7 @@
     var isGitHubHost = core.isGitHubHost;
     var isStackOverflowHost = core.isStackOverflowHost;
     var isHackerNewsHost = core.isHackerNewsHost;
+    var isDuckDuckGoHost = core.isDuckDuckGoHost;
     var isWikipediaHost = core.isWikipediaHost;
     var isRedditHost = core.isRedditHost;
     var isAmazonHost = core.isAmazonHost;
@@ -130,9 +131,9 @@
     const subBg = sub.bg;
     const subText = sub.text;
     const subBorder = sub.border;
-    const subscribedBg = sub.bg;
-    const subscribedText = sub.text;
-    const subscribedBorder = sub.border;
+    const subscribedBg = sub.subscribedBg || sub.bg;
+    const subscribedText = sub.subscribedText || sub.text;
+    const subscribedBorder = sub.subscribedBorder || sub.border;
     const subHost = [
       ':host-context(#subscribe-button)',
       ':host-context(ytd-subscribe-button-renderer)',
@@ -266,15 +267,15 @@
       + 'ytd-playlist-panel-renderer ytd-playlist-panel-video-renderer[selected],ytd-playlist-panel-renderer ytd-playlist-panel-video-renderer[active],ytd-playlist-panel-renderer ytd-playlist-panel-video-renderer:hover{background:' + soft + ' !important;color:' + p.text + ' !important;}'
       + 'ytd-playlist-panel-renderer #video-title,ytd-playlist-panel-renderer #video-title *,ytd-playlist-panel-renderer #playlist-title,ytd-playlist-panel-renderer #playlist-title *,ytd-playlist-panel-renderer #title,ytd-playlist-panel-renderer #title *,ytd-playlist-panel-renderer yt-formatted-string,ytd-playlist-panel-renderer .yt-core-attributed-string,ytd-playlist-panel-renderer .yt-core-attributed-string *{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + 'ytd-playlist-panel-renderer #byline,ytd-playlist-panel-renderer #byline *,ytd-playlist-panel-renderer #video-info,ytd-playlist-panel-renderer #video-info *,ytd-playlist-panel-renderer #publisher-container,ytd-playlist-panel-renderer #publisher-container *{color:' + p.muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      + 'ytd-playlist-panel-renderer yt-icon,ytd-playlist-panel-renderer yt-icon-shape,ytd-playlist-panel-renderer svg,ytd-playlist-panel-renderer path{color:' + p.text + ' !important;fill:currentColor !important;stroke:currentColor !important;}'
+      + 'ytd-playlist-panel-renderer yt-icon,ytd-playlist-panel-renderer yt-icon-shape,ytd-playlist-panel-renderer svg,ytd-playlist-panel-renderer path{color:' + p.text + ' !important;fill:currentColor !important;}'
       + 'ytd-comments,ytd-comments #sections,ytd-comments #contents,ytd-comments-header-renderer,ytd-comment-thread-renderer,ytd-comment-view-model,ytd-comment-renderer,ytd-comment-replies-renderer,ytd-comment-reply-dialog-renderer{background:' + surface + ' !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;}'
       + 'ytd-comments ytd-comment-thread-renderer,ytd-comments ytd-comment-view-model,ytd-comments ytd-comment-renderer,ytd-comments ytd-comment-replies-renderer,ytd-comments #comment,ytd-comments #main,ytd-comments #main *,ytd-comments #body,ytd-comments #body *,ytd-comments #content,ytd-comments #content-text,ytd-comments #content-text *,ytd-comments #comment-content,ytd-comments #comment-content *,ytd-comments yt-formatted-string,ytd-comments yt-attributed-string,ytd-comments .yt-core-attributed-string,ytd-comments .yt-core-attributed-string *{background:transparent !important;background-color:transparent !important;box-shadow:none !important;}'
       + 'ytd-comments h2,ytd-comments h2 *,ytd-comments #title,ytd-comments #title *,ytd-comments #content-text,ytd-comments #content-text *,ytd-comments #comment-content,ytd-comments #comment-content *,ytd-comments #main,ytd-comments #main *,ytd-comments yt-formatted-string,ytd-comments yt-attributed-string,ytd-comments .yt-core-attributed-string,ytd-comments .yt-core-attributed-string *{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + 'ytd-comments #author-text,ytd-comments #author-text *,ytd-comments #header-author,ytd-comments #header-author *,ytd-comments #published-time-text,ytd-comments #published-time-text *,ytd-comments #vote-count-middle,ytd-comments #vote-count-middle *,ytd-comments #simplebox-placeholder,ytd-comments #placeholder-area,ytd-comments #placeholder-area *{color:' + p.muted + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
-      + 'ytd-comments yt-icon,ytd-comments yt-icon-shape,ytd-comments svg,ytd-comments path,ytd-comments button,ytd-comments yt-icon-button{background:transparent !important;color:' + p.text + ' !important;fill:currentColor !important;stroke:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
+      + 'ytd-comments yt-icon,ytd-comments yt-icon-shape,ytd-comments svg,ytd-comments path,ytd-comments button,ytd-comments yt-icon-button{background:transparent !important;color:' + p.text + ' !important;fill:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
       + 'ytd-watch-metadata #top-level-buttons-computed,ytd-watch-metadata ytd-menu-renderer,ytd-watch-metadata segmented-like-dislike-button-view-model,ytd-watch-metadata like-button-view-model,ytd-watch-metadata dislike-button-view-model,ytd-watch-metadata ytd-segmented-like-dislike-button-renderer{background:transparent !important;color:' + p.text + ' !important;border-color:transparent !important;}'
-      + 'ytd-watch-metadata #top-level-buttons-computed button,ytd-watch-metadata #top-level-buttons-computed yt-button-shape,ytd-watch-metadata #top-level-buttons-computed button-view-model,ytd-watch-metadata #top-level-buttons-computed .yt-spec-button-shape-next,ytd-watch-metadata #top-level-buttons-computed .yt-spec-button-shape-next__button-text-content,ytd-watch-metadata segmented-like-dislike-button-view-model button,ytd-watch-metadata like-button-view-model button,ytd-watch-metadata dislike-button-view-model button{background:transparent !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
-      + 'ytd-watch-metadata #top-level-buttons-computed yt-icon,ytd-watch-metadata #top-level-buttons-computed yt-icon-shape,ytd-watch-metadata #top-level-buttons-computed .yt-icon-shape,ytd-watch-metadata #top-level-buttons-computed yt-animated-icon,ytd-watch-metadata #top-level-buttons-computed svg,ytd-watch-metadata #top-level-buttons-computed path,ytd-watch-metadata segmented-like-dislike-button-view-model yt-icon,ytd-watch-metadata segmented-like-dislike-button-view-model yt-icon-shape,ytd-watch-metadata segmented-like-dislike-button-view-model svg,ytd-watch-metadata segmented-like-dislike-button-view-model path,ytd-watch-metadata like-button-view-model yt-icon,ytd-watch-metadata like-button-view-model yt-icon-shape,ytd-watch-metadata like-button-view-model svg,ytd-watch-metadata like-button-view-model path,ytd-watch-metadata dislike-button-view-model yt-icon,ytd-watch-metadata dislike-button-view-model yt-icon-shape,ytd-watch-metadata dislike-button-view-model svg,ytd-watch-metadata dislike-button-view-model path{background:transparent !important;color:' + p.text + ' !important;fill:currentColor !important;stroke:currentColor !important;}'
+      + 'ytd-watch-metadata #top-level-buttons-computed button,ytd-watch-metadata #top-level-buttons-computed yt-button-shape,ytd-watch-metadata #top-level-buttons-computed button-view-model,ytd-watch-metadata #top-level-buttons-computed .yt-spec-button-shape-next,ytd-watch-metadata #top-level-buttons-computed .yt-spec-button-shape-next__button-text-content,ytd-watch-metadata segmented-like-dislike-button-view-model button,ytd-watch-metadata like-button-view-model button,ytd-watch-metadata dislike-button-view-model button{background:' + (p.scheme === 'light' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.1)') + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
+      + 'ytd-watch-metadata #top-level-buttons-computed yt-icon,ytd-watch-metadata #top-level-buttons-computed yt-icon-shape,ytd-watch-metadata #top-level-buttons-computed .yt-icon-shape,ytd-watch-metadata #top-level-buttons-computed yt-animated-icon,ytd-watch-metadata #top-level-buttons-computed svg,ytd-watch-metadata #top-level-buttons-computed path,ytd-watch-metadata segmented-like-dislike-button-view-model yt-icon,ytd-watch-metadata segmented-like-dislike-button-view-model yt-icon-shape,ytd-watch-metadata segmented-like-dislike-button-view-model svg,ytd-watch-metadata segmented-like-dislike-button-view-model path,ytd-watch-metadata like-button-view-model yt-icon,ytd-watch-metadata like-button-view-model yt-icon-shape,ytd-watch-metadata like-button-view-model svg,ytd-watch-metadata like-button-view-model path,ytd-watch-metadata dislike-button-view-model yt-icon,ytd-watch-metadata dislike-button-view-model yt-icon-shape,ytd-watch-metadata dislike-button-view-model svg,ytd-watch-metadata dislike-button-view-model path{background:transparent !important;color:' + p.text + ' !important;fill:currentColor !important;}'
       + youtubeSubscribeButtonCSS(p)
       + 'ytd-logo,#logo,ytd-topbar-logo-renderer,#country-code{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + 'ytd-logo #country-code,#country-code.ytd-topbar-logo-renderer{color:' + p.muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
@@ -287,9 +288,9 @@
     const subBg = sub.bg;
     const subText = sub.text;
     const subBorder = sub.border;
-    const subscribedBg = sub.bg;
-    const subscribedText = sub.text;
-    const subscribedBorder = sub.border;
+    const subscribedBg = sub.subscribedBg || sub.bg;
+    const subscribedText = sub.subscribedText || sub.text;
+    const subscribedBorder = sub.subscribedBorder || sub.border;
     const subHost = 'ytd-subscribe-button-renderer,yt-subscribe-button-view-model,#subscribe-button,#owner ytd-subscribe-button-renderer,#owner yt-subscribe-button-view-model,#owner #subscribe-button';
     const joinHost = 'ytd-button-renderer#sponsor-button,#sponsor-button,ytd-sponsor-button-renderer,ytd-sponsorships-button-renderer,yt-sponsorships-button-view-model,#owner ytd-button-renderer#sponsor-button,#owner #sponsor-button,#owner ytd-sponsor-button-renderer,#owner ytd-sponsorships-button-renderer,#owner yt-sponsorships-button-view-model';
     const subscribedHost = 'ytd-subscribe-button-renderer[subscribed],yt-subscribe-button-view-model[subscribed],#subscribe-button[subscribed]';
@@ -334,7 +335,7 @@
       + youtubeNotificationsPanelCSS(p)
       + '#buttons.ytd-masthead yt-icon,#buttons.ytd-masthead yt-icon-shape,#buttons.ytd-masthead .yt-icon-shape,#buttons.ytd-masthead svg,#buttons.ytd-masthead path,#end.ytd-masthead yt-icon,#end.ytd-masthead yt-icon-shape,#end.ytd-masthead .yt-icon-shape,#end.ytd-masthead svg,#end.ytd-masthead path,ytd-topbar-menu-button-renderer yt-icon,ytd-notification-topbar-button-renderer yt-icon,#buttons.ytd-masthead ytd-button-renderer yt-icon,#end.ytd-masthead ytd-button-renderer yt-icon,#buttons.ytd-masthead button-view-model yt-icon,#end.ytd-masthead button-view-model yt-icon,#buttons.ytd-masthead yt-button-shape yt-icon,#end.ytd-masthead yt-button-shape yt-icon{color:#0f0f0f !important;fill:currentColor !important;}'
       + '#buttons.ytd-masthead button,#end.ytd-masthead button,ytd-topbar-menu-button-renderer,ytd-notification-topbar-button-renderer,#buttons.ytd-masthead ytd-button-renderer,#end.ytd-masthead ytd-button-renderer,#buttons.ytd-masthead yt-button-shape,#end.ytd-masthead yt-button-shape,#buttons.ytd-masthead button-view-model,#end.ytd-masthead button-view-model,#buttons.ytd-masthead .yt-spec-button-shape-next,#end.ytd-masthead .yt-spec-button-shape-next,#buttons.ytd-masthead .yt-spec-button-shape-next__button-text-content,#end.ytd-masthead .yt-spec-button-shape-next__button-text-content{background:transparent !important;color:#0f0f0f !important;-webkit-text-fill-color:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
-      + 'ytd-masthead #voice-search-button,ytd-masthead #voice-search-button button,ytd-masthead #voice-search-button yt-icon,ytd-masthead button yt-icon,ytd-masthead button yt-icon-shape,ytd-masthead button svg,ytd-masthead button path,ytd-masthead yt-icon-button yt-icon,ytd-masthead yt-icon-button svg,ytd-masthead yt-icon-button path{background:transparent !important;color:#0f0f0f !important;-webkit-text-fill-color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
+      + 'ytd-masthead #voice-search-button,ytd-masthead #voice-search-button button,ytd-masthead #voice-search-button yt-icon,ytd-masthead button yt-icon,ytd-masthead button yt-icon-shape,ytd-masthead button svg,ytd-masthead button path,ytd-masthead yt-icon-button yt-icon,ytd-masthead yt-icon-button svg,ytd-masthead yt-icon-button path{background:transparent !important;color:#0f0f0f !important;-webkit-text-fill-color:currentColor !important;fill:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
       + youtubeWatchPageCSS(p)
       + 'ytd-guide-entry-renderer yt-formatted-string,ytd-mini-guide-entry-renderer yt-formatted-string,ytd-guide-section-renderer yt-formatted-string,ytd-guide-collapsible-section-entry-renderer yt-formatted-string,ytd-guide-entry-renderer a,ytd-mini-guide-entry-renderer a,ytd-guide-renderer yt-icon,ytd-mini-guide-renderer yt-icon{color:#0f0f0f !important;-webkit-text-fill-color:currentColor !important;}'
       + 'ytd-rich-grid-media,ytd-rich-grid-media #dismissible,ytd-rich-grid-media #details,ytd-rich-grid-media #meta,ytd-rich-grid-media h3,ytd-rich-item-renderer,ytd-video-renderer,ytd-video-renderer #dismissible,ytd-video-renderer #details,ytd-video-renderer #meta,ytd-video-renderer h3,ytd-compact-video-renderer,ytd-grid-video-renderer,ytd-playlist-renderer,ytd-reel-item-renderer,#contents.ytd-rich-grid-row{background:transparent !important;color:#0f0f0f !important;border-color:transparent !important;}'
@@ -344,7 +345,11 @@
       + 'yt-icon-button,ytd-menu-renderer yt-icon-button,ytd-menu-renderer button,#button.yt-icon-button,#button.ytd-menu-renderer,ytd-rich-grid-media ytd-menu-renderer,ytd-video-renderer ytd-menu-renderer{background:transparent !important;color:#0f0f0f !important;border-color:transparent !important;box-shadow:none !important;}'
       + 'ytd-rich-grid-media #details *,ytd-video-renderer #details *,ytd-video-meta-block *{background:transparent !important;}'
       + youtubePlayerCSS('#ffffff')
-      + 'video,.html5-video-player,.ytp-player-content,.ytp-chrome-bottom,.ytp-gradient-top,.ytp-gradient-bottom{filter:none !important;}';
+      + 'video,.html5-video-player,.ytp-player-content,.ytp-chrome-bottom,.ytp-gradient-top,.ytp-gradient-bottom{filter:none !important;}'
+      /* YouTube's round hover highlight keeps its dark-theme layers when the account is dark, which
+         drew a dark disc behind every "More actions" button. These are its own light values. */
+      + '.ytSpecTouchFeedbackShapeFill{background-color:rgba(0,0,0,0.1) !important;}'
+      + '.ytSpecTouchFeedbackShapeStroke{border-color:rgba(0,0,0,0.1) !important;}';
   }
 
   function youtubeDarkCSS(remap) {
@@ -733,7 +738,7 @@
       + '#search h1,#search h2,#search h3,#rso h2,#rso h3,#rhs h2,#rhs h3{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;text-shadow:none !important;}'
       + '#search button,#search [role="button"],#search [aria-label*="More" i],#search [aria-label*="Tools" i],#rhs button,#rhs [role="button"]{background:' + chip + ' !important;background-color:' + chip + ' !important;color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:' + border + ' !important;box-shadow:none !important;}'
       + '#search svg,#search path,#rhs svg,#rhs path,#gb svg,#gb path{color:' + text + ' !important;fill:currentColor !important;stroke:currentColor !important;}'
-      + '.LC20lb,.DKV0Md,.yuRUbf a h3{color:#1a0dab !important;-webkit-text-fill-color:currentColor !important;}'
+      + '#search a h3,#rso a h3,#rhs a h3,#search h3 a,#rso h3 a,#search a .LC20lb,#rso a .LC20lb,.LC20lb,.DKV0Md,.yuRUbf a h3{color:' + link + ' !important;-webkit-text-fill-color:currentColor !important;}'
       // Same as the dark sheet: the rule above colours the title, and Chrome
       // will not honour it on a visited link's h3. Light mode got away with it
       // because the colour Chrome substitutes there is a purple close enough to
@@ -806,6 +811,7 @@
       + inputSel + '{color:' + text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + text + ' !important;background:transparent !important;background-color:transparent !important;border-color:transparent !important;border-bottom-color:transparent !important;box-shadow:none !important;outline:0 !important;}'
       + inputSel + '::placeholder{color:' + muted + ' !important;-webkit-text-fill-color:' + muted + ' !important;opacity:1 !important;}'
       + iconSel + '{background-color:transparent !important;color:' + icon + ' !important;fill:currentColor !important;stroke:currentColor !important;border-color:transparent !important;box-shadow:none !important;}'
+      + (globalThis.WOEyeShieldProfiles?.googleSearchActionsCSS?.(icon) || '')
       // Paint the dropdown's outer wrapper only. Transparent inner layers prevent stacked borders/shadows and native-color
       // leaks.
       + googleSuggestRoot + '{background-color:' + panel + ' !important;color:' + text + ' !important;border-color:' + border + ' !important;box-shadow:none !important;text-shadow:none !important;}'
@@ -888,6 +894,25 @@
       // The generic a:visited * rule does not colour result titles reliably.
       + '#search a:visited h3,#rso a:visited h3,#rhs a:visited h3,#search h3 a:visited,#rso h3 a:visited,#search a:visited .LC20lb,#rso a:visited .LC20lb{color:' + visited + ' !important;-webkit-text-fill-color:currentColor !important;}'
       + '#search cite,#rso cite,#search .VuuXrf,#rso .VuuXrf,#search .UdQCqe,#rso .UdQCqe,#search .byrV5b,#rso .byrV5b,#search .tjvcx,#rso .tjvcx{color:' + muted + ' !important;-webkit-text-fill-color:currentColor !important;}'
+      // AI Mode's composer paints no surface of its own: Google separates it from the page with a hairline
+      // against its own near-black. On the EyeShield page colour that edge disappears and the box stops
+      // reading as a field, so it carries its own surface and border here, as the search box above does.
+      /* The "Ask anything" box, on AI Mode and on the AI Overview in ordinary results. Nothing carries its
+         surface: a ::before paints the rounded field, and a sibling fades the conversation out behind it with
+         a gradient ending on GOOGLE's page colour. Both assume that colour, so on a darker page they show as
+         pale rectangles with square edges. The AI Mode plate attribute is absent in results, so these go by
+         the element classes, like the result rules above. */
+      /* Google keeps its own page colour in these three custom properties and paints its AI backdrops with
+         them, so on a darker page each one shows as a pale block. Re-pointing the properties fixes every
+         element that uses them, including ones not enumerated here. */
+      + ':root,html,body{--cIehld:' + bg + ' !important;--PBxOKe:' + bg + ' !important;--xhUGwc:' + bg + ' !important;}'
+      /* A gradient bakes its colour in and ignores the properties above, so each fade needs its own stops:
+         .Zze5V sits behind the "Ask anything" box, .RDmXvc fades out a collapsed AI Overview. */
+      + 'div.Zze5V{background-image:linear-gradient(rgba(0,0,0,0),' + bg + ' 30px,' + bg + ') !important;}'
+      + 'div.RDmXvc{background-image:linear-gradient(rgba(0,0,0,0) 0px,' + bg + ' 80px) !important;}'
+      + 'div.d4HWzd{border:1px solid ' + border + ' !important;box-shadow:none !important;}'
+      + 'div.d4HWzd::before{background-color:' + gp.input + ' !important;background-image:none !important;}'
+      + ':is(div.d4HWzd,[data-xid="aim-mars-input-plate"]) :is(textarea,input){background:transparent !important;background-color:transparent !important;}'
       + googleSearchBoxCSS(remap);
   }
 
@@ -941,6 +966,118 @@
       + 'input,textarea,select{background:' + p.input + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + p.text + ' !important;border-color:' + p.border + ' !important;}'
       + '.js-vote-count,.s-badge,.post-tag{background:' + p.control + ' !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;}'
       + 'img,picture,video,canvas,iframe,embed,object{filter:none !important;background:transparent !important;}';
+  }
+
+  /* DuckDuckGo paints from its own --theme-col-* variables, so EyeShield's palette goes in there
+     rather than over the top. Painting element by element left empty pills, boxed filter chips and
+     a square search button, because those controls take their shape from the same variables. */
+  const DDG_ROLES = {
+    bg: ['bg-page', 'bg-page-alt-2', 'bg-page-alt-3', 'bg-header', 'metabar-bg', 'bg-result-item-divider'],
+    surface: ['bg-card', 'bg-modal', 'bg-header-modal', 'bg-ext-dropdown', 'bg-expandcollapse', 'bg-button-qna'],
+    raised: ['bg-card-header', 'bg-page-alt-1', 'image-preload'],
+    control: ['bg-ui', 'bg-search', 'bg-pill', 'bg-button-tab', 'bg-button-expandcollapse'],
+    input: ['bg-textarea'],
+    controlHover: ['bg-ui-active', 'bg-button-tab-hover', 'bg-button-expandcollapse-hover', 'bg-button-expandcollapse-active',
+      'bg-expandcollapse-hover', 'bg-button-qna-hover'],
+    text: ['bg-txt-1', 'bg-txt-2', 'txt-card', 'txt-card-title', 'txt-card-subtitle', 'txt-card-body', 'txt-snippet', 'txt-msg',
+      'txt-qna-answer', 'txt-large-tab', 'txt-expandcollapse', 'txt-button-secondary', 'txt-button-tertiary', 'txt-button-tab',
+      'txt-search-input', 'txt-textarea', 'txt-header-link-hover', 'icon-qna', 'icon-button-expandcollapse', 'missing-asset',
+      'border-large-tab-selected', 'bg-button-tab-active'],
+    muted: ['bg-txt-3', 'txt-card-aside', 'txt-card-body-light', 'txt-header-link', 'txt-qna-details', 'txt-url',
+      'txt-button-ghostsecondary', 'txt-search-button', 'txt-tertiary'],
+    link: ['txt-title', 'about-link', 'module-link-new-ux', 'sports-team-link', 'txt-button-ghost', 'txt-button-ghost-hover',
+      'txt-button-ghost-active'],
+    visited: ['txt-title-visited'],
+    primary: ['bg-button-primary', 'bg-button-primary-hover', 'bg-button-primary-active'],
+    primaryText: ['txt-button-primary'],
+    bgOnText: ['txt-button-tab-active'],
+    border: ['separator', 'separator-active', 'border-ui', 'border-card-nested', 'card-inner-border', 'border-expandcollapse',
+      'border-button-expandcollapse', 'border-button-qna', 'border-button-qna-hover', 'border-qna-list-sep', 'header-divider',
+      'modal-border', 'menu-promo-border'],
+  };
+  /* Translucent washes over whatever is behind them: kept translucent, in the scheme's own ink. */
+  const DDG_WASHES = {
+    'bg-button-ghost-hover': 0.08, 'bg-button-ghost-active': 0.14, 'bg-button-ghostsecondary-hover': 0.08,
+    'bg-button-ghostsecondary-active': 0.14, 'bg-button-secondary': 0.08, 'bg-button-secondary-hover': 0.14,
+    'bg-button-secondary-active': 0.2, 'bg-button-secondary-disabled': 0.06, 'bg-button-tertiary-hover': 0.08,
+    'bg-button-tertiary-active': 0.14, 'bg-button-primary-disabled': 0.06, 'bg-bar': 0.1,
+    'border-button-ghostsecondary': 0.16, 'border-button-ghostsecondary-hover': 0.2, 'border-button-ghostsecondary-active': 0.24,
+    'border-button-tertiary': 0.16, 'border-button-tertiary-hover': 0.24, 'border-button-tertiary-active': 0.4,
+    'border-button-tertiary-disabled': 0.12, 'border-dashed': 0.18, 'border-input-alternate': 0.14, 'modal-header-border': 0.14,
+    'txt-bar': 0.84, 'icon': 0.8, 'newtab-globe': 0.4, 'txt-button-primary-disabled': 0.36,
+    'txt-button-secondary-disabled': 0.36, 'txt-button-tertiary-disabled': 0.36, 'txt-button-ghost-disabled': 0.36,
+  };
+  /* The newer components draw from DuckDuckGo's design-system variables instead; full names here. */
+  const DDG_DS_ROLES = {
+    bg: ['--ds-surface-canvas'],
+    surface: ['--ds-surface-secondary', '--sds-color-background-container-01', '--ds-color-gray-90', '--ds-color-gray-0'],
+    text: ['--ds-text-primary', '--sds-color-text-01', '--sds-color-text-02'],
+    muted: ['--ds-text-secondary', '--ds-link-secondary', '--sds-color-text-03', '--sds-color-text-link-02'],
+    link: ['--ds-link-header', '--ds-link-primary', '--ds-accent-primary-text-color'],
+  };
+  const DDG_DS_WASHES = {
+    '--ds-surface-decoration-primary': 0.06, '--ds-surface-decoration-secondary': 0.12, '--ds-icons-secondary': 0.6,
+    '--ds-container-tertiary-background-color': 0.06, '--ds-container-tertiary-border-color': 0.12,
+    '--ds-control-subtle-primary-border-color': 0.14, '--ds-control-tertiary-background-color': 0.12,
+    '--sds-color-background-utility': 0.12, '--sds-color-border-01': 0.12,
+  };
+  function duckDuckGoCSS(mode) {
+    if (!isDuckDuckGoHost() || (mode !== 'light' && mode !== 'dark' && mode !== 'ultra')) return '';
+    const p = paletteFor(mode);
+    const ink = mode === 'light' ? '0,0,0' : '255,255,255';
+    const rgb = (hex) => {
+      const h = String(hex).replace('#', '');
+      const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h.slice(0, 6), 16);
+      return ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255);
+    };
+    const value = { bgOnText: p.bg };
+    let vars = 'color-scheme:' + p.scheme + ' !important;';
+    for (const role of Object.keys(DDG_ROLES)) {
+      const colour = value[role] || p[role];
+      for (const name of DDG_ROLES[role]) vars += '--theme-col-' + name + ':' + colour + ' !important;';
+    }
+    for (const name of Object.keys(DDG_WASHES)) vars += '--theme-col-' + name + ':rgba(' + ink + ',' + DDG_WASHES[name] + ') !important;';
+    for (const role of Object.keys(DDG_DS_ROLES)) {
+      for (const name of DDG_DS_ROLES[role]) vars += name + ':' + p[role] + ' !important;';
+    }
+    for (const name of Object.keys(DDG_DS_WASHES)) vars += name + ':rgba(' + ink + ',' + DDG_DS_WASHES[name] + ') !important;';
+    vars += '--ds-accent-primary-content-color:' + (mode === 'light' ? '#ffffff' : '#0b1a33') + ' !important;';
+    vars += '--theme-col-bg-page-transparent:rgba(' + rgb(p.bg) + ',0) !important;'
+      + '--theme-col-bg-header-transparent:rgba(' + rgb(p.bg) + ',0) !important;'
+      + '--theme-col-metabar-transparent:rgba(' + rgb(p.bg) + ',0) !important;'
+      + '--theme-col-bg-ui-transparent:rgba(' + rgb(p.control) + ',0) !important;'
+      + '--result-item-bg:' + p.bg + ' !important;--result-item-bg-transparent:rgba(' + rgb(p.bg) + ',0) !important;'
+      + '--theme-bg-dropdown:' + p.surface + ' !important;--theme-col-txt-title-visited:' + p.visited + ' !important;'
+      + '--sds-color-border-utility:' + p.border + ' !important;--sds-color-border-utility-state-01:' + p.border + ' !important;'
+      + '--sds-color-border-utility-state-02:' + p.border + ' !important;--ds-accent-primary:' + p.link + ' !important;'
+      + '--col-result-focus-outline:' + p.focus + ' !important;--calendar-icons:' + p.text + ' !important;'
+      + '--calendar-header-border:' + p.border + ' !important;--hotel-offers-border:' + p.border + ' !important;'
+      + '--theme-col-bg-dialog-overlay:rgba(0,0,0,' + (mode === 'light' ? '0.35' : '0.6') + ') !important;'
+      + '--theme-shadow-card:0 1px 3px rgba(0,0,0,' + (mode === 'light' ? '0.12' : '0.5') + ') !important;';
+    /* Its dark theme also paints a few pieces with fixed colours. Backgrounds are pinned; text uses
+       a stronger selector but no !important, so its class-level rules (result titles) still win. */
+    const wash = 'rgba(' + ink + ',0.12)';
+    return ':root,html,body{' + vars + '}'
+      + 'html,body,.body--home,.body--serp,.site-wrapper,.region__body,.badge-link,.result__image,.header-wrap,.zci-wrap,'
+      + '.vertical--map__sidebar,.vertical--map__sidebar__header{background-color:' + p.bg + ' !important;}'
+      + '.nav-menu,.nav-menu--slideout,.sidebar-modules .module,.results--main,'
+      + '.module:not(.module--carousel):not(.module--placeholder):not(.module--translations):not(.module__chromeless)'
+      + '{background-color:' + p.surface + ' !important;color:' + p.text + ' !important;}'
+      + '.module__toggle,.tile__expand,code,.btn:not(.btn--primary){background-color:' + p.control + ' !important;color:' + p.text + ' !important;}'
+      + '.ia-module--definitions .module--definitions__synonym{background-color:' + wash + ' !important;color:' + p.text + ' !important;}'
+      + '[data-testid="serp-popover-promo"]>div{background-color:' + p.surface + ' !important;color:' + p.text + ' !important;}'
+      + 'html body{color:' + p.text + ';}'
+      + ddgEach(['a', 'a:hover', '.zcm__link', '.zci__body a', '.zci__detail a', '.results', '.msg', '.dropdown .dropdown__button',
+        '.nav-menu__item', '.nav-menu__item>a', '.ia-module--definitions', '.module--definitions__definition',
+        '.module--definitions__pronunciation', '.related-searches__title-long', '.related-searches__title-short'], p.text)
+      + ddgEach(['.zci__subheader', '.zci__header__sub', '.c-info__sub', '.text--secondary', '.nav-menu__heading',
+        '.module--definitions__attribution-text'], p.muted)
+      + ddgEach(['.ia-module--definitions .module--definitions__group ol li a.module--definitions__reference'], p.link);
+  }
+  /* Each selector keeps its own weight plus two elements: grouping them in :is() would lend every
+     one the heaviest, and a plain link would then outrank DuckDuckGo's own result title colour. */
+  function ddgEach(selectors, colour) {
+    return selectors.map((s) => 'html body ' + s).join(',') + '{color:' + colour + ';}';
   }
 
   function hackerNewsCSS(mode) {
@@ -1222,6 +1359,7 @@
     return {
       amazonCSS: amazonCSS,
       chatGPTCSS: chatGPTCSS,
+      duckDuckGoCSS: duckDuckGoCSS,
       githubCSS: githubCSS,
       googleDarkCSS: googleDarkCSS,
       googleLightCSS: googleLightCSS,

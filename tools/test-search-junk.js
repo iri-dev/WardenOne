@@ -145,7 +145,8 @@ check('the feed is attributed in CREDITS',
   /uBlock-Origin-dev-filter/.test(fs.readFileSync(path.join(ROOT, 'CREDITS.md'), 'utf8')));
 
 /* parseList is what turns the feed into hosts, so its guards matter here. */
-const parseListSrc = BG.slice(BG.indexOf('function parseList(text)'), BG.indexOf('\n}\n', BG.indexOf('function parseList(text)')));
+const parseListAt = BG.indexOf('function parseList(');
+const parseListSrc = BG.slice(parseListAt, BG.indexOf('\n}\n', parseListAt));
 check('the search-junk bucket retains its compatibility guard',
   /bucket === 'grabberDomainsExtra' \? isUnsafeFeedBlockTarget\(h\) : isNeverBlockDomain\(h\)/.test(BG));
 check('the parser skips comment lines the feed header uses',

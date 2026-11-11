@@ -40,7 +40,21 @@ async function run() {
     assert(!h.chrome.storage[area]._data[key], 'off must not save ' + area + '/' + key);
   assert.equal(h.chrome.storage.local._data.wardenone_config.historyMode, 'off');
   assert.equal((await h.ctx.clearProtectionHistory(false, 'invalid')).ok, false);
-  const privateProfile = loadBackground({ incognito: true }); await sleep(100);
+  const sentinel = { wardenone_config: { historyMode: 'normal' },
+    wardenone_history: [{ type: 'blocked_popup', url: 'https://sentinel.example/', at: Date.now() }],
+    wardenone_notifications: [{ title: 'sentinel notice', at: Date.now() }] };
+  const privateProfile = loadBackground({ incognito: true });
+  Object.assign(privateProfile.chrome.storage.local._data, JSON.parse(JSON.stringify(sentinel)));
+  privateProfile.chrome.storage.session._data.wardenone_history = sentinel.wardenone_history;
+  await sleep(100);
+  await privateProfile.ctx.WO_HISTORY.erase();
+  assert.deepEqual(privateProfile.chrome.storage.local._data.wardenone_history, sentinel.wardenone_history,
+    'a private window worker must not erase the regular profile history it shares storage.local with');
+  assert.deepEqual(privateProfile.chrome.storage.local._data.wardenone_notifications, sentinel.wardenone_notifications);
+  assert.deepEqual(privateProfile.chrome.storage.session._data.wardenone_history, sentinel.wardenone_history);
+  delete privateProfile.chrome.storage.local._data.wardenone_history;
+  delete privateProfile.chrome.storage.local._data.wardenone_notifications;
+  delete privateProfile.chrome.storage.session._data.wardenone_history;
   privateProfile.ctx.queueHistory(event); await settle(privateProfile);
   assert(!privateProfile.chrome.storage.local._data.wardenone_history);
   assert(!privateProfile.chrome.storage.local._data.wardenone_notifications);

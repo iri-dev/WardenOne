@@ -75,12 +75,9 @@ async function run() {
       }
       let state;
       try {
-        state = await value(`(async () => { const dialog=document.querySelector('#import-review');
-          const locks=await navigator.locks.query().catch(()=>null);
+        state = await value(`(() => { const dialog=document.querySelector('#import-review');
           return {visibility:document.visibilityState,backup:(document.querySelector('[data-custom=result-backup] .msg')||{}).textContent,
-            review:dialog?{open:dialog.open,value:dialog.returnValue}:null,errors:window.__errors,
-            toast:(document.querySelector('#toast')||{}).textContent,loaded,
-            locksHeld:locks&&locks.held.map(lock=>lock.name),locksWaiting:locks&&locks.pending.map(lock=>lock.name)}; })()`);
+            review:dialog?{open:dialog.open,value:dialog.returnValue}:null,errors:window.__errors}; })()`);
       } catch (_) {}
       throw new Error('Timed out waiting for ' + label + (state ? ': ' + JSON.stringify(state) : ''));
     }
@@ -398,7 +395,7 @@ async function run() {
     await value("document.querySelector('[data-act=diag-prepare]').click(); true");
     await until("(document.querySelector('pre.diag') || {}).textContent && document.querySelector('pre.diag').textContent.startsWith('WardenOne diagnostics')", 'the report', 20000);
     const report = await text('pre.diag');
-    ok(report.includes('WardenOne version: ' + manifest.version) && /Protections active: \d+\/\d+/.test(report), 'the report holds the version and the protection count');
+    ok(report.includes('WardenOne version: ' + manifest.version) && /Protections enabled in settings: \d+\/\d+/.test(report), 'the report holds the version and the protection count');
     ok(!report.includes('chrome-extension://') && !/https?:\/\//.test(report), 'the report names no address');
     ok(await value("!document.querySelector('[data-act=diag-download]').disabled"), 'it can be downloaded once prepared');
 

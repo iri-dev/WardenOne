@@ -131,6 +131,12 @@ function build(opts) {
   sandbox.window = sandbox;
   sandbox.top = opts.framed ? {} : sandbox;
   sandbox.self = sandbox;
+  if (typeof opts.browserActivation === 'boolean') {
+    class UserActivation {
+      get isActive() { return opts.browserActivation; }
+    }
+    sandbox.navigator = { userActivation: new UserActivation() };
+  }
   sandbox.innerWidth = 1000;
   sandbox.innerHeight = 800;
   sandbox.addEventListener = (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); };
@@ -164,6 +170,7 @@ function build(opts) {
   };
   sandbox.open = nativeOpen;
   sandbox.URL = URL;
+  sandbox.URLSearchParams = URLSearchParams;
   sandbox.Date = opts.fakeClock ? HarnessDate : Date;
   sandbox.Number = Number;
   sandbox.Object = Object;
@@ -229,6 +236,7 @@ function build(opts) {
   });
   loc.hostname = opts.hostname || 'videosite.com';
   loc.pathname = opts.pathname || '/page';
+  loc.origin = new URL(hrefVal).origin;
   sandbox.location = loc;
   sandbox.document = {
     readyState: 'loading',
@@ -254,6 +262,7 @@ function build(opts) {
       return null;
     },
     querySelectorAll(sel) {
+      if (sel === 'iframe') return iframes;
       return String(sel || '').indexOf('player') >= 0 || String(sel || '').indexOf('video') >= 0 ? playerSurfaces : [];
     },
   };
@@ -957,6 +966,26 @@ for (const [name, options, eligible] of [
   }
 }
 
+// DuckDuckGo's own Duck.ai button opens duck.ai, a different domain from the same company.
+{
+  const press = (target) => {
+    const t = build({ hostname: 'duckduckgo.com', href: 'https://duckduckgo.com/?q=wardenone&ia=web' });
+    const url = 'https://duckduckgo.com/?q=wardenone&ia=chat';
+    const a = makeEl({ tag: 'a', href: url, attrs: { href: url }, text: 'Duck.ai',
+      rect: { left: 10, top: 10, right: 110, bottom: 60, width: 100, height: 50 } });
+    a.isConnected = true;
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 50 });
+    t.open(target);
+    return t;
+  };
+  check('T10i Duck.ai opened from DuckDuckGo\'s own button is allowed',
+    press('https://duck.ai/chat?q=wardenone').state.opened.some((u) => /^https:\/\/duck\.ai\//.test(u)));
+  check('T10i an unrelated tab from the same press is still refused',
+    !press('https://ads.example/i.ashx?a=1').state.opened.some((u) => /ads\.example/.test(u)));
+  check('T10i a look-alike of duck.ai is not taken for it',
+    !press('https://duck.ai.example.org/chat').state.opened.some((u) => /duck\.ai\.example/.test(u)));
+}
+
 // A real content link supplies its own site to the browser popup backstop.
 // Pawchive can open the post and a native ad tab from the same click.
 {
@@ -1321,6 +1350,43 @@ const MONETAG = 'https://dadgah.org/4/52106d0b?refer=https%3A%2F%2Fplaymogo.com%
 }
 
 {
+  const rect = { left: 65, top: 32, width: 800, height: 450, right: 865, bottom: 482 };
+  const t = build({ hostname: 'playmogo.com', iframeRects: [rect, rect], mutationObserver: true, timers: true });
+  const [player, ad] = t.iframes;
+  const body = (text, label) => ({
+    innerText: text,
+    querySelector() { return null; },
+    querySelectorAll() { return label ? [{ ...makeEl({ tag: 'button' }), innerText: label }] : []; },
+  });
+  player.setAttribute('src', '/e/fixture');
+  player.setAttribute('allowfullscreen', '');
+  player.isConnected = true;
+  player.remove = () => { player.isConnected = false; };
+  let video = true;
+  player.contentDocument = { body: body('Player', ''), querySelector: () => video ? {} : null };
+  ad.setAttribute('src', '/fallback.html');
+  ad.setAttribute('srcdoc', '<video></video>');
+  ad.setAttribute('allowfullscreen', '');
+  ad.isConnected = true;
+  ad.remove = () => { ad.isConnected = false; };
+  ad.contentDocument = { body: body('Confirm to watch the video', 'Play'), querySelector: () => ({}) };
+  t.runTimers();
+  check('the anonymous Play bait frame is removed', !ad.isConnected);
+
+  video = false;
+  player.contentDocument.body = body('Network error! Please reload the page & play the video again.', 'Play');
+  t.mutate(player.contentDocument);
+  t.runTimers();
+  check('the same-origin media frame keeps its error after the video element is replaced', player.isConnected);
+
+  const original = player.contentDocument;
+  player.contentDocument = { body: body('Confirm to watch the video', 'Play'), querySelector: () => null };
+  t.mutate(original);
+  t.runTimers();
+  check('a new document in the same iframe does not inherit the player exemption', !player.isConnected);
+}
+
+{
   /* The interstitial shell on <html> whose advert never arrived: fixed, inset 0, z-index
      2147483647, holding only empty boxes and a <style>. Over the player iframe it took every press. */
   const IFRAME_RECT = { left: 65, top: 32, width: 1110, height: 624, right: 1175, bottom: 656 };
@@ -1581,6 +1647,39 @@ const MONETAG = 'https://dadgah.org/4/52106d0b?refer=https%3A%2F%2Fplaymogo.com%
   t.assign('https://randomsite.com/lander');
   const e = t.lastEmit();
   check('T15 gestureless redirect blocked', t.state.assigned.length === 0 && !!e && e.detail.why === 'no recent user gesture', e);
+}
+
+{
+  const hostname = 'uk.pinterest.com';
+  const href = 'https://' + hostname + '/login/';
+  const oauth = 'https://accounts.google.com/o/oauth2/v2/auth?'
+    + new URLSearchParams({ origin: new URL(href).origin, client_id: '123-a.apps.googleusercontent.com',
+      gsiwebsdk: 'gis_attributes', redirect_uri: 'gis_transform', response_mode: 'form_post' });
+  const open = (t, target) => {
+    t.sandbox.oauthProbeTarget = target;
+    vm.runInContext('window.open(oauthProbeTarget)', t.sandbox);
+  };
+  for (const [label, target, options, opened] of [
+    ['the Google frame click activates sign-in', oauth, {}, true],
+    ['no activation still blocks sign-in', oauth, { browserActivation: false }, false],
+    ['an unrelated site cannot borrow the exception', oauth, { hostname: 'pinterest.com.example.org' }, false],
+    ['a child frame cannot borrow the exception', oauth, { framed: true }, false],
+    ['a lookalike provider is refused', oauth.replace('accounts.google.com', 'accounts.google.com.example.org'), {}, false],
+    ['a different Google path is refused', oauth.replace('/o/oauth2/v2/auth', '/gsi/select'), {}, false],
+    ['an external origin is refused', oauth.replace('uk.pinterest.com', 'example.org'), {}, false],
+    ['an external callback is refused', oauth.replace('gis_transform', 'https://example.org/'), {}, false],
+    ['conflicting callback parameters are refused', oauth + '&redirect_uri=https://example.org/', {}, false],
+    ['coercible targets cannot use the exception', { toString: () => oauth }, {}, false],
+    ['an ad popup is still refused', 'https://advertising.example/', {}, false],
+  ]) {
+    const t = build({ hostname, href, browserActivation: true, ...options });
+    open(t, target);
+    check('Pinterest Google sign-in: ' + label, (t.state.opened.length === 1) === opened, t.state.opened);
+  }
+  const t = build({ hostname, href, browserActivation: false });
+  t.sandbox.navigator.userActivation = { isActive: true };
+  open(t, oauth);
+  check('Pinterest Google sign-in: replacing userActivation cannot authorize a popup', t.state.opened.length === 0);
 }
 
 // T16: synthetic click on a cross-site download link is allowed

@@ -783,6 +783,53 @@ async function main() {
     }
   }
 
+  console.log("23) the registered arm stands in for a late worker reply:");
+  {
+    /* Arm first, engine second: the bootstrap is read before any config, as it is when the
+       worker is busy, and is pruned instead of latching AdShield off for the visit. */
+    const ctx = newCtx(JSON.stringify(coldSample()));
+    ctx.window.__wardenOneYouTubeArm = 1;
+    runModule(ctx, null);
+    ctx.window.ytInitialPlayerResponse = coldSample();
+    ok("an arm placed before the engine prunes a bootstrap read before config", adsGone(ctx.window.ytInitialPlayerResponse));
+    ok("and is consumed rather than left for the page", ctx.window.__wardenOneYouTubeArm === undefined);
+    const response = await ctx.self.fetch("https://www.youtube.com/youtubei/v1/player?key=x");
+    ok("later player responses are pruned too", adsGone(JSON.parse(await response.text())));
+  }
+  {
+    const ctx = newCtx(JSON.stringify(coldSample()));
+    runModule(ctx, null);
+    ctx.window.__wardenOneYouTubeArm = 1;
+    ctx.window.ytInitialPlayerResponse = coldSample();
+    ok("an arm arriving after the engine works the same way", adsGone(ctx.window.ytInitialPlayerResponse));
+  }
+  {
+    /* A page that ran first could plant the arm before a late re-injection; it is refused for
+       the same reason a key offered then is. */
+    const ctx = newCtx(JSON.stringify(coldSample()));
+    ctx.document.body = {};
+    ctx.window.__wardenOneYouTubeArm = 1;
+    runModule(ctx, null);
+    const initial = coldSample(); ctx.window.ytInitialPlayerResponse = initial;
+    ok("an arm found after page scripts could have run is refused", !adsGone(ctx.window.ytInitialPlayerResponse));
+  }
+  {
+    const ctx = newCtx(JSON.stringify(coldSample()));
+    runModule(ctx, null);
+    ctx.document.body = {};
+    ctx.window.__wardenOneYouTubeArm = 1;
+    ok("a page setting the arm itself is refused", !adsGone(ctx.JSON.parse(JSON.stringify(coldSample()))));
+  }
+  {
+    /* Pausing everything still wins over an armed page. */
+    const ctx = newCtx(JSON.stringify(coldSample()));
+    ctx.window.__wardenOneYouTubeArm = 1;
+    runModule(ctx, null);
+    const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+    bridge.sendConfig({ enabled: false });
+    ok("a signed master pause still stops an armed engine", !adsGone(ctx.JSON.parse(JSON.stringify(coldSample()))));
+  }
+
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 }

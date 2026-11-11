@@ -169,9 +169,11 @@ async function run() {
     assert(await value(settings, "document.querySelector('.about-page').textContent.includes('phishing and scams')"));
     await until(settings, "document.querySelector('#wo-build-status')?.dataset.state === 'local'", 'local source build status');
     assert.equal(await value(settings, "document.querySelector('#wo-build-status').textContent"), 'Local source copy');
-    assert(await value(settings, "document.querySelector('#wo-build-check').disabled"));
+    /* A local copy has no build ID to compare, so it asks nothing until the button is pressed. */
+    assert(!await value(settings, "document.querySelector('#wo-build-check').disabled"));
+    assert.equal(await value(settings, "document.querySelector('#wo-build-check').textContent"), 'Check official release');
     assert.equal(await value(settings, "document.querySelector('.about-build-actions a').href"), 'https://github.com/iri-dev/WardenOne/releases/latest');
-    assert.equal(await value(settings, "document.querySelectorAll('.about-build-steps li').length"), 3);
+    assert.equal(await value(settings, "document.querySelectorAll('.about-build-steps li').length"), 4);
     if (process.env.WARDENONE_SETTINGS_INFO_DIR) {
       const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }, settings.sessionId);
       fs.writeFileSync(path.join(process.env.WARDENONE_SETTINGS_INFO_DIR, 'about-preview.png'), Buffer.from(shot.data, 'base64'));

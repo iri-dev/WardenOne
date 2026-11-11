@@ -107,7 +107,7 @@ check('the bridge still derives grabber domains from the learned map',
   /learnedGrabberDomains = sanitizeBridgeHostList\(\s*Object\.keys\(learned \|\| \{\}\)/.test(BRIDGE),
   'if this moves, the filter above has to move with it');
 check('and that list still feeds grabberDomains in the engine',
-  /learnedGrabberDomains,/.test(BRIDGE)
+  /learnedGrabberDomains\.filter\(\(host\) => pageSuffixes\.has\(host\)\),/.test(BRIDGE)
     && /grabberDomains:masterOn&&\(cfg\.warnGrabberDomains\|\|cfg\.blockGrabberResources\)/.test(MIN));
 check('the warning the bug produced is still the one at stake',
   /Known IP-logger detected/.test(MIN));

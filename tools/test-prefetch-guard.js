@@ -70,8 +70,15 @@ const plainRules = new Node('SCRIPT', { type: 'speculationrules' });
 const page = run([plainPrefetch, plainPreconnect, reactPreload, reactModule, stylesheet, plainRules]);
 
 assert(page.logs.includes('resource_prefetch_off'), 'the guard must still switch on');
-assert.strictEqual(plainPrefetch.parentNode, null, 'a page prefetch hint must still be removed');
-assert.strictEqual(plainPreconnect.parentNode, null, 'a page preconnect hint must still be removed');
+/* No speculative LINK is taken out of the document, React's or the page's own. A page reads its own
+   link elements: Spotify's player reads href off <link rel="preload" data-translations-url-for-locale>
+   during boot, and with the node gone it threw and the player showed "Something went wrong". An
+   unknown rel disarms the hint just as well and leaves the page's DOM as the page built it. */
+for (const [node, rel] of [[plainPrefetch, 'prefetch'], [plainPreconnect, 'preconnect']]) {
+  assert.strictEqual(node.parentNode, page.head, 'a page hint stays in the document: ' + rel);
+  assert.strictEqual(node.getAttribute('rel'), 'wo-off-' + rel, 'a page hint is switched off in place: ' + rel);
+  assert.strictEqual(node.getAttribute('href') != null, true, 'and keeps the attributes the page reads: ' + rel);
+}
 assert.strictEqual(plainRules.parentNode, null, 'page speculation rules must still be removed');
 assert.strictEqual(stylesheet.parentNode, page.head, 'a stylesheet is never touched');
 assert.strictEqual(stylesheet.getAttribute('rel'), 'stylesheet');
@@ -87,7 +94,8 @@ const lateReact = new Node('LINK', { rel: 'preconnect', href: 'https://files.exa
 const latePlain = new Node('LINK', { rel: 'dns-prefetch', href: 'https://dns.example' });
 page.add(lateReact);
 page.add(latePlain);
-assert.strictEqual(latePlain.parentNode, null, 'a late page hint must still be removed');
+assert.strictEqual(latePlain.parentNode, page.head, 'a late page hint stays in the document');
+assert.strictEqual(latePlain.getAttribute('rel'), 'wo-off-dns-prefetch', 'and is switched off in place');
 assert.strictEqual(lateReact.getAttribute('rel'), 'wo-off-preconnect');
 assert.doesNotThrow(() => reactUnmount(lateReact), 'React unmounting a late link must not throw');
 
@@ -96,4 +104,4 @@ const reactRules = new Node('SCRIPT', { type: 'speculationrules' }, '__reactFibe
 page.add(reactRules);
 assert.doesNotThrow(() => reactUnmount(reactRules), 'React unmounting its own speculation rules must not throw');
 
-console.log('[ok] prefetch guard removes page hints and leaves React-owned links in place');
+console.log('[ok] prefetch guard disarms speculative links in place, keeps them in the document and still removes page speculation rules');

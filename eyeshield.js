@@ -80,7 +80,8 @@
   // backgrounds would cover the video.
   if (/(^|\.)ext-twitch\.tv$/i.test(String(location.hostname || '').toLowerCase())) return;
   const compatibilityHost = String(location.hostname || '').toLowerCase();
-  if (/^(drive|docs|mail|calendar|classroom|meet|chat|myaccount)\.google\.com$/i.test(compatibilityHost)
+  if ((window !== window.top && /(^|\.)hcaptcha\.com$/i.test(compatibilityHost))
+      || /^(drive|docs|mail|calendar|classroom|meet|chat|myaccount)\.google\.com$/i.test(compatibilityHost)
       || /(^|\.)ucas\.com$/i.test(compatibilityHost)
       || /\.ac\.uk$|\.edu$|\.edu\.au$|\.ac\.nz$|\.ac\.za$|\.ac\.in$|\.edu\.sg$|\.edu\.hk$/i.test(compatibilityHost)) return;
 
@@ -119,6 +120,8 @@
   const WIKIPEDIA_HOST_RE = /(^|\.)wikipedia\.org$/i;
   const REDDIT_HOST_RE = /(^|\.)reddit\.com$/i;
   const AMAZON_HOST_RE = /(^|\.)amazon\.[a-z.]+$/i;
+  /* Only the themed site: html. and lite. have no themes and keep the generic path. */
+  const DUCKDUCKGO_HOST_RE = /^(www\.)?duckduckgo\.com$/i;
 
   function isYouTubeHost() {
     return YOUTUBE_HOST_RE.test(String(location.hostname || '').toLowerCase());
@@ -169,6 +172,10 @@
     return STACKOVERFLOW_HOST_RE.test(String(location.hostname || '').toLowerCase());
   }
 
+  function isDuckDuckGoHost() {
+    return DUCKDUCKGO_HOST_RE.test(String(location.hostname || '').toLowerCase());
+  }
+
   function isHackerNewsHost() {
     return HACKERNEWS_HOST_RE.test(String(location.hostname || '').toLowerCase());
   }
@@ -215,6 +222,7 @@
     if (isChatGPTHost()) return 'chatgpt';
     if (isRedditHost()) return 'reddit';
     if (isAmazonHost()) return 'amazon';
+    if (isDuckDuckGoHost()) return 'duckduckgo';
     return '';
   }
 
@@ -245,21 +253,9 @@
     return isManagedThemeHost() && !needsManagedObserverHost() ? [document] : rootsList();
   }
 
-  // Anti-flash: use the registered isolated preload mode until async config arrives.
-  // Replace or remove that backdrop once config resolves. Remove legacy site-localStorage mode keys
-  // and never write them again: sites could read them and uninstall did not clear them (PRIV-12).
+  // Anti-flash: paint the isolated mode hint while waiting for the full settings.
   try {
-    const hinted = window.__wardenOneEyeShieldPreloadMode;
-    // Discord themes itself via <html> classes (its own light/dark themes) — skip the
-    // backdrop preload there so we don't briefly paint over its native theme.
-    if (!/(^|\.)discord\.com$|(^|\.)spotify\.com$/i.test(String(location.hostname || '')) &&
-        (hinted === 'dark' || hinted === 'ultra' || hinted === 'light')) {
-      const pre = document.createElement('style');
-      pre.id = PRELOAD_ID;
-      pre.textContent = 'html{background-color:' + BASE_BG[hinted] + ' !important;color-scheme:'
-        + (hinted === 'light' ? 'light' : 'dark') + ' !important;}';
-      (document.head || document.documentElement).appendChild(pre);
-    }
+    WOEyeShieldProfiles.paintPreload(document, location, window.__wardenOneEyeShieldPreloadMode);
   } catch (e) {}
   try { window.localStorage.removeItem(LEGACY_MODE_CACHE_KEY); } catch (e) {}
   function removePreload() { const p = document.getElementById(PRELOAD_ID); if (p) p.remove(); }
@@ -880,6 +876,22 @@
       else el.style.removeProperty(prop);
     } catch (_) {}
   }
+  /* A surface is not always a background-color. Mozilla's cards, Google's AI panels and plenty of
+     marketing pages paint theirs with a gradient, which the colour-only walk below reads straight
+     through: it then assumes the theme's dark base, decides white text is fine, and leaves it sitting
+     on a pale card. Take the most opaque stop, preferring the last, since that is where a fade ends. */
+  function ewBgImageColor(cs) {
+    const img = cs && cs.backgroundImage;
+    if (!img || img === 'none' || img.indexOf('gradient') < 0) return null;
+    let best = null;
+    const stops = img.match(/rgba?\([^)]*\)/g);
+    if (!stops) return null;
+    for (let i = 0; i < stops.length; i++) {
+      const c = ewParseRgb(stops[i]);
+      if (c && c.a >= 0.5 && (!best || c.a >= best.a)) best = c;
+    }
+    return best;
+  }
   function ewEffectiveBg(el) {
     let node = el;
     // Bounded ancestor walk: an opaque background is almost always within a few levels; if not
@@ -889,6 +901,8 @@
       let cs; try { cs = getComputedStyle(node); } catch (_) { return null; }
       const bg = ewParseRgb(cs.backgroundColor);
       if (bg && bg.a >= 0.5) return bg;
+      const painted = ewBgImageColor(cs);
+      if (painted) return painted;
       node = node.parentElement;
     }
     return null;
@@ -1583,6 +1597,11 @@
     const p = paletteFor(mode);
     const isGH = /(^|\.)github\.com$/i.test(String(location.hostname || '').toLowerCase());
     const isXSite = /(^|\.)(x|twitter)\.com$/i.test(String(location.hostname || '').toLowerCase());
+    /* X is dark already and colours its own controls, so this repair only undid work the site had got
+       right: dim composer icons turned white, the flat row under a post gained a pill behind every
+       reply, repost and like, and its own text area became a filled box. Leave the site alone in the
+       dark modes. Light has nothing native to fall back on, so it keeps the X block further down. */
+    if (isXSite && mode !== 'light') return '';
     const root = inShadow ? ':host' : ':root,html,body';
     const app = inShadow
       ? ':host,:host > *'
@@ -1660,7 +1679,11 @@
       // Restore :visited after forcing link colours. Repeat -webkit-text-fill-color:currentColor
       // because an explicit fill otherwise paints over the visited color.
       + 'a[href]:visited,[role="link"]:visited{color:' + p.visited + ' !important;-webkit-text-fill-color:currentColor !important;}'
-      + field + '{background-color:' + p.input + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + p.text + ' !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
+      + field + '{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + p.text + ' !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
+      /* A real field owns its box, so it takes the input colour. A contenteditable is usually an app's own
+         inline editor sitting directly on a card -- X's composer -- where an input colour paints a visible
+         box inside the card. Text, caret, placeholder and border still apply to both. */
+      + field + ':not([contenteditable="true"]){background-color:' + p.input + ' !important;}'
       + field + '::placeholder{color:' + p.muted + ' !important;-webkit-text-fill-color:' + p.muted + ' !important;opacity:1 !important;}'
       + 'input[type="checkbox"],input[type="radio"],input[type="range"]{accent-color:' + p.primary + ' !important;}'
       + buttonSafe + '{background-color:' + p.control + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
@@ -1763,12 +1786,17 @@
       + '--yt-spec-text-secondary:' + text + ' !important;';
   }
 
+  /* Light keeps YouTube's own Subscribe: a black pill that turns into a soft grey one once you have
+     subscribed. An outlined white button read as heavier than the page around it. */
   function youtubeSubscribePalette(p) {
     const light = p.scheme === 'light';
     return {
-      bg: light ? '#ffffff' : p.chip,
-      text: light ? '#0f0f0f' : p.text,
-      border: light ? '#d3d3d3' : p.border,
+      bg: light ? '#0f0f0f' : p.chip,
+      text: light ? '#ffffff' : p.text,
+      border: light ? 'transparent' : p.border,
+      subscribedBg: light ? 'rgba(0,0,0,0.05)' : p.chip,
+      subscribedText: light ? '#0f0f0f' : p.text,
+      subscribedBorder: light ? 'transparent' : p.border,
     };
   }
 
@@ -1908,6 +1936,7 @@
           isWikipediaHost: isWikipediaHost,
           isRedditHost: isRedditHost,
           isAmazonHost: isAmazonHost,
+          isDuckDuckGoHost: isDuckDuckGoHost,
         });
       }
     } catch (_) { __eyeSites = null; }
@@ -1957,11 +1986,16 @@
       case 'amazon':
         siteCSS = siteCSSOf('amazonCSS', remap);
         break;
+      case 'duckduckgo':
+        siteCSS = siteCSSOf('duckDuckGoCSS', remap);
+        break;
       default:
         siteCSS = '';
     }
     return siteCSS + selectionCSS(remap); // dark / ultra: give them the same crisp selection
   }
+  const X_HOST_RE = /(^|\.)(x|twitter)\.com$/i;
+  function isXHost() { return X_HOST_RE.test(String(location.hostname || '').toLowerCase()); }
   // ---------- main ----------
   let lastAppliedMode = null;
   // ---------- Discord: drive its NATIVE theme (it ships polished light + dark themes via
@@ -2001,9 +2035,18 @@
     };
     var sel = ':root,html,body,.encore-dark-theme,.encore-light-theme,[class*="encore-dark-theme" i],[class*="encore-light-theme" i]';
     var appShell = 'html body :is(#main,[data-testid="root"],.Root,.Root__top-container,.Root__main-view,.main-view-container,.main-view-container__scroll-node)';
-    var chromeShell = 'html body :is([data-testid="global-nav-bar"],[data-testid="now-playing-bar"],[data-testid="left-sidebar"],[data-testid="right-sidebar"],.Root__globalNav,.Root__top-bar,.Root__now-playing-bar,.Root__nav-bar,.Root__right-sidebar,.main-topBar-container,.main-nowPlayingBar-container)';
-    var panelShell = 'html body :is(.main-yourLibraryX-library,.main-yourLibraryX-entryPoints,.main-card-card,.main-shelf-shelf,.main-trackList-trackList,[data-testid="playlist-tracklist"],[data-testid="tracklist-row"],[data-testid="entityTitle"],[data-testid="artist-page"],[data-testid="album-page"],[data-testid="playlist-page"],[data-testid="home-page"],[data-testid="right-sidebar"])';
+    var chromeShell = 'html body :is([data-testid="global-nav-bar"],#global-nav-bar,[data-testid="now-playing-bar"],[data-testid="left-sidebar"],[data-testid="right-sidebar"],.Root__globalNav,.Root__top-bar,.Root__now-playing-bar,.Root__nav-bar,.Root__right-sidebar,.main-topBar-container,.main-nowPlayingBar-container)';
+    var panelShell = 'html body :is(.main-yourLibraryX-library,.main-yourLibraryX-entryPoints,.main-card-card,.main-shelf-shelf,.main-trackList-trackList,[data-testid="playlist-tracklist"],[data-testid="tracklist-row"],[data-testid="artist-page"],[data-testid="album-page"],[data-testid="playlist-page"],[data-testid="home-page"],[data-testid="right-sidebar"])';
+    /* entityTitle is the page's <h1> text, not a surface. Giving it a panel background painted an
+       opaque box across the playlist header artwork, so it takes the panel colour only. */
+    var titleText = 'html body [data-testid="entityTitle"]';
     var controls = 'html :where(input:not([type="range"]),textarea,select,[role="textbox"],[contenteditable="true"],button,[role="button"],a[role="button"],[data-testid*="button" i])';
+    var contrastSets = '.encore-inverted-light-set,.encore-inverted-dark-set,.encore-bright-accent-set';
+    var contrastScopes = 'html.spotify__container--is-web body :is(' + contrastSets + ')';
+    var contrastButton = 'html.spotify__container--is-web body :is(button,[role="button"],a[role="button"])';
+    var contrastSurface = function (state) {
+      return contrastButton + state + ':is(' + contrastSets + '),' + contrastButton + state + ' :is(' + contrastSets + ')';
+    };
     var icons = 'html body :is([data-testid="global-nav-bar"],[data-testid="now-playing-bar"],[data-testid="left-sidebar"],[data-testid="right-sidebar"],.Root__globalNav,.Root__now-playing-bar,.Root__nav-bar,.Root__right-sidebar,.main-view-container) :where(svg,path,use)';
     var textScopes = 'html body :is(.main-view-container,.Root__nav-bar,.Root__right-sidebar,.Root__globalNav,.Root__now-playing-bar,[data-testid="global-nav-bar"],[data-testid="left-sidebar"],[data-testid="right-sidebar"],[data-testid="now-playing-bar"])';
     var lightBackdrop = 'html body :is(.Root,.Root__top-container,.Root__main-view,.Root__now-playing-bar,.Root__globalNav,[data-testid="root"],#main)';
@@ -2021,6 +2064,18 @@
     var lightLegalLinks = 'html.spotify__container--is-web body :is(#Desktop_LeftSidebar_Id,[id^="Desktop_LeftSidebar"],.Root__nav-bar,[data-testid="left-sidebar"],[data-testid="left-sidebar-footer"],[data-testid="left-sidebar-legal-links"]) :where(footer,[class*="legal" i],[class*="privacy" i],a[href*="privacy" i],a[href*="cookie" i],a[href*="accessibility" i])';
     var lightSidebarLegalText = 'html.spotify__container--is-web body :is([data-testid="left-sidebar-footer"],[data-testid="left-sidebar-legal-links"]) :where(a,span,p,small,button,div)';
     var lightScrollFooter = 'html.spotify__container--is-web body :is(.main-view-container__scroll-node footer,.main-view-container__scroll-node [data-testid*="footer" i],.main-view-container__scroll-node [class*="links-group" i])';
+    /* www.spotify.com (account, Premium, Support) has its own header, built dark with white links and
+       logo. Light gave it half a theme: a light bar with the links still white on the account page, or
+       a near-black "Premium plans" on the black bar elsewhere. Light makes the whole header light. */
+    function spotifySiteHeaderCSS(mode, p) {
+      if (mode !== 'light' || typeof location === 'undefined' || !/^www\.spotify\.com$/i.test(String(location.hostname || ''))) return '';
+      const head = 'html body header[class*="mh-header"]';
+      return head + ',' + head + ' :where(nav,div,ul,li,section){background-color:' + p.bg + ' !important;}'
+        + head + ' :where(a,button,span,p,h2,h3,strong,small){color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;}'
+        + head + ' :where(svg,svg path,svg use){fill:' + p.text + ' !important;color:' + p.text + ' !important;}'
+        + head + ' :where([class*="dropdown" i],[class*="menu" i],[role="menu"],[aria-expanded="true"] + *){background-color:' + p.elev + ' !important;border-color:' + p.border + ' !important;}'
+        + head + ' :where(a,button):hover{background-color:' + p.controlHi + ' !important;}';
+    }
     return sel + '{'
       + '--background-base:' + p.bg + ' !important;--background-highlight:' + p.hi + ' !important;--background-press:' + p.press + ' !important;'
       + '--background-elevated-base:' + p.elev + ' !important;--background-elevated-highlight:' + p.elevHi + ' !important;--background-elevated-press:' + p.elevPress + ' !important;'
@@ -2032,9 +2087,14 @@
       + 'html,body,#main{background:' + p.bg + ' !important;}'
       + appShell + '{background:' + p.bg + ' !important;color:' + p.text + ' !important;}'
       + chromeShell + '{background:' + p.elev + ' !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
+      + 'html body :is(.skeleton-card,[class~="skeleton"],[class*="Skeleton"],[data-testid*="skeleton" i]){background-color:' + p.control + ' !important;background-image:none !important;}'
+      + 'html body :is(.skeleton-card,[class~="skeleton"],[class*="Skeleton"],[data-testid*="skeleton" i]) :where(div,span){background-color:' + p.controlHi + ' !important;background-image:none !important;}'
       + panelShell + '{background-color:' + p.elev + ' !important;background-image:none !important;color:' + p.text + ' !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
+      + titleText + '{background-color:transparent !important;background-image:none !important;color:' + p.text + ' !important;box-shadow:none !important;}'
       + controls + '{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;border-color:' + p.border + ' !important;box-shadow:none !important;}'
-      + controls + ':where(:hover,[aria-expanded="true"],[aria-pressed="true"],[aria-selected="true"]){background-color:' + p.controlHi + ' !important;color:' + p.text + ' !important;}'
+      /* A tint, never an opaque fill: Spotify's list rows put a full-size role="button" overlay ON TOP of the
+         row, so an opaque hover colour paints out the playlist name and subtitle underneath it. */
+      + controls + ':not(:where(' + contrastSets + ')):where(:hover,[aria-expanded="true"],[aria-pressed="true"],[aria-selected="true"]){background-color:' + p.tintedHi + ' !important;color:' + p.text + ' !important;}'
       + 'html :where(input:not([type="range"]),textarea,select,[role="textbox"],[contenteditable="true"]){background-color:' + p.input + ' !important;color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;caret-color:' + p.text + ' !important;}'
       + icons + '{color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;}'
       + 'html :where(img,picture,video,canvas,iframe,embed,object){filter:none !important;background-color:transparent !important;}'
@@ -2078,9 +2138,20 @@
           + 'html :where([data-testid="global-nav-bar"],[data-testid="now-playing-bar"],.Root__globalNav,.Root__now-playing-bar) :where(button,[role="button"],a,span,svg,path,use){color:#121212 !important;-webkit-text-fill-color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;}'
           + 'html :where([data-testid="now-playing-bar"],.Root__now-playing-bar,.main-nowPlayingBar-container) :where(.playback-bar,.progress-bar,[data-testid*="progress" i]){background-color:transparent !important;color:#121212 !important;}'
         : 'html.spotify__container--is-web body :where(button,[role="button"],a[role="button"],[data-testid*="button" i]){color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;}'
-          + 'html.spotify__container--is-web body :where(button,[role="button"],a[role="button"],[data-testid*="button" i]) :where(span,div,[data-encore-id="text"],[data-encore-id="type"],svg,path,use){color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;text-shadow:none !important;}'
-          + 'html.spotify__container--is-web body :where(.encore-inverted-light-set,.encore-inverted-dark-set,[class*="button-primary" i],[class*="legacy-button-primary" i]){color:' + p.text + ' !important;-webkit-text-fill-color:' + p.text + ' !important;}'
-          + 'html.spotify__container--is-web body :where(.encore-inverted-light-set,.encore-inverted-dark-set,[class*="button-primary" i],[class*="legacy-button-primary" i]) *{color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;}');
+          + 'html.spotify__container--is-web body :where(button,[role="button"],a[role="button"],[data-testid*="button" i]) :where(span,div,[data-encore-id="text"],[data-encore-id="type"],svg,path,use){color:' + p.text + ' !important;-webkit-text-fill-color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;text-shadow:none !important;}')
+      /* Encore contrast sets pair their own foreground with white, dark or accent surfaces. */
+      + contrastSurface('') + '{background-color:var(--background-base) !important;}'
+      + contrastSurface(':hover') + '{background-color:var(--background-highlight,var(--background-base)) !important;}'
+      + contrastSurface(':active') + '{background-color:var(--background-press,var(--background-base)) !important;}'
+      + contrastScopes + '{color:var(--text-base,' + p.text + ') !important;-webkit-text-fill-color:currentColor !important;}'
+      + contrastScopes + ' :where(span,div,a,button,strong,em,[data-encore-id="text"],[data-encore-id="type"],svg,path,use){color:var(--text-base,' + p.text + ') !important;-webkit-text-fill-color:currentColor !important;fill:currentColor !important;stroke:currentColor !important;text-shadow:none !important;}'
+      /* Right-click and profile menus paint a fixed #282828 rather than the variables, so in Light
+         they stayed dark with dark text on them. */
+      + 'html body :is([data-tippy-root],#context-menu) [role="menu"]{background-color:' + p.elev + ' !important;color:' + p.text + ' !important;box-shadow:0 8px 24px rgba(0,0,0,' + (mode === 'light' ? '0.18' : '0.5') + ') !important;}'
+      + 'html body :is([data-tippy-root],#context-menu) [role="menu"] :where(div:not([role]):empty,hr){background-color:' + p.border + ' !important;}'
+      + 'html body :is([data-tippy-root],#context-menu) [role="menu"] :is([role="menuitem"],[role="menuitemcheckbox"],button):is(:hover,:focus-visible){background-color:' + p.controlHi + ' !important;}'
+      + 'html body :is([data-tippy-root],#context-menu) [role="menu"] :where(span,a,button,svg,path){color:' + p.text + ' !important;fill:currentColor !important;}'
+      + spotifySiteHeaderCSS(mode, p);
   }
   // Re-inject Spotify's theme <style> at the END of <head> so it beats Spotify's own
   // stylesheets (which load AFTER our early inject) in the source-order/!important tie.
@@ -2092,6 +2163,37 @@
     sst.id = THEME_ID; sst.setAttribute('data-wo-eyeshield', '1'); sst.setAttribute('data-wo-eyeshield-mode', mode);
     sst.textContent = spotifyThemeCSS(mode);
     try { (document.head || document.documentElement).appendChild(sst); themeEls.push(sst); } catch (e) {}
+    keepSpotifyThemeLast();
+  }
+  /* Spotify can drop our style element while it hydrates, and the page stayed dark until a timer
+     put it back. Put it back the moment it goes. The style is all !important, so where it sits does
+     not matter, and moving it about to stay last only fought Spotify and pinned the page. Capped so
+     a page that keeps removing it cannot keep us busy. */
+  let spotifyHeadObserver = null;
+  let spotifyThemeReturns = 0;
+  function keepSpotifyThemeLast() {
+    if (spotifyHeadObserver) return;
+    try {
+      spotifyHeadObserver = woObserver(function (muts) {
+        if (spotifyThemeReturns >= 40 || !themeEls.length) return;
+        const ours = themeEls[themeEls.length - 1];
+        if (!ours || ours.isConnected || ours.id !== THEME_ID) return;
+        for (var k = 0; k < muts.length; k++) {
+          if (Array.prototype.indexOf.call(muts[k].removedNodes || [], ours) < 0) continue;
+          spotifyThemeReturns++;
+          try { (document.head || document.documentElement).appendChild(ours); } catch (e) {}
+          watchSpotifyHead();
+          return;
+        }
+      });
+      watchSpotifyHead();
+    } catch (e) { spotifyHeadObserver = null; }
+  }
+  /* Only <head> and <html> themselves: a whole-document watch would wake on every node Spotify adds. */
+  function watchSpotifyHead() {
+    if (!spotifyHeadObserver) return;
+    try { spotifyHeadObserver.observe(document.documentElement, { childList: true }); } catch (e) {}
+    try { if (document.head) spotifyHeadObserver.observe(document.head, { childList: true }); } catch (e) {}
   }
   const DISCORD_THEME_CLASSES = ['theme-light', 'theme-lighter', 'theme-dark', 'theme-darker'];
   const DISCORD_IMG_CLASSES = ['images-light', 'images-dark'];
@@ -2169,6 +2271,15 @@
       discordObserver.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
     } catch (e) { discordObserver = null; }
   }
+  /* The mode hint is here at document_start. Waiting for the worker let Discord paint its own dark
+     shell first, which read as dark, then light. Discord's own default is dark, so that is what
+     switching EyeShield off restores when nothing had been set yet. */
+  function applyDiscordThemeEarly() {
+    const hinted = window.__wardenOneEyeShieldPreloadMode;
+    if (!isDiscordHost() || (hinted !== 'light' && hinted !== 'dark' && hinted !== 'ultra')) return;
+    applyDiscordTheme(hinted);
+    if (discordOrigTheme && !discordOrigTheme.length) discordOrigTheme = ['theme-dark', 'images-dark'];
+  }
   function restoreDiscordTheme() {
     if (discordObserver) { try { discordObserver.disconnect(); } catch (e) {} discordObserver = null; }
     if (discordRescanT) { try { clearTimeout(discordRescanT); } catch (e) {} discordRescanT = 0; }
@@ -2185,6 +2296,7 @@
   /* Select GitHub’s native theme only after its stylesheet loads; activate data-href placeholders as needed.
      Prefer the user’s variant, then plain light/dark. Store original page values on the isolated window
      so replacement copies restore the page’s state rather than the previous copy’s overrides. */
+  try { applyDiscordThemeEarly(); } catch (e) {}
   const GITHUB_THEME_ATTRS = ['data-color-mode', 'data-light-theme', 'data-dark-theme'];
   let githubWant = null;
   let githubVariant = null;
@@ -2496,10 +2608,65 @@
     nativeCheckTimer = woTimeout(run, 1500);
   }
 
+  function applyTikTokTheme(mode) {
+    let style = document.getElementById(THEME_ID);
+    if (mode === 'off') { style?.remove(); return; }
+    if (style?.getAttribute('data-wo-eyeshield-mode') === mode) return;
+    const p = paletteFor(mode);
+    if (!style) {
+      style = document.createElement('style');
+      style.id = THEME_ID;
+      style.setAttribute('data-wo-eyeshield', '1');
+      (document.head || document.documentElement).appendChild(style);
+    }
+    style.setAttribute('data-wo-eyeshield-mode', mode);
+    /* Feed and TUX controls use different palettes. Leave media overlay tokens to the player. */
+    style.textContent = `html:root{
+      color-scheme:${p.scheme} !important;
+      --ui-page-flat-1:${p.bg} !important;
+      --ui-page-grouped-1:${p.bg} !important;
+      --ui-page-flat-2:${p.surface} !important;
+      --ui-page-grouped-2:${p.surface} !important;
+      --ui-page-flat-3:${p.raised} !important;
+      --ui-page-grouped-3:${p.raised} !important;
+      --ui-sheet-flat-1:${p.surface} !important;
+      --ui-sheet-grouped-1:${p.surface} !important;
+      --ui-sheet-flat-2:${p.raised} !important;
+      --ui-sheet-grouped-2:${p.raised} !important;
+      --ui-sheet-flat-3:${p.control} !important;
+      --ui-sheet-grouped-3:${p.control} !important;
+      --ui-text-1:${p.text} !important;
+      --ui-text-2:${p.text} !important;
+      --ui-text-3:${p.muted} !important;
+      --ui-text-placeholder:${p.muted} !important;
+      --tux-colorBGPrimary:${p.bg} !important;
+      --tux-colorBGSecondary:${p.surface} !important;
+      --tux-colorBGTertiary:${p.raised} !important;
+      --tux-colorBGQuaternary:${p.control} !important;
+      --tux-colorBGInput:${p.input} !important;
+      --tux-colorTextPrimary:${p.text} !important;
+      --tux-colorTextSecondary:${p.muted} !important;
+      --tux-colorTextTertiary:${p.muted} !important;
+      --tux-colorLinePrimary2:${p.border} !important;
+    }html body{background-color:var(--ui-page-flat-1) !important;}` + (mode === 'light' ? `
+      :is([data-e2e="tiktok-logo"],[data-e2e="side-nav-utilities-get-coin"],[data-e2e="side-nav-utilities-get-app"]){
+        --tux-v2-color-ui-text-1:${p.text} !important;color:${p.text} !important;
+      }
+      [data-e2e="tiktok-logo"] path:is([fill="#fff" i],[fill="#ffffff" i]){fill:${p.text} !important;}
+    ` : '');
+  }
+
   function apply() {
     const enabled = cfg.enabled !== false;
     const mode = normalizeMode(cfg.eyeShieldMode);
     const brightness = getBrightness();
+
+    if (/(^|\.)tiktok\.com$/i.test(String(location.hostname || ''))) {
+      removePreload();
+      applyTikTokTheme(enabled ? mode : 'off');
+      if (enabled && brightness < 100) ensureScrim(brightness); else removeScrim();
+      return;
+    }
 
     // Discord: native-theme path (no remap). Handles every case and returns.
     if (isDiscordHost()) {

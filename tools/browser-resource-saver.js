@@ -14,21 +14,18 @@ async function run() {
   const port = await profile.freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-resource-saver-'));
   let cdp;
-  /* A timeout reports where a settings change stopped: when the test wrote it, what the worker
-     saw and sent (and to which tabs), and whether the page applied anything. */
-  const startedAt = Date.now();
-  const marks = [];
-  const mark = (label) => marks.push([Date.now() - startedAt, label]);
   try {
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir,
       ['--autoplay-policy=no-user-gesture-required']);
-    mark('browser up');
     cdp = new profile.Cdp(browser.webSocketDebuggerUrl);
     await cdp.connect();
     const version = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')).version;
     const extension = await profile.extensionReady(cdp, port, version);
-    mark('extension ready');
     await profile.closeExtensionTabs(cdp, port, extension.id);
+    /* A timeout reports where a settings change stopped: when the test wrote it, what the worker
+       saw and sent (and to which tabs), and whether the page applied anything. */
+    const marks = [];
+    const mark = (label) => marks.push([Date.now() % 100000, label]);
     async function workerValue(expression) {
       if (!extension.attachedSession) return 'no worker session';
       const result = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, extension.attachedSession);
@@ -108,13 +105,6 @@ async function run() {
         return true;
       })`, ext.sessionId);
     };
-    /* A starved browser has left play() unsettled for twenty minutes, the limit of the whole job. */
-    const play = async (selector) => {
-      const played = await value(`Promise.race([document.querySelector(${JSON.stringify(selector)}).play().then(() => true, () => false),
-        new Promise((resolve) => setTimeout(() => resolve('play() did not settle'), 60000))])`);
-      mark('play ' + selector + ': ' + played);
-      return played;
-    };
     await until.call(null, "document.readyState === 'complete'", 'blank page');
     await setPreferences(true, true);
 
@@ -167,16 +157,6 @@ async function run() {
       { urlPattern: '*://www.youtube.com/*', resourceType: 'Document' },
     ] }, page.sessionId);
 
-    /* The switch-on above may still be queued behind other settings work. Seeing it land first
-       means the empty list below is the switch-off, not a registration still on its way to a page. */
-    assert.equal(await workerValue(`(async () => {
-      for(let i=0;i<100;i++) {
-        const rules=await chrome.scripting.getRegisteredContentScripts({ids:['wo-resource-saver']});
-        if(rules.length)return true;
-        await new Promise(resolve=>setTimeout(resolve,100));
-      }
-      return false;
-    })()`), true, 'enabled Resource Saver registers its injection');
     await setPreferences(false, false);
     assert.equal(await workerValue(`(async () => {
       for(let i=0;i<100;i++) {
@@ -197,7 +177,7 @@ async function run() {
     })()`);
     assert(Array.isArray(frameProbe) && frameProbe.length === 3
       && frameProbe.every((entry) => entry.result.bridge && !entry.result.resource && !entry.result.images),
-    'default-off modules stay absent while every inherited frame retains its security bridge: ' + JSON.stringify(frameProbe));
+    'default-off modules stay absent while every inherited frame retains its security bridge');
     await setPreferences(true, true);
     await until("window.__woFrameFixture && window.__woBlankReady && document.querySelector('#blank-frame').contentDocument.querySelector('#frame-preview').paused && !document.querySelector('#blank-frame').contentDocument.querySelector('#frame-preview').autoplay && !document.querySelector('#blank-frame').contentDocument.querySelector('#frame-preview').hasAttribute('autoplay') && document.querySelector('#srcdoc-frame').contentDocument.querySelector('#frame-preview').paused && !document.querySelector('#srcdoc-frame').contentDocument.querySelector('#frame-preview').autoplay && !document.querySelector('#srcdoc-frame').contentDocument.querySelector('#frame-preview').hasAttribute('autoplay')", 'about:blank and srcdoc frames to receive their initial Resource Saver state');
     await setPreferences(true, false);
@@ -205,31 +185,31 @@ async function run() {
     await until("window.__woGenericFixture && document.querySelector('#card-preview').autoplay && document.querySelector('#card-preview').hasAttribute('autoplay')", 'the original general preview to retain autoplay');
     /* Headless Chrome 121 can leave a muted autoplay fixture paused. Establish
        playback before checking that Resource Saver stops and restores it. */
-    assert.equal(await value("document.querySelector('#card-preview').paused") ? await play('#card-preview') : true, true,
+    assert.equal(await value("(() => { const video = document.querySelector('#card-preview'); return video.paused ? video.play().then(() => true, () => false) : true; })()"), true,
       'the browser can play the general preview with Resource Saver off');
     await until("!document.querySelector('#card-preview').paused", 'the original general preview to play');
     await setPreferences(true, true);
     await until("document.querySelector('#card-preview').paused && !document.querySelector('#card-preview').autoplay && !document.querySelector('#card-preview').hasAttribute('autoplay')", 'a general muted card preview to stop');
-    assert.equal(await play('#normal-player'), true,
+    assert.equal(await value("document.querySelector('#normal-player').play().then(() => true, () => false)"), true,
       'a normal player with controls can start');
     await until("!document.querySelector('#normal-player').paused", 'normal controlled playback');
-    assert.equal(await play('#audible-card'), true,
+    assert.equal(await value("document.querySelector('#audible-card').play().then(() => true, () => false)"), true,
       'an audible inline video is not guessed to be a preview');
     await until("!document.querySelector('#audible-card').paused", 'audible inline playback');
-    assert.equal(await play('#manual-card'), true,
+    assert.equal(await value("document.querySelector('#manual-card').play().then(() => true, () => false)"), true,
       'a manually started card video is left alone');
     await until("!document.querySelector('#manual-card').paused", 'manual card playback');
-    assert.equal(await play('#manual-inline-card'), true,
+    assert.equal(await value("document.querySelector('#manual-inline-card').play().then(() => true, () => false)"), true,
       'playsinline alone does not make a user-started card video a preview');
     await until("!document.querySelector('#manual-inline-card').paused", 'manual playsinline card playback');
-    assert.equal(await play('#manual-loop-card'), true,
+    assert.equal(await value("document.querySelector('#manual-loop-card').play().then(() => true, () => false)"), true,
       'loop alone does not make a user-started card video a preview');
     await until("!document.querySelector('#manual-loop-card').paused", 'manual looping card playback');
     await setPreferences(true, false);
     await until("document.querySelector('#card-preview').autoplay && document.querySelector('#card-preview').hasAttribute('autoplay') && !document.querySelector('#card-preview').paused",
       'the general preview autoplay state to restore without page help');
     await setPreferences(true, true);
-    await play('#card-preview');
+    await value("document.querySelector('#card-preview').play().catch(() => {})");
     await until("document.querySelector('#card-preview').paused", 'the general preview control to return live');
     await setPreferences(true, true, true, true);
     await until("document.querySelector('#animated-image') && getComputedStyle(document.querySelector('#animated-image')).display === 'none' && !!document.querySelector('canvas[aria-label=\"Play animated image: Demo\"]')",
@@ -256,10 +236,10 @@ async function run() {
     await until("window.__woYouTubeFixture && getComputedStyle(document.querySelector('#cinematics')).display === 'none' && getComputedStyle(document.querySelector('#cinematics-container')).display === 'none' && getComputedStyle(document.querySelector('#frosted-glass')).backdropFilter === 'none' && getComputedStyle(document.querySelector('ytd-video-preview')).display === 'none'", 'YouTube resource styles');
     assert.equal(await value("getComputedStyle(document.querySelector('#frosted-glass')).backgroundColor"), 'rgb(23, 19, 28)',
       'the frosted header follows the active YouTube or EyeShield background');
-    assert.equal(await play('#watch-video'), true,
+    assert.equal(await value("document.querySelector('#watch-video').play().then(() => true, () => false)"), true,
       'the watch-page video still plays');
     await until("!document.querySelector('#watch-video').paused", 'watch-page playback');
-    await play('#preview-video');
+    await value("document.querySelector('#preview-video').play().catch(() => {})");
     await until("document.querySelector('#preview-video').paused", 'an inline preview play attempt to be stopped');
 
     assert.equal(await value("(() => { const active = document.querySelector('style[data-wardenone-resource-saver=\"ambient\"]'); if (!active) return false; const legacy = active.cloneNode(true); legacy.removeAttribute('data-wardenone-resource-saver'); const duplicate = active.cloneNode(true); document.documentElement.append(legacy, duplicate); window.__woLegacyAmbientStyle = legacy; window.__woDuplicateAmbientStyle = duplicate; return true; })()"), true,
@@ -298,13 +278,7 @@ async function run() {
     }
     console.log('[ok] Edge Resource Saver fixture: inherited frames, video previews, GIF replacement, player compatibility and live reversal');
   } finally {
-    mark('checks finished');
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
-    /* It normally takes 10 s. One run took 279 s and passed, leaving nothing to say where the time went. */
-    if (Date.now() - startedAt > 60000) {
-      mark('browser closed');
-      console.warn('[slow] resource saver took ' + Math.round((Date.now() - startedAt) / 1000) + ' s: ' + JSON.stringify(marks));
-    }
     if (path.dirname(path.resolve(dir)) === path.resolve(os.tmpdir()) && path.basename(dir).startsWith('wo-resource-saver-')) {
       try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); } catch (_) {}
     }

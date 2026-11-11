@@ -727,6 +727,7 @@
   // Watch for late content and remove the frame only when its inner box matches;
   // cross-origin frames are handled by their own injected guard.
   const watchedFrameDocs = new WeakSet();
+  const playerFrameDocs = new WeakSet();
   function watchFrameDocument(doc) {
     try {
       if (!doc || watchedFrameDocs.has(doc)) return;
@@ -773,7 +774,14 @@
         if (r.width < 160 || r.height < 80) continue;
         if (!doc.body) continue;
         const src = String(frame.getAttribute('src') || '').trim().toLowerCase();
-        out.push({ frame: frame, body: doc.body, anonymous: !src || src === 'about:blank' });
+        const anonymous = !src || src === 'about:blank' || frame.getAttribute('srcdoc') !== null;
+        // Leave the frame intact if its player has replaced the video with an error.
+        if (!anonymous && frame.getAttribute('allowfullscreen') !== null
+            && (playerFrameDocs.has(doc) || doc.querySelector('video,audio'))) {
+          playerFrameDocs.add(doc);
+          continue;
+        }
+        out.push({ frame: frame, body: doc.body, anonymous });
       }
     } catch (_) {}
     return out;
@@ -984,7 +992,7 @@
       return popupMatcherEntries.delete(id);
     },
     match(url, context) {
-      const value = String(url == null ? '' : url);
+      const value = typeof url === 'string' ? url : String(url == null ? '' : url);
       for (const [id, matcher] of popupMatcherEntries) {
         try {
           const result = matcher(value, context || {});
@@ -1032,6 +1040,10 @@
     a = regHost(a);
     b = regHost(b);
     if (!a || !b) return false;
+    /* Sites one company runs under unrelated domains, where its own button opens the other: Duck.ai
+       opened from DuckDuckGo was blocked as a popup nobody pressed. Kept short and checked by hand. */
+    const owner = (host) => [['duckduckgo.com', 'duck.ai']].findIndex((group) => group.some((d) => host === d || host.endsWith('.' + d)));
+    if (owner(a) >= 0 && owner(a) === owner(b)) return true;
     const own = ownSite();
     if (own) {
       const aOwn = a === own || a.endsWith('.' + own);
@@ -1768,6 +1780,33 @@
     return false;
   }
 
+  const activatedPinterestGooglePopup = (() => {
+    const refuse = () => false;
+    if (!TOP_FRAME || !/(^|\.)pinterest\.com$/i.test(location.hostname)) return refuse;
+    try {
+      const activation = navigator.userActivation;
+      const isActive = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(activation), 'isActive').get.bind(activation);
+      const matchGoogleEndpoint = RegExp.prototype.exec.bind(/^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/);
+      const NativeURL = URL;
+      const searchParams = Function.call.bind(Object.getOwnPropertyDescriptor(URL.prototype, 'searchParams').get);
+      const getAll = Function.call.bind(URLSearchParams.prototype.getAll);
+      const origin = location.origin;
+      const singleParam = (params, name) => {
+        const values = getAll(params, name);
+        return values.length === 1 ? values[0] : '';
+      };
+      return (rawTarget) => {
+        // A press in Google's cross-origin button activates the top frame without dispatching a click there.
+        if (!matchGoogleEndpoint(rawTarget) || !isActive()) return false;
+        const params = searchParams(new NativeURL(rawTarget));
+        return singleParam(params, 'origin') === origin
+          && singleParam(params, 'gsiwebsdk') === 'gis_attributes' && singleParam(params, 'redirect_uri') === 'gis_transform'
+          && singleParam(params, 'response_mode') === 'form_post'
+          && /^[a-z0-9-]+\.apps\.googleusercontent\.com$/.test(singleParam(params, 'client_id'));
+      };
+    } catch (_) { return refuse; }
+  })();
+
   function corePopupPolicy(rawTarget, context) {
     if (redirectChainStopApplies() && !(context && context.nativeAnchor && context.trustedActivation)) return 'stopped redirect chain';
     if (!popupPolicyApplies()) return false;
@@ -1778,7 +1817,9 @@
       return blankPopupAllowanceAvailable(true) ? false : 'non-auth staged blank popup';
     }
     const targetHost = hostOf(rawTarget);
-    if (!freshGesture()) return 'no recent user gesture';
+    if (!freshGesture()) {
+      return context && context.directWindowOpen && activatedPinterestGooglePopup(rawTarget) ? false : 'no recent user gesture';
+    }
     if (!targetHost || sameParty(targetHost, location.hostname)) return false;
     if (unresolvedDownloadNeedsReview(rawTarget)) return 'unverified download destination after a blocked redirect';
     if (suspiciousRedirectTarget(rawTarget)) return 'confirmed suspicious popup target';
@@ -1811,10 +1852,11 @@
   // cannot replace it, even when the guarded page is actively adversarial.
   popupMatcherEntries.set('core:popup-policy', corePopupPolicy);
 
-  function popupBlockMatch(rawTarget) {
+  function popupBlockMatch(rawTarget, directWindowOpen = false) {
     if (!masterEnabled() && !popupPolicyApplies()) return null;
     const match = popupMatcherApi.match(rawTarget, {
       topFrame: TOP_FRAME,
+      directWindowOpen: directWindowOpen && typeof rawTarget === 'string',
       freshGesture: freshGesture(),
       strict: strictPopupEnabled(),
       playerGesture: lastGestureTainted,
@@ -2935,7 +2977,7 @@
     if (existingNamedFrameTarget(name) && !openerIsolationRequested(features)) {
       return realOpenFn.apply(self, args);
     }
-    const match = popupBlockMatch(rawTarget);
+    const match = popupBlockMatch(rawTarget, self === window);
     if (match) {
       noteBlockedPopup(rawTarget, match);
       return inertWindowFacade(playerDocument());
