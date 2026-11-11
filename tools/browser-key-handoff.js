@@ -15,6 +15,7 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const profile = require('./perf-profile.js');
+const { cleanupProfile } = require('./lib/browser-profile-cleanup.js');
 
 const root = path.resolve(__dirname, '..');
 const host = 'keyhandoff.wardenone-audit.net';
@@ -138,9 +139,12 @@ async function run() {
     const { targetId } = await cdp.send('Target.createTarget', { url: 'http://' + host + ':' + server.address().port + '/attack' });
     const { sessionId: page } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
     await cdp.send('Runtime.enable', {}, page);
-    for (const deadline = Date.now() + 10000; Date.now() < deadline; await sleep(100)) {
-      if (await evaluate(page, "document.readyState==='complete'")) break;
+    /* A new tab is a finished about:blank first, so wait for the fixture itself. */
+    let loaded = false;
+    for (const deadline = Date.now() + 15000; !loaded && Date.now() < deadline; await sleep(100)) {
+      loaded = await evaluate(page, "location.pathname==='/attack'&&document.readyState==='complete'&&typeof startFrame==='function'").catch(() => false);
     }
+    if (!loaded) throw new Error('the attack fixture never loaded');
 
     await evaluate(page, 'startFrame()');
     /* A real click, so the popup is one a person opened and no popup guard has a reason to close it. */
@@ -216,10 +220,8 @@ async function run() {
     console.log('[ok] key hand-off: an overheard key cannot sign a relayed request, and a mute it signs needs the reader\'s own click');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
-    if (server) await new Promise((resolve) => server.close(resolve));
-    const resolved = path.resolve(dir);
-    if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('wo-keyhandoff-')) throw new Error('Unexpected temporary profile');
-    fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
+    await sleep(2000); cleanupProfile(dir, 'wo-keyhandoff-');
   }
 }
 
