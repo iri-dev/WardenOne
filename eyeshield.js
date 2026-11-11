@@ -910,7 +910,7 @@
   let __ewContrastTimer = null;
   let __ewContrastOriginals = new WeakMap();
   function scheduleContrastGuard(mode) {
-    if (!mode || mode === 'off') return;
+    if (!mode || mode === 'off' || hasOwnThemePath()) return;
     if (__ewContrastTimer) clearTimeout(__ewContrastTimer);
     __ewContrastTimer = woTimeout(() => { __ewContrastTimer = null; try { contrastGuard(mode); } catch (_) {} }, 600);
   }
@@ -1267,11 +1267,17 @@
     observeRoot(document);
   }
   function disconnectObserver() { if (observer) { observer.disconnect(); observer = null; } observedRoots = new WeakSet(); pendingSheet = false; pendingNodes = []; }
+  /* Sites themed through their own variables or classes. The general remap and its readability
+     pass misread them: on Spotify a late rebuild stacked a second theme and wrote wrong inline
+     colours onto the Log in and Create playlist buttons. */
+  function hasOwnThemePath() {
+    return isSpotifyHost() || isDiscordHost() || /(^|\.)tiktok\.com$/i.test(String(location.hostname || ''));
+  }
   function scheduleRebuild() {
     if (rebuildTimer) return;
     rebuildTimer = woTimeout(() => {
       rebuildTimer = 0;
-      if (!activeRemap) return;
+      if (!activeRemap || hasOwnThemePath()) return;
       if (pendingSheet) {
         // a new stylesheet appeared -> full re-theme across all roots, but
         // THROTTLED: if we did a full re-theme recently, defer (keep pendingSheet
@@ -2809,7 +2815,7 @@
 
   // late-loading stylesheets (web fonts, async CSS) — re-theme after full load
   woOn(window, 'load', () => {
-    if (!activeRemap || isTwitchHost()) return;
+    if (!activeRemap || isTwitchHost() || hasOwnThemePath()) return;
     pendingSheet = true;
     scheduleRebuild();
   });

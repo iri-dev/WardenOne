@@ -74,7 +74,11 @@ function bridgeRealm(opts) {
     document: { dispatchEvent(ev) { const fn = state.listeners[ev.type]; if (fn) fn(ev); return true; } },
     window: {},
     woOn: (target, type, fn) => { state.listeners[type] = fn; },
+    navigator: { userActivation: { isActive: false } },
+    keySharedWithRelative: o.shared === true,
   };
+  const trustLine = /^\s*const keyTrustedNow = \(\) => [\s\S]*?;\n/m.exec(BRIDGE);
+  if (!trustLine) throw new Error('keyTrustedNow is gone from the bridge');
   const ctx = vm.createContext(sandbox);
   vm.runInContext([
     iife(BRIDGE, 'const __woAuth=(function(){'),
@@ -86,6 +90,7 @@ function bridgeRealm(opts) {
     'let bridgeEngineSeen = false; let bridgePendingPong = null;',
     /* The event signature every security event now needs (bridge.js eventSigned). */
     BRIDGE.slice(BRIDGE.indexOf('  const KEY_PADS = KEY ?'), BRIDGE.indexOf('  let bridgeEventSeq = 0;')),
+    trustLine[0].trim(),
     optional(BRIDGE, /^\s*let interstitialSeqSeen = 0;/m),
     optional(BRIDGE, /^\s*const interstitialRequestSigned = \(detail\) => \{[\s\S]*?\n  \};/m),
     listener,
@@ -93,6 +98,7 @@ function bridgeRealm(opts) {
   ].join('\n'), ctx, { filename: 'bridge-relay.js' });
   return {
     state,
+    sandbox,
     auth: sandbox.__woAuth,
     dispatch: (detail) => sandbox.document.dispatchEvent({ type: 'wo-event', detail }),
     interstitials: () => state.sent.filter((m) => m.kind === 'redirect-warning'),
@@ -187,6 +193,19 @@ const asEvent = (b, d, key) => {
   b.dispatch(asEvent(b, forged({ seq: 4, why: 'no recent user gesture', mac: hmacHex(KEY, sig(4, ATTACKER, 'no recent user gesture', 'assign')) })));
   check('a jump with no gesture behind it stays badge-only even when signed', b.interstitials().length === 2);
 }
+/* H-01: where a same-origin parent or opener may have heard the key, the page can sign. A
+   warning page then also needs the reader's own activation, and a finding keeps only its type. */
+{
+  const b = bridgeRealm({ shared: true });
+  const em = emitterRealm((d) => b.dispatch(d));
+  em.emit('blocked_gestureless_nav', { kind: 'assign', url: ATTACKER, matched: 'attacker.example', why: 'forced redirect after a click', silent: false });
+  check('with an overheard key and no activation, no warning page is raised', b.interstitials().length === 0, JSON.stringify(b.interstitials()));
+  check('...the block is still counted, but with none of the page-written detail',
+    b.badges().length === 1 && JSON.stringify(b.badges()[0].detail) === '{}', JSON.stringify(b.badges()));
+  b.sandbox.navigator.userActivation.isActive = true;
+  em.emit('blocked_gestureless_nav', { kind: 'href', url: 'https://second.example/', matched: 'second.example', why: 'click did not target this site', silent: false });
+  check('during the reader\'s own click the warning page is offered again', b.interstitials().length === 1 && b.interstitials()[0].detail.url === 'https://second.example/');
+}
 {
   const b = bridgeRealm({ key: '' });
   b.dispatch(asEvent(b, forged({ seq: 1, mac: hmacHex(KEY, sig(1, ATTACKER, 'forced redirect after a click', 'assign')) })));
@@ -260,10 +279,10 @@ check('the relay forwards only bounded review fields',
   && BRIDGE.indexOf("kind: 'redirect-warning', detail }") > 0);
 check('the relay believes a security event only when it is signed, before it forwards anything',
   /if \(!eventSigned\(d\) \|\| d\.src === 'bridge'\) return;/.test(BRIDGE)
-  && BRIDGE.indexOf('if (!eventSigned(d)') < BRIDGE.indexOf("kind: 'rg-block', type, detail:")
+  && BRIDGE.indexOf('if (!eventSigned(d)') < BRIDGE.indexOf("kind: 'rg-block', type, detail }")
   && /if \(d\.src !== 'realm' \|\| !eventSigned\(d\)[^\n]*return;[\s\S]{0,150}kind: 'rg-block', type/.test(BRIDGE));
 check('the relay checks the signature before it forwards an interstitial request',
-  /if \(!interstitialRequestSigned\(d\.detail\)\) return;/.test(BRIDGE)
+  /if \(!interstitialRequestSigned\(d\.detail\) \|\| !keyTrustedNow\(\)\) return;/.test(BRIDGE)
   && BRIDGE.indexOf('interstitialRequestSigned(d.detail)') < BRIDGE.indexOf("kind: 'redirect-warning', detail }"));
 check('the guard signs at dispatch, after the queue, so a queued request is signed when it goes out',
   /function emit\(type, detail\) \{[\s\S]*?queuedEvents\.push\(payload\);[\s\S]*?signInterstitial\(payload\.detail\)/.test(GUARD));

@@ -53,6 +53,25 @@ function run() {
       assert(/background-color:transparent/.test(rule.body), mode + ': the entity title keeps the header behind it');
     }
   }
+  /* The page load re-theme ran the general remap on Spotify, stacked a second theme element and
+     started the readability pass, which wrote inline colours onto Spotify's own buttons. */
+  {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'eyeshield.js'), 'utf8');
+    const own = /function hasOwnThemePath\(\) \{[\s\S]*?\n  \}/.exec(src);
+    assert(own, 'hasOwnThemePath is where the check expects it');
+    for (const [host, want] of [['open.spotify.com', true], ['www.spotify.com', true], ['discord.com', true], ['www.tiktok.com', true],
+      ['example.com', false], ['notspotify.com.example', false]]) {
+      const box = { location: { hostname: host }, String };
+      vm.createContext(box);
+      vm.runInContext('const SPOTIFY_HOST_RE=/(^|\\.)spotify\\.com$/i;function isSpotifyHost(){return SPOTIFY_HOST_RE.test(String(location.hostname||"").toLowerCase());}'
+        + 'const DISCORD_HOST_RE=' + /const DISCORD_HOST_RE = ([^;]+);/.exec(src)[1] + ';function isDiscordHost(){return DISCORD_HOST_RE.test(String(location.hostname||"").toLowerCase());}'
+        + own[0] + ';this.r=hasOwnThemePath();', box);
+      assert.equal(box.r, want, host + ' owns its theme path: ' + want);
+    }
+    assert(/rebuildTimer = 0;\s*if \(!activeRemap \|\| hasOwnThemePath\(\)\) return;/.test(src), 'a scheduled rebuild skips sites with their own theme path');
+    assert(/if \(!activeRemap \|\| isTwitchHost\(\) \|\| hasOwnThemePath\(\)\) return;\s*pendingSheet = true;/.test(src), 'the page load re-theme skips them too');
+    assert(/function scheduleContrastGuard\(mode\) \{\s*if \(!mode \|\| mode === 'off' \|\| hasOwnThemePath\(\)\) return;/.test(src), 'and so does the readability pass');
+  }
   console.log('[ok] Spotify contrast-set text, icon, surface and interaction contracts across all EyeShield themes');
 }
 module.exports = { loadThemeCSS };

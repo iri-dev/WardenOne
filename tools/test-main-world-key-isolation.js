@@ -299,8 +299,9 @@ console.log('notice mutes');
   check('...and the same mute during a click still passes',
     !!relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'mute-toast', type: 'blocked_popup', minutes: 60 })))));
   vm.runInContext('keySharedWithRelative = true;', relay);
-  check('a key handed out while a same-origin relative could listen cannot mute',
-    relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'mute-toast', type: 'blocked_popup', minutes: 60 })))) === null);
+  const asked = relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'mute-toast', type: 'blocked_popup', minutes: 60 }))));
+  check('a key handed out while a same-origin relative could listen cannot mute by itself: the reader is asked',
+    !!asked && asked.kind === 'mute-toast-confirm' && asked.type === 'blocked_popup' && asked.minutes === 60, JSON.stringify(asked));
   check('...nor mark a notice as shown',
     relay.allowed(JSON.parse(JSON.stringify(e.request({ kind: 'toast-shown', type: 'blocked_popup' })))) === null);
   vm.runInContext('keySharedWithRelative = false;', relay);

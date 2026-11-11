@@ -280,8 +280,8 @@ function buildDispose() {
 // 5. Every warning that uses the helper opts in, and the focus ring survives `all:initial`.
 // ---------------------------------------------------------------------------
 {
-  check('bridge.js opts all six of its owned warnings into dialog semantics',
-    (BRIDGE.match(/\.dialog\(\{/g) || []).length === 6);
+  check('bridge.js opts all seven of its owned warnings and questions into dialog semantics',
+    (BRIDGE.match(/\.dialog\(\{/g) || []).length === 7);
 
   // oauth-guard keeps its own lifted copy of the helper, so the first attempt to wire it called a
   // dialog() that did not exist there -- the surrounding try/catch swallowed the TypeError and took
@@ -312,7 +312,7 @@ function buildDispose() {
     !/WO_FOCUS_STYLE/.test(BRIDGE) && !/WO_FOCUS_STYLE/.test(OAUTH) && !/focus-visible\{/.test(ENGINE),
     'a :focus-visible rule loses to the elements\' own important style attribute');
   check('every wired dialog is given a name rather than relying on its contents',
-    (BRIDGE.match(/label: 'WardenOne/g) || []).length === 6);
+    (BRIDGE.match(/label: 'WardenOne/g) || []).length === 7);
 }
 
 // ---------------------------------------------------------------------------

@@ -72,7 +72,11 @@ function bridgeRealm() {
     chrome: { runtime: { lastError: null, sendMessage: (msg) => { state.relayed.push(JSON.parse(JSON.stringify(msg))); } } },
     document: { dispatchEvent(ev) { const fn = state.listeners[ev.type]; if (fn) fn(ev); return true; } },
     woOn: (target, type, fn) => { state.listeners[type] = fn; },
+    navigator: { userActivation: { isActive: false } },
+    keySharedWithRelative: false,
   };
+  const trustLine = /^\s*const keyTrustedNow = \(\) => [\s\S]*?;\n/m.exec(BRIDGE);
+  assert(trustLine, 'keyTrustedNow is gone from the bridge');
   const ctx = vm.createContext(sandbox);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8'), ctx);
   vm.runInContext([
@@ -80,11 +84,12 @@ function bridgeRealm() {
     engineMacLine[0].trim(),
     'const BRIDGE_RATE = Object.create(null);',
     grabFn(BRIDGE, 'bridgeRateOk'),
+    trustLine[0].trim(),
     seqLine ? seqLine[0].trim() : '',
     listener,
     'this.__auth = __woAuth;',
   ].join('\n'), ctx, { filename: 'bridge-relay.js' });
-  return { state, auth: sandbox.__auth, dispatch: (detail) => sandbox.document.dispatchEvent({ type: 'wo-nav-signal', detail }) };
+  return { state, sandbox, auth: sandbox.__auth, dispatch: (detail) => sandbox.document.dispatchEvent({ type: 'wo-nav-signal', detail }) };
 }
 
 /* ---- the in-page guard's emitter, in the MAIN world ---------------------------------------- */
@@ -190,6 +195,30 @@ const hmacHex = (keyHex, text) => crypto.createHmac('sha256', Buffer.from(keyHex
     check('a signed pressed-link destination is relayed', b.state.relayed.length === 4 && b.state.relayed[3].host === 'link-vault.org');
     b.dispatch({ token: TOKEN, kind: 'link-press', host: 'evil.example', seq: 5, mac: hmacHex(KEY, 'nav-signal\n5\nlink-press\nlink-vault.org') });
     check('the pressed-link destination is covered by the signature', b.state.relayed.length === 4);
+  }
+  /* H-01: a same-origin parent or opener may have heard the key. Then a signal that lifts a
+     warning also needs the reader's own activation in this frame, which a page cannot fake. */
+  {
+    const b = bridgeRealm();
+    b.sandbox.keySharedWithRelative = true;
+    const signed = (seq, kind, host, url) => ({ token: TOKEN, kind, host, url, seq,
+      mac: hmacHex(KEY, 'nav-signal\n' + seq + '\n' + kind + '\n' + (host || '') + (url ? '\n' + url : '')) });
+    b.dispatch(signed(1, 'top-nav-authorized', 'evil.example'));
+    b.dispatch(signed(2, 'gesture', ''));
+    b.dispatch(signed(3, 'player-gesture', ''));
+    b.dispatch(signed(4, 'popup-overlay', ''));
+    b.dispatch(signed(5, 'download-hijack', ''));
+    b.dispatch(signed(6, 'link-press', 'files.example', 'https://files.example/get'));
+    check('with an overheard key and no activation, no signal that lifts a warning is relayed', b.state.relayed.length === 0, JSON.stringify(b.state.relayed));
+    b.dispatch(signed(7, 'link-press', 'files.example', ''));
+    check('...but withdrawing a pressed link still is, since it only takes trust away', b.state.relayed.length === 1 && b.state.relayed[0].url === '');
+    b.sandbox.navigator.userActivation.isActive = true;
+    b.dispatch(signed(8, 'top-nav-authorized', 'payments.example'));
+    check('during the reader\'s own click the same frame\'s signals go through again', b.state.relayed.length === 2 && b.state.relayed[1].host === 'payments.example');
+    b.sandbox.keySharedWithRelative = false;
+    b.sandbox.navigator.userActivation.isActive = false;
+    b.dispatch(signed(9, 'gesture', ''));
+    check('and a key nobody else could hear needs no activation, as before', b.state.relayed.length === 3);
   }
   {
     const b = bridgeRealm();

@@ -52,9 +52,23 @@ async function run() {
     'a private window worker must not erase the regular profile history it shares storage.local with');
   assert.deepEqual(privateProfile.chrome.storage.local._data.wardenone_notifications, sentinel.wardenone_notifications);
   assert.deepEqual(privateProfile.chrome.storage.session._data.wardenone_history, sentinel.wardenone_history);
+  /* "Clear history" pressed in a private window: the private worker only leaves a request, and
+     the normal profile's worker, which owns the history and its pending writes, clears it. */
+  const asked = await privateProfile.ctx.requestRegularHistoryClear(false);
+  assert.equal(asked.ok, true);
+  assert.deepEqual(privateProfile.chrome.storage.local._data.wardenone_history, sentinel.wardenone_history,
+    'the private worker leaves the shared history to the normal worker');
+  assert.equal(privateProfile.chrome.storage.local._data.wardenone_history_clear_request.observations, false);
+  for (const listener of privateProfile.chrome.storage.onChanged._l) {
+    listener({ wardenone_history_clear_request: { newValue: { at: Date.now(), observations: false } } }, 'local');
+  }
+  await settle(privateProfile);
+  assert.deepEqual(privateProfile.chrome.storage.local._data.wardenone_history, sentinel.wardenone_history,
+    'a private worker never acts on the request itself');
   delete privateProfile.chrome.storage.local._data.wardenone_history;
   delete privateProfile.chrome.storage.local._data.wardenone_notifications;
   delete privateProfile.chrome.storage.session._data.wardenone_history;
+  delete privateProfile.chrome.storage.local._data.wardenone_history_clear_request;
   privateProfile.ctx.queueHistory(event); await settle(privateProfile);
   assert(!privateProfile.chrome.storage.local._data.wardenone_history);
   assert(!privateProfile.chrome.storage.local._data.wardenone_notifications);
@@ -63,6 +77,15 @@ async function run() {
   await h.ctx.clearProtectionHistory(false, 'normal');
   await h.ctx.WO_HISTORY.write({ wardenone_history: [event] }, null, token);
   assert(!h.chrome.storage.local._data.wardenone_history, 'revoked generation cannot write after clear');
+  h.ctx.queueHistory(event); await settle(h);
+  assert.equal(h.chrome.storage.local._data.wardenone_history.length, 1);
+  h.chrome.storage.local._data.wardenone_history_clear_request = { at: Date.now(), observations: false };
+  for (const listener of h.chrome.storage.onChanged._l) {
+    listener({ wardenone_history_clear_request: { newValue: { at: Date.now(), observations: false } } }, 'local');
+  }
+  await settle(h); await sleep(50);
+  assert(!h.chrome.storage.local._data.wardenone_history, 'the normal worker clears its history when a private window asks');
+  assert(!h.chrome.storage.local._data.wardenone_history_clear_request, 'and removes the request once done');
   const firewall = { 'site.example': { 'tracker.example': { all: 'block' } } };
   await h.chrome.storage.local.set({ wardenone_firewall: firewall, wardenone_site_tally: { 'site.example': {} },
     wardenone_script_drift_baselines: { stale: {} } });

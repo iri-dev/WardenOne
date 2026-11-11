@@ -32,6 +32,7 @@ function build({ frame = false, dark = false, stored = 'light' } = {}) {
   window.matchMedia = value => { assert.equal(value, '(prefers-color-scheme: dark)'); return query; };
   const context = {
     window, document, TOKEN: token, KEY: key, location: { hostname: 'catalog.example' },
+    keySharedWithRelative: false, keyTrustedNow: () => true,
     WardenBadgeControls: { create(options) { state.activity = options.onActivity; state.sendControl = options.send; return panel; } },
     CustomEvent: class { constructor(type, options) { this.type = type; this.detail = options.detail; } },
     postToPage(message) { state.replies.push(JSON.parse(JSON.stringify(message))); },

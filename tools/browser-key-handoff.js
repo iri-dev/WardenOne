@@ -85,7 +85,16 @@ window.forge = (name) => {
   send('control-' + name, { kind: 'adult-arrival' });
   return { caught: true, signsLikeTheBridge };
 };
-window.replies = (name) => __probe.messages[name].filter((m) => m && m.source === 'wardenone-bg-response').map((m) => m.id);
+window.forgeMute = (name, rseq) => {
+  const caught = __probe.keys[name][__probe.keys[name].length - 1];
+  const pads = __woAuth.key(caught.key);
+  const body = { kind: 'mute-toast', type: 'blocked_popup', minutes: 60 };
+  __targets[name].document.dispatchEvent(new CustomEvent('wo-background-message', { detail: { token: caught.token, id: 'mute-' + rseq,
+    message: Object.assign({}, body, { rseq, rmac: __woAuth.hmac(pads, 'bg-request\\n' + rseq + '\\n' + __woAuth.canon(body, 0)) }) } }));
+  return true;
+};
+window.confirmShown = (name) => !!__targets[name].document.getElementById('wo-owned-mute-confirm');
+window.replies = (name) =>__probe.messages[name].filter((m) => m && m.source === 'wardenone-bg-response').map((m) => m.id);
 </script><button id="go" style="position:fixed;left:0;top:0;width:200px;height:80px" onclick="window.__opened = startPopup()">open</button>`;
 
 const PAGES = {
@@ -162,7 +171,49 @@ async function run() {
       assert(!r.replies.includes('forged-' + name), name + ': a request signed with an overheard key is not relayed');
     }
     assert(opened, 'the attacker popup opened');
-    console.log('[ok] key hand-off: an overheard key cannot sign a relayed request');
+
+    /* A notice mute in a popup the site opened for itself: the page signs it with the overheard
+       key, so WardenOne asks on its own button, and only a real click there saves the mute. */
+    const targets = (await cdp.send('Target.getTargets')).targetInfos;
+    const popupTarget = targets.find((t) => t.type === 'page' && /\/child$/.test(t.url) && t.openerId === targetId)
+      || targets.find((t) => t.type === 'page' && /\/child$/.test(t.url));
+    assert(popupTarget, 'the popup is a page CDP can reach');
+    const { sessionId: popup } = await cdp.send('Target.attachToTarget', { targetId: popupTarget.targetId, flatten: true });
+    await cdp.send('DOM.enable', {}, popup);
+    await evaluate(page, 'forgeMute("popup", 2000)');
+    await sleep(800);
+    assert(!(await evaluate(page, 'confirmShown("popup")')), 'a mute with no click behind it does not even ask');
+    const click = async (x, y) => {
+      for (const type of ['mousePressed', 'mouseReleased']) await cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 }, popup);
+    };
+    await click(20, 120);
+    await evaluate(page, 'forgeMute("popup", 2001)');
+    await sleep(800);
+    assert(await evaluate(page, 'confirmShown("popup")'), 'during a real click the mute is asked about on WardenOne\'s own card');
+    assert(!(await evaluate(page, 'replies("popup")')).includes('mute-2001'), 'and nothing is saved before the reader answers');
+    const pageClicks = await evaluate(page, `(() => { const host = __targets.popup.document.getElementById('wo-owned-mute-confirm');
+      return { shadow: host.shadowRoot === null }; })()`);
+    assert(pageClicks.shadow, "the page cannot reach the card's buttons");
+    const { root: doc } = await cdp.send('DOM.getDocument', { depth: -1, pierce: true }, popup);
+    const findButton = (node) => {
+      if (!node) return null;
+      if (node.nodeName === 'BUTTON' && (node.children || []).some((c) => c.nodeValue === 'Hide them')) return node;
+      for (const child of [].concat(node.children || [], node.shadowRoots || [], node.contentDocument || [])) {
+        const hit = findButton(child);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const hide = findButton(doc);
+    assert(hide, 'the card offers Hide them');
+    const { model } = await cdp.send('DOM.getBoxModel', { backendNodeId: hide.backendNodeId }, popup);
+    const [x1, y1, , , x3, y3] = model.content;
+    await click((x1 + x3) / 2, (y1 + y3) / 2);
+    await sleep(1200);
+    const after = await evaluate(page, 'replies("popup")');
+    assert(after.includes('mute-2001'), "the reader's own click on Hide them saves the mute: " + JSON.stringify(after));
+    assert(!(await evaluate(page, 'confirmShown("popup")')), 'and the card goes away');
+    console.log('[ok] key hand-off: an overheard key cannot sign a relayed request, and a mute it signs needs the reader\'s own click');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     if (server) await new Promise((resolve) => server.close(resolve));

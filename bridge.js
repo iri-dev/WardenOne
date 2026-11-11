@@ -308,6 +308,10 @@
     } catch (_) { return null; }
     return others;
   };
+  /* Where the key may have been overheard, a signal that lifts a warning also needs the reader's
+     own recent click in this frame, which a page cannot fake. */
+  const keyTrustedNow = () => !keySharedWithRelative
+    || !!(navigator.userActivation && navigator.userActivation.isActive);
   const deliverKey = () => {
     if (!keyOpen()) return false;
     const relatives = sameOriginRelatives();
@@ -2700,8 +2704,12 @@
          page's notice card and are not findings to record. */
       if (!eventSigned(d) || d.src === 'bridge') return;
       if (!bridgeRateOk(securitySignal ? 'wo-security-event' : 'wo-event', securitySignal ? 12 : 240, 60000)) return;
+      /* With an overheard key the page could write the detail itself, so only the finding and its
+         site are recorded, which is no more than the page could cause by really doing it. The image
+         candidate keeps its address: the worker checks that address itself. */
+      const detail = keySharedWithRelative && type !== 'detected_grabber_image_candidate' ? {} : boundedBridgeDetail(d.detail);
       try {
-        chrome.runtime.sendMessage({ kind: 'rg-block', type, detail: boundedBridgeDetail(d.detail) }, () => { void chrome.runtime.lastError; });
+        chrome.runtime.sendMessage({ kind: 'rg-block', type, detail }, () => { void chrome.runtime.lastError; });
       } catch (_) {
         // background may be asleep; it's fine, the badge is best-effort
       }
@@ -2711,7 +2719,7 @@
         // And only the guard may ask for one (SEC-15); the badge above already has the block.
         const detail = redirectReviewDetail(d.detail);
         if (!detail) return;
-        if (!interstitialRequestSigned(d.detail)) return;
+        if (!interstitialRequestSigned(d.detail) || !keyTrustedNow()) return;
         try {
           chrome.runtime.sendMessage({ kind: 'redirect-warning', detail }, () => { void chrome.runtime.lastError; });
         } catch (_) {}
@@ -2744,6 +2752,9 @@
     if (!Number.isInteger(seq) || seq <= navSignalSeqSeen) return;
     if (!KEY || !__woAuth.same(d.mac, engineMac('nav-signal', seq + '\n' + kind + '\n' + host + (url ? '\n' + url : '')))) return;
     navSignalSeqSeen = seq;
+    /* Each of these says the reader just acted, and lifts a redirect or popup warning. An empty
+       link-press only withdraws that, so it needs no proof. */
+    if (!(kind === 'link-press' && !url) && !keyTrustedNow()) return;
     if (!bridgeRateOk('wo-nav-signal', 180, 60000)) return;
     try {
       chrome.runtime.sendMessage({ kind: 'wo-nav-signal', signal: kind, host, url }, () => { void chrome.runtime.lastError; });
@@ -3105,10 +3116,69 @@
         if (![60, 120, 480, 0].includes(minutes)) return null;
         /* The mute buttons answer a real click, so a mute with no user activation is forged. */
         if (!(navigator.userActivation && navigator.userActivation.isActive)) return null;
-        if (keySharedWithRelative || !relayRequestSigned(msg, { kind: 'mute-toast', type: msg.type, minutes: msg.minutes })) return null;
+        if (!relayRequestSigned(msg, { kind: 'mute-toast', type: msg.type, minutes: msg.minutes })) return null;
+        /* The page may hold an overheard key here, so the reader confirms on WardenOne's own button. */
+        if (keySharedWithRelative) return { kind: 'mute-toast-confirm', type, minutes };
         return { kind: 'mute-toast', type, minutes };
       }
       return null;
+    };
+    const MUTE_SPANS = { 60: 'for an hour', 120: 'for two hours', 480: 'for today', 0: 'from now on' };
+    let muteConfirm = null;
+    /* A closed shadow root: the page cannot reach these buttons, so only the reader's own click mutes. */
+    const confirmMute = (type, minutes, done) => {
+      if (muteConfirm) { try { muteConfirm.destroy(); } catch (_) {} muteConfirm = null; }
+      const overlay = muteConfirm = woOwnedOverlay('wo-owned-mute-confirm');
+      const root = overlay.root();
+      if (!root) { muteConfirm = null; done(false); return; }
+      let owner = '';
+      try {
+        const keys = badgeProtectionEvents ? badgeProtectionEvents.keysFor(type) : [];
+        owner = keys && keys[0] ? badgeProtectionEvents.settingLabel(keys[0]) : '';
+      } catch (_) {}
+      const site = String(location.hostname || '').replace(/^www\./, '');
+      const panel = document.createElement('div');
+      panel.setAttribute('style', 'all:initial!important;position:fixed!important;top:16px!important;right:16px!important;'
+        + 'width:min(340px,calc(100vw - 32px))!important;box-sizing:border-box!important;padding:14px 16px!important;'
+        + 'border-left:4px solid #9d54c9!important;border-radius:14px!important;'
+        + 'background:linear-gradient(135deg,#faf2fe,#f4e9fb)!important;color:#3d2a52!important;'
+        + 'box-shadow:0 8px 28px rgba(120,55,160,.26)!important;'
+        + 'font:13px/1.45 "Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;');
+      const title = document.createElement('strong');
+      title.setAttribute('style', 'all:initial!important;display:block!important;margin-bottom:4px!important;'
+        + 'font:700 13.5px/1.3 "Quicksand","Nunito",system-ui,sans-serif!important;color:#3d2a52!important;');
+      title.textContent = 'Hide these notices?';
+      panel.appendChild(title);
+      const body = document.createElement('span');
+      body.setAttribute('style', 'all:initial!important;display:block!important;margin-bottom:10px!important;'
+        + 'font:12.5px/1.5 "Nunito",-apple-system,"Segoe UI",system-ui,sans-serif!important;color:#5a4470!important;');
+      body.textContent = 'WardenOne will stop showing ' + (owner ? '“' + owner + '” notices' : 'this kind of notice')
+        + ' on ' + (site || 'this site') + ' ' + (MUTE_SPANS[minutes] || '') + '. Protection keeps running.';
+      panel.appendChild(body);
+      const row = document.createElement('div');
+      row.setAttribute('style', 'all:initial!important;display:flex!important;gap:8px!important;');
+      const button = (label, primary, answer) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = label;
+        b.setAttribute('style', 'all:initial!important;cursor:pointer!important;border-radius:10px!important;padding:8px 13px!important;'
+          + 'font:700 12.5px/1.2 Quicksand,system-ui,sans-serif!important;'
+          + (primary ? 'background:linear-gradient(135deg,#9d54c9,#c0549a)!important;color:#fff!important;border:0!important;'
+            : 'background:rgba(176,106,212,.1)!important;color:#7a5f93!important;border:1px solid rgba(176,106,212,.3)!important;'));
+        woOn(b, 'click', (e) => {
+          if (!e || e.isTrusted === false || muteConfirm !== overlay || !overlay.owns(b)) return;
+          muteConfirm = null;
+          try { overlay.destroy(); } catch (_) {}
+          done(answer);
+        });
+        row.appendChild(b);
+      };
+      button('Hide them', true, true);
+      button('Keep showing', false, false);
+      panel.appendChild(row);
+      root.appendChild(panel);
+      overlay.dialog({ label: 'WardenOne: hide these notices on this site?', description: body.textContent });
+      overlay.mount();
     };
     const postBackgroundReply = (id, result) => {
       postToPage(signed('bg-response', id + '\n' + JSON.stringify(result), { source: 'wardenone-bg-response', token: TOKEN, id, result }));
@@ -3121,6 +3191,16 @@
       if (!message) return;
       if (!bridgeRateOk('background-relay-' + message.kind, 20, 60000)) {
         postBackgroundReply(id, { ok: false, error: 'Rate limited by WardenOne.' });
+        return;
+      }
+      if (message.kind === 'mute-toast-confirm') {
+        confirmMute(message.type, message.minutes, (yes) => {
+          if (!yes) { postBackgroundReply(id, { ok: false, declined: true }); return; }
+          chrome.runtime.sendMessage({ kind: 'mute-toast', type: message.type, minutes: message.minutes }, (res) => {
+            void chrome.runtime.lastError;
+            postBackgroundReply(id, res || { ok: false, error: 'No WardenOne response' });
+          });
+        });
         return;
       }
       if (message.kind === 'badge-rule-menu' || message.kind === 'badge-rule-menu-close') {

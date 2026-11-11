@@ -1080,6 +1080,24 @@ async function clearProtectionHistory(observations = false, mode) {
   } catch (error) { return { ok: false, error: String(error.message || error) }; }
 }
 
+/* A private window shares storage.local with the normal profile but not its history writer, so
+   "Clear history" there asks the normal profile's worker to clear rather than deleting under it. */
+const HISTORY_CLEAR_REQUEST_KEY = 'wardenone_history_clear_request';
+async function requestRegularHistoryClear(observations) {
+  try {
+    const write = await localSet({ [HISTORY_CLEAR_REQUEST_KEY]: { at: Date.now(), observations: observations === true } });
+    return write && write.persisted === false ? { ok: false, error: 'The clear request could not be saved.' } : { ok: true, requested: true };
+  } catch (error) { return { ok: false, error: String((error && error.message) || error) }; }
+}
+async function runRegularHistoryClearRequest(request) {
+  if (INCOGNITO_CONTEXT || !request || typeof request !== 'object') return;
+  try { await clearProtectionHistory(request.observations === true); }
+  finally { try { await chrome.storage.local.remove(HISTORY_CLEAR_REQUEST_KEY); } catch (_) {} }
+}
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes[HISTORY_CLEAR_REQUEST_KEY]) void runRegularHistoryClearRequest(changes[HISTORY_CLEAR_REQUEST_KEY].newValue);
+});
+
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes.wardenone_config || WO_HISTORY.changing) return;
   const change = changes.wardenone_config;
@@ -1088,6 +1106,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 setTimeout(async () => {
   try {
+    /* A request a private window left while this worker was not running. */
+    if (!INCOGNITO_CONTEXT) {
+      const pending = await chrome.storage.local.get(HISTORY_CLEAR_REQUEST_KEY);
+      if (pending && pending[HISTORY_CLEAR_REQUEST_KEY]) await runRegularHistoryClearRequest(pending[HISTORY_CLEAR_REQUEST_KEY]);
+    }
     const selected = await WO_HISTORY.context();
     if (selected.mode === 'off') await WO_HISTORY.erase();
     else await (selected.mode === 'normal' ? chrome.storage.session : chrome.storage.local)
@@ -23272,6 +23295,9 @@ const PRIVACY_STORE_POLICY = Object.freeze([
   { owner: 'Activity history', sensitivity: 'browsing records', area: 'local or session', maxAgeDays: 30, maxItems: 200, retention: 'Normal: 30 days; latest 200 events. Session: until browser closes. Off: none.', siteErase: 'prune', keys: [
     'wardenone_history',
   ] },
+  { owner: 'Private window history clear request', sensitivity: 'session state', area: 'local', maxAgeDays: null, maxItems: 1, retention: 'Removed as soon as the normal window has cleared its history', siteErase: 'keep', keys: [
+    'wardenone_history_clear_request',
+  ] },
   { owner: 'Notification Centre', sensitivity: 'security records', area: 'local or session', maxAgeDays: null, maxItems: 300, retention: 'Normal: reader choice of unlimited, 1, 7 or 30 days; latest 300 notices. Session: until browser closes. Off: none.', siteErase: 'prune', keys: [
     'wardenone_notifications',
   ] },
@@ -24048,7 +24074,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.kind === 'history-clear') {
-    respond(clearProtectionHistory(msg.observations === true), sendResponse);
+    respond(INCOGNITO_CONTEXT ? requestRegularHistoryClear(msg.observations === true)
+      : clearProtectionHistory(msg.observations === true), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'history-mode-set') {
