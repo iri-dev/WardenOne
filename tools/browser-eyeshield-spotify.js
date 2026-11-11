@@ -120,6 +120,9 @@ async function run() {
     const liveResults = [];
     const liveTab = await evaluate(worker, 'chrome.tabs.query({}).then(tabs=>tabs.find(tab=>tab.url==="https://open.spotify.com/"))');
     for (const mode of ['dark', 'light', 'ultra']) {
+      /* Save the mode first, as the popup does. A settings reply that lands late on a slow runner
+         otherwise puts the page back on the stored mode and the switch never shows. */
+      await evaluate(worker, `updateStoredConfig(cfg=>Object.assign(cfg,{eyeShieldMode:${JSON.stringify(mode)}})).then(()=>true)`);
       await evaluate(worker, `chrome.scripting.executeScript({target:{tabId:${liveTab.id}},func:mode=>window.__wardenOneEyeShieldApplyConfig({enabled:true,eyeShield:true,eyeShieldMode:mode}),args:[${JSON.stringify(mode)}]}).then(()=>true)`);
       await until(() => evaluate(live, `document.getElementById("wardenone-eyeshield-theme")?.getAttribute("data-wo-eyeshield-mode")===${JSON.stringify(mode)}`), mode + ' on Spotify');
       const rows = await evaluate(live, `Array.from(document.querySelectorAll('button .encore-inverted-light-set,button .encore-bright-accent-set')).slice(0,12).map(el=>{const s=getComputedStyle(el),label=el.querySelector('svg')||el;return{text:(el.innerText||el.closest('button').getAttribute('aria-label')||'').slice(0,80),color:getComputedStyle(label).color,paint:getComputedStyle(label).webkitTextFillColor,bg:s.backgroundColor,textBase:s.getPropertyValue('--text-base')}})`);
