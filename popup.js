@@ -145,6 +145,13 @@ const REPUTATION_PROVIDERS = [
 let config = Object.assign({}, DEFAULTS);
 // Diff against this snapshot so popup saves do not overwrite another surface's changes.
 let savedConfigSnapshot = configClone(DEFAULTS);
+/* Until the stored settings have been read, every switch on the page shows the HTML's unticked
+   state. A save reads every switch, so one click in that window wrote every protection that is
+   on by default as off (measured in a real profile: 90 switches lost to one click). Nothing is
+   read from the page before the settings arrive; a click made sooner is kept and applied then. */
+let popupConfigLoaded = false;
+const pendingPopupChanges = new Map();
+let pendingPopupAfterSave = null;
 let eyeShieldHost = '';
 let eyeShieldSaveTimer = 0;
 let eyeShieldEditGeneration = 0;
@@ -589,6 +596,7 @@ function setJsShield(scope, block) {
 }
 
 function readFromUI() {
+  if (!popupConfigLoaded) return false;
   const previousProviderKeys = {
     downloadSafeBrowsingKey: config.downloadSafeBrowsingKey || '',
     downloadVirusTotalKey: config.downloadVirusTotalKey || '',
@@ -744,6 +752,8 @@ function publicConfig(cfg, tabUrl) {
 
 function load() {
   chrome.storage.local.get('wardenone_config', (res) => {
+    /* A failed read is not an empty config; try again rather than paint the defaults as yours. */
+    if (chrome.runtime.lastError) { setTimeout(load, 300); return; }
     const saved = (res && res.wardenone_config) || null;
     if (saved) config = Object.assign({}, DEFAULTS, saved);
     // Snapshot what storage actually holds BEFORE the migration below, so the
@@ -756,7 +766,15 @@ function load() {
       config.googleSearchResultCleanup = false;
     }
     config.showDownloadBar = true;
+    popupConfigLoaded = true;
+    pendingPopupChanges.forEach((value, key) => { config[key] = value; });
     applyToUI();
+    if (pendingPopupChanges.size) {
+      pendingPopupChanges.clear();
+      const after = pendingPopupAfterSave;
+      pendingPopupAfterSave = null;
+      saveConfig('Saved', after || undefined);
+    }
     reconcileForgetHistoryPermission();
     updateAllowlistBtn();
     // Painted after applyToUI so the per-site list can read each protection's
@@ -775,6 +793,12 @@ function load() {
 }
 
 function save(afterSave) {
+  if (!popupConfigLoaded) {
+    /* Values a control set directly on the config are kept too; nothing is read from the page. */
+    popupChangedKeys().forEach((key) => { if (!pendingPopupChanges.has(key)) pendingPopupChanges.set(key, configClone({ v: config[key] }).v); });
+    if (afterSave) pendingPopupAfterSave = afterSave;
+    return;
+  }
   readFromUI();
   applyToUI();
   saveConfig('Saved', afterSave);
@@ -861,6 +885,7 @@ function exportableSettings(cfg) {
 }
 
 function exportSettings() {
+  if (!popupConfigLoaded) { settingsIoStatus('Your settings are still loading. Try again in a moment.', true); return; }
   readFromUI();
   const settings = exportableSettings(config);
   const payload = { format: SETTINGS_FILE_MARKER, version: 1, settings };
@@ -1148,6 +1173,7 @@ function injectEyeShieldActiveTab() {
 }
 
 function turnEverythingOn() {
+  if (!popupConfigLoaded) return;
   const enabled = $('enabled');
   if (enabled) enabled.checked = true;
   const silent = document.querySelector('input[data-key="silentMode"]');
@@ -2958,6 +2984,7 @@ $('enabled').addEventListener('change', () => {
   updateMasterState();
   reflectMasterDisable();
   const masterOn = $('enabled').checked;
+  if (!popupConfigLoaded) pendingPopupChanges.set('enabled', masterOn);
   // The master switch disables the network blocker + new-page protection + new
   // notifications after the config is saved. Already-open pages can have MAIN-world
   // hooks installed, so turning the master switch off reloads all normal pages to
@@ -3011,6 +3038,7 @@ document.querySelectorAll('input[data-key]').forEach((el) => {
   el.addEventListener('change', () => {
     const key = el.getAttribute('data-key');
     syncConfigCheckboxes(key, el.checked);
+    if (!popupConfigLoaded) { pendingPopupChanges.set(key, el.checked); return; }
     if (key === 'scriptletEngine' && el.checked) {
       activeTabHost(host => {
         if (/(^|\.)youtube(-nocookie)?\.com$/i.test(host || '')) enableYoutubeFromPopup();

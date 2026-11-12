@@ -830,6 +830,39 @@ async function main() {
     ok("a signed master pause still stops an armed engine", !adsGone(ctx.JSON.parse(JSON.stringify(coldSample()))));
   }
 
+  console.log("24) a page that read its player data before any settings is reloaded once:");
+  {
+    /* Measured on a tab the browser restored at start-up: no arm (registered scripts were not
+       loaded yet), player data read at ~0.9 s, settings at ~2.3 s. AdShield stayed off for the
+       whole visit. */
+    const late = (opts = {}) => {
+      const ctx = newCtx(JSON.stringify(coldSample()));
+      let reloads = 0;
+      ctx.location.reload = () => { reloads++; };
+      ctx.performance = { now: () => opts.age || 2300, getEntriesByType: () => [{ type: opts.navType || "back_forward" }] };
+      ctx.navigator = { userActivation: { hasBeenActive: !!opts.touched } };
+      runModule(ctx, null);
+      /* The page reads its player data, which is what settles how this visit is handled. */
+      if (!opts.settingsFirst) { ctx.window.ytInitialPlayerResponse = coldSample(); void ctx.window.ytInitialPlayerResponse; }
+      const bridge = auth.handshake(ctx.__dispatchDocument, ctx.__postWindowMessage);
+      bridge.sendConfig(opts.config || { enabled: true, scriptletEngine: true });
+      if (opts.settingsFirst) ctx.window.ytInitialPlayerResponse = coldSample();
+      return { ctx, bridge, reloads: () => reloads };
+    };
+    const restored = late();
+    ok("the page left as YouTube served it is not half handled", !adsGone(restored.ctx.window.ytInitialPlayerResponse));
+    ok("and is reloaded once settings say AdShield is on", restored.reloads() === 1);
+    restored.bridge.sendConfig({ enabled: true, scriptletEngine: true });
+    ok("a second settings message does not reload it again", restored.reloads() === 1);
+    ok("a page that is itself a reload is left alone, so it cannot loop", late({ navType: "reload" }).reloads() === 0);
+    ok("a page the reader has already used is not interrupted", late({ touched: true }).reloads() === 0);
+    ok("nor one that has been open a while", late({ age: 45000 }).reloads() === 0);
+    ok("AdShield switched off means there is nothing to recover", late({ config: { enabled: true, scriptletEngine: false } }).reloads() === 0);
+    ok("a paused WardenOne is not reloaded either", late({ config: { enabled: false, scriptletEngine: true } }).reloads() === 0);
+    const onTime = late({ settingsFirst: true });
+    ok("settings that arrive in time need no reload", onTime.reloads() === 0 && adsGone(onTime.ctx.window.ytInitialPlayerResponse));
+  }
+
   console.log("\n" + pass + " passed, " + fail + " failed");
   process.exit(fail ? 1 : 0);
 }

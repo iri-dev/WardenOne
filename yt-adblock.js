@@ -261,9 +261,28 @@
           woYoutubeConfigured = true;
         }
         setMasterEnabled(typeof overrides.enabled === "boolean" ? overrides.enabled : woMasterEnabled);
+        recoverFromLatePassthrough();
       }
     });
   } catch (_) {}
+
+  /* A tab the browser restores at start-up loads before its registered scripts exist, so the arm
+     below never reaches it, and the worker's settings land after YouTube has read its player data.
+     The page is then left as YouTube served it, ads included, until it is reloaded. Reload it once:
+     by then the arm is there. Only a fresh page nobody has touched, and never one that is itself a
+     reload, so this cannot loop or interrupt anything. */
+  var woYoutubeRecoveryTried = false;
+  function recoverFromLatePassthrough() {
+    if (woYoutubeRecoveryTried || !woYoutubePassthroughStarted || !featureEnabled()) return;
+    woYoutubeRecoveryTried = true;
+    try {
+      var nav = performance.getEntriesByType("navigation")[0];
+      if (!nav || nav.type === "reload" || performance.now() > 30000) return;
+      if (navigator.userActivation && navigator.userActivation.hasBeenActive) return;
+      if (document.prerendering) return;
+      location.reload();
+    } catch (_) {}
+  }
 
   /* yt-adblock-arm.js arrives with the browser's own injection, not a worker reply, so a busy or
      sleeping worker can no longer let the page read its player data first and latch AdShield off

@@ -96,7 +96,12 @@ class FakeMutationObserver {
    data-href, which loads once it is given an href. Loads are settled by hand so the test decides
    when a stylesheet arrives. */
 let themeSheets = [];
+/* Stylesheets GitHub's own head still has on the way while the page parses. */
+let parsingSheets = [];
 let placeholders = [];
+/* Elements carrying Discord's theme classes, for its selector. */
+let discordEls = [];
+const DISCORD_SEL = '[class*="theme-light"],[class*="theme-lighter"],[class*="theme-dark"],[class*="theme-darker"]';
 function makePlaceholder(name) {
   const attrs = new Map([['data-color-theme', name], ['data-href', 'https://github.githubassets.com/assets/' + name + '-0123abcd.css']]);
   const ph = {
@@ -123,8 +128,10 @@ function linkQuery(sel) {
   }
   if (sel === 'link[href]') {
     return themeSheets.map((name) => ({ getAttribute: (a) => (a === 'href' ? 'https://github.githubassets.com/assets/' + name + '-89abcdef.css' : null), sheet: {} }))
+      .concat(parsingSheets.map((name) => ({ getAttribute: (a) => (a === 'href' ? 'https://github.githubassets.com/assets/' + name + '-4567cdef.css' : null), hasAttribute: () => false, sheet: null })))
       .concat(placeholders.filter((p) => p.getAttribute('href')));
   }
+  if (sel === DISCORD_SEL) return discordEls.slice();
   return [];
 }
 const noop = () => {};
@@ -163,6 +170,8 @@ vm.createContext(ctx);
 /* The core keeps its functions inside one closure. Expose the ones under test just before
    the closure ends -- the code that runs is the shipped code, unchanged. */
 const EXPOSE = ['themeHeader', 'themeFooter', 'managedThemeHostName', 'applyGitHubNativeTheme',
+  'applyDiscordTheme', 'restoreDiscordTheme', 'applyYouTubeScope', 'restoreYouTubeScope',
+  'applyTwitchNativeTheme', 'restoreTwitchNativeTheme', 'applyRedditNativeTheme', 'restoreRedditNativeTheme',
   'restoreGitHubNativeTheme', 'applyChatGPTNativeTheme', 'restoreChatGPTNativeTheme',
   'applyYouTubeMusicNativeTheme', 'restoreYouTubeMusicNativeTheme', 'applyNativeTheme', 'restoreNativeThemes',
   'buildVarRoles', 'buildThemeCSS', 'managedRemapsOwnText', 'needsManagedObserverHost',
@@ -303,6 +312,19 @@ for (const mode of ['dark', 'ultra', 'light']) {
   }
 }
 
+/* YouTube's own light theme draws Join as a light grey pill with dark text; only Subscribe is black. */
+for (const host of ['www.youtube.com']) {
+  const sheet = rules(themeFor(host, 'light').css);
+  const joinRule = sheet.find((rule) => rule.sel.includes('#sponsor-button button') && /background:/.test(rule.body));
+  const subRule = sheet.find((rule) => rule.sel.includes('ytd-subscribe-button-renderer button') && !rule.sel.includes('[subscribed]') && /background:/.test(rule.body));
+  check('YouTube light: Join is a light pill with dark text', !!joinRule && /background:rgba\(0,0,0,0\.05\) !important/.test(joinRule.body)
+    && /color:#0f0f0f !important/.test(joinRule.body), joinRule && joinRule.body.slice(0, 160));
+  check('YouTube light: Subscribe stays YouTube\'s black pill', !!subRule && /background:#0f0f0f !important/.test(subRule.body) && /color:#ffffff !important/.test(subRule.body),
+    subRule && subRule.body.slice(0, 160));
+  const joinText = sheet.find((rule) => rule.sel.includes('#sponsor-button #text') && /color:/.test(rule.body));
+  check('YouTube light: Join\'s label is dark too', !!joinText && /color:#0f0f0f !important/.test(joinText.body), joinText && joinText.body.slice(0, 120));
+}
+
 /* The switch itself, driven against a page the way GitHub serves one. */
 console.log('GitHub theme switch');
 function ghPage(attrs, loaded, parked) {
@@ -354,6 +376,179 @@ const PARKED = ['light', 'dark', 'dark_dimmed', 'dark_high_contrast'];
   check('with both sheets present the switch is immediate', h.getAttribute('data-color-mode') === 'dark');
   check('and nothing is fetched', placeholders.every((p) => !p.requested));
   core.restoreGitHubNativeTheme();
+}
+{
+  /* A fresh page still parsing: GitHub's own light stylesheet is in its head but not loaded yet.
+     It holds the first paint, so the switch happens now. Waiting for it painted a dark frame. */
+  const h = ghPage({ 'data-color-mode': 'auto', 'data-light-theme': 'light', 'data-dark-theme': 'dark' }, [], PARKED);
+  parsingSheets = ['light'];
+  ctx.document.readyState = 'loading';
+  core.applyGitHubNativeTheme('light');
+  check('while GitHub parses, its own light sheet on the way is enough to switch', h.getAttribute('data-color-mode') === 'light'
+    && placeholders.every((p) => !p.requested));
+  core.restoreGitHubNativeTheme();
+  ctx.document.readyState = 'complete';
+  ghPage({ 'data-color-mode': 'auto', 'data-light-theme': 'light', 'data-dark-theme': 'dark' }, [], PARKED);
+  core.applyGitHubNativeTheme('light');
+  check('once parsed, an unloaded sheet is not trusted and the switch waits for it',
+    ctx.document.documentElement.getAttribute('data-color-mode') === 'auto');
+  core.restoreGitHubNativeTheme();
+  parsingSheets = [];
+}
+
+{
+  /* A reader on one fixed GitHub theme: the wanted sheet is only a placeholder. Asked for while
+     the head is still arriving it holds the first paint, so the switch is made at once. Waiting
+     for it to load showed the page in the theme it was leaving. */
+  const h = ghPage({ 'data-color-mode': 'dark', 'data-light-theme': 'light', 'data-dark-theme': 'dark' }, ['dark'], PARKED);
+  ctx.document.readyState = 'loading';
+  ctx.document.body = null;
+  core.applyGitHubNativeTheme('light');
+  const light = placeholders.find((p) => p.name === 'light');
+  check('a placeholder asked for during the head is marked to hold the first paint', light.requested === 1 && light.getAttribute('blocking') === 'render');
+  check('and the page is switched without waiting for it', h.getAttribute('data-color-mode') === 'light');
+  settle('light', false);
+  check('if that sheet fails, GitHub gets its own attributes back', h.getAttribute('data-color-mode') === 'dark', h.getAttribute('data-color-mode'));
+  core.restoreGitHubNativeTheme();
+  ctx.document.readyState = 'complete';
+  const late = ghPage({ 'data-color-mode': 'dark', 'data-light-theme': 'light', 'data-dark-theme': 'dark' }, ['dark'], PARKED);
+  core.applyGitHubNativeTheme('light');
+  check('once the page has parsed, the switch waits for the sheet as before', late.getAttribute('data-color-mode') === 'dark'
+    && placeholders.find((p) => p.name === 'light').getAttribute('blocking') !== 'render');
+  settle('light', true);
+  check('and is made when it arrives', late.getAttribute('data-color-mode') === 'light');
+  core.restoreGitHubNativeTheme();
+}
+
+console.log('YouTube colour scope');
+{
+  /* YouTube declares its palette for [light] and [dark] scopes. The page stays as it is and
+     <body> is marked with the scope for the chosen mode. */
+  observers = [];
+  ctx.location.hostname = 'www.youtube.com';
+  const h = makeHtml({ dark: '' });
+  const b = makeHtml({});
+  ctx.document.documentElement = h;
+  ctx.document.body = b;
+  core.applyYouTubeScope('light');
+  check('a dark YouTube page under Light gets the light scope on its body', b.hasAttribute('light') && !b.hasAttribute('dark')
+    && h.hasAttribute('dark'));
+  b.removeAttribute('light');
+  flushObservers();
+  check('and it is put back if the page drops it', b.hasAttribute('light'));
+  core.applyYouTubeScope('dark');
+  check('the same page under Dark needs no scope', !b.hasAttribute('light') && !b.hasAttribute('dark'));
+  h.removeAttribute('dark');
+  flushObservers();
+  check('a page that turns light while Dark is chosen gets the dark scope', b.hasAttribute('dark'));
+  core.restoreYouTubeScope();
+  check('Normal removes the scope', !b.hasAttribute('dark') && !b.hasAttribute('light') && !b.hasAttribute('data-wo-yt-scope'));
+  ctx.document.body = null;
+  ctx.location.hostname = 'example.com';
+}
+
+console.log('Twitch own theme');
+{
+  observers = [];
+  ctx.location.hostname = 'www.twitch.tv';
+  ctx.__wardenOneTwitchThemeOrig = null;
+  const h = makeHtml({}, ['tw-root--hover', 'tw-root--theme-dark']);
+  const b = makeHtml({}, ['dark-theme']);
+  ctx.document.documentElement = h;
+  ctx.document.body = b;
+  core.applyTwitchNativeTheme('light');
+  check('Light swaps Twitch to its own light theme class', h.classList.contains('tw-root--theme-light') && !h.classList.contains('tw-root--theme-dark')
+    && b.classList.contains('light-theme') && !b.classList.contains('dark-theme') && h.classList.contains('tw-root--hover'));
+  h.classList.remove('tw-root--theme-light');
+  h.classList.add('tw-root--theme-dark');
+  const rounds = flushObservers();
+  check('and holds it when Twitch writes its own back', h.classList.contains('tw-root--theme-light') && rounds < 10);
+  core.restoreTwitchNativeTheme();
+  check('Normal gives Twitch its own theme back', h.classList.contains('tw-root--theme-dark') && !h.classList.contains('tw-root--theme-light')
+    && b.classList.contains('dark-theme'));
+  const css = themeFor('www.twitch.tv', 'light', {}).css;
+  const sheet = rules(css);
+  const tokens = sheet.find((rule) => rule.sel === ':root' && rule.body.includes('--color-background-base:var(--color-white) !important'));
+  check('Light sets Twitch\'s own light tokens, on the root only', !!tokens && tokens.body.includes('--color-text-base:var(--color-hinted-grey-1) !important')
+    && (tokens.body.match(/--color-/g) || []).length > 300);
+  check('and never on the parts Twitch keeps dark, such as the player', !/tw-root--theme-dark/.test(css));
+  check('nor does it recolour buttons or text by hand', !/#root (?:button|:where\(h1)/.test(css));
+  const dark = themeFor('www.twitch.tv', 'dark', {}).css;
+  check('Dark carries Twitch\'s own dark tokens for a page that started light', dark.includes('--color-background-base:var(--color-hinted-grey-2) !important'));
+  ctx.document.body = null;
+  ctx.location.hostname = 'example.com';
+}
+
+console.log('Reddit own theme');
+{
+  observers = [];
+  ctx.location.hostname = 'www.reddit.com';
+  ctx.__wardenOneRedditThemeOrig = null;
+  const h = makeHtml({}, ['theme-beta', 'theme-dark']);
+  ctx.document.documentElement = h;
+  core.applyRedditNativeTheme('light');
+  check('Light names Reddit\'s own light theme', h.classList.contains('theme-light') && !h.classList.contains('theme-dark') && h.classList.contains('theme-beta'));
+  const light = core.themeHeader('light') + core.themeFooter('light');
+  check('and adds no colours of its own, canvas included', !/--color-neutral|--shreddit|html,body\{background-color/.test(light), light.slice(0, 200));
+  check('Ultra still adds its black canvas', /--color-neutral-background:/.test(core.themeFooter('ultra')));
+  core.restoreRedditNativeTheme();
+  check('Normal gives Reddit its own theme back', h.classList.contains('theme-dark') && !h.classList.contains('theme-light'));
+  const follows = makeHtml({}, ['theme-beta']);
+  ctx.document.documentElement = follows;
+  ctx.__wardenOneRedditThemeOrig = null;
+  core.applyRedditNativeTheme('dark');
+  check('a page following the system is named dark under Dark', follows.classList.contains('theme-dark'));
+  core.restoreRedditNativeTheme();
+  check('and goes back to following the system', !follows.classList.contains('theme-dark') && !follows.classList.contains('theme-light'));
+  const old = makeHtml({}, []);
+  ctx.document.documentElement = old;
+  core.applyRedditNativeTheme('light');
+  check('old Reddit, with no theme classes, is left to the remap', old.classes().length === 0 && /--color-neutral-background:/.test(core.themeFooter('light')));
+  core.restoreRedditNativeTheme();
+  ctx.location.hostname = 'example.com';
+}
+
+/* Measured live: a page that writes its theme back on every change froze the tab blank against the
+   same-callback switch. Every site switch must go through the burst guard, which falls back to a timer. */
+check('every site theme switch is guarded against a page that keeps writing its theme back',
+  /function themeWriteGuard\(apply\)[\s\S]{0,500}if \(\+\+writes <= 40\) \{ apply\(\); return; \}[\s\S]{0,200}woTimeout\(/.test(CORE)
+    && /themeWriteGuard\(\(\) => \{ discordRescan\(\); \}\)/.test(CORE) && /if \(\+\+discordBurst > 40\) \{ discordGuarded\(\); return; \}/.test(CORE)
+    && /themeWriteGuard\(githubAssertTheme\)/.test(CORE) && /themeWriteGuard\(ytScopeAssert\)/.test(CORE)
+    && /themeWriteGuard\(redditAssertTheme\)/.test(CORE) && /themeWriteGuard\(\(\) => \{ twitchAssertTheme\(\); \}\)/.test(CORE));
+check('a theme switch holds the page\'s own colour transitions off until it has drawn',
+  /function holdTransitionsForSwitch\(\)[\s\S]{0,600}transition:none !important/.test(CORE)
+    && /if \(lastAppliedMode && mode !== lastAppliedMode\) holdTransitionsForSwitch\(\);/.test(CORE)
+    && /holdTransitionsForSwitch\(\);\s*if \(h\.getAttribute\('data-color-mode'\) !== githubWant\)/.test(CORE));
+
+console.log('Discord theme switch');
+{
+  /* Discord mounts panels with its own dark classes as you move around. They are switched in the
+     watcher's own callback, before a paint; a timer there showed each one dark for ~55 ms. */
+  observers = [];
+  ctx.location.hostname = 'discord.com';
+  const h = makeHtml({}, ['theme-dark', 'theme-darker', 'images-dark']);
+  ctx.document.documentElement = h;
+  discordEls = [h];
+  core.applyDiscordTheme('light');
+  check('the page switches to Discord light', h.classList.contains('theme-light') && !h.classList.contains('theme-dark'));
+  flushObservers();
+  const panel = makeHtml({}, ['theme-dark', 'theme-darker', 'images-dark']);
+  const wrapper = makeHtml({}, []);
+  wrapper.firstElementChild = panel;
+  wrapper.querySelectorAll = (sel) => (sel === DISCORD_SEL ? [panel] : []);
+  discordEls = [h, panel];
+  notifyAdded(wrapper);
+  flushObservers();
+  check('a dark panel Discord mounts is switched before the next paint, with no timer',
+    panel.classList.contains('theme-light') && panel.classList.contains('images-light') && !panel.classList.contains('theme-dark'),
+    panel.classes().join(' '));
+  panel.classList.add('theme-dark');
+  const rounds = flushObservers();
+  check('and when Discord puts dark back on it, that is undone at once', !panel.classList.contains('theme-dark') && rounds < 10);
+  core.restoreDiscordTheme();
+  discordEls = [];
+  observers = [];
+  ctx.location.hostname = 'example.com';
 }
 {
   /* The reader's own dark variant is loaded for them and kept. */

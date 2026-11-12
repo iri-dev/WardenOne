@@ -135,6 +135,23 @@ async function run() {
     });
     const reopenPosition = await value("JSON.parse(localStorage.getItem('wardenone_popup_scroll_memory'))");
     await cdp.send('Target.closeTarget', { targetId: page.targetId });
+    {
+      /* Measured in a real profile: one click on the master switch before the stored settings had
+         been read saved every unticked switch on the page, and 90 protections went off. */
+      const storedConfig = "new Promise(r => chrome.storage.local.get(['wardenone_config'], d => r(d.wardenone_config || {})))";
+      await openPopup(2500);
+      const before = await value(storedConfig);
+      await value("document.getElementById('enabled').click(); true");
+      await until(`new Promise(r => chrome.storage.local.get(['wardenone_config'], d => r(d.wardenone_config && d.wardenone_config.enabled === false)))`,
+        'the early master click to be saved once the settings arrive', 15000);
+      const after = await value(storedConfig);
+      const lost = Object.keys(before).filter((key) => key !== 'enabled' && typeof before[key] === 'boolean' && before[key] !== after[key]);
+      assert.deepEqual(lost, [], 'a click before the settings loaded must change only what was clicked: ' + lost.join(', '));
+      await value("document.getElementById('enabled').click(); true");
+      await until(`new Promise(r => chrome.storage.local.get(['wardenone_config'], d => r(d.wardenone_config && d.wardenone_config.enabled === true)))`, 'master back on');
+      await cdp.send('Target.closeTarget', { targetId: page.targetId });
+      console.log('[ok] a click before the stored settings load changes only that switch');
+    }
     await openPopup(1200);
     try { await until('window.__woPopupFrames.some(frame => frame.visible)', 'first visible popup frame'); }
     catch (error) {

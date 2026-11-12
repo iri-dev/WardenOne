@@ -29,8 +29,23 @@ const cases = [
   { name: 'returning-preferences', settings: 'on', repeat: 'clone', expected: ['settings', 'save', 'settings', 'save', 'settings', 'save'] },
   { name: 'returning-preferences-reused', settings: 'on', repeat: 'style', reuseSettings: true, expected: ['settings', 'save', 'settings', 'save', 'settings', 'save'] },
   { name: 'stuck-banner', label: 'Reject all', stuck: true, expected: ['reject'] },
+  /* Complianz: Deny hides the banner and shows a small fixed "Manage consent" tab that reopens it.
+     Opening that tab after the choice strobed the page between the two about once a second. */
+  { name: 'complianz-manage-tab', complianz: true, expected: ['reject'] },
 ];
 function fixture(test) {
+  if (test.complianz) {
+    const fixed = 'position:fixed;right:20px;bottom:20px;background:white;color:black;z-index:99999;';
+    return '<!doctype html><meta charset="utf-8"><title>Consent stress: ' + test.name + '</title><style>.cmplz-hidden,.cmplz-manage-consent{display:none}.cmplz-manage-consent.cmplz-show{display:block}</style><header><a href="#policy">Cookie Policy</a></header><input id="editor" value="works"><main>' + 'A readable article. '.repeat(120) + '</main>'
+      + '<div id="cmplz-cookiebanner-container"><div class="cmplz-cookiebanner" id="banner" role="dialog" style="' + fixed + 'width:520px;padding:20px">'
+      + '<p>To provide the best experiences, we use technologies like cookies to store and access device information. Consenting to these technologies will allow us to process data such as browsing behaviour.</p>'
+      + '<button id="accept">Accept</button><button id="deny">Deny</button><button id="prefs">View preferences</button></div></div>'
+      + '<div id="cmplz-manage-consent"><button id="manage" class="cmplz-btn cmplz-manage-consent manage-consent-1" aria-haspopup="dialog" aria-controls="banner" style="' + fixed + 'padding:8px">Manage consent</button></div>'
+      + '<script>document.body.className="cmplz-functional cmplz-uk cmplz-optin";window.fixtureActions=[];const b=document.getElementById("banner"),m=document.getElementById("manage");'
+      + 'document.getElementById("deny").onclick=()=>{fixtureActions.push("reject");document.cookie="cmplz_banner-status=dismissed";b.classList.add("cmplz-hidden");setTimeout(()=>m.classList.add("cmplz-show"),2500);};'
+      + 'document.getElementById("accept").onclick=()=>fixtureActions.push("accept");document.getElementById("prefs").onclick=()=>fixtureActions.push("settings");'
+      + 'm.onclick=()=>{fixtureActions.push("settings");m.classList.remove("cmplz-show");b.classList.remove("cmplz-hidden");};window.fixtureReady=true;</script>';
+  }
   const bannerStyle = 'position:fixed;inset:40px auto auto 40px;width:650px;min-height:180px;background:white;color:black;z-index:99999;padding:20px';
   const control = test.link ? '<a href="https://unrelated.invalid/" target="_blank" id="choice">Reject all</a>'
     : '<button id="choice" ' + (test.attrs || '') + '>' + test.label + '</button>';
@@ -103,7 +118,7 @@ async function run() {
       const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
       await cdp.send('Page.enable', {}, sessionId); await cdp.send('Runtime.enable', {}, sessionId);
       await until(() => evaluate(cdp, sessionId, 'window.fixtureReady===true'), 'fixture ' + test.name);
-      await sleep(test.repeat ? 5000 : test.settings ? 4000 : 2000);
+      await sleep(test.complianz ? 8000 : test.repeat ? 5000 : test.settings ? 4000 : 2000);
       const state = await evaluate(cdp, sessionId, '({actions:window.fixtureActions,cookie:document.cookie,optionalOn:window.fixtureOptionalOn,editor:document.getElementById("editor").value})');
       const passed = JSON.stringify(state.actions) === JSON.stringify(test.expected) && state.editor === 'works' && !(state.actions.includes('save') && state.optionalOn);
       report.cases.push({ name: test.name, expected: test.expected, ...state, passed });

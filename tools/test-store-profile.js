@@ -193,6 +193,9 @@ function workerRealm(store, extra) {
   parts.push(grabFn(workerText, 'eyeShieldRegistrationScope'));
   parts.push(grabFn(workerText, 'eyeShieldUsesBootstrap'));
   parts.push(grabFn(workerText, 'eyeShieldActiveProfileHosts'));
+  parts.push("const EYESHIELD_TOP_SCRIPT_ID = 'wo-eyeshield-top-dynamic';");
+  parts.push(grabFn(workerText, 'eyeShieldTopRegistration'));
+  parts.push(grabFn(workerText, 'syncEyeShieldTopRegistration'));
   parts.push("let eyeShieldBootstrapCatchupKey = '';");
   parts.push(grabFn(workerText, 'eraseEyeShieldSiteMarkerFromOpenTabs'));
   parts.push(grabFn(workerText, 'reconcileEyeShieldInjection'));

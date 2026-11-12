@@ -50,10 +50,7 @@
       "urls": [
         "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_11_Mobile/filter.txt",
         "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_2_Base/filter.txt",
-        "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt",
-        "https://filters.adtidy.org/extension/ublock/filters/2.txt",
-        "https://filters.adtidy.org/extension/ublock/filters/3.txt",
-        "https://filters.adtidy.org/extension/ublock/filters/11.txt"
+        "https://raw.githubusercontent.com/AdguardTeam/FiltersRegistry/master/filters/filter_3_Spyware/filter.txt"
       ],
       "license": {
         "type": "published-license",
@@ -2718,6 +2715,21 @@
     }
   ],
   "retired": [
+    {
+      "url": "https://filters.adtidy.org/extension/ublock/filters/2.txt",
+      "status": "source-no-longer-used",
+      "reason": "The packaged cosmetic rules are built from the same AdGuard Base list in AdGuard's FiltersRegistry, already listed under adguard."
+    },
+    {
+      "url": "https://filters.adtidy.org/extension/ublock/filters/3.txt",
+      "status": "source-no-longer-used",
+      "reason": "The packaged cosmetic rules are built from the same AdGuard Tracking Protection list in AdGuard's FiltersRegistry, already listed under adguard."
+    },
+    {
+      "url": "https://filters.adtidy.org/extension/ublock/filters/11.txt",
+      "status": "source-no-longer-used",
+      "reason": "The packaged cosmetic rules are built from the same AdGuard Mobile Ads list in AdGuard's FiltersRegistry, already listed under adguard."
+    },
     {
       "url": "https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt",
       "status": "source-no-longer-used",

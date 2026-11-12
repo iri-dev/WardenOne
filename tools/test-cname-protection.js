@@ -25,7 +25,7 @@ async function explicitChoiceTests() {
   for (const initial of [false, true]) {
     const inputs = [{ key: 'blockCnameTrackers', checked: initial }, { key: 'blockFirstPartyTrackers', checked: false }];
     for (const input of inputs) input.getAttribute = () => input.key;
-    const context = vm.createContext({ document: { querySelector: () => null, querySelectorAll: () => inputs }, $: () => ({}),
+    const context = vm.createContext({ popupConfigLoaded: true, document: { querySelector: () => null, querySelectorAll: () => inputs }, $: () => ({}),
       readFromUI() {}, applyToUI() {}, saveConfig() {}, reloadActiveHttpTab() {}, showLeftOffNote() {} });
     vm.runInContext(manual + '\n' + shippedFunction('popup.js', 'turnEverythingOn') + '\nturnEverythingOn();', context);
     assert.equal(inputs[0].checked, initial, 'Enable everything preserves the explicit CNAME choice');

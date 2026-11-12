@@ -10299,7 +10299,37 @@ async function fetchUrlHausHost(host, apiKey) {
   }
 }
 
+/* A URLhaus host lookup answers with every file anyone has put on that host. On a host shared
+   by many publishers that says nothing about this file: it graded WardenOne's own GitHub release
+   as malware because another project's release was listed. There, only the exact address counts. */
+const URLHAUS_SHARED_FILE_HOSTS = new Set([
+  'github.com', 'githubusercontent.com', 'gitlab.com', 'bitbucket.org', 'sourceforge.net', 'codeberg.org',
+  'google.com', 'googleusercontent.com', 'googleapis.com', 'dropbox.com', 'dropboxusercontent.com',
+  'discord.com', 'discordapp.com', 'discordapp.net', 'live.com', 'onedrive.com', 'sharepoint.com', '1drv.ms',
+  'mediafire.com', 'mega.nz', 'mega.io', 'box.com', 'wetransfer.com', 'archive.org', 'huggingface.co',
+  'pastebin.com', 'telegram.org', 'npmjs.org', 'pypi.org', 'pythonhosted.org',
+  'amazonaws.com', 'cloudfront.net', 'windows.net', 'backblazeb2.com', 'digitaloceanspaces.com', 'r2.dev',
+]);
+function urlHausSharedFileHost(host) {
+  const labels = String(host || '').toLowerCase().replace(/\.$/, '').split('.');
+  for (let i = 0; i < labels.length - 1; i++) {
+    const name = labels.slice(i).join('.');
+    if (URLHAUS_SHARED_FILE_HOSTS.has(name)) return true;
+    try { if (typeof SHARED_HOSTING_SUFFIXES !== 'undefined' && SHARED_HOSTING_SUFFIXES.has(name)) return true; } catch (_) {}
+  }
+  return false;
+}
+/* A cached host answer from before this rule is not a verdict on a shared host either. */
+function urlHausWithoutSharedHostVerdict(result, url) {
+  if (!result || !result.hostOnly || !(result.hit || result.warning)) return result;
+  let host = '';
+  try { host = new URL(url).hostname; } catch (_) { return result; }
+  if (!urlHausSharedFileHost(host)) return result;
+  return Object.assign({}, result, { hit: false, warning: false, threats: [], sharedHost: true });
+}
+
 function shouldUseUrlHausHostFallback(url, context) {
+  try { if (urlHausSharedFileHost(new URL(url).hostname)) return false; } catch (_) {}
   const ctx = String(context || '').toLowerCase();
   if (ctx === 'download' || ctx === 'link' || ctx === 'form' || ctx === 'paste') return true;
   return shouldUsePhishTankForContext(url, context);
@@ -10328,7 +10358,8 @@ async function urlHausLookupUrl(url, opts) {
   const key = await reputationCacheKey(normalized);
   const cached = cache[key];
   if (cached && cached.expiresAt > now) {
-    return Object.assign({ provider: 'URLhaus', ok: true, enabled: true, cached: true, url: normalized }, cached.result || {});
+    return urlHausWithoutSharedHostVerdict(
+      Object.assign({ provider: 'URLhaus', ok: true, enabled: true, cached: true, url: normalized }, cached.result || {}), normalized);
   }
 
   if (urlHausInflight[key]) return urlHausInflight[key];
@@ -13023,6 +13054,48 @@ const EYESHIELD_SCRIPT_ID = 'wo-eyeshield-dynamic';
 /* Hand-tuned site themes run only in top frames, via registration without profiles
    or with the core's on-demand injection when profiles exist (COST-03). */
 const EYESHIELD_SITES_SCRIPT_ID = 'wo-eyeshield-sites-dynamic';
+/* With any per-site setting, every frame goes through the bootstrap, which waits on this worker
+   before EyeShield exists. On a busy worker the page painted its own colours first, on every site,
+   on every load and every Back. Top pages of sites without their own setting are registered
+   directly as well, with the mode hint, so they theme at document_start again. The bootstrap still
+   runs there too; its injection then finds EyeShield installed and only refreshes it. */
+const EYESHIELD_TOP_SCRIPT_ID = 'wo-eyeshield-top-dynamic';
+function eyeShieldTopRegistration(cfg) {
+  if (!eyeShieldUsesBootstrap(cfg)) return null;
+  const globalConfig = Object.assign({}, cfg, { eyeShieldSites: {} });
+  if (!eyeShieldThemingActive(globalConfig)) return null;
+  const sites = WOEyeShieldProfiles.cleanSites(cfg && cfg.eyeShieldSites);
+  const excludeMatches = Object.keys(sites).flatMap((host) => ['*://' + host + '/*', '*://www.' + host + '/*']);
+  return {
+    id: EYESHIELD_TOP_SCRIPT_ID,
+    matches: ['<all_urls>'],
+    excludeMatches,
+    js: eyeShieldScriptFiles(globalConfig).concat('eyeshield-sites.js'),
+    runAt: 'document_start',
+    allFrames: false,
+    persistAcrossSessions: true,
+  };
+}
+/* Only ever called from inside reconcileEyeShieldInjection, so it shares that serialized lane. */
+async function syncEyeShieldTopRegistration(cfg) {
+  try {
+    const want = cfg ? eyeShieldTopRegistration(cfg) : null;
+    const current = ((await chrome.scripting.getRegisteredContentScripts({ ids: [EYESHIELD_TOP_SCRIPT_ID] })) || [])
+      .find((script) => script && script.id === EYESHIELD_TOP_SCRIPT_ID);
+    if (!want) {
+      if (current) await chrome.scripting.unregisterContentScripts({ ids: [EYESHIELD_TOP_SCRIPT_ID] });
+      return;
+    }
+    if (current) {
+      const same = (a, b) => JSON.stringify((a || []).map((f) => String(f).replace(/^\/+/, ''))) === JSON.stringify(b || []);
+      if (same(current.js, want.js) && same(current.matches, want.matches) && same(current.excludeMatches, want.excludeMatches)
+          && current.allFrames === false && current.runAt === 'document_start') return;
+      await chrome.scripting.updateContentScripts([{ id: want.id, js: want.js, matches: want.matches, excludeMatches: want.excludeMatches, allFrames: false }]);
+    } else {
+      await chrome.scripting.registerContentScripts([want]);
+    }
+  } catch (_) {}
+}
 let eyeShieldBootstrapCatchupKey = '';
 function eyeShieldThemingActive(cfg) {
   cfg = cfg || {};
@@ -13261,6 +13334,7 @@ async function reconcileEyeShieldInjection(cfgArg) {
   if (!chrome.scripting || !chrome.scripting.registerContentScripts) return;
   if (woFeatureOmitted('eyeShield')) {
     try { await chrome.scripting.unregisterContentScripts({ ids: [EYESHIELD_SCRIPT_ID, EYESHIELD_SITES_SCRIPT_ID] }); } catch (_) {}
+    await syncEyeShieldTopRegistration(null);
     return;
   }
   let cfg = cfgArg;
@@ -13284,6 +13358,7 @@ async function reconcileEyeShieldInjection(cfgArg) {
     sites = Array.isArray(reg) ? reg.find((script) => script.id === EYESHIELD_SITES_SCRIPT_ID) : null;
   } catch (_) {}
   try {
+    await syncEyeShieldTopRegistration(want ? cfg : null);
     if (!want) {
       eyeShieldBootstrapCatchupKey = '';
       const ids = [core && EYESHIELD_SCRIPT_ID, sites && EYESHIELD_SITES_SCRIPT_ID].filter(Boolean);

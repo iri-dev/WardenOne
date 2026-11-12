@@ -53,6 +53,40 @@ function run() {
       assert(/background-color:transparent/.test(rule.body), mode + ': the entity title keeps the header behind it');
     }
   }
+  /* Light only: the header band and row fades were dark, the white pills vanished on the white
+     page, and the header text and logo were solid black. */
+  {
+    const light = theme('light');
+    const band = 'main > div > div[style*="background-color"]:first-child{background-image:linear-gradient(rgba(255,255,255,';
+    const fade = 'section[data-shelf] > div[style*="--scrollAnimationRange"]::after{background-image:linear-gradient(-90deg,#ffffffd9';
+    const pill = '.encore-inverted-light-set{--background-base:#e3e6eb !important;';
+    const logo = 'svg[class*="-logo"] :where(path,use){color:#1db954 !important;fill:#1db954 !important;}';
+    for (const [label, rule] of [['the header band keeps a faint wash', band], ['row fades fade to the page', fade], ['white pills become a soft grey', pill], ['the logo is Spotify green', logo]]) {
+      assert(light.includes(rule), 'light: ' + label);
+      for (const mode of ['dark', 'ultra']) assert(!theme(mode).includes(rule), mode + ' is untouched: ' + label);
+    }
+    assert(!/--text-base:#fff/.test(light.slice(light.indexOf(pill), light.indexOf(pill) + 200)), 'light: the grey pills keep Spotify\'s own black text');
+    /* Measured on a signed-in page: these were a dark bar, a dark header, missing bars and unreadable panels. */
+    const scopes = ':is(html body #Desktop_PanelContainer_Id:has(video),html body #Desktop_PanelContainer_Id :is([data-testid="lyrics-npv-section"],[data-testid="npv-artist-bio-button"]))';
+    for (const [label, rule] of [
+      ['the bar over a playlist is light', 'header[data-testid="topbar"] > div:not(:has([data-testid="topbar-content-wrapper"])){background-color:#ffffff !important;'],
+      ['the playlist header keeps its cover colour as a pale tint', '[data-testid="entity-header"] > div[style*="--background-base"]{background-color:#ffffff !important;background-image:linear-gradient(color-mix(in srgb,var(--background-base) 24%,#ffffff)'],
+      ['text in that header uses the page colours', 'html body main [style*="--text-"]{--text-base:#121212 !important;--text-subdued:#5b6068 !important;'],
+      ['the progress and volume bars are drawn dark', ':is([data-testid="playback-progressbar"],[data-testid="volume-bar"]) :where(div){--bg-color:#0000002e !important;--fg-color:#121212 !important;}'],
+      ['the Now Playing video, lyric card and artist card keep Spotify\'s dark palette', scopes + '{--background-base:#121212 !important;'],
+      ['with white text', '--text-base:#ffffff !important;--text-subdued:#b3b3b3 !important;'],
+      ['quiet icon buttons take the muted colour', '[class*="button-tertiary"]:not([aria-checked="true"],[aria-pressed="true"]):not(:hover,:focus-visible) :where(svg,path,use){color:var(--text-subdued,#5b6068) !important;'],
+      ['muted text stays muted', 'html body [class*="encore-internal-color-text-subdued"]{color:var(--text-subdued,#5b6068) !important;'],
+      ['controls drawn for use over artwork become a light pill', '.encore-over-media-set{--background-base:#eef0f4e6 !important;'],
+    ]) {
+      assert(light.includes(rule), 'light: ' + label);
+      for (const mode of ['dark', 'ultra']) assert(!theme(mode).includes(rule), mode + ' is untouched: ' + label);
+    }
+    assert(/:not\(\[class\*="encore-internal-color-text-subdued"\]\)\{background-color:transparent !important;color:var\(--text-base,#121212\) !important;/.test(light),
+      'light: other text follows the scope it is in, so it is white inside the dark parts');
+    assert(!/Root__right-sidebar[^{]*:where\(div,section/.test(light), 'light: nothing paints every block in the right panel any more');
+    assert(!/\[data-testid\*="progress" i\]\)\{background-color:transparent/.test(light), 'light: the progress track is no longer made transparent');
+  }
   /* The page load re-theme ran the general remap on Spotify, stacked a second theme element and
      started the readability pass, which wrote inline colours onto Spotify's own buttons. */
   {

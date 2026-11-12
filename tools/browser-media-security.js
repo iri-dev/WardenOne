@@ -296,6 +296,10 @@ async function run() {
     await cdp.send('Page.navigate', { url: githubUrl }, page);
     await until(page, 'window.fixtureReady===true&&document.readyState==="complete"');
     const githubTab = await evaluate(worker, `chrome.tabs.query({}).then(tabs=>tabs.find(tab=>tab.url===${JSON.stringify(githubUrl)}).id)`);
+    /* These hosts point at the fixture server, and WardenOne fetches its own lists from
+       raw.githubusercontent.com. A list download landing here looks like DNS rebinding and
+       quarantines the host for the session, whenever the timing lines up. */
+    await evaluate(worker, 'updateStoredConfig(cfg=>{cfg.dnsRebindGuard=false;}).then(()=>clearRebindQuarantine()).then(()=>true)');
     for (const host of infrastructure.slice(1)) {
       const badUrl = 'https://' + host + ':' + serverPort + '/denied-infrastructure/payload.js';
       const knownUrl = 'https://' + host + ':' + serverPort + '/denied-confirmed/payload.js';

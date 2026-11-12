@@ -301,9 +301,6 @@ The inventory records exact addresses, local processing, evidence and any specif
 
 Build-only inputs (not daily runtime downloads):
 
-- [AdGuard Base, Tracking Protection and Mobile Ads filters](https://filters.adtidy.org/extension/ublock/filters/2.txt) → `cosmetic-rules.json` (GPL-3.0).
-- [AdGuard Base, Tracking Protection and Mobile Ads filters](https://filters.adtidy.org/extension/ublock/filters/3.txt) → `cosmetic-rules.json` (GPL-3.0).
-- [AdGuard Base, Tracking Protection and Mobile Ads filters](https://filters.adtidy.org/extension/ublock/filters/11.txt) → `cosmetic-rules.json` (GPL-3.0).
 - [Public Suffix List](https://publicsuffix.org/list/public_suffix_list.dat) → `psl-private.js` (MPL-2.0).
 - [Public Suffix List](https://publicsuffix.org/list/public_suffix_list.dat) → `domain-utils.js` (MPL-2.0).
 - [Unicode confusables](https://www.unicode.org/Public/security/latest/confusables.txt) → `idn-utils.js` (Unicode-3.0).

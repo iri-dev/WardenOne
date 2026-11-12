@@ -9,7 +9,7 @@
     "writtenPermissionFeeds": 11,
     "resolvedFeeds": 42,
     "unresolvedFeeds": 2,
-    "buildOnlyInputs": 11,
+    "buildOnlyInputs": 8,
     "redistributedArtifacts": 27
   },
   "sources": [
@@ -2640,144 +2640,6 @@
   ],
   "buildSources": [
     {
-      "url": "https://filters.adtidy.org/extension/ublock/filters/2.txt",
-      "purpose": "Packaged cosmetic rules",
-      "artifact": "cosmetic-rules.json",
-      "inputSha256": "331c2851ef27fc580f2a5ef9a22a3de7089d0fc9af39ab944f70a43d8dca879f",
-      "kind": "build-input",
-      "policyId": "adguard",
-      "name": "AdGuard Base, Tracking Protection and Mobile Ads filters",
-      "publisher": "AdGuard Team",
-      "home": "https://github.com/AdguardTeam/AdguardFilters",
-      "license": {
-        "type": "published-license",
-        "id": "GPL-3.0",
-        "url": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/LICENSE"
-      },
-      "permission": {
-        "status": "not-required",
-        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
-      },
-      "attribution": "AdGuard Team and AdGuard filter contributors. These three filter headers identify AdguardFilters GPL terms; FiltersRegistry’s LGPL infrastructure license is not substituted for them.",
-      "compliance": {
-        "status": "implemented",
-        "conditions": [
-          "GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives.",
-          "Private local use does not require publishing a user’s local rules or licensing the browser."
-        ],
-        "implementation": [
-          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
-          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped.",
-          "Packaged cosmetic derivatives are GPL-covered; corresponding source records/comments, original input identities and the compiler are supplied in the public source tree."
-        ],
-        "noticeFiles": [
-          "CREDITS.md",
-          "THIRD_PARTY_NOTICES.html"
-        ],
-        "issueIds": []
-      },
-      "evidence": [
-        {
-          "url": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/LICENSE",
-          "documentSha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
-          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
-        }
-      ],
-      "checkedAt": "2026-10-19"
-    },
-    {
-      "url": "https://filters.adtidy.org/extension/ublock/filters/3.txt",
-      "purpose": "Packaged cosmetic rules",
-      "artifact": "cosmetic-rules.json",
-      "inputSha256": "b4b4fe9b9e4d044c2571a196c51fed59acbcef08197ecfe1973705203fe3583f",
-      "kind": "build-input",
-      "policyId": "adguard",
-      "name": "AdGuard Base, Tracking Protection and Mobile Ads filters",
-      "publisher": "AdGuard Team",
-      "home": "https://github.com/AdguardTeam/AdguardFilters",
-      "license": {
-        "type": "published-license",
-        "id": "GPL-3.0",
-        "url": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/LICENSE"
-      },
-      "permission": {
-        "status": "not-required",
-        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
-      },
-      "attribution": "AdGuard Team and AdGuard filter contributors. These three filter headers identify AdguardFilters GPL terms; FiltersRegistry’s LGPL infrastructure license is not substituted for them.",
-      "compliance": {
-        "status": "implemented",
-        "conditions": [
-          "GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives.",
-          "Private local use does not require publishing a user’s local rules or licensing the browser."
-        ],
-        "implementation": [
-          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
-          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped.",
-          "Packaged cosmetic derivatives are GPL-covered; corresponding source records/comments, original input identities and the compiler are supplied in the public source tree."
-        ],
-        "noticeFiles": [
-          "CREDITS.md",
-          "THIRD_PARTY_NOTICES.html"
-        ],
-        "issueIds": []
-      },
-      "evidence": [
-        {
-          "url": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/LICENSE",
-          "documentSha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
-          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
-        }
-      ],
-      "checkedAt": "2026-10-19"
-    },
-    {
-      "url": "https://filters.adtidy.org/extension/ublock/filters/11.txt",
-      "purpose": "Packaged cosmetic rules",
-      "artifact": "cosmetic-rules.json",
-      "inputSha256": "ad14f49a7bca679e24e4c579fba37e4300037a21725071a6a257a8d865f576ce",
-      "kind": "build-input",
-      "policyId": "adguard",
-      "name": "AdGuard Base, Tracking Protection and Mobile Ads filters",
-      "publisher": "AdGuard Team",
-      "home": "https://github.com/AdguardTeam/AdguardFilters",
-      "license": {
-        "type": "published-license",
-        "id": "GPL-3.0",
-        "url": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/LICENSE"
-      },
-      "permission": {
-        "status": "not-required",
-        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
-      },
-      "attribution": "AdGuard Team and AdGuard filter contributors. These three filter headers identify AdguardFilters GPL terms; FiltersRegistry’s LGPL infrastructure license is not substituted for them.",
-      "compliance": {
-        "status": "implemented",
-        "conditions": [
-          "GPL-3.0 terms govern the listed filter material; retain notices and provide corresponding source when conveying covered derivatives.",
-          "Private local use does not require publishing a user’s local rules or licensing the browser."
-        ],
-        "implementation": [
-          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
-          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped.",
-          "Packaged cosmetic derivatives are GPL-covered; corresponding source records/comments, original input identities and the compiler are supplied in the public source tree."
-        ],
-        "noticeFiles": [
-          "CREDITS.md",
-          "THIRD_PARTY_NOTICES.html"
-        ],
-        "issueIds": []
-      },
-      "evidence": [
-        {
-          "url": "https://raw.githubusercontent.com/AdguardTeam/AdguardFilters/master/LICENSE",
-          "documentSha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
-          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
-        }
-      ],
-      "checkedAt": "2026-10-19"
-    },
-    {
       "url": "https://publicsuffix.org/list/public_suffix_list.dat",
       "purpose": "Site identity and filter exception boundaries",
       "artifact": "psl-private.js",
@@ -3190,7 +3052,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "36e6b18ea522f24ef821c96e88c38a3f0dc7dfaa8f7d99350937e3f5ecb3b8ac"
+      "sha256": "86b84a2de48c0a96f511046b1d375083df2450fc1804bb2b1c58777c9defd92b"
     },
     {
       "file": "psl-private.js",
@@ -3853,6 +3715,21 @@
     }
   ],
   "retired": [
+    {
+      "url": "https://filters.adtidy.org/extension/ublock/filters/2.txt",
+      "status": "source-no-longer-used",
+      "reason": "The packaged cosmetic rules are built from the same AdGuard Base list in AdGuard's FiltersRegistry, already listed under adguard."
+    },
+    {
+      "url": "https://filters.adtidy.org/extension/ublock/filters/3.txt",
+      "status": "source-no-longer-used",
+      "reason": "The packaged cosmetic rules are built from the same AdGuard Tracking Protection list in AdGuard's FiltersRegistry, already listed under adguard."
+    },
+    {
+      "url": "https://filters.adtidy.org/extension/ublock/filters/11.txt",
+      "status": "source-no-longer-used",
+      "reason": "The packaged cosmetic rules are built from the same AdGuard Mobile Ads list in AdGuard's FiltersRegistry, already listed under adguard."
+    },
     {
       "url": "https://raw.githubusercontent.com/blocklistproject/Lists/master/porn.txt",
       "status": "source-no-longer-used",

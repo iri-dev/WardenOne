@@ -101,6 +101,28 @@
   let lastLogAt = 0;
   let needsTimedScan = true;
   let firstChoiceMade = false;
+  /* Choices made on this page. Complianz answers Deny by showing a "Manage consent" tab, and
+     opening that as a settings control reopened the banner, so the page strobed between the two
+     about once a second, for as long as it was open. */
+  let choicesMade = 0;
+  const CHOICE_LIMIT = 3;
+  /* After a choice, a settings control standing on its own, with no banner text around it, is the
+     site's way back in (Complianz's "Manage consent" tab). A banner that comes back still counts. */
+  function reopensChoice(el, container) {
+    if (!firstChoiceMade) return false;
+    /* Judge the control by the fixed box it sits in, not the container, which can be the whole
+       body. Visible text only: Complianz keeps the dismissed banner, hidden, next to its tab. */
+    try {
+      let box = null;
+      for (let n = el; n && n !== container && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+        if (/^(fixed|sticky)$/.test(getComputedStyle(n).position)) { box = n; break; }
+      }
+      if (!box) return false;
+      const own = String(el.innerText || el.textContent || '');
+      return String(box.innerText || '').replace(own, '').replace(/\s+/g, ' ').trim().length < 40;
+    } catch (_) { return false; }
+  }
+
   let outcomeGeneration = 0;
 
   const clicked = new WeakSet();
@@ -766,6 +788,8 @@
     if (!clickControl(el)) { reportOutcome('failed', 'reject', profile); return false; }
     lastChoiceAt = Date.now();
     finishConsentWork();
+    /* A page that keeps asking after this many answers is not going to take one; stop rather than fight it. */
+    if (++choicesMade >= CHOICE_LIMIT) { active = false; stopConsentObservers(); }
     const check = final => {
       if (!active || generation !== outcomeGeneration) return;
       if (profile && WOConsentState.verify(profile, before, consentCookie(profile))) {
@@ -798,7 +822,7 @@
         if (save && choicesReadyToSave(container, changed) && (selectionSave || saveChoicesCandidate(save, container, true))
           && performChoice(save, container, profile)) return true;
         const settings = find(profile.settings);
-        if (!opened.has(container) && settings && settingsCandidate(settings, container)) {
+        if (!opened.has(container) && settings && !reopensChoice(settings, container) && settingsCandidate(settings, container)) {
           rememberConsentSurface(container, settings);
           if (!clickControl(settings)) continue;
           opened.add(container); openSettingsUntil = Date.now() + 900;
@@ -976,7 +1000,7 @@
     if (Date.now() < openSettingsUntil) return;
     for (const container of containers) {
       if (opened.has(container)) continue;
-      const settings = getControls(container).find((el) => settingsCandidate(el, container));
+      const settings = getControls(container).find((el) => !reopensChoice(el, container) && settingsCandidate(el, container));
       if (settings) {
         rememberConsentSurface(container, settings);
         if (!clickControl(settings)) continue;

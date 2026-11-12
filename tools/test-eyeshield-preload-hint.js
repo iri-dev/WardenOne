@@ -102,11 +102,12 @@ function worker(opts) {
         registerContentScripts: async (list) => { state.registered.push(...list); },
         updateContentScripts: async (list) => { state.updated.push(...list); },
         unregisterContentScripts: async (q) => { state.unregistered.push(...(q.ids || [])); },
-        getRegisteredContentScripts: async () => {
+        getRegisteredContentScripts: async (q) => {
           const registered = (o.registered || []).map((r) => r.id === 'wo-eyeshield-dynamic'
             ? Object.assign({ matches: ['<all_urls>'], excludeMatches: [] }, r) : r);
-          return registered.some((r) => r.id === 'wo-eyeshield-dynamic') && !registered.some((r) => r.id === 'wo-eyeshield-sites-dynamic') && !o.omitSites
+          const all = registered.some((r) => r.id === 'wo-eyeshield-dynamic') && !registered.some((r) => r.id === 'wo-eyeshield-sites-dynamic') && !o.omitSites
             ? [...registered, { id: 'wo-eyeshield-sites-dynamic', matches: ['<all_urls>'], excludeMatches: [] }] : registered;
+          return q && Array.isArray(q.ids) ? all.filter((r) => q.ids.includes(r.id)) : all;
         },
         executeScript: (spec, cb) => { state.executed.push(spec); cb && cb(); },
       },
@@ -127,6 +128,9 @@ function worker(opts) {
     grabFn(BG, 'eyeShieldRegistrationScope'),
     grabFn(BG, 'eyeShieldUsesBootstrap'),
     grabFn(BG, 'eyeShieldActiveProfileHosts'),
+    "const EYESHIELD_TOP_SCRIPT_ID = 'wo-eyeshield-top-dynamic';",
+    grabFn(BG, 'eyeShieldTopRegistration'),
+    grabFn(BG, 'syncEyeShieldTopRegistration'),
     "let eyeShieldBootstrapCatchupKey = '';",
     grabFn(BG, 'eraseEyeShieldSiteMarkerFromOpenTabs'),
     grabFn(BG, 'reconcileEyeShieldInjection'),
@@ -136,6 +140,8 @@ function worker(opts) {
   return { api: sandbox.api, state };
 }
 const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dynamic') || {}).js;
+const coreOf = (w) => w.state.registered.find((r) => r.id === 'wo-eyeshield-dynamic') || {};
+const topOf = (w) => w.state.registered.find((r) => r.id === 'wo-eyeshield-top-dynamic');
 
 (async () => {
   for (const mode of MODES) {
@@ -144,7 +150,8 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
     check('mode ' + mode + ' registers the hint file AHEAD of eyeshield.js',
       JSON.stringify(filesOf(w)) === JSON.stringify(['eyeshield-preload-' + mode + '.js', 'eyeshield-profiles.js', 'eyeshield.js']), filesOf(w));
     check('...at document_start in every frame, as before',
-      w.state.registered[0].runAt === 'document_start' && w.state.registered[0].allFrames === true && w.state.registered[0].persistAcrossSessions === true);
+      coreOf(w).runAt === 'document_start' && coreOf(w).allFrames === true && coreOf(w).persistAcrossSessions === true);
+    check('...and with no site settings there is no second registration', !topOf(w));
     check('...and the per-site themes registration is untouched by it',
       w.state.registered[1] && w.state.registered[1].id === 'wo-eyeshield-sites-dynamic' && JSON.stringify(w.state.registered[1].js) === '["eyeshield-sites.js"]');
   }
@@ -188,16 +195,23 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
        page to paint its own colours. The hint rides along so the bootstrap can lay the holding colour
        down at document_start; it stays one small registration. */
     check('a site Off profile registers the small frame bootstrap, with the mode hint ahead of it',
-      w.state.registered.length === 1
-      && JSON.stringify(filesOf(w)) === '["eyeshield-preload-dark.js","eyeshield-profiles.js","eyeshield-bootstrap.js"]'
-      && JSON.stringify(w.state.registered[0].matches) === '["<all_urls>"]');
+      JSON.stringify(filesOf(w)) === '["eyeshield-preload-dark.js","eyeshield-profiles.js","eyeshield-bootstrap.js"]'
+      && JSON.stringify(coreOf(w).matches) === '["<all_urls>"]');
+    /* Measured in a real profile with one site setting: every page waited on the worker and painted
+       its own theme first. Top pages of every other site start themed again. */
+    const top = topOf(w);
+    check('and every other site\'s top page still gets EyeShield at document_start, with the hint',
+      !!top && JSON.stringify(top.js) === '["eyeshield-preload-dark.js","eyeshield-profiles.js","eyeshield.js","eyeshield-sites.js"]'
+      && top.runAt === 'document_start' && top.allFrames === false && JSON.stringify(top.matches) === '["<all_urls>"]', top);
+    check('the site with its own setting is left to the bootstrap', !!top && top.excludeMatches.includes('*://github.com/*') && top.excludeMatches.includes('*://www.github.com/*'));
   }
   {
     const w = worker();
     await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'off', eyeShieldSites: { 'youtube.com': { mode: 'custom', theme: 'dark' } } });
     check('a custom-only setup sends the bootstrap to every frame origin',
       w.state.registered.length === 1 && JSON.stringify(filesOf(w)) === '["eyeshield-profiles.js","eyeshield-bootstrap.js"]'
-      && w.state.registered[0].allFrames === true && JSON.stringify(w.state.registered[0].matches) === '["<all_urls>"]');
+      && coreOf(w).allFrames === true && JSON.stringify(coreOf(w).matches) === '["<all_urls>"]');
+    check('with EyeShield off everywhere else, nothing is registered for other sites', !topOf(w));
   }
   {
     const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield-profiles.js', 'eyeshield.js'], matches: ['<all_urls>'] }] });
@@ -213,6 +227,21 @@ const filesOf = (w) => (w.state.registered.find((r) => r.id === 'wo-eyeshield-dy
     check('removing the last profile restores direct document-start injection and top-frame themes',
       w.state.updated.length === 1 && JSON.stringify(w.state.updated[0].js) === '["eyeshield-preload-dark.js","eyeshield-profiles.js","eyeshield.js"]'
       && w.state.registered.some((script) => script.id === 'wo-eyeshield-sites-dynamic') && w.state.injected);
+  }
+  {
+    const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-bootstrap.js'], matches: ['<all_urls>'] },
+      { id: 'wo-eyeshield-top-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield-profiles.js', 'eyeshield.js', 'eyeshield-sites.js'], matches: ['<all_urls>'], excludeMatches: [], allFrames: false, runAt: 'document_start' }], omitSites: true });
+    await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'dark' });
+    check('and the extra top-page registration goes with it', w.state.unregistered.includes('wo-eyeshield-top-dynamic'));
+  }
+  {
+    const w = worker({ registered: [{ id: 'wo-eyeshield-top-dynamic', js: ['eyeshield-preload-dark.js', 'eyeshield-profiles.js', 'eyeshield.js', 'eyeshield-sites.js'], matches: ['<all_urls>'], excludeMatches: ['*://github.com/*', '*://www.github.com/*'], allFrames: false, runAt: 'document_start' }], omitSites: true });
+    await w.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'light', eyeShieldSites: { 'github.com': { mode: 'off' } } });
+    check('a mode change swaps the hint in the top-page registration too',
+      w.state.updated.some((u) => u.id === 'wo-eyeshield-top-dynamic' && u.js[0] === 'eyeshield-preload-light.js'), w.state.updated);
+    const w2 = worker({ registered: [{ id: 'wo-eyeshield-top-dynamic', js: ['eyeshield-profiles.js'] }], omitSites: true });
+    await w2.api.reconcileEyeShieldInjection({ enabled: true, eyeShieldMode: 'off' });
+    check('EyeShield off removes it', w2.state.unregistered.includes('wo-eyeshield-top-dynamic'));
   }
   {
     const w = worker({ registered: [{ id: 'wo-eyeshield-dynamic', js: ['eyeshield-profiles.js', 'eyeshield-bootstrap.js'], matches: ['<all_urls>'] }], omitSites: true });

@@ -67,6 +67,7 @@ function popupHarness(stored) {
     $: (id) => document.getElementById(id),
     KEYS: ['showToasts', 'showBadge', 'silentMode', 'adShield'],
     normalizeProviderSettings() {},
+    popupConfigLoaded: true,
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(

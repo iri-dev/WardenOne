@@ -234,6 +234,48 @@ function askedAbout(req) {
       /safeBrowsingLookupUrl\(url, \{ cfg, key: cfg\.downloadSafeBrowsingKey \}\)/.test(DL));
   }
 
+  /* A host answer on a host shared by many publishers is not a verdict on this file. */
+  console.log('3b. URLhaus on shared file hosts');
+  {
+    const hostHit = (url) => (/\/v1\/host\//.test(url)
+      ? { query_status: 'ok', host: 'x', url_count: 1, urls: [{ url: 'https://x/other.exe', url_status: 'online', threat: 'malware_download', tags: ['dropped-by-amadey'] }] }
+      : { query_status: 'no_results' });
+    const cfg = fullState().cfg;
+    const own = 'https://release-assets.githubusercontent.com/github-production-release-asset/1/WardenOne-latest.zip';
+    const shared = providerSandbox();
+    shared.replies['urlhaus-api.abuse.ch'] = hostHit;
+    const release = await shared.api.urlHausLookupUrl(own, { cfg, key: cfg.urlHausKey, context: 'download' });
+    check('a GitHub release is not graded by what else is on the host', release.ok === true && release.hit === false && !release.warning,
+      JSON.stringify(release).slice(0, 160));
+    check('and the host is not even asked about', !shared.requests.some((r) => /\/v1\/host\//.test(r.url)));
+    for (const host of ['github.com', 'raw.githubusercontent.com', 'drive.google.com', 'cdn.discordapp.com', 'bucket.s3.amazonaws.com']) {
+      const box = providerSandbox();
+      box.replies['urlhaus-api.abuse.ch'] = hostHit;
+      const res = await box.api.urlHausLookupUrl('https://' + host + '/a/file.zip', { cfg, key: cfg.urlHausKey, context: 'link' });
+      check(host + ' gets no host verdict', res.hit === false && !box.requests.some((r) => /\/v1\/host\//.test(r.url)));
+    }
+    const exact = providerSandbox();
+    exact.replies['urlhaus-api.abuse.ch'] = (url) => (/\/v1\/url\//.test(url)
+      ? { query_status: 'ok', url_status: 'online', threat: 'malware_download', tags: ['amadey'], payloads: [] } : { query_status: 'no_results' });
+    const listed = await exact.api.urlHausLookupUrl(own, { cfg, key: cfg.urlHausKey, context: 'download' });
+    check('a release whose own address is listed is still a hit', listed.hit === true && !listed.hostOnly);
+    const single = providerSandbox();
+    single.replies['urlhaus-api.abuse.ch'] = hostHit;
+    const owned = await single.api.urlHausLookupUrl('https://downloads.acme-tools.net/setup.exe', { cfg, key: cfg.urlHausKey, context: 'download' });
+    check('a host with one publisher still gets its host verdict', owned.hit === true && owned.hostOnly === true);
+    const stale = providerSandbox();
+    stale.replies['urlhaus-api.abuse.ch'] = hostHit;
+    const staleKey = await stale.api.reputationCacheKey(stale.api.reputationQueryUrl(own));
+    stale.store.wardenone_urlhaus_cache = {};
+    const cacheName = Object.keys(await (async () => { await stale.api.loadUrlHausCache(); return stale.store; })()).find((k) => /urlhaus/i.test(k)) || 'wardenone_urlhaus_cache';
+    stale.store[cacheName] = { [staleKey]: { checkedAt: Date.now(), expiresAt: Date.now() + 3600000, result: { ok: true, hit: true, hostOnly: true, scope: 'host', threats: ['MALWARE_HOST'], threat: 'malware_download' } } };
+    const fresh = providerSandbox();
+    Object.assign(fresh.store, JSON.parse(JSON.stringify(stale.store)));
+    fresh.replies['urlhaus-api.abuse.ch'] = hostHit;
+    const fromCache = await fresh.api.urlHausLookupUrl(own, { cfg, key: cfg.urlHausKey, context: 'download' });
+    check('a host verdict cached before this rule no longer counts on a shared host', fromCache.hit === false, JSON.stringify(fromCache).slice(0, 160));
+  }
+
   /* the raw request builders refuse a query on their own */
   {
     const { api, requests } = providerSandbox();
