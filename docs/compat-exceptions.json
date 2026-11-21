@@ -7,7 +7,7 @@
    "where": "background.js NEVER_BLOCK_DOMAINS (its own literal)",
    "relaxes": "Downloaded ad and tracker lists cannot block these hosts or their subdomains, and an allow rule keeps their scripts, styles, fonts, data and frames loading. Security lists still block them.",
    "reason": "Code hosting, Google sign in and mail, and WardenOne's own homepage, which whole sites depend on. gamedrive.org is the owner's reviewed exception.",
-   "evidence": "docs/security-feed-exceptions.md (GameDrive)",
+   "evidence": "Owner review of the GameDrive exception, kept with the security feed records.",
    "tests": [
     "tools/test-feed-shared-platforms.js",
     "tools/test-network-compatibility.js"
@@ -598,7 +598,7 @@
    "where": "background.js FEED_FALSE_POSITIVE_DOMAINS",
    "relaxes": "A single conflicting feed verdict is suppressed for the exact name and its www form only.",
    "reason": "Reviewed one feed disagreements. This is not a safety verdict; other protections and the reader's own rules still apply.",
-   "evidence": "docs/security-feed-exceptions.md",
+   "evidence": "Each host was checked by hand against the feed that named it before it was excused.",
    "tests": [
     "tools/test-network-compatibility.js",
     "tools/test-phishing-false-positives.js"
@@ -614,7 +614,7 @@
    "where": "background.js remoteListBlockAllowed",
    "relaxes": "One named feed's entry for these hosts is ignored. Other feeds can still block them and no allow rule is added.",
    "reason": "Shared services that one list named whole: fileditch and Tawk chat (ThreatView), GameDrive (DurableNapkin, owner's choice), HubSpot forms and Intercom chat (Blocklist Project tracking). Their tracking hosts stay blocked by other lists.",
-   "evidence": "docs/security-feed-exceptions.md",
+   "evidence": "Each entry was checked by hand against the feed that named it before it was dropped.",
    "tests": [
     "tools/test-threatview-feed.js",
     "tools/test-network-compatibility.js"

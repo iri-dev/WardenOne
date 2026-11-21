@@ -12,6 +12,7 @@ const ROOT = path.resolve(__dirname, '..');
 const REGISTRY = path.join(ROOT, 'docs', 'compat-exceptions.json');
 const registry = JSON.parse(fs.readFileSync(REGISTRY, 'utf8'));
 const GATE = fs.readFileSync(path.join(ROOT, 'tools', 'check-maintainability.js'), 'utf8');
+const PUBLIC_DOCS = new Set(JSON.parse(fs.readFileSync(path.join(ROOT, 'tools', 'publication-policy.json'), 'utf8')).publicDocuments);
 let checks = 0;
 const ok = (cond, label) => { assert(cond, label); checks++; };
 
@@ -29,8 +30,9 @@ for (const g of registry.groups) {
     ok(fs.existsSync(path.join(ROOT, t)), g.id + ': ' + t + ' exists');
     ok(GATE.split('\n').some((line) => line.startsWith('checkCommand(') && line.includes("'" + t + "'")), g.id + ': ' + t + ' is run by the gate');
   }
+  /* A cited document must be published: a private one exists here, passed, then failed on a fresh checkout. */
   const doc = /docs\/[\w./-]+\.(?:md|json)/.exec(g.evidence || '');
-  if (doc) ok(fs.existsSync(path.join(ROOT, doc[0])), g.id + ': its evidence ' + doc[0] + ' exists');
+  if (doc) ok(PUBLIC_DOCS.has(doc[0]) && fs.existsSync(path.join(ROOT, doc[0])), g.id + ': its evidence ' + doc[0] + ' is a published document');
 }
 
 /* The record against the code. */
