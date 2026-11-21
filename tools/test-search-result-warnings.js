@@ -179,10 +179,10 @@ check('the scorer reads SECURITY_DOMAINS, never BLOCKED_DOMAINS',
 check('the security half is tracked separately in memory',
   /let SECURITY_DOMAINS = new Set\(\)/.test(BG));
 check('and restored from storage as the leading run of the stored list',
-  /wardenone_blocked_security_count/.test(BG)
-  && /SECURITY_DOMAINS = new Set\(r\.wardenone_blocked_domains\.slice\(0, n\)\)/.test(BG));
+  /adoptBlockedDomainPrefix\(r\.wardenone_blocked_domains, r\.wardenone_blocked_security_count\)/.test(BG)
+  && /SECURITY_DOMAINS = new Set\(list\.slice\(0, n\)\)/.test(BG));
 check('the stored count can never outrun the stored list',
-  /Math\.min\(r\.wardenone_blocked_domains\.length, Number\(r\.wardenone_blocked_security_count\)/.test(BG),
+  /const n = Math\.max\(0, Math\.min\(list\.length, Number\(securityCount\) \|\| 0\)\);/.test(BG),
   'an over-long count would claim ad domains are malware');
 check('the pressure trim cuts the count with the array',
   /wardenone_blocked_security_count: keptSecurity/.test(BG),

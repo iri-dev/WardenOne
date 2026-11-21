@@ -31,12 +31,94 @@ function write(file, text) {
   fs.writeFileSync(file, text, 'utf8');
 }
 
-// src/content.js is a lossless formatted runtime artifact: only line breaks and
-// indentation are generated. Removing those generated runs must recreate the
-// exact extension runtime loaded by manifest.json.
+// The runtime is src/content.js without its line breaks, indentation and block comments, so the
+// explanations stay in the source and are not shipped to every page (about 65 KB, 2026-11-20).
 function buildFromSource(source) {
-  return String(source || '').replace(/\r?\n[ \t]*/g, '');
+  return stripBlockComments(String(source || '')).replace(/\r?\n[ \t]*/g, '');
 }
+
+/* Kept in the runtime: the licence header, the region markers the realm build and its tests find, and directives. */
+const KEPT_COMMENT_RE = /^\/\*\s*(?:WardenOne\b[^\n]*Copyright|[A-Z][A-Z0-9-]*-(?:BEGIN|END)\b|@wardenone-)/;
+
+/* What touches a removed comment once the build has joined the lines: a space or tab that survives the join is a
+   separator; a line break and the indentation after it are removed. */
+function joinedNeighbour(chars, index, step) {
+  for (let i = index; i >= 0 && i < chars.length; i += step) {
+    const ch = chars[i];
+    if (ch === '\r' || ch === '\n') continue;
+    if (ch === ' ' || ch === '\t') {
+      let j = i;
+      while (j >= 0 && j < chars.length && (chars[j] === ' ' || chars[j] === '\t')) j += step;
+      const edge = chars[step < 0 ? j : i - 1];
+      if (step < 0 ? chars[j] === '\n' : edge === '\n' || edge === '\r') { i = j - step; continue; }
+      return ' ';
+    }
+    return String(ch).slice(step < 0 ? -1 : 0, step < 0 ? undefined : 1);
+  }
+  return '';
+}
+
+// Same states as findLineComments. In the joined runtime a comment is whitespace (it holds no line
+// break any more), so a removed one becomes one space unless a separator or punctuation already
+// stands beside it: `return/* c */value` must not become `returnvalue`.
+// tools/test-build-content-comments.js checks every removed comment really was a comment.
+function stripBlockComments(source, removed) {
+  const input = String(source || '');
+  const out = [];
+  let state = 'code';
+  let quote = '';
+  let escaped = false;
+  let regexClass = false;
+  let prevSig = '';
+  /* The last word read in code, so `return /* note *\/ /re/` still sees the keyword before the regex. */
+  let word = '', lastWord = '';
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    const next = input[i + 1] || '';
+    if (state !== 'code') {
+      out.push(ch);
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (state === 'string' && ch === quote) state = 'code';
+      else if (state === 'template' && ch === '`') state = 'code';
+      else if (state === 'regex') {
+        if (ch === '[') regexClass = true;
+        else if (ch === ']') regexClass = false;
+        else if (ch === '/' && !regexClass) state = 'code';
+      }
+      continue;
+    }
+    if (ch === '/' && next === '*') {
+      const end = input.indexOf('*/', i + 2);
+      if (end < 0) throw new Error('src/content.js has an unterminated block comment at offset ' + i);
+      const comment = input.slice(i, end + 2);
+      if (KEPT_COMMENT_RE.test(comment)) out.push(comment);
+      else {
+        const before = joinedNeighbour(out, out.length - 1, -1);
+        const after = joinedNeighbour(input, end + 2, 1);
+        if (before && after && before !== ' ' && after !== ' ' && !/[;,{}()[\]]/.test(before + after)) {
+          /* Only a line break and indentation can trail here, and the join would remove them and this space too. */
+          while (out.length && /^[ \t\r\n]$/.test(out[out.length - 1])) out.pop();
+          out.push(' ');
+        }
+        if (removed) removed.push([i, end + 2]);
+      }
+      i = end + 1;
+      continue;
+    }
+    out.push(ch);
+    const regexStart = ch === '/' && (isRegexStart(prevSig) || REGEX_KEYWORD_RE.test(lastWord) || regexKeywordBefore(input, i));
+    if (/[\w$]/.test(ch)) { word += ch; lastWord = word; } else { word = ''; if (!/\s/.test(ch)) lastWord = ''; }
+    if (ch === '"' || ch === "'") { state = 'string'; quote = ch; escaped = false; prevSig = ch; continue; }
+    if (ch === '`') { state = 'template'; escaped = false; prevSig = ch; continue; }
+    if (regexStart) {
+      state = 'regex'; regexClass = false; escaped = false; prevSig = ch; continue;
+    }
+    if (!/\s/.test(ch)) prevSig = ch;
+  }
+  return out.join('');
+}
+const REGEX_KEYWORD_RE = /^(?:return|throw|case|delete|void|typeof|new|in|of|yield|await)$/;
 
 function isRegexStart(prev) {
   if (!prev) return true;
@@ -338,8 +420,11 @@ function check() {
   console.log('[ok] page authentication receivers share the canonical implementation');
 }
 
-const arg = process.argv[2] || '--build';
-if (arg === '--format-from-runtime') {
+module.exports = { buildFromSource, stripBlockComments, KEPT_COMMENT_RE };
+const arg = require.main === module ? process.argv[2] || '--build' : null;
+if (arg === null) {
+  /* Loaded by a test: build nothing. */
+} else if (arg === '--format-from-runtime') {
   write(SRC, formatRuntime(read(OUT)));
   console.log('[ok] wrote src/content.js from content.min.js');
 } else if (arg === '--check') {

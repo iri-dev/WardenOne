@@ -26,7 +26,7 @@ check('derived audio noise is idempotent for native snapshots', `(()=>{const a=n
 check('zero SVG lengths remain zero', `(()=>{const s=new SVGTextContentElement('');return s.getComputedTextLength()===0&&s.getSubStringLength(0,0)===0;})()`);
 check('wrapped native methods remain nonconstructible with matching arity', `before.methods.filter(x=>['measureText','getParameter','getExtension','getSupportedExtensions','getComputedTextLength','getSubStringLength','getFloatFrequencyData'].includes(x.key)).every(x=>{const f=x.owner[x.key];return f.name===x.key&&f.length===x.descriptor.value.length&&!Object.hasOwn(f,'prototype')&&Object.getPrototypeOf(f)===Function.prototype;})`);
 check('wrapper descriptor flags stay unchanged', `before.methods.every(x=>{const d=Object.getOwnPropertyDescriptor(x.owner,x.key);return d.configurable===x.descriptor.configurable&&d.enumerable===x.descriptor.enumerable&&d.writable===x.descriptor.writable;})`);
-check('raw audio buffers and Worker construction stay native', `before.audio===AudioBuffer.prototype.getChannelData&&before.worker===Worker`);
+check('decoded audio keeps its samples and Worker construction stays native', `before.worker===Worker&&new AudioBuffer().getChannelData(0).every(x=>x===0)`);
 const a = create({ seed: 1 }), b = create({ seed: 901 });
 assert.equal(a.run("new WebGLRenderingContext(true).getParameter(37446)"), b.run("new WebGLRenderingContext(true).getParameter(37446)"), 'site graphics policy remains stable across documents');
 assert.notEqual(a.run("new CanvasRenderingContext2D().measureText('editing').width"), b.run("new CanvasRenderingContext2D().measureText('editing').width"), 'private document seeds remain independent');

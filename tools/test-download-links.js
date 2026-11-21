@@ -47,7 +47,8 @@ function bareIndexLinks(text) {
 
 // Release links that are not the rolling ZIP, its checksum, the Latest page or the bare index.
 function oddReleaseLinks(text) {
-  const allowed = new Set([LATEST_ASSET, LATEST_ASSET + '.sha256', LATEST_PAGE, BARE_INDEX]);
+  /* .sig is the owner's offline signature (tools/release-signing.js), present only on releases she signed. */
+  const allowed = new Set([LATEST_ASSET, LATEST_ASSET + '.sha256', LATEST_ASSET + '.sig', LATEST_PAGE, BARE_INDEX]);
   return [...text.matchAll(/https:\/\/github\.com\/iri-dev\/WardenOne\/releases[^\s"'<>)`]*/g)]
     .map((m) => m[0]).filter((url) => !allowed.has(url));
 }

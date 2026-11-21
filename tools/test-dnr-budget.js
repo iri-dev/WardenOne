@@ -180,7 +180,9 @@ function runDynamic() {
 
   // Every range belongs to an allocation. Missing a band defeats the quota check.
   const ranges = [...bg.matchAll(/const ([A-Z][A-Z0-9_]*)_RULE_BASE = \d+/g)].map((m) => m[1]);
-  const COVERED_ELSEWHERE = { IP_LOOKUP_BLOCK: 'SMALL_SESSION_RULES_BUDGET', DYNAMIC: 'LIST_RULES_BUDGET' };
+  // The bare IP program guard's local-range allows sit inside its own band (913010 of 913000 + 40).
+  const COVERED_ELSEWHERE = { IP_LOOKUP_BLOCK: 'SMALL_SESSION_RULES_BUDGET', DYNAMIC: 'LIST_RULES_BUDGET',
+    IP_PROGRAM_LOCAL: 'IP_PROGRAM_RULES_BUDGET' };
   const unbudgeted = ranges.filter((prefix) => {
     if (COVERED_ELSEWHERE[prefix]) return !bands.includes(COVERED_ELSEWHERE[prefix]);
     return !bands.some((band) => band.startsWith(prefix));
@@ -243,6 +245,8 @@ function runBands() {
     ["LINK_CLEAN_RULE_BASE", "LINK_CLEAN_RULES_BUDGET", "link cleaning"],
     ["TRACKING_REDIRECT_RULE_BASE", "TRACKING_REDIRECT_RULES_BUDGET", "tracking redirect skipping"],
     ["TRACKING_REDIRECT_FALLBACK_BASE", "TRACKING_REDIRECT_FALLBACK_BUDGET", "tracking redirect continuation"],
+    ["IP_PROGRAM_RULE_BASE", "IP_PROGRAM_RULES_BUDGET", "bare IP program guard"],
+    ["IP_PROGRAM_ONCE_RULE_BASE", "IP_PROGRAM_ONCE_RULES_BUDGET", "bare IP program continue once"],
   ];
   // Single ids reserved outside the families. A band must never grow far enough to reach them.
   const RESERVED = ["PRIVACY_HEADER_RULE_ID", "PRIVACY_HEADER_NAV_RULE_ID", "THIRD_PARTY_COOKIE_RULE_ID",

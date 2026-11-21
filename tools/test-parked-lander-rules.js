@@ -147,14 +147,19 @@ test('the exception and the feed block stay narrow', () => {
 });
 
 test('first-party GA4 conditions retain path, method and party boundaries', () => {
+  /* Rule 50's own boundaries. EasyPrivacy's general /g/collect? rule is broader by its authors' choice and is
+     checked on its own below, so it is left out here. */
+  const ownRule = (packId) => packId === 'easyprivacy_general';
   const hit = req('https://wardenone.com/g/collect?v=2&tid=G-TEST123', 'xmlhttprequest');
-  assert.deepEqual(winner(hit), { priority: 1000, action: 'block', pack: 'trackers', id: 50 });
-  assert.equal(outcome({ ...hit, method: 'post' }), 'block');
-  assert.equal(outcome({ ...hit, method: 'head' }), 'none');
-  assert.equal(outcome({ ...hit, initiator: 'unrelated.example.net' }), 'none');
-  assert.equal(outcome({ ...hit, url: hit.url.replace('/g/', '/G/') }), 'none');
-  assert.equal(outcome({ ...hit, url: hit.url.replace('tid=', 'not_tid=') }), 'none');
-  assert.equal(outcome({ ...hit, type: 'main_frame' }), 'none');
+  assert.deepEqual(winner(hit, ownRule), { priority: 1000, action: 'block', pack: 'trackers', id: 50 });
+  assert.equal(outcome({ ...hit, method: 'post' }, ownRule), 'block');
+  assert.equal(outcome({ ...hit, method: 'head' }, ownRule), 'none');
+  assert.equal(outcome({ ...hit, initiator: 'unrelated.example.net' }, ownRule), 'none');
+  assert.equal(outcome({ ...hit, url: hit.url.replace('/g/', '/G/') }, ownRule), 'none');
+  assert.equal(outcome({ ...hit, url: hit.url.replace('tid=', 'not_tid=') }, ownRule), 'none');
+  assert.equal(outcome({ ...hit, type: 'main_frame' }, ownRule), 'none');
+  assert.equal(outcome(hit, (packId) => packId !== 'easyprivacy_general'), 'block', 'EasyPrivacy general blocks the same hit');
+  assert.equal(outcome({ ...hit, type: 'main_frame' }), 'none', 'no pack blocks opening the address');
 });
 
 let failures = 0;

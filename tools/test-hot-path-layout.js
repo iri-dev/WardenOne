@@ -76,7 +76,19 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
   assert(!/\bel\.innerText\b/.test(elementText),
     'elementText must not read innerText -- it forces layout, and textContent is already '
     + 'in the same joined string');
-  assert(/\bel\.textContent\b/.test(elementText), 'elementText still needs the text');
+  assert(/\bleadingText\(el, 500\)/.test(elementText), 'elementText still needs the text, read only as far as it keeps');
+  const leadingText = code(consent.slice(consent.indexOf('function leadingText(el, limit)'),
+    consent.indexOf('function elementText(el)')));
+  assert(/createTreeWalker/.test(leadingText) && !/innerText/.test(leadingText),
+    'leadingText walks text nodes and never forces layout');
+}
+{
+  /* The document-wide reject scan runs safeRejectCandidate on every link and button: the cheap stem check must come
+     before controlLabel's innerText. */
+  const safe = code(consent.slice(consent.indexOf('function safeRejectCandidate(el)'),
+    consent.indexOf('function ', consent.indexOf('function safeRejectCandidate(el)') + 10)));
+  assert(safe.indexOf('mayBeRejectControl(el)') > 0 && safe.indexOf('mayBeRejectControl(el)') < safe.indexOf('controlLabel(el)'),
+    'safeRejectCandidate checks the stems before reading innerText');
 }
 {
   /* controlLabel takes the FIRST truthy bit rather than joining, so innerText there is
@@ -146,9 +158,19 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
     refreshHandledSurfaces() { visibilityChecks++; },
   };
   vm.createContext(sandbox);
-  vm.runInContext('let scanQueued = false, scanDeferred = null, active = true, observer = null;\n'
-    + observerSource + '\nstartObserver();', sandbox);
+  vm.runInContext('let scanQueued = false, scanDeferred = null, active = true, observer = null, domVersion = 0;\n'
+    + observerSource + '\nstartObserver();this.version = () => domVersion;', sandbox);
   assert.strictEqual(typeof onMutation, 'function');
+  {
+    /* The container match cache is only safe if every callback marks the page changed, skipped ones included. */
+    const before = sandbox.version();
+    vm.runInContext('scanQueued = true', sandbox);
+    onMutation([{ type: 'childList', addedNodes: [] }]);
+    vm.runInContext('scanQueued = false; active = false', sandbox);
+    onMutation([{ type: 'childList', addedNodes: [] }]);
+    vm.runInContext('active = true', sandbox);
+    assert.strictEqual(sandbox.version(), before + 2, 'every observer callback bumps domVersion, even one that schedules nothing');
+  }
   for (const state of ['scanQueued', 'scanDeferred', 'active']) {
     vm.runInContext(state + ' = ' + (state === 'active' ? 'false' : 'true'), sandbox);
     onMutation([{ type: 'childList', addedNodes: [] }]);
@@ -473,24 +495,47 @@ const isVisible = code(consent.slice(isVisibleAt, consent.indexOf('function coll
 }
 {
   const declarations = [
-    consent.slice(consent.indexOf('function getContainers('), consent.indexOf('function getControls(')),
+    consent.slice(consent.indexOf('const CONTAINER_MATCH_MAX_AGE_MS'), consent.indexOf('function getControls(')),
     consent.slice(consent.indexOf('function visibleControlsInDocument('), consent.indexOf('function tryTwitchReject(')),
   ].join('\n');
-  const banner = { id: 'shadow-banner', getBoundingClientRect: () => ({ width: 400, height: 120 }) };
+  const banner = { id: 'shadow-cookie-banner', localName: 'div', hasAttributes: () => true,
+    getAttribute: (n) => (n === 'id' ? 'shadow-cookie-banner' : null), getBoundingClientRect: () => ({ width: 400, height: 120 }) };
   const reject = { id: 'shadow-reject' };
   const documentRoot = { querySelectorAll: () => [] };
-  const shadowRoot = { querySelectorAll: (selector) => selector === 'banner' ? [banner] : [reject] };
+  /* Containers come from one '*' pass (a shadow root has no getElementsByTagName); controls from CONTROL_SELECTOR. */
+  const shadowRoot = { querySelectorAll: (selector) => selector === '*' ? [banner] : [reject] };
   let rootWalks = 0;
   const sandbox = {
     document: documentRoot, CONTAINER_SELECTOR: 'banner', CONTROL_SELECTOR: 'button',
     innerWidth: 1000, innerHeight: 800, CONSENT_ACTION_TEXT_RE: /reject/i, elementText: () => '',
     collectRoots: () => { rootWalks++; return [documentRoot, shadowRoot]; },
     looksLikeConsentContainer: () => true, containerScore: () => 0, isVisible: () => true,
+    observer: null, domVersion: 0, WeakMap, Date,
   };
   vm.createContext(sandbox);
-  vm.runInContext(declarations + '\nthis.getContainers = getContainers; this.visibleControls = visibleControlsInDocument;', sandbox);
+  vm.runInContext(declarations + '\nthis.getContainers = getContainers; this.visibleControls = visibleControlsInDocument;'
+    + 'this.matches = containerMatches;', sandbox);
   const roots = sandbox.collectRoots();
   assert.strictEqual(sandbox.getContainers(roots)[0], banner, 'a shadow-root banner stays discoverable');
+  {
+    /* The match cache: reused while nothing changed, refreshed after a change or a second, never without an observer. */
+    let passes = 0;
+    const counted = { querySelectorAll: () => { passes++; return [banner]; } };
+    sandbox.matches(counted); sandbox.matches(counted);
+    assert.strictEqual(passes, 2, 'with no observer every scan matches afresh');
+    sandbox.observer = {};
+    passes = 0;
+    sandbox.matches(counted); sandbox.matches(counted); sandbox.matches(counted);
+    assert.strictEqual(passes, 1, 'with the observer quiet, one selector pass serves the next scans');
+    sandbox.domVersion++;
+    sandbox.matches(counted);
+    assert.strictEqual(passes, 2, 'any observed change matches afresh');
+    const realNow = Date.now;
+    sandbox.Date = { now: () => realNow() + 1500 };
+    sandbox.matches(counted);
+    assert.strictEqual(passes, 3, 'and so does a list older than a second');
+    sandbox.Date = Date; sandbox.observer = null;
+  }
   assert.strictEqual(sandbox.visibleControls(roots)[0], reject, 'the same shadow root supplies its controls');
   assert.strictEqual(rootWalks, 1, 'one scan should collect document and shadow roots once');
   const scan = consent.slice(consent.indexOf('function scan()'), consent.indexOf('function queueScan('));

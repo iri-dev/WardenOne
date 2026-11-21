@@ -21,7 +21,8 @@ const POPUP_HTML = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
 
 /* The shipped block, header included, so the toggle it answers to is the real one. */
 const START = 'if(WO.deviceAccessGuard)try{const FS_PICKERS=';
-const END = '/* Browser-in-the-Browser.';
+/* The next block's code: comments are stripped from content.min.js (2026-11-20). */
+const END = 'if(WO.fakeWindowGuard&&WO_TOP&&!trustedMediaHost';
 const from = CONTENT.indexOf(START);
 const to = CONTENT.indexOf(END, from + START.length);
 assert(from >= 0 && to > from, 'the file-access guard moved in content.min.js');

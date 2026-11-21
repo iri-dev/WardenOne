@@ -106,6 +106,13 @@ ok(!blockedBy('pixel.mfilterit.net', 'www.mfilterit.net') && blockedBy('pixel.mf
   'a tracker is blocked on other sites and never on its own');
 const fixedSite = [...fixes.get('securepubads.g.doubleclick.net') || []][0];
 ok(!fixedSite || !blockedBy('securepubads.g.doubleclick.net', fixedSite), 'a Privacy Badger site fix keeps that site working');
+/* the-sun.com's "Verifying Device" check loads from toadmash.net (rematch, 2026-11-14). */
+ok(['www.the-sun.com', 'www.thesun.co.uk', 'www.thetimes.com'].every(site => !blockedBy('p.toadmash.net', site) && !blockedBy('toadmash.net', site))
+  && !blockedBy('p.toadmash.net', 'www.target.com'),
+  'News UK sites and target.com load their bot check from toadmash.net');
+ok(blockedBy('p.toadmash.net', 'www.fixture-publisher-1.com') && blockedBy('toadmash.net', 'www.fixture-publisher-1.com')
+  && blockedBy('toadmash.net', 'www.target.com'),
+  'toadmash.net stays blocked everywhere else, and Privacy Badger’s target.com fix stays limited to p.toadmash.net');
 
 /* ---- the head-to-head sample, against every tracker ruleset on the same switch ------------------- */
 const allTrackers = new Map();

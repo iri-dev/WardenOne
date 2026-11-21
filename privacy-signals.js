@@ -5,8 +5,8 @@ function wardenOneSetPrivacySignals(enabled) {
   let control = window[name];
   if (!control && enabled !== true) return;
   if (!control) {
-    const targets = [[Navigator.prototype, 'globalPrivacyControl', true], [navigator, 'globalPrivacyControl', true],
-      [Navigator.prototype, 'doNotTrack', '1'], [navigator, 'doNotTrack', '1'], [window, 'doNotTrack', '1']];
+    /* On the prototype only, where a real browser keeps them; an own copy on navigator gives the extension away. */
+    const targets = [[Navigator.prototype, 'globalPrivacyControl', true], [Navigator.prototype, 'doNotTrack', '1'], [window, 'doNotTrack', '1']];
     const entries = targets.map(([owner, key, value]) => ({ owner, key, value, original: Object.getOwnPropertyDescriptor(owner, key), getter: null }));
     const set = on => {
       for (const entry of entries) {

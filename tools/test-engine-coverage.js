@@ -87,11 +87,11 @@ const chainStart = src.indexOf('    const YT_COMPAT_PAUSED=[');
 const chainEnd = src.indexOf('    WO_TOP=window===window.top,', chainStart);
 assert(chainStart > 0 && chainEnd > chainStart);
 const chain = src.slice(chainStart, chainEnd).replace(/,\s*$/, ';');
-const enabled = ['enabled', 'removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint', 'clientHintProtection',
+const enabled = ['enabled', 'removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint', 'fingerprintShield', 'clientHintProtection',
   'detectPhishing', 'commandPasteGuard', 'formTrapDetector', 'detectSkimmers', 'fakeUpdateDetector',
   'scamLockGuard', 'paymentCardGuard', 'blockTokenExfil', 'sessionShield'];
 const config = Object.fromEntries(enabled.map((key) => [key, true]));
-const paused = ['removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint', 'clientHintProtection'];
+const paused = ['removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint', 'fingerprintShield', 'clientHintProtection'];
 for (const url of contentPages) {
   const ctx = vm.createContext({ location: new URL(url), __woConfigStore: config,
     __woRedirectChainControl: { configure() {}, blocked() { return false; } },

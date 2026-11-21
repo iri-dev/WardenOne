@@ -19,6 +19,8 @@ const examples = [
   'https://prf.hn/click/camref:fixture/destination:' + encodeURIComponent(target),
   'https://prf.hn/click/camref:fixture/destination:' + target,
   wrap('https://rover.ebay.com/rover/1/2/3', 'mpre'),
+  wrap('https://steamcommunity.com/linkfilter/', 'url'), wrap('https://steamcommunity.com/linkfilter', 'u'),
+  wrap('https://t.umblr.com/redirect', 'z'),
 ];
 for (const source of examples) {
   const result = redirect.resolve(source, publicHost);
@@ -40,6 +42,8 @@ for (const source of [
 ]) assert.equal(redirect.resolve(source, publicHost).status, 'unchanged', source);
 for (const source of [
   wrap('https://www.awin1.com.attacker.example.org/cread.php', 'ued'),
+  wrap('https://t.umblr.com.attacker.example.org/redirect', 'z'), wrap('https://www.t.umblr.com/redirect', 'z'),
+  wrap('https://steamcommunity.com/linkfilter/elsewhere', 'url'), wrap('https://sub.steamcommunity.com/linkfilter/', 'url'),
   wrap('https://merchant.example.org/login', 'url'), wrap('https://www.awin1.com/checkout', 'ued'),
   'https://user:secret@www.awin1.com/cread.php?ued=' + encodeURIComponent(target),
   'x'.repeat(9000),

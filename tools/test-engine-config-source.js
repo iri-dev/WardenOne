@@ -148,7 +148,9 @@ const REAL = { enabled: true, detectPhishing: true, paymentCardGuard: true, dete
   const codeOf = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '');
   for (const [label, text] of [['source', SRC], ['shipped build', MIN]]) {
     const hits = [...codeOf(text).matchAll(/window\.__WO_CONFIG__/g)].length;
-    check('only the two mirror writes touch the global in the ' + label, hits === 2, 'found ' + hits);
+    /* Page start, the signed settings, and the early off signal (P3-1): all writes, never a read. */
+    check('only the three mirror writes touch the global in the ' + label, hits === 3, 'found ' + hits);
+    check('each of them is a write in the ' + label, [...codeOf(text).matchAll(/window\.__WO_CONFIG__\s*=\s*Object\.assign\(\{\},\s*(?:__woConfigStore|prev)\)/g)].length === 3);
   }
   check('the refresh reads the private store', /__woSyncConfig=\(\)=>\{\s*const cfg=__woConfigStore,/.test(codeOf(MIN)));
   check('the store is declared once', (SRC.match(/const __woConfigStore=\{\};/g) || []).length === 1);

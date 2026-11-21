@@ -80,6 +80,20 @@ async function main() {
     ['accounts.spotify.com','/resource',['script','sub_frame']],['connect.facebook.net','/en_US/sdk.js',['script']],
     ['www.gstatic.com','/recaptcha/releases/fixture.js',['script']],
   ])for(const type of types)assert(cookieStripped(rules,host,'shop.example.org',type,path),host+' '+type+' '+path);
+  /* reCAPTCHA (Round 5b): its cookie is stripped on other sites, kept on Google's own, and only under /recaptcha/. */
+  const urlFilterOk=(c,host,pathname)=>!c.urlFilter||(c.urlFilter.startsWith('||'+host+'/')&&pathname.startsWith(c.urlFilter.slice(2+host.length)));
+  const strippedAt=(host,top,type,pathname)=>rules.some(rule=>{
+    const c=rule.condition;
+    return c.requestDomains.some(scope=>matchesHost(host,scope))&&c.resourceTypes.includes(type)
+      &&!(c.excludedInitiatorDomains||c.excludedTopDomains||[]).some(scope=>matchesHost(top,scope))
+      &&!(c.excludedRequestDomains||[]).some(scope=>matchesHost(host,scope))&&urlFilterOk(c,host,pathname)
+      &&(!c.regexFilter||new RegExp(c.regexFilter).test('https://'+host+pathname));
+  });
+  for(const [host,pathname]of [['www.google.com','/recaptcha/enterprise/anchor'],['www.google.com','/recaptcha/api2/webworker.js'],['www.recaptcha.net','/recaptcha/enterprise.js']]){
+    for(const type of ['script','sub_frame','xmlhttprequest'])assert(strippedAt(host,'shop.example.org',type,pathname),'reCAPTCHA cookie stripped '+host+pathname+' '+type);
+  }
+  assert(!strippedAt('www.google.com','mail.google.com','sub_frame','/recaptcha/api2/anchor'),'reCAPTCHA keeps its cookie on Google itself');
+  for(const pathname of ['/search?q=x','/maps/embed?pb=1','/recaptchaX/','/'])assert(!strippedAt('www.google.com','shop.example.org','sub_frame',pathname),'only reCAPTCHA paths on www.google.com: '+pathname);
   for(const [host,top]of [['accounts.google.com','mail.google.com'],['js.stripe.com','dashboard.stripe.com']]){
     assert(!cookieStripped(rules,host,top,'sub_frame','/resource'),'preserve first-party service context '+host);
   }

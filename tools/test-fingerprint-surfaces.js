@@ -59,6 +59,8 @@ function harness(opts) {
     screenH: 900,
     availW: 1600,
     availH: 860,
+    protectedW: () => 1600,
+    protectedH: () => 900,
     navigator: {
       language: opts.language || 'en-US',
       keyboard: opts.noKeyboard ? undefined : { getLayoutMap() { return Promise.resolve(new Map([['KeyA', 'q']])); } },
@@ -224,9 +226,13 @@ pending.push((async function missingApisAreHandled() {
 
   /* All four ride the existing anti-fingerprinting switch. One toggle per surface
      is how a settings page becomes a list nobody reads. */
-  const noiseAt = SOURCE.indexOf('if(WO.antiFingerprintNoise||WO.antiFingerprint)');
-  check('they live inside the existing fingerprint-noise feature',
-    noiseAt > 0 && SOURCE.indexOf('window.queryLocalFonts=') > noiseAt);
+  const noiseAt = SOURCE.indexOf('if(__woRealmRecord?.noise||!(strongNoise||WO.fingerprintShield))');
+  const noiseStart = SOURCE.indexOf('FINGERPRINT-NOISE-BEGIN'), noiseEnd = SOURCE.indexOf('FINGERPRINT-NOISE-END */', noiseStart);
+  const fontsAt = SOURCE.indexOf('window.queryLocalFonts=');
+  /* The default shield returns before them, so they stay with the opt-in noise. */
+  const standardReturn = SOURCE.indexOf('if("standard"===__woLevel){', noiseStart);
+  check('they stay in the shared fingerprint function and follow the setting',
+    noiseStart > 0 && fontsAt > noiseStart && fontsAt < noiseEnd && noiseAt > noiseEnd && standardReturn > noiseStart && standardReturn < fontsAt);
   const popup = fs.readFileSync(path.join(ROOT, 'popup.html'), 'utf8');
   check('no new toggle was added for any of them',
     !/data-key="(queryLocalFonts|localFonts|screenDetails|keyboardLayout|speechVoices)/i.test(popup));

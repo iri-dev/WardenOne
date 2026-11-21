@@ -538,6 +538,59 @@ test('the page engine applies site rules on player pages only away from the play
     'a player-page path still clears every rule');
 });
 
+test('the player-safe rule list measures players only when a rule reaches outside a player shell', () => {
+  const fn = CONTENT.slice(CONTENT.indexOf('playerSafeSelectors=list=>'), CONTENT.indexOf('applyPlayerSafe=()=>')).replace(/,\s*$/, '');
+  /* A tiny tree: nodes know their parent, whether they sit in a shell, and their box; selectors map to node lists. */
+  let seed = 11;
+  const rand = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return Math.floor(seed / 65536) % n; };
+  const run = (nodes, matches) => {
+    let measured = 0;
+    const ctx = {
+      PLAYER_PAGE_SELECTOR: 'player-page', PLAYER_SHELL_SELECTOR: 'shell',
+      document: { querySelectorAll: (sel) => {
+        if (sel === 'player-page') return nodes.filter((n) => n.player).map((n) => Object.assign(n, { getBoundingClientRect: () => { measured++; return n.box; } }));
+        if (sel === 'bad[') throw Error('invalid');
+        return matches[sel] || [];
+      } },
+    };
+    vm.createContext(ctx);
+    vm.runInContext('this.safe = (' + fn.replace(/^playerSafeSelectors=/, '') + ');', ctx);
+    return { safe: Array.from(ctx.safe(Object.keys(matches).concat(['bad[']))), measured };
+  };
+  const reference = (nodes, matches) => {
+    let main = null, best = 0;
+    for (const n of nodes.filter((x) => x.player)) { const a = n.box.width * n.box.height; if (a > best) { best = a; main = n; } }
+    return Object.keys(matches).filter((sel) => !(matches[sel] || []).some((el) => el.closest('shell') || (main && (el.contains(main) || main.contains(el)))));
+  };
+  const make = () => {
+    const nodes = [];
+    for (let i = 0; i < 12; i++) {
+      const parent = i && rand(3) ? nodes[rand(i)] : null;
+      const node = { parent, player: !rand(4), inShell: !rand(5) || !!(parent && parent.inShell), box: { width: rand(800), height: rand(500) } };
+      node.closest = (s) => (s === 'shell' && node.inShell ? node : null);
+      node.contains = (other) => { for (let n = other; n; n = n.parent) if (n === node) return true; return false; };
+      nodes.push(node);
+    }
+    const matches = {};
+    const sparse = !rand(3);
+    for (let r = 0; r < 4; r++) matches['.rule' + r] = sparse && rand(4) ? [] : nodes.filter(() => !rand(sparse ? 12 : 6));
+    return { nodes, matches };
+  };
+  let lazy = 0;
+  for (let t = 0; t < 400; t++) {
+    const { nodes, matches } = make();
+    const got = run(nodes, matches);
+    assert.deepStrictEqual(got.safe, reference(nodes, matches), 'player-safe answer changed at case ' + t);
+    const needsPlayer = Object.values(matches).some((list) => list.some((el) => !el.inShell));
+    if (!needsPlayer) { assert.strictEqual(got.measured, 0, 'players were measured with no rule reaching outside a shell'); lazy++; }
+    else assert(got.measured <= nodes.filter((n) => n.player).length, 'players were measured more than once in one pass');
+  }
+  assert(lazy > 20, 'the fixtures exercise the no-measure path (' + lazy + ')');
+  const none = run([{ player: true, box: { width: 640, height: 360 }, closest: () => null, contains: () => false }], { '.unused': [] });
+  assert.deepStrictEqual(none.safe, ['.unused'], 'a rule that matches nothing is kept');
+  assert.strictEqual(none.measured, 0, 'and no player is measured for it');
+});
+
 test('ordinary pages retain generic, specific, procedural and scriptlet protection', () => {
   const compute = loadCosmeticComputer();
   const host = 'ordinary.example';
@@ -831,7 +884,7 @@ test('hidden-autoplay protection leaves recognized player media alone', () => {
   assert(/mediaInsidePlayerShell=el=>/.test(media)
     && /return!!playerShellFor\(el\)/.test(media),
   'hidden-media protection has no player-shell compatibility boundary');
-  assert(/playBlockReason=el=>isMediaElement\(el\)&&"VIDEO"===el\.tagName&&!mediaInsidePlayerShell\(el\)&&hiddenMedia\(el\)/.test(media),
+  assert(/playBlockReason=el=>isMediaElement\(el\)&&"VIDEO"===el\.tagName&&!mediaInsidePlayerShell\(el\)&&!autoplayProbe\(el\)&&hiddenMedia\(el\)/.test(media),
     'hidden-media protection can still reject an initializing player video');
 
   const playBlockReason = loadHiddenMediaBlockReason();
@@ -844,6 +897,24 @@ test('hidden-autoplay protection leaves recognized player media alone', () => {
   }
   assert.strictEqual(playBlockReason(hiddenVideoNode('')), 'Hidden media player',
     'ordinary hidden media no longer receives autoplay protection');
+
+  /* A player's autoplay check: a detached, muted video playing a tiny clip held in the page (CNN's Bitmovin player). */
+  const probe = (shape) => Object.assign(hiddenVideoNode(''), { isConnected: false, muted: true,
+    getAttribute: (name) => (name === 'src' ? 'data:video/mp4;base64,AAAAHGZ0eXBNNFYgAAACAGlzb21pc28yYXZjMQ' : null) }, shape);
+  assert.strictEqual(playBlockReason(probe({})), '', 'a player\'s detached, muted autoplay check is let through');
+  /* CNN asks again with sound; refusing that one left the player waiting. The browser decides about sound. */
+  assert.strictEqual(playBlockReason(probe({ muted: false })), '', 'the same check with sound is let through too');
+  for (const [label, shape] of [
+    ['an attached hidden video', { isConnected: true }],
+    ['an attached hidden one with sound', { isConnected: true, muted: false }],
+    ['one loading from the network', { getAttribute: (n) => (n === 'src' ? 'https://ads.adnet-fixture.net/clip.mp4' : null) }],
+    ['one loading from the network with sound', { muted: false, getAttribute: (n) => (n === 'src' ? 'https://ads.adnet-fixture.net/clip.mp4' : null) }],
+    ['one streaming through a blob', { getAttribute: (n) => (n === 'src' ? 'blob:https://ads.adnet-fixture.net/1234' : null) }],
+    ['one with no src attribute', { getAttribute: () => null }],
+    ['an embedded picture', { getAttribute: (n) => (n === 'src' ? 'data:image/png;base64,iVBORw0KGgo' : null) }],
+  ]) {
+    assert.strictEqual(playBlockReason(probe(shape)), 'Hidden media player', label + ' is still treated as hidden media');
+  }
 });
 
 void (async () => {

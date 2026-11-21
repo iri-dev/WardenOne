@@ -405,6 +405,8 @@ function checkContentBuild() {
   'tools/test-repair-honesty.js',
   'tools/test-engine-teardown.js',
   'tools/test-bridge-host-lists.js',
+  'tools/test-login-age-offer.js',
+  'tools/test-login-age-choice-worker.js',
   'tools/test-main-config-minimisation.js',
   'tools/test-verification-compatibility.js',
   'tools/test-bridge-bounds.js',
@@ -442,6 +444,17 @@ function checkContentBuild() {
   'tools/test-procedural-selectors.js',
   'tools/test-scriptlet-library.js',
   'tools/test-redirect-resources.js',
+  'surrogates/analytics.js',
+  'surrogates/facebook.js',
+  'surrogates/publisher-tag.js',
+  'surrogates/tag-manager.js',
+  'surrogates/segment.js',
+  'surrogates/adobe-launch.js',
+  'surrogates/matomo.js',
+  'surrogates/apstag.js',
+  'surrogates/optimizely.js',
+  'surrogates/urchin.js',
+  'surrogates/onetrust.js',
   'tools/test-filter-catalog.js',
   'tools/test-filter-parsing-benchmark.js',
   'tools/test-filter-compilation.js',
@@ -509,6 +522,7 @@ function checkContentBuild() {
   'tools/test-search-junk-seed.js',
   'tools/test-text-scan-scheduler.js',
   'tools/test-fingerprint-realm.js',
+  'tools/test-fingerprint-early.js',
   'tools/test-client-hints-metadata.js',
   'tools/test-confirm-bait-linked-overlay.js',
   'tools/test-config-handshake-recovery.js',
@@ -541,6 +555,7 @@ function checkContentBuild() {
   'tools/test-security-scan-coverage.js',
   'tools/test-config-write-lock.js',
   'tools/test-browser-test-finish.js',
+  'tools/test-browser-profile-cleanup.js',
   'tools/test-domain-index.js',
   'tools/bench-domain-index-memory.js',
   'tools/test-workflow-pinning.js',
@@ -603,6 +618,10 @@ function checkContentBuild() {
   // A syntax error in any of them shipped without the gate noticing.
   'anti-redirect.js',
   'anti-adblock-shield.js',
+  'fingerprint-early-on.js',
+  'fingerprint-early-standard.js',
+  'fingerprint-early-off.js',
+  'engine-early-off.js',
   'fingerprint-realm.js',
   'cert-error.js',
   'consent-reject.js',
@@ -651,6 +670,7 @@ function checkContentBuild() {
   'rules-grabber-compat.json',
   'rules-trackers.json',
   'rules-easyprivacy.json',
+  'rules-easyprivacy-general.json',
   'rules-cname.json',
   'rules-badger.json',
   'first-party-sites.json',
@@ -702,6 +722,16 @@ checkCommand('dynamic-rule read tests', ['tools/test-dynamic-rule-reads.js']);
 checkCommand('redirect-chain mirror tests', ['tools/test-redirect-chain-mirror.js']);
 checkCommand('feed load safety tests', ['tools/test-feed-load-safety.js']);
 checkCommand('feed domain validation tests', ['tools/test-feed-domain-validation.js']);
+checkCommand('feed shared-platform and oisd tests', ['tools/test-feed-shared-platforms.js']);
+checkCommand('De-AMP default and loop guard tests', ['tools/test-deamp-default.js']);
+checkCommand('social embed guard tests', ['tools/test-social-embed-guard.js']);
+checkCommand('fingerprint shield tests', ['tools/test-fingerprint-shield.js']);
+checkCommand('referrer cap tests', ['tools/test-referrer-cap.js']);
+checkCommand('OneTrust local answer tests', ['tools/test-onetrust-answer.js']);
+checkCommand('measured CNAME tracker tests', ['tools/test-measured-cname-trackers.js']);
+checkCommand('content build comment stripping tests', ['tools/test-build-content-comments.js']);
+checkCommand('engine early off tests', ['tools/test-engine-early-off.js']);
+checkCommand('compatibility exception registry tests', ['tools/test-compat-exceptions.js']);
 checkCommand('ThreatView feed integration tests', ['tools/test-threatview-feed.js']);
 checkCommand('feed reachability coverage', ['tools/test-feed-check-coverage.js']);
 checkCommand('navigation signal forgery tests', ['tools/test-nav-signal-forgery.js']);
@@ -716,6 +746,8 @@ checkCommand('listener registration tests', ['tools/test-listener-registration.j
 checkCommand('logger batch reset tests', ['tools/test-logger-batch-reset.js']);
 checkCommand('bridge payload bound tests', ['tools/test-bridge-bounds.js']);
 checkCommand('bridge host list tests', ['tools/test-bridge-host-lists.js']);
+checkCommand('login age offer tests', ['tools/test-login-age-offer.js']);
+checkCommand('login age choice worker tests', ['tools/test-login-age-choice-worker.js']);
 checkCommand('MAIN config minimisation tests', ['tools/test-main-config-minimisation.js']);
 checkCommand('hostile message hardening tests', ['tools/test-message-hardening.js']);
 checkCommand('message trust boundary tests', ['tools/test-message-boundaries.js']);
@@ -735,6 +767,7 @@ checkCommand('Eye Shield site-profile tests', ['tools/test-eyeshield-profiles.js
 checkCommand('Engine allowlist honesty tests', ['tools/test-engine-allowlist-honesty.js']);
 checkCommand('Logger reconnect tests', ['tools/test-logger-reconnect.js']);
 checkCommand('Script Drift storage tests', ['tools/test-script-drift-storage.js']);
+checkCommand('Script Drift page load tests', ['tools/test-script-drift-page-loads.js']);
 checkCommand('Permission justification tests', ['tools/test-permission-justification.js']);
 checkCommand('Optional history permission tests', ['tools/test-optional-history-permission.js']);
 checkCommand('XSS Behavior Guard tests', ['tools/test-xss-behavior-guard.js']);
@@ -785,6 +818,16 @@ checkCommand('forced download protection tests', ['tools/test-forced-downloads.j
 checkCommand('download auto-skip intent tests', ['tools/test-download-auto-skip-intent.js']);
 checkCommand('download interruption policy tests', ['tools/test-download-interruption-policy.js']);
 checkCommand('download early-pause tests', ['tools/test-download-early-pause.js']);
+checkCommand('download flagged-page tests', ['tools/test-download-flagged-pages.js']);
+checkCommand('bare IP program guard tests', ['tools/test-ip-program-guard.js']);
+checkCommand('feed IP address tests', ['tools/test-tweetfeed-ip-feed.js']);
+checkCommand('download bare IP hidden program tests', ['tools/test-download-bare-ip-hidden.js']);
+checkCommand('consent scan cost tests', ['tools/test-consent-scan-cost.js']);
+checkCommand('clipboard swap tests', ['tools/test-clipboard-swap.js']);
+checkCommand('phishing address tests', ['tools/test-phishing-url-feed.js']);
+checkCommand('feed provenance tests', ['tools/test-feed-provenance.js']);
+checkCommand('CNN stream tests', ['tools/test-cnn-stream.js']);
+checkCommand('release signing tests', ['tools/test-release-signing.js']);
 checkCommand('download review cleanup tests', ['tools/test-download-review-cleanup.js']);
 checkCommand('download trust decision tests', ['tools/test-download-trust-decision.js']);
 checkCommand('download hash redirect tests', ['tools/test-download-hash-redirects.js']);
@@ -875,6 +918,8 @@ checkCommand('tracker cookie isolation tests', ['tools/test-tracker-cookie-isola
 checkCommand('CNAME mapping source parity', ['tools/build-cname-data.js', '--check']);
 checkCommand('CNAME catalog tests', ['tools/test-cname-catalog.js']);
 checkCommand('Privacy Badger trained list source parity', ['tools/build-badger-dnr.js', '--check']);
+checkCommand('EasyPrivacy general collector rules match their pinned source', ['tools/build-easyprivacy-general-dnr.js', '--check']);
+checkCommand('EasyPrivacy general collector rule tests', ['tools/test-easyprivacy-general.js']);
 checkCommand('trained tracker coverage tests', ['tools/test-badger-trained.js']);
 checkCommand('downloaded list rules', ['tools/test-list-domain-rules.js']);
 checkCommand('site-compatibility host scope tests', ['tools/test-compat-host-scope.js']);
@@ -933,6 +978,7 @@ checkCommand('cold-wake profile harness', ['tools/test-cold-wake-profile.js']);
 checkCommand('cosmetic cache lifecycle', ['tools/test-cosmetic-cache-lifecycle.js']);
 checkCommand('frame ClickFix tests', ['tools/test-frame-clickfix.js']);
 checkCommand('fingerprint realm tests', ['tools/test-fingerprint-realm.js']);
+checkCommand('early fingerprint registration', ['tools/test-fingerprint-early.js']);
 checkCommand('Client Hints metadata tests', ['tools/test-client-hints-metadata.js']);
 checkCommand('confirm-bait linked overlay tests', ['tools/test-confirm-bait-linked-overlay.js']);
 checkCommand('config handshake recovery tests', ['tools/test-config-handshake-recovery.js']);
@@ -972,6 +1018,7 @@ checkCommand('Settings side-card fold tests', ['tools/test-settings-rail-fold.js
 checkCommand('security scan coverage tests', ['tools/test-security-scan-coverage.js']);
 checkCommand('config write lock tests', ['tools/test-config-write-lock.js']);
 checkCommand('browser test finish guard tests', ['tools/test-browser-test-finish.js']);
+checkCommand('browser profile cleanup tests', ['tools/test-browser-profile-cleanup.js']);
 checkCommand('workflow action pinning tests', ['tools/test-workflow-pinning.js']);
 checkCommand('education site compatibility tests', ['tools/test-education-compat.js']);
 checkCommand('toast dedupe tests', ['tools/test-toast-dedupe.js']);

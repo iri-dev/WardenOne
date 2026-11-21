@@ -52,15 +52,38 @@ async function run() {
     'a private window worker must not erase the regular profile history it shares storage.local with');
   assert.deepEqual(privateProfile.chrome.storage.local._data.wardenone_notifications, sentinel.wardenone_notifications);
   assert.deepEqual(privateProfile.chrome.storage.session._data.wardenone_history, sentinel.wardenone_history);
-  /* "Clear history" pressed in a private window: the private worker only leaves a request, and
-     the normal profile's worker, which owns the history and its pending writes, clears it. */
-  const asked = await privateProfile.ctx.requestRegularHistoryClear(false);
-  assert.equal(asked.ok, true);
+  /* "Clear history" pressed in a private window: the private worker leaves a request, and the normal profile's
+     worker, which owns the history and its pending writes, clears it and answers. Saving the request is never
+     reported as "cleared". */
+  const answer = (value) => {
+    for (const listener of privateProfile.chrome.storage.onChanged._l) listener({ wardenone_history_clear_result: { newValue: value } }, 'local');
+  };
+  const unanswered = await privateProfile.ctx.requestRegularHistoryClear(false, 30);
+  assert.equal(unanswered.ok, false, 'with no answer yet, a private window does not claim the history is cleared');
+  assert.equal(unanswered.pending, true, 'it says the clear is still waiting');
   assert.deepEqual(privateProfile.chrome.storage.local._data.wardenone_history, sentinel.wardenone_history,
     'the private worker leaves the shared history to the normal worker');
-  assert.equal(privateProfile.chrome.storage.local._data.wardenone_history_clear_request.observations, false);
+  const request = privateProfile.chrome.storage.local._data.wardenone_history_clear_request;
+  assert.equal(request.observations, false);
+  assert(typeof request.id === 'string' && request.id.length >= 8, 'each request carries its own id');
+  const waiting = privateProfile.ctx.requestRegularHistoryClear(false, 2000);
+  await sleep(10);
+  answer({ id: privateProfile.chrome.storage.local._data.wardenone_history_clear_request.id, ok: true, at: Date.now() });
+  assert.deepEqual(JSON.parse(JSON.stringify(await waiting)), { ok: true }, 'the normal worker\'s answer is what reports success');
+  const failing = privateProfile.ctx.requestRegularHistoryClear(false, 2000);
+  await sleep(10);
+  answer({ id: privateProfile.chrome.storage.local._data.wardenone_history_clear_request.id, ok: false, error: 'disk full', at: Date.now() });
+  assert.deepEqual(JSON.parse(JSON.stringify(await failing)), { ok: false, error: 'disk full' }, 'a failed clear is reported as a failure');
+  const stale = privateProfile.ctx.requestRegularHistoryClear(false, 60);
+  await sleep(10);
+  answer({ id: 'another-request', ok: true, at: Date.now() - 60000 });
+  assert.equal((await stale).pending, true, 'an older answer to another request does not count');
+  const later = privateProfile.ctx.requestRegularHistoryClear(false, 2000);
+  await sleep(10);
+  answer({ id: 'a-newer-request', ok: true, at: Date.now() + 5 });
+  assert.equal((await later).ok, true, 'a successful clear that finished after this request also answers it');
   for (const listener of privateProfile.chrome.storage.onChanged._l) {
-    listener({ wardenone_history_clear_request: { newValue: { at: Date.now(), observations: false } } }, 'local');
+    listener({ wardenone_history_clear_request: { newValue: { id: 'x', at: Date.now(), observations: false } } }, 'local');
   }
   await settle(privateProfile);
   assert.deepEqual(privateProfile.chrome.storage.local._data.wardenone_history, sentinel.wardenone_history,
@@ -79,13 +102,25 @@ async function run() {
   assert(!h.chrome.storage.local._data.wardenone_history, 'revoked generation cannot write after clear');
   h.ctx.queueHistory(event); await settle(h);
   assert.equal(h.chrome.storage.local._data.wardenone_history.length, 1);
-  h.chrome.storage.local._data.wardenone_history_clear_request = { at: Date.now(), observations: false };
+  h.chrome.storage.local._data.wardenone_history_clear_request = { id: 'req-1', at: Date.now(), observations: false };
   for (const listener of h.chrome.storage.onChanged._l) {
-    listener({ wardenone_history_clear_request: { newValue: { at: Date.now(), observations: false } } }, 'local');
+    listener({ wardenone_history_clear_request: { newValue: { id: 'req-1', at: Date.now(), observations: false } } }, 'local');
   }
   await settle(h); await sleep(50);
   assert(!h.chrome.storage.local._data.wardenone_history, 'the normal worker clears its history when a private window asks');
   assert(!h.chrome.storage.local._data.wardenone_history_clear_request, 'and removes the request once done');
+  assert.equal(h.chrome.storage.local._data.wardenone_history_clear_result.id, 'req-1', 'it answers that request by id');
+  assert.equal(h.chrome.storage.local._data.wardenone_history_clear_result.ok, true);
+  /* A clear that fails keeps the request for the next start and answers with the error. */
+  const realClear = h.ctx.clearProtectionHistory;
+  h.ctx.clearProtectionHistory = async () => ({ ok: false, error: 'disk full' });
+  h.chrome.storage.local._data.wardenone_history_clear_request = { id: 'req-2', at: Date.now(), observations: false };
+  await h.ctx.runRegularHistoryClearRequest({ id: 'req-2', at: Date.now(), observations: false });
+  h.ctx.clearProtectionHistory = realClear;
+  assert.equal(h.chrome.storage.local._data.wardenone_history_clear_request.id, 'req-2', 'a failed clear keeps the request to retry');
+  assert.deepEqual(JSON.parse(JSON.stringify(h.chrome.storage.local._data.wardenone_history_clear_result)).ok, false);
+  assert.equal(h.chrome.storage.local._data.wardenone_history_clear_result.error, 'disk full', 'and its answer says why');
+  delete h.chrome.storage.local._data.wardenone_history_clear_request;
   const firewall = { 'site.example': { 'tracker.example': { all: 'block' } } };
   await h.chrome.storage.local.set({ wardenone_firewall: firewall, wardenone_site_tally: { 'site.example': {} },
     wardenone_script_drift_baselines: { stale: {} } });

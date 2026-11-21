@@ -153,15 +153,26 @@ function makeHarness() {
     && (!condition.initiatorDomains || matches(condition.initiatorDomains, site))
     && (!condition.requestDomains || matches(condition.requestDomains, host))
     && !matches(condition.excludedInitiatorDomains, site) && !matches(condition.excludedRequestDomains, host));
+  /* Embedded frames, media and fetch requests keep the browser's origin-only Referer on every site: the
+     megaplay.buzz embed answers 410 and its CDNs 403 without it (anikoto, 2026-11-13), and a frame can read
+     its embedder through location.ancestorOrigins anyway. Everything else bound for a third party loses it. */
   for (const [site, host, type, strips] of [
     ['playmogo.com', 'jm305k.cloudatacdn.com', 'media', false],
     ['www.playmogo.com', 're511lo.cloudatacdn.com', 'media', false],
     ['playmogo.com', 're511lo.cloudatacdn.com', 'script', true],
     ['playmogo.com', 're511lo.cloudatacdn.com', 'main_frame', true],
-    ['playmogo.com', 'cloudatacdn.com.attacker.example', 'media', true],
-    ['playmogo.com.attacker.example', 're511lo.cloudatacdn.com', 'media', true],
-    ['unrelated.example', 're511lo.cloudatacdn.com', 'media', true],
+    ['unrelated.example', 're511lo.cloudatacdn.com', 'media', false],
+    ['unrelated.example', 're511lo.cloudatacdn.com', 'script', true],
+    ['megaplay.buzz', 'fetch.nexabloom.top', 'xmlhttprequest', false],
+    ['megaplay.buzz', 'qra5z.mysubsplay.com', 'xmlhttprequest', false],
+    ['megaplay.buzz', 'fetch.nexabloom.top', 'media', false],
+    ['news.example', 'pixel.tracker.example', 'image', true],
+    ['news.example', 'pixel.tracker.example', 'ping', true],
+    ['news.example', 'cdn.tracker.example', 'script', true],
+    ['anikototv.to', 'megaplay.buzz', 'sub_frame', false],
+    ['news.example', 'away.example', 'main_frame', true],
     ['login.example', 're511lo.cloudatacdn.com', 'media', false],
+    ['login.example', 'cdn.tracker.example', 'script', false],
   ]) check('Referer policy for ' + [site, host, type].join(' '), stripsReferer(site, host, type) === strips);
   check('cache defense removes both request and response validators',
     cache && headerNames(cache.action.requestHeaders).includes('if-none-match') &&

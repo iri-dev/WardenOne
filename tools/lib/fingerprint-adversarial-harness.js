@@ -52,9 +52,10 @@ function create(options = {}) {
   `, world);
   for (const file of ['domain-utils.js', 'psl-private.js']) vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), world);
   if (options.detector) {
-    const from=source.indexOf('const patchGLProbe=proto=>'),to=source.indexOf('patchGLProbe(window.WebGL2RenderingContext&&WebGL2RenderingContext.prototype)',from);
+    const from=source.indexOf('const observeFingerprintMethod='),to=source.indexOf('observeFingerprintMethod(window.HTMLCanvasElement',from);
     if(from<0||to<from)throw Error('Missing GPU detector');
-    vm.runInContext('const noteFingerprint=()=>{};'+source.slice(from,to)+'patchGLProbe(WebGL2RenderingContext.prototype);',world);
+    vm.runInContext('const noteFingerprint=()=>{};'+source.slice(from,to)
+      +'observeFingerprintMethod(WebGL2RenderingContext.prototype,"getParameter","GPU",p=>p===37445||p===37446);',world);
   }
   vm.runInContext(source.slice(start, end) + '\nthis.applyNoise=inherited=>__woFingerprintNoise(inherited);', world);
   if (options.apply !== false) vm.runInContext('this.record=applyNoise(null);', world);

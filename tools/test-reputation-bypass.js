@@ -18,7 +18,8 @@ function region(start, end) {
 function world(store = {}, verdict = { ok: true, hit: true, threats: ['MALWARE'] }) {
   let now = 1700000000000;
   const activeTabs = new Map();
-  const calls = [], updates = [], history = [];
+  const calls = [], updates = [], history = [], programGrants = [];
+  let programGrantResult = true;
   const session = {
     async get(key) { return structuredClone({ [key]: store[key] }); },
     async set(values) { Object.assign(store, structuredClone(values)); },
@@ -39,10 +40,14 @@ function world(store = {}, verdict = { ok: true, hit: true, threats: ['MALWARE']
     queueHistory: entry => history.push(entry),
     urlReputationConfig: async () => ({ enabled: true }),
     locallyBlockedReputationHost: async () => '',
+    localPhishingUrlVerdict: async () => null,
+    registerListener: () => {},
     urlReputationLookupUrl: async url => { calls.push(url); return structuredClone(verdict); },
     tabsGet: async id => ({ id, ...activeTabs.get(id) }), tabsUpdate: async (...args) => updates.push(args),
     bumpBadge() {}, safeBrowsingThreatLabel: () => 'malware',
     safeBrowsingBlockPageUrl: async () => ORIGIN + 'safe-browsing-block.html?w=' + HANDLE,
+    showIpProgramBlockPage: async () => false,
+    allowIpProgramOnce: async (tabId, url) => { programGrants.push([tabId, url]); return programGrantResult; },
   };
   vm.createContext(box);
   vm.runInContext([
@@ -65,7 +70,8 @@ function world(store = {}, verdict = { ok: true, hit: true, threats: ['MALWARE']
     if (frameId === 0) activeTabs.set(tabId, { url, documentId: 'document-a', incognito: false });
     return box.api.handleSafeBrowsingNavigation({ tabId, url, frameId });
   };
-  return { ...box.api, store, session, seed, sender, navigate, calls, updates, history, advance(ms) { now += ms; },
+  return { ...box.api, store, session, seed, sender, navigate, calls, updates, history, programGrants,
+    refuseProgramGrant() { programGrantResult = false; }, advance(ms) { now += ms; },
     active(url, document = 'document-a', privateTab = false) { activeTabs.set(7, { url, documentId: document, incognito: privateTab }); } };
 }
 async function grant(w, tabId = 7, url = URL_A, handle = HANDLE) {
@@ -100,10 +106,41 @@ async function run() {
     assert.equal(await w.consumeSafeBrowsingBypass(7, URL_A), false, 'another navigation cancels the grant');
   }
   {
+    /* A bare IP program warning also opens its network rule, for that tab and that exact address. */
+    const program = 'http://93.184.216.34/files/a/setup.exe?id=1';
+    const w = world();
+    assert.equal((await w.addSafeBrowsingBypass(HANDLE, w.seed(7, program, HANDLE, { ipProgram: true }))).ok, true);
+    assert.deepEqual(w.programGrants, [[7, program]]);
+    const plain = world(); await grant(plain);
+    assert.equal(plain.programGrants.length, 0, 'an ordinary reputation warning opens no network rule');
+    const refused = world(); refused.refuseProgramGrant();
+    assert.equal((await refused.addSafeBrowsingBypass(HANDLE, refused.seed(7, program, HANDLE, { ipProgram: true }))).ok, false,
+      'without the network rule the grant would only reach a blocked page');
+    assert(refused.store['wardenone_warning:' + HANDLE], 'a failed grant keeps the warning so it can be tried again');
+    assert(!refused.store[refused.key], 'and records no navigation grant');
+  }
+  {
     const w = world(); await grant(w);
     assert.equal(await w.consumeSafeBrowsingBypass(8, URL_A), false);
     await w.navigate(7, URL_A, 2);
     assert.equal(await w.consumeSafeBrowsingBypass(7, URL_A), true, 'another tab or subframe cannot consume it');
+  }
+  {
+    /* Until the blocked page commits, the tab still shows the page it came from with nothing pending. */
+    const w = world();
+    w.active('https://previous.example/');
+    await w.handleSafeBrowsingNavigation({ tabId: 7, url: URL_A, frameId: 0 });
+    assert.equal(w.updates.length, 1, 'a page blocked before it commits still gets the warning');
+    const blank = world();
+    blank.active('about:blank');
+    await blank.handleSafeBrowsingNavigation({ tabId: 7, url: URL_A, frameId: 0 });
+    assert.equal(blank.updates.length, 1, 'a new tab blocked on its first page gets the warning');
+    const moved = world();
+    moved.active('https://previous.example/');
+    const pending = moved.handleSafeBrowsingNavigation({ tabId: 7, url: URL_A, frameId: 0 });
+    moved.active('https://next.example/');
+    await pending;
+    assert.equal(moved.updates.length, 0, 'a tab that moved on to another page is left alone');
   }
   for (const elapsed of [59999, 60000, 60001]) {
     const w = world(); await grant(w); w.advance(elapsed);

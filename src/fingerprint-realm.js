@@ -46,11 +46,11 @@
     record = Object.freeze(Object.assign({}, record, { webglBlocked: blocked === true, clientHints: hints === true }));
     settledHere();
   };
-  const settle = (noise, blocked, inherited, hints = false) => {
-    if (settled) return;
+  const settle = (noise, blocked, inherited, hints = false, level) => {
+    if (settled && (!noise || record?.noise)) return;
     settled = true;
     if (noise) {
-      try { record = __woFingerprintNoise(inherited || null); } catch (_) { record = OFF; }
+      try { record = __woFingerprintNoise(inherited || null, inherited ? undefined : level); } catch (_) { record = OFF; }
     } else {
       record = OFF;
     }
@@ -81,14 +81,24 @@
   };
   const early = adopt();
   if (early) settle(early.noise, early.webglBlocked === true, early, early.clientHints === true);
+  /* A third-party frame's fingerprinting runs before its signed settings arrive, so the registered early script arms
+     the level at document_start. It can only add noise. It only knows this frame's own address, so a frame stays
+     shielded on a site that switched the shield off; the noise moves a colour by one step at most. */
+  for (const [type, level] of [['wo-fingerprint-early-on', 'max'], ['wo-fingerprint-early-standard', 'standard']]) {
+    try {
+      document.addEventListener(type, () => {
+        if (!settled && document.readyState === 'loading') settle(true, false, adopt(), false, level);
+      }, true);
+    } catch (_) {}
+  }
 
   /* Listen for an upstream verdict while configuration is pending. Page-generated events only trigger a re-read of the
      protected record. */
   const adoptLater = () => {
     const late = adopt();
     if (!late) return;
-    if (settled) publishWebGL(late.webglBlocked === true, late.clientHints === true);
-    else settle(late.noise, late.webglBlocked === true, late, late.clientHints === true);
+    if (!settled || (late.noise && !record?.noise)) settle(late.noise, late.webglBlocked === true, late, late.clientHints === true);
+    else publishWebGL(late.webglBlocked === true, late.clientHints === true);
   };
   SOURCES.forEach((w) => {
     try { w.document.addEventListener('wo-realm-settled', adoptLater, true); } catch (_) {}
@@ -134,12 +144,13 @@
        a page can compare agreeing on the numbers, so adoption is tried once more first. */
     const late = adopt();
     if (late) {
-      if (settled) publishWebGL(late.webglBlocked === true, late.clientHints === true);
-      else settle(late.noise, late.webglBlocked === true, late, late.clientHints === true);
+      if (!settled || (late.noise && !record?.noise)) settle(late.noise, late.webglBlocked === true, late, late.clientHints === true);
+      else publishWebGL(late.webglBlocked === true, late.clientHints === true);
       return;
     }
-    if (settled) publishWebGL(config.webglDisabled === true, config.frameClientHints === true);
-    else settle(config.frameNoise === true, config.webglDisabled === true, null, config.frameClientHints === true);
+    if (!settled || (config.frameNoise === true && !record?.noise)) settle(config.frameNoise === true, config.webglDisabled === true, null, config.frameClientHints === true,
+      config.frameNoiseLevel === 'standard' ? 'standard' : 'max');
+    else publishWebGL(config.webglDisabled === true, config.frameClientHints === true);
   }, true);
   /* Attribute only this frame's native canvas use. A page-supplied script URL cannot name a tracker. */
   try {
@@ -149,12 +160,12 @@
     const patch = (proto, name, after) => {
       const descriptor = Object.getOwnPropertyDescriptor(proto, name);
       if (typeof descriptor?.value !== 'function') return;
-      const real = descriptor.value;
-      Object.defineProperty(proto, name, Object.assign({}, descriptor, { value: function () {
-        const result = Reflect.apply(real, this, arguments);
-        try { after(this, arguments, result); } catch (_) {}
+      const observed = new Proxy(descriptor.value, { apply(native, receiver, args) {
+        const result = Reflect.apply(native, receiver, args);
+        try { after(receiver, args, result); } catch (_) {}
         return result;
-      } }));
+      } });
+      Object.defineProperty(proto, name, Object.assign({}, descriptor, { value: observed }));
     };
     const read = (canvas, width, height) => {
       if (learningConfigured && !learning || interacted || !drawn.has(canvas) || !(width >= 16 && height >= 16) || !(canvas.width >= 16 && canvas.height >= 16)) return;

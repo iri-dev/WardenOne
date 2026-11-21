@@ -23,6 +23,7 @@ This reference maps the controls in WardenOne to their descriptions in the READM
 | `twitchAdBlock` | AdShield: Twitch | [Twitch AdShield](../README.md#twitch-adshield) |
 | `sendPrivacySignals` | Do Not Track & privacy signals | [Tracker protection](../README.md#tracker-protection) |
 | `clientHintProtection` | Reduce third-party Client Hints | [Header Shield](../README.md#header-shield) |
+| `capLeakyReferrer` | Referrer cap | [Header Shield](../README.md#header-shield) |
 | `capReferrer` | Strict cross-site referrer protection | [Header Shield](../README.md#header-shield) |
 | `trackerCacheProtection` | Block tracker cache validators | [Header Shield](../README.md#header-shield) |
 | `fingerprintProbeDetection` | Fingerprint probe detection | [Anti-fingerprinting](../README.md#anti-fingerprinting) |
@@ -101,6 +102,7 @@ This reference maps the controls in WardenOne to their descriptions in the READM
 | `watchExtensionPermissions` | Watch installed-extension changes | [Extension Change Monitoring](../README.md#extension-change-monitoring) |
 | `startupCheck` | Startup security check | [Startup Security Check](../README.md#startup-security-check) |
 | `blockPopupTricks` | Block popup and redirect tricks | [Redirect, Pop-up & Back-trap Protection](../README.md#redirect-pop-up--back-trap-protection) |
+| `fingerprintShield` | Fingerprint shield | [Anti-fingerprinting](../README.md#anti-fingerprinting) |
 | `antiFingerprintNoise` | Anti-fingerprinting noise | [Anti-fingerprinting](../README.md#anti-fingerprinting) |
 | `autoRejectConsent` | Auto-reject cookie banners | [Consent protection](../README.md#consent-protection) |
 | `removeConsentWalls` | Lift full-screen cookie walls | [Consent protection](../README.md#consent-protection) |

@@ -43,6 +43,11 @@ const officialDestinations = [
   ['shop.example', 'js.stripe.com'],
   ['portal.example', 'login.microsoftonline.com'],
   ['portal.example', 'challenges.cloudflare.com'],
+  /* AWS WAF bot check: refusing its token post left IMDb's first visit blank (Browser Guard 1v1). */
+  ['www.imdb.com', 'fb423e1ef94f.d0a40594.us-east-1.token.awswaf.com'],
+  /* A consent manager storing the visitor's refusal with its consent token (Bleacher Report, Round 5). */
+  ['bleacherreport.com', 'privacyportal-eu.onetrust.com'],
+  ['news.example', 'cdn.cookielaw.org'],
 ];
 
 for (const [page, target] of officialDestinations) {
@@ -62,6 +67,10 @@ const spoofedDestinations = [
   'accounts.google.com.attacker.test',
   'secure-paypal.com',
   'evilgoogle.com',
+  'awswaf.com.attacker.test',
+  'token-awswaf.com',
+  'onetrust.com.attacker.test',
+  'my-onetrust.com',
 ];
 
 for (const target of spoofedDestinations) {
@@ -87,6 +96,9 @@ const familyDestinations = [
   ['www.tiktok.com', 'mon16-normal-useastred.tiktokv.eu'],
   ['www.tiktok.com', 'mcs-va.tiktokv.com'],
   ['www.tiktok.com', 'mon.tiktokv.com'],
+  /* Bleacher Report's sports data API and its owner's video platform (Round 5 false warning). */
+  ['bleacherreport.com', 'fed-api.sportsplatform.io'],
+  ['bleacherreport.com', 'atlas.ngtv.io'],
   ['discord.com', 'cdn.discordapp.net'],
   ['discordapp.com', 'discord.gg'],
   /* The originally reported case, kept as a regression even though it is now
@@ -251,4 +263,62 @@ assert(!/\bsessionTrusted\b/.test(source), 'blanket sessionTrusted bypass has be
 assert(!/\btrustedFamilyRe\b/.test(source), 'legacy partial family map has been removed');
 assert(!/\bGOOD_DEST\s*=/.test(source), 'brand-prefix destination regex has been removed');
 
-console.log(`token-exfil destination trust tests passed (${officialDestinations.length + spoofedDestinations.length + familyDestinations.length + sessionPages.length + 19} assertions)`);
+/* A page's own registrable site is never a foreign destination. regDomain only drops www, so on edition.cnn.com
+   CNN's own API on default.any-any.prd.api.bolt.cnn.com counted as foreign and its video player could not start.
+   The real destIsForeign runs here with the real domain-utils.js, so the public suffix list decides. */
+let siteChecks = 0;
+{
+  const fnStart = source.indexOf('destIsForeign=url=>{');
+  const fnEnd = source.indexOf('\n      };', fnStart);
+  assert(fnStart > 0 && fnEnd > fnStart, 'destIsForeign is present in src/content.js');
+  const fn = source.slice(fnStart + 'destIsForeign='.length, fnEnd + '\n      }'.length);
+  const domainUtils = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8');
+  const foreignFrom = (page) => {
+    const ctx = vm.createContext({ URL, console });
+    ctx.window = ctx; ctx.self = ctx; ctx.globalThis = ctx;
+    vm.runInContext(domainUtils, ctx, { filename: 'domain-utils.js' });
+    ctx.location = { href: 'https://' + page + '/', hostname: page };
+    ctx.regDomain = (h) => String(h || '').replace(/^www\./, '').toLowerCase();
+    ctx.here = ctx.regDomain(page);
+    ctx.TOKEN_EXFIL_TRUST_POLICY = () => false;
+    return vm.runInContext('(' + fn + ')', ctx);
+  };
+  const cases = [
+    ['edition.cnn.com', 'https://default.any-any.prd.api.bolt.cnn.com/labs/api/v1/sessions', false],
+    ['edition.cnn.com', 'https://registry.api.cnn.io/bundles/fave/latest-4.x/js', 'registry.api.cnn.io'],
+    ['en.wikipedia.org', 'https://login.wikimedia.org/x', 'login.wikimedia.org'],
+    ['en.wikipedia.org', 'https://meta.wikipedia.org/x', false],
+    ['shop.example.co.uk', 'https://api.example.co.uk/cart', false],
+    ['shop.example.co.uk', 'https://api.other.co.uk/cart', 'api.other.co.uk'],
+    ['alice.github.io', 'https://bob.github.io/steal', 'bob.github.io'],
+    ['alice.github.io', 'https://alice.github.io/api', false],
+    ['app.herokuapp.com', 'https://evil.herokuapp.com/collect', 'evil.herokuapp.com'],
+    ['10.0.0.5', 'https://10.0.0.6/collect', '10.0.0.6'],
+    ['www.example.com', 'https://cdn.example.com/x', false],
+    ['www.example.com', 'https://example.net/x', 'example.net'],
+  ];
+  for (const [page, url, want] of cases) {
+    const got = foreignFrom(page)(url);
+    assert.strictEqual(got, want, 'destIsForeign from ' + page + ' to ' + url + ': got ' + JSON.stringify(got));
+    siteChecks++;
+  }
+  /* Without domain-utils.js the old host check still applies, never a looser one. */
+  const ctx = vm.createContext({ URL });
+  ctx.location = { href: 'https://edition.cnn.com/', hostname: 'edition.cnn.com' };
+  ctx.regDomain = (h) => String(h || '').replace(/^www\./, '').toLowerCase();
+  ctx.here = 'edition.cnn.com';
+  ctx.TOKEN_EXFIL_TRUST_POLICY = () => false;
+  const bare = vm.runInContext('(' + fn + ')', ctx);
+  assert.strictEqual(bare('https://api.bolt.cnn.com/x'), 'api.bolt.cnn.com', 'without the site helper a sibling stays foreign');
+  assert.strictEqual(bare('https://edition.cnn.com/x'), false, 'and the page host itself is never foreign');
+  siteChecks += 2;
+}
+
+/* The family covers Bleacher Report only, and its owner's data platform stays untrusted. */
+for (const [page, target] of [['bleacherreport.com', 'receive.wmcdp.io'], ['news.example', 'fed-api.sportsplatform.io'],
+  ['news.example', 'atlas.ngtv.io'], ['bleacherreport.com', 'sportsplatform.io.attacker.test']]) {
+  assert.strictEqual(isTrustedDestination(page, target), false, `${page} must not trust ${target}`);
+  siteChecks++;
+}
+
+console.log(`token-exfil destination trust tests passed (${officialDestinations.length + spoofedDestinations.length + familyDestinations.length + sessionPages.length + 19 + siteChecks} assertions)`);

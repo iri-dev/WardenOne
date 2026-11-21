@@ -128,6 +128,10 @@ if (sourceRegion) {
   check('an allowlist id names your allowlist', src(bases.ALLOWLIST_RULE_BASE, '_dynamic') === 'Your allowlist');
   check('a skipped redirect has its own source', src(bases.TRACKING_REDIRECT_RULE_BASE, '_dynamic') === 'Tracking redirect skipped');
   check('a redirect continuation cannot explain a block', canBlock(bases.TRACKING_REDIRECT_FALLBACK_BASE, '_session') === false);
+  check('a bare IP program rule names its own source and can block',
+    src(bases.IP_PROGRAM_RULE_BASE + 1, '_dynamic') === 'Program link on a bare IP address' && canBlock(bases.IP_PROGRAM_RULE_BASE + 1, '_dynamic') === true);
+  check('its local-range allows and its continue grants cannot explain a block',
+    canBlock(bases.IP_PROGRAM_LOCAL_RULE_BASE + 4, '_dynamic') === false && canBlock(bases.IP_PROGRAM_ONCE_RULE_BASE, '_session') === false);
   check('a static ruleset is named by its list', src(7, 'easyprivacy') === 'EasyPrivacy');
   check('an unknown static ruleset falls back to its id', src(7, 'something-new') === 'something-new');
   /* Ranges must not overlap into the wrong owner. */

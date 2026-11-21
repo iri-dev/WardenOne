@@ -220,25 +220,17 @@ pending.push((async function theProbeIsRecordedByTheDetectionFeature() {
      patchGLProbe and patchGL already are, so the probe count lives in the
      detection block and not in the shield. The two chain at runtime: whichever
      wraps second calls through to the first. */
-  const at = CONTENT.indexOf('const gpuProbe=navigator.gpu');
-  check('the detection block hooks requestAdapter', at > 0);
-  const start = CONTENT.lastIndexOf('if(navigator.gpu&&navigator.gpu.requestAdapter){', at);
-  /* content.min.js is one line, so the block has to be delimited by balancing
-     braces rather than by looking for a newline. */
-  let depth = 0;
-  let end = start;
-  for (; end < CONTENT.length; end++) {
-    if (CONTENT[end] === '{') depth++;
-    else if (CONTENT[end] === '}' && --depth === 0) { end++; break; }
-  }
-  const detect = CONTENT.slice(start, end);
-  check('the detection hook was delimited cleanly', /realAdapterRequest\.apply/.test(detect));
+  const start = CONTENT.indexOf('const observeFingerprintMethod=');
+  const end = CONTENT.indexOf('observeFingerprintMethod(window.HTMLCanvasElement', start);
+  const call = 'observeFingerprintMethod(Object.getPrototypeOf(navigator.gpu),"requestAdapter","WebGPU adapter probe")';
+  check('the detection block hooks requestAdapter', start >= 0 && end > start && CONTENT.includes(call));
+  const detect = CONTENT.slice(start, end) + call;
 
   const probes = [];
   const sandbox = {
     console, Promise, Object,
     noteFingerprint: (why) => { probes.push(why); },
-    navigator: { gpu: { requestAdapter: () => Promise.resolve({ real: true }) } },
+    navigator: { gpu: Object.create({ requestAdapter: () => Promise.resolve({ real: true }) }) },
   };
   vm.createContext(sandbox);
   vm.runInContext(detect, sandbox);
@@ -246,6 +238,7 @@ pending.push((async function theProbeIsRecordedByTheDetectionFeature() {
   await sandbox.navigator.gpu.requestAdapter();
   check('asking for an adapter is recorded as a fingerprint probe',
     probes.some((p) => /WebGPU/i.test(p)), JSON.stringify(probes));
+  check('the GPU object gains no own wrapper', !Object.hasOwn(sandbox.navigator.gpu, 'requestAdapter'));
 }()));
 
 (function theShieldReachesForNothingOutsideItsScope() {

@@ -3,14 +3,14 @@
   "note": "Generated from runtime constants, embedded build provenance and docs/source-licensing.json. Edit policy metadata, not this file. Counts include optional configured feeds; license and permission counts can overlap.",
   "checkedAt": "2026-11-05",
   "summary": {
-    "runtimeFeeds": 44,
-    "publishers": 28,
-    "publishedLicenseCoveredFeeds": 38,
+    "runtimeFeeds": 47,
+    "publishers": 29,
+    "publishedLicenseCoveredFeeds": 41,
     "writtenPermissionFeeds": 11,
-    "resolvedFeeds": 42,
+    "resolvedFeeds": 45,
     "unresolvedFeeds": 2,
     "buildOnlyInputs": 8,
-    "redistributedArtifacts": 27
+    "redistributedArtifacts": 28
   },
   "sources": [
     {
@@ -320,7 +320,79 @@
       ],
       "kind": "fetched",
       "policyId": "phishingfilter",
-      "name": "malware-filter Phishing hosts",
+      "name": "malware-filter Phishing hosts and addresses",
+      "publisher": "Ming Di Leom / malware-filter",
+      "home": "https://gitlab.com/malware-filter/phishing-filter",
+      "license": {
+        "type": "published-license",
+        "id": "CC-BY-SA-4.0",
+        "url": "https://gitlab.com/malware-filter/phishing-filter/-/raw/main/README.md"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Ming Di Leom / malware-filter; OpenPhish, IPThreat and PhishTank.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Credit the authors, link the license and source, identify modifications, and do not imply endorsement.",
+          "Share adaptations under compatible share-alike terms. This license applies to filters, while src/ code is MIT/CC0."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://gitlab.com/malware-filter/phishing-filter/-/raw/main/README.md",
+          "documentSha256": "eaf7eae96ec55af9af2c71d04b8e600acae6941d51bf16f17eb03ec30aa623f3",
+          "finding": "Published basis for the exact list; file-specific declarations take precedence over repository defaults."
+        },
+        {
+          "reference": "owner-review-decision-2026-11-05",
+          "finding": "Owner accepted the existing OpenPhish grant for current local use, including aggregate-derived domains; OP-1 closed without further publisher outreach. The direct feed continues to use the requested GitHub repository."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "OpenPhish",
+          "url": "https://openphish.com/terms.html",
+          "license": "Community Feed terms; written WardenOne permission",
+          "note": "Current local use reviewed under permission-openphish-2026-11-03."
+        },
+        {
+          "name": "IPThreat",
+          "url": "https://ipthreat.net/",
+          "license": "CC-BY-SA-4.0",
+          "note": ""
+        },
+        {
+          "name": "PhishTank",
+          "url": "https://phishtank.org/terms.php",
+          "license": "Published API data terms",
+          "note": ""
+        }
+      ],
+      "checkedAt": "2026-11-05"
+    },
+    {
+      "url": "https://malware-filter.gitlab.io/malware-filter/phishing-filter.txt",
+      "purposes": [
+        "Phishing page addresses"
+      ],
+      "toggles": [
+        "blockMalwareSites"
+      ],
+      "kind": "fetched",
+      "policyId": "phishingfilter",
+      "name": "malware-filter Phishing hosts and addresses",
       "publisher": "Ming Di Leom / malware-filter",
       "home": "https://gitlab.com/malware-filter/phishing-filter",
       "license": {
@@ -412,7 +484,8 @@
         ],
         "implementation": [
           "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
-          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped.",
+          "The IP-only online file (urlhaus-filter-dnscrypt-blocked-ips-online.txt) carries the bare IP servers the hosts list cannot; each public IPv4 address becomes an exact address block."
         ],
         "noticeFiles": [
           "CREDITS.md",
@@ -425,6 +498,76 @@
           "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md",
           "documentSha256": "0166b8144a53b9a114440ee1ebac612d72d9cab9dc26b01b76014245c867fdeb",
           "finding": "Published basis for the exact lists; the README's license section (CC0-1.0 and MIT) covers the hosts and online-URL outputs alike. File-specific declarations take precedence over repository defaults."
+        },
+        {
+          "url": "https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-dnscrypt-blocked-ips-online.txt",
+          "finding": "Header names the same homepage, licence link and URLhaus API source as the other urlhaus-filter files; 1,282 bare IPv4 lines and nothing else on 13 November 2026."
+        }
+      ],
+      "upstream": [
+        {
+          "name": "URLhaus / abuse.ch",
+          "url": "https://urlhaus.abuse.ch/",
+          "license": "CC0-1.0",
+          "note": "As labelled by malware-filter. abuse.ch's current terms state CC0 only for Feodo Tracker, SSL Blacklist and YARAify and make URLhaus free for not-for-profit use, which covers WardenOne's noncommercial use."
+        },
+        {
+          "name": "Tranco",
+          "url": "https://tranco-list.eu/",
+          "license": "MIT",
+          "note": "False-positive exclusion input, not republished as ranking data."
+        }
+      ],
+      "checkedAt": "2026-10-22"
+    },
+    {
+      "url": "https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-dnscrypt-blocked-ips-online.txt",
+      "purposes": [
+        "Malware and phishing domains"
+      ],
+      "toggles": [
+        "blockMalwareSites"
+      ],
+      "kind": "fetched",
+      "policyId": "urlhaus",
+      "name": "malware-filter URLhaus hosts and online URLs",
+      "publisher": "Ming Di Leom / malware-filter",
+      "home": "https://gitlab.com/malware-filter/urlhaus-filter",
+      "license": {
+        "type": "published-license",
+        "id": "MIT OR CC0-1.0",
+        "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "Published terms cover direct runtime download and local processing; no separate email grant is needed."
+      },
+      "attribution": "Copyright (c) 2023 Ming Di Leom; URLhaus / abuse.ch.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "Keep copyright and permission notices with redistributed material."
+        ],
+        "implementation": [
+          "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped.",
+          "The IP-only online file (urlhaus-filter-dnscrypt-blocked-ips-online.txt) carries the bare IP servers the hosts list cannot; each public IPv4 address becomes an exact address block."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md",
+          "documentSha256": "0166b8144a53b9a114440ee1ebac612d72d9cab9dc26b01b76014245c867fdeb",
+          "finding": "Published basis for the exact lists; the README's license section (CC0-1.0 and MIT) covers the hosts and online-URL outputs alike. File-specific declarations take precedence over repository defaults."
+        },
+        {
+          "url": "https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-dnscrypt-blocked-ips-online.txt",
+          "finding": "Header names the same homepage, licence link and URLhaus API source as the other urlhaus-filter files; 1,282 bare IPv4 lines and nothing else on 13 November 2026."
         }
       ],
       "upstream": [
@@ -473,7 +616,8 @@
         ],
         "implementation": [
           "Attribution, source and terms links in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html.",
-          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped."
+          "Local parsing changes format, normalization, deduplication and rule caps; raw runtime feeds are not shipped.",
+          "The IP-only online file (urlhaus-filter-dnscrypt-blocked-ips-online.txt) carries the bare IP servers the hosts list cannot; each public IPv4 address becomes an exact address block."
         ],
         "noticeFiles": [
           "CREDITS.md",
@@ -486,6 +630,10 @@
           "url": "https://gitlab.com/malware-filter/urlhaus-filter/-/raw/main/README.md",
           "documentSha256": "0166b8144a53b9a114440ee1ebac612d72d9cab9dc26b01b76014245c867fdeb",
           "finding": "Published basis for the exact lists; the README's license section (CC0-1.0 and MIT) covers the hosts and online-URL outputs alike. File-specific declarations take precedence over repository defaults."
+        },
+        {
+          "url": "https://malware-filter.gitlab.io/urlhaus-filter/urlhaus-filter-dnscrypt-blocked-ips-online.txt",
+          "finding": "Header names the same homepage, licence link and URLhaus API source as the other urlhaus-filter files; 1,282 bare IPv4 lines and nothing else on 13 November 2026."
         }
       ],
       "upstream": [
@@ -725,6 +873,64 @@
         }
       ],
       "checkedAt": "2026-11-05"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/0xDanielLopez/TweetFeed/master/month.csv",
+      "purposes": [
+        "Malware and phishing domains"
+      ],
+      "toggles": [
+        "blockMalwareSites"
+      ],
+      "kind": "fetched",
+      "policyId": "tweetfeed",
+      "name": "TweetFeed",
+      "publisher": "Daniel Lopez (0xDanielLopez)",
+      "home": "https://tweetfeed.live",
+      "license": {
+        "type": "published-license",
+        "id": "CC0-1.0",
+        "url": "https://github.com/0xDanielLopez/TweetFeed/blob/master/LICENSE"
+      },
+      "permission": {
+        "status": "not-required",
+        "scope": "The README releases the data feeds (CSV, JSON, RSS, MISP, STIX) and the public API responses under CC0 1.0 Universal: no rights reserved, reuse freely, no attribution required. Direct download and local processing need no personal permission."
+      },
+      "attribution": "TweetFeed, collected by Daniel Lopez from security researchers' public posts. Credited although CC0 asks for none.",
+      "compliance": {
+        "status": "implemented",
+        "conditions": [
+          "CC0 1.0 public-domain dedication with fallback licence and warranty disclaimer; no attribution or other condition attaches to the feed data.",
+          "The optional external corroboration block in /v1/ioc responses comes from abuse.ch and is not CC0. WardenOne reads only month.csv, which the README says never contains that block."
+        ],
+        "implementation": [
+          "Direct runtime download of month.csv; nothing is bundled or mirrored.",
+          "Only bare IPv4 addresses are kept: reported IPs and the hosts of reported URLs that are IP literals. Domains are left to HaGeZi TIF, which already takes TweetFeed as an input.",
+          "Private, local and documentation ranges and a short list of public resolvers are never blocked.",
+          "Source and licence notices in CREDITS.md and the packaged THIRD_PARTY_NOTICES.html."
+        ],
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html"
+        ],
+        "issueIds": []
+      },
+      "evidence": [
+        {
+          "url": "https://raw.githubusercontent.com/0xDanielLopez/TweetFeed/master/LICENSE",
+          "documentSha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+          "finding": "Verbatim Creative Commons CC0 1.0 Universal legal code; Git blob 0e259d42c996742e9e3cba14c677129b2c1b6311 checked on 13 November 2026. GitHub reports the repository licence as CC0-1.0."
+        },
+        {
+          "url": "https://github.com/0xDanielLopez/TweetFeed#license",
+          "finding": "The README licence section says the data feeds and public API responses are released under CC0 1.0 Universal, no rights reserved, reuse freely, no attribution required, with one exception: the optional external corroboration block from abuse.ch in /v1/ioc responses, which never enters the feed data itself. Checked 13 November 2026."
+        },
+        {
+          "url": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/sources.md",
+          "finding": "HaGeZi lists TweetFeed week.csv and month.csv among the main inputs of its Threat Intelligence Feeds, so TweetFeed domains already reach WardenOne; this source adds the IP addresses a domain list cannot carry. Checked 13 November 2026."
+        }
+      ],
+      "checkedAt": "2026-11-13"
     },
     {
       "url": "https://raw.githubusercontent.com/AdAway/adaway.github.io/master/hosts.txt",
@@ -2822,7 +3028,7 @@
       "license": {
         "type": "published-license",
         "id": "MIT",
-        "url": "https://github.com/AdguardTeam/cname-trackers/blob/3a7f5b0cdf8f28b2f5b88db0e55d940869fe1473/LICENSE"
+        "url": "https://github.com/AdguardTeam/cname-trackers/blob/dd5bd59eda209a97efeee1ee7898e119c582a13b/LICENSE"
       },
       "permission": {
         "status": "not-required",
@@ -2847,11 +3053,11 @@
       },
       "evidence": [
         {
-          "url": "https://github.com/AdguardTeam/cname-trackers/blob/3a7f5b0cdf8f28b2f5b88db0e55d940869fe1473/LICENSE",
+          "url": "https://github.com/AdguardTeam/cname-trackers/blob/dd5bd59eda209a97efeee1ee7898e119c582a13b/LICENSE",
           "finding": "The pinned repository includes an MIT copyright and permission notice for its software and accompanying material."
         }
       ],
-      "checkedAt": "2026-10-30"
+      "checkedAt": "2026-11-20"
     },
     {
       "url": "https://github.com/EFForg/privacybadger",
@@ -3012,7 +3218,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "32be475e5c6d1175980f5b5080c0adc5bfaabfdd34b91205df80ee6dbc5ca954"
+      "sha256": "daf26e8ea3381baebc81b197a90c6b14331edc013e9828013d2f18cc8f9e306f"
     },
     {
       "file": "rules-easyprivacy.json",
@@ -3032,6 +3238,28 @@
       },
       "kind": "redistributed",
       "sha256": "acf6172d028b0f4f9c8aa4b07b284e389344e4d82612e1dac7d3ac7a5b6b071c"
+    },
+    {
+      "file": "rules-easyprivacy-general.json",
+      "license": "CC-BY-SA-3.0",
+      "provenance": "The EasyList authors; EasyPrivacy general collector rules",
+      "builtBy": "tools/build-easyprivacy-general-dnr.js",
+      "modifications": "EasyPrivacy general rules naming a collector, minus payment, checkout, captcha and bot check sensor paths, converted to DNR rules; matching allowlist exceptions folded in as excluded domains. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-11-19.",
+      "sourceFiles": [
+        "docs/easyprivacy-general-snapshot.txt",
+        "tools/build-easyprivacy-general-dnr.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      },
+      "kind": "redistributed",
+      "sha256": "8ad412dc770db529f9b115b28116acde289f9aab057adb62ab8bb1ea4a369317"
     },
     {
       "file": "cosmetic-rules.json",
@@ -3204,7 +3432,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "c44701ef0c826827d3c91981aee7a9ea962ff83f43e603413f63a86af070c68d"
+      "sha256": "01f8902529767407bc6ac870967c5870ce2084bf2cf6bb4c9fafeb6f24dbf763"
     },
     {
       "file": "grabber-extra.json",
@@ -3461,7 +3689,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "327b5d6bec849a2885b6cea376e81891c0766dc99df50d871e65eda24043932f"
+      "sha256": "f1f60c8d04d9b5a4e49d586697ea097f24921c2705f4a991da1315eb1b0b0535"
     },
     {
       "file": "rules-cname.json",
@@ -3483,7 +3711,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "9c9dc664c6d1d984fd7388e16595ac5c71621e4b5ef0996cfc2923e87f2a34c5"
+      "sha256": "4656d885c173e6825deffd47cdb5c5470b8c8ab229ac480420f86847272e8971"
     },
     {
       "file": "rules-badger.json",
@@ -3505,7 +3733,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "fe9a27875c47921afbf6ab7a4e9d2ff2286759c2ca34ecd0947342feec121a94"
+      "sha256": "b7272241a8183d7c7c5f4bf21ba8eea3c7935b44ea354f4253c86a640799cc5e"
     },
     {
       "file": "first-party-sites.json",
@@ -3551,7 +3779,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "ef0b7ee03361fec180c4e8760a2e4d60c4b8826521c49c0a0dc20b888063fa42"
+      "sha256": "f433b260593b20f967d166ee61ec3ace1c93da8add39f6b1c5d6e0867f815c5b"
     },
     {
       "file": "tracker-catalog.json",

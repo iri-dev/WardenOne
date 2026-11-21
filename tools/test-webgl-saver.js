@@ -103,7 +103,7 @@ function bridgeFunction(name) {
   check('both shipped page realms contain the exact shared saver', CONTENT.includes(marked(CONTENT, 'WEBGL-SAVER'))
     && REALM.includes(marked(CONTENT, 'WEBGL-SAVER')));
   check('the signed frame verdict reaches the child bootstrap and can update later', /webglDisabled/.test(REALM)
-    && /if\s*\(settled\)\s*publishWebGL/.test(REALM));
+    && /else\s+publishWebGL\(config\.webglDisabled === true/.test(REALM));
   check('the bridge removes raw site lists before entering the page world', /clean\.webglDisabled = bridgeFrameWebGLDisabled\(clean\);[\s\S]{0,180}delete clean\.webglSaverBlockHosts;[\s\S]{0,100}delete clean\.webglSaverAllowHosts;/.test(BRIDGE));
   check('stored WebGL fields have conservative defaults in both owners', /webglSaverMode: 'off',[\s\S]{0,100}webglSaverBlockHosts: \[\],[\s\S]{0,100}webglSaverAllowHosts: \[\]/.test(BG)
     && /webglSaverMode: 'off', webglSaverBlockHosts: \[\], webglSaverAllowHosts: \[\]/.test(POPUP_JS));

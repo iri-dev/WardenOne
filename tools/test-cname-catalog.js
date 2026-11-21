@@ -67,7 +67,8 @@ assert(family && family.action.type === 'block', 'wildcard family');
 expectAction('anything-new.net.daraz.com', 'block');
 expectAction('net.daraz.com', 'block');
 expectAction('child.net.home24.de', 'block');
-expectAction('net.home24.de', '');
+/* AdGuard lists the apex itself since revision dd5bd59 (2026-11-05), so it is blocked by name, not by the family. */
+expectAction('net.home24.de', 'block');
 assert.equal(matches('a.trowow.de', 'main_frame').length, 0);
 
 const snapshot = readSnapshot();

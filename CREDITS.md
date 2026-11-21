@@ -145,8 +145,8 @@ The extension includes offline attribution and license notices in
 - **EasyList & EasyPrivacy**: <https://github.com/easylist/easylist> ·
   <https://easylist.to/pages/licence.html>
 
-  The tracker- and privacy-blocking rules bundled as `rules-easyprivacy.json`
-  and `rules-trackers.json` are derived from the EasyList project's community
+  The tracker- and privacy-blocking rules bundled as `rules-easyprivacy.json`,
+  `rules-easyprivacy-general.json` and `rules-trackers.json` are derived from the EasyList project's community
   blocklists.
 
   Unless an individual file says otherwise, the EasyList repository is dual
@@ -263,7 +263,7 @@ WardenOne uses independently maintained protection lists. Their maintainers reta
 Published licenses and written permissions are separate permission grants; no personal reply is needed when the applicable license covers the use.
 The inventory records exact addresses, local processing, evidence and any specific scope exception.
 
-[44 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md)
+[47 runtime feeds](https://github.com/iri-dev/WardenOne/blob/main/docs/source-inventory.json) · [Packaged notices](https://github.com/iri-dev/WardenOne/blob/main/THIRD_PARTY_NOTICES.html) · [Review and exceptions](https://github.com/iri-dev/WardenOne/blob/main/docs/source-usage.md)
 
 | Source | Runtime feeds | License or permission |
 | --- | --- | --- |
@@ -271,11 +271,12 @@ The inventory records exact addresses, local processing, evidence and any specif
 | [EasyList Dutch](https://github.com/easylist/easylistdutch) | 1 | GPL-3.0-or-later OR CC-BY-SA-3.0-or-later |
 | [Fanboy’s Annoyance and Social Blocking lists](https://easylist.to/) | 2 | CC-BY-3.0 |
 | [EasyList and EasyPrivacy](https://easylist.to/) | 2 | GPL-3.0-or-later OR CC-BY-SA-3.0-or-later |
-| [malware-filter Phishing hosts](https://gitlab.com/malware-filter/phishing-filter) | 1 | CC-BY-SA-4.0 |
-| [malware-filter URLhaus hosts and online URLs](https://gitlab.com/malware-filter/urlhaus-filter) | 2 | MIT OR CC0-1.0 |
+| [malware-filter Phishing hosts and addresses](https://gitlab.com/malware-filter/phishing-filter) | 2 | CC-BY-SA-4.0 |
+| [malware-filter URLhaus hosts and online URLs](https://gitlab.com/malware-filter/urlhaus-filter) | 3 | MIT OR CC0-1.0 |
 | [malware-filter VN Badsite hosts](https://gitlab.com/malware-filter/vn-badsite-filter) | 1 | MIT OR CC0-1.0 |
 | [Peter Lowe ad and tracking servers](https://pgl.yoyo.org/adservers/) | 1 | Written permission (2026-10) |
 | [Phishing Army](https://phishing.army/) | 1 | Written permission (2026-10); An open question about how this source may be used, recorded in the source review |
+| [TweetFeed](https://tweetfeed.live) | 1 | CC0-1.0 |
 | [AdAway hosts](https://github.com/AdAway/adaway.github.io) | 1 | CC-BY-3.0 |
 | [AdGuard Base, Tracking Protection and Mobile Ads filters](https://github.com/AdguardTeam/AdguardFilters) | 3 | GPL-3.0 |
 | [1Hosts Lite](https://github.com/badmojr/1Hosts) | 1 | MPL-2.0 |
@@ -316,6 +317,7 @@ Bundled and derived material:
 | --- | --- | --- |
 | `rules-adshield.json` | The EasyList authors; selected network rules plus WardenOne compatibility edits | CC-BY-SA-3.0 |
 | `rules-easyprivacy.json` | The EasyList authors; EasyPrivacy plus WardenOne tracker rules | CC-BY-SA-3.0 |
+| `rules-easyprivacy-general.json` | The EasyList authors; EasyPrivacy general collector rules | CC-BY-SA-3.0 |
 | `cosmetic-rules.json` | EasyList, EasyPrivacy, uAssets, AdGuard and Fanboy Social | GPL-3.0; Fanboy CC-BY-3.0 attribution retained |
 | `psl-private.js` | Public Suffix List private and ICANN sections | MPL-2.0 |
 | `domain-utils.js` | WardenOne code with compact Public Suffix List ICANN data | GPL-3.0-or-later; MPL-2.0 covers the marked PSL data |

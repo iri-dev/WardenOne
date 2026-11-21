@@ -64,6 +64,7 @@ function realm() {
   const sandbox = {
     console, Object, Array, String, Number, Set, Map, Math, Date, JSON,
     loadKnownAliases: async () => new Map(),
+    listRuleSources: async () => null,
     setTimeout: (fn, ms) => { const id = ++state.timerId; state.timers.push({ id, fn, ms }); return id; },
     clearTimeout: (id) => { state.timers = state.timers.filter((t) => t.id !== id); },
     setInterval: () => 0, clearInterval: () => {},

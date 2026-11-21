@@ -37,11 +37,12 @@ ok('max privacy is a true superset of recommended (nothing weakened)', weakened.
 
 // hardened set that max must turn on
 /* antiFingerprintNoise alone: the legacy antiFingerprint alias is no longer set (PI-06, below). */
-const HARDENED = ['antiFingerprintNoise', 'blockFirstPartyTrackers', 'breachCheck', 'clipboardGuard', 'blockSuspiciousWebRTC', 'capReferrer', 'deAmp'];
+const HARDENED = ['antiFingerprintNoise', 'blockFirstPartyTrackers', 'breachCheck', 'clipboardGuard', 'capReferrer', 'deAmp'];
 HARDENED.forEach((k) => ok('max enables hardened: ' + k, M[k] === true));
 
 // recommended must NOT include the hardened set (stays the safe default)
 HARDENED.forEach((k) => ok('recommended leaves hardened untouched: ' + k, !(k in R)));
+ok('Maximum privacy keeps WebRTC hardening off', M.blockSuspiciousWebRTC === false);
 
 // footguns that must never be in either bundle
 ['blockAllCookies', 'honeytokenMode', 'forceHttps'].forEach((k) => {

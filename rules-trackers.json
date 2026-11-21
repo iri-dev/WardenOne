@@ -1279,5 +1279,181 @@
         "other"
       ]
     }
+  },
+  {
+    "id": 51,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/analytics.js" } },
+    "condition": {
+      "regexFilter": "^https?://www\\.google-analytics\\.com(?::[0-9]+)?/analytics\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 52,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/tag-manager.js" } },
+    "condition": {
+      "regexFilter": "^https?://www\\.googletagmanager\\.com(?::[0-9]+)?/(?:gtm\\.js|gtag/js)(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 53,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/publisher-tag.js" } },
+    "condition": {
+      "regexFilter": "^https?://(?:securepubads\\.g\\.doubleclick\\.net|pagead2\\.googlesyndication\\.com)(?::[0-9]+)?/tag/js/gpt\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 54,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/facebook.js" } },
+    "condition": {
+      "regexFilter": "^https?://connect\\.facebook\\.net(?::[0-9]+)?/[a-z]{2}_[A-Z]{2}/sdk\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 55,
+    "priority": 1910,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/facebook.js" } },
+    "condition": {
+      "regexFilter": "^https?://connect\\.facebook\\.net(?::[0-9]+)?/[a-z]{2}_[A-Z]{2}/fbevents\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 57,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/segment.js" } },
+    "condition": {
+      "regexFilter": "^https?://cdn\\.segment\\.(?:com|io)(?::[0-9]+)?/analytics\\.js/v1/[A-Za-z0-9]+/analytics(?:\\.min)?\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 58,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/adobe-launch.js" } },
+    "condition": {
+      "regexFilter": "^https?://assets\\.adobedtm\\.com(?::[0-9]+)?/(?:[A-Za-z0-9_-]+/){0,3}(?:launch-[A-Za-z0-9_-]+|satelliteLib-[A-Za-z0-9_-]+)(?:\\.min)?\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 59,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/matomo.js" } },
+    "condition": {
+      "regexFilter": "^https?://cdn\\.matomo\\.cloud(?::[0-9]+)?/[a-z0-9-]+(?:\\.[a-z0-9-]+)+/(?:matomo|piwik)\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 60,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/apstag.js" } },
+    "condition": {
+      "regexFilter": "^https?://c\\.amazon-adsystem\\.com(?::[0-9]+)?/aax2/apstag\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 61,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/optimizely.js" } },
+    "condition": {
+      "regexFilter": "^https?://cdn\\.optimizely\\.com(?::[0-9]+)?/(?:js/[0-9]+|public/[0-9]+/s/[0-9_]+)\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 62,
+    "priority": 1160,
+    "action": { "type": "redirect", "redirect": { "extensionPath": "/surrogates/urchin.js" } },
+    "condition": {
+      "regexFilter": "^https?://(?:ssl|www)\\.google-analytics\\.com(?::[0-9]+)?/ga\\.js(?:\\?[^#]*)?$",
+      "isUrlFilterCaseSensitive": true,
+      "domainType": "thirdParty",
+      "requestMethods": ["get"],
+      "resourceTypes": ["script"]
+    }
+  },
+  {
+    "id": 63,
+    "priority": 1000,
+    "action": { "type": "block" },
+    "condition": {
+      "regexFilter": "^https://fls-(?:na|eu|fe)\\.amazon\\.[a-z.]{2,12}/1/batch/",
+      "isUrlFilterCaseSensitive": true,
+      "requestMethods": ["get", "post"],
+      "resourceTypes": ["image", "ping", "xmlhttprequest", "other"]
+    }
+  },
+  {
+    "id": 64,
+    "priority": 1000,
+    "action": { "type": "block" },
+    "condition": {
+      "regexFilter": "^https://tom\\.itv\\.com/itv/(?:lserver/)?hserver/size=(?:collectiontile|hubsponsorbutton|xbanner|xps)/",
+      "isUrlFilterCaseSensitive": true,
+      "requestMethods": ["get"],
+      "resourceTypes": ["xmlhttprequest", "script", "image"]
+    }
+  },
+  {
+    "id": 65,
+    "priority": 1000,
+    "action": { "type": "block" },
+    "condition": {
+      "regexFilter": "^https://unagi(?:-[a-z]{2})?\\.amazon\\.[a-z.]{2,12}/1/events/",
+      "isUrlFilterCaseSensitive": true,
+      "requestMethods": ["get", "post"],
+      "resourceTypes": ["ping", "xmlhttprequest", "image", "other"]
+    }
+  },
+  {
+    "id": 66,
+    "priority": 1000,
+    "action": { "type": "block" },
+    "condition": {
+      "regexFilter": "^https://s\\.amazon-adsystem\\.com/(?:iu3|ecm3)(?:[/?]|$)",
+      "isUrlFilterCaseSensitive": true,
+      "requestMethods": ["get"],
+      "resourceTypes": ["sub_frame", "image", "script", "xmlhttprequest"]
+    }
   }
 ]

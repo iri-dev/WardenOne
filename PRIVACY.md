@@ -48,6 +48,10 @@ unclear, contact us (see **Contact** below).
   after an opt-out action. Cookie values stay out of Activity; it records the
   manager, action, outcome and evidence type. Pending verification is canceled
   by pause, disposal or clearing history. Verification adds no external lookup.
+- With **Auto-reject cookie banners** on, a site that loads OneTrust from OneTrust's own servers gets
+  WardenOne's stand-in instead. It writes OneTrust's two consent cookies on that site, holding only the
+  refusal, the date and whether Global Privacy Control is on, with no ID of any kind. Nothing is sent
+  anywhere, and OneTrust itself is not contacted.
 - Tracking redirect skipping decodes supported links on your device without asking a
   link-resolution service or contacting the tracking host. A local extension page briefly
   holds the original link in its fragment and replaces itself with the destination.
@@ -315,7 +319,10 @@ already loaded**, hashes them, and compares the hash with what it saw before.
 
 The important detail for your privacy: every one of those requests goes to a host **the
 page itself just used**, so no company learns anything it did not already know from you
-loading the page. Scripts served by the site you are visiting are skipped entirely,
+loading the page. A script the page never loaded, because WardenOne or your browser blocked
+it or the site is holding it back until you agree to cookies, is never requested at all; if
+WardenOne can't tell what the page loaded, it skips the check for that page. Scripts served
+by the site you are visiting are skipped entirely,
 nothing about the request is sent anywhere else, and the hashing and comparison happen on
 your device. Re-checks are rate-limited and capped per page, and allowlisted sites are
 skipped. Turn it off with **Script drift guard** in the popup.
@@ -396,15 +403,16 @@ A login form on a domain registered days ago is one of the strongest phishing si
 there is. If you switch this on, a page with a password field offers a **Check domain age**
 button. Only pressing it sends that site's registrable domain (`example.com`, never
 the full URL, page contents or what you type) to **`rdap.org`**, or your enabled
-WhoisXML domain-age service. WardenOne uses the returned registration date to assess
-the sign-in page. Page scripts cannot start the manual domain-age request through
-the MAIN-world message bridge.
+WhoisXML domain age service. I use the returned registration date to assess the page
+where you would enter your password. Scripts on the page cannot start the request.
 
 This optional check tells an outside party something about where you browse,
 which is why it is **off by default** even though it needs no API key and costs nothing.
 rdap.org sees the domain and your IP address, as any site you load would. Answers are
-cached on your device (most recent 100 domains) so the same site is not looked up twice;
-requests for IP addresses and private or local hostnames are never sent at all. Turn it
+cached on your device (most recent 100 domains) so the same site is not looked up twice.
+If you choose **Don’t ask again here**, I keep that exact host in your local site preferences
+until you erase that site’s data or reset WardenOne. I do not send it to RDAP for that choice.
+I never send requests for IP addresses or private or local hostnames. Turn it
 on or off with **Login page age check** in the popup.
 
 ### 5. Reputation providers and the local OpenPhish feed

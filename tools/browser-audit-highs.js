@@ -11,6 +11,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const profile = require('./perf-profile.js');
+const { cleanupProfile } = require('./lib/browser-profile-cleanup.js');
 const root = path.resolve(__dirname, '..');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -185,10 +186,8 @@ async function run() {
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     if (server) await new Promise((resolve) => server.close(resolve));
-    const resolved = path.resolve(dir);
-    if (path.dirname(resolved) === path.resolve(os.tmpdir()) && /^wo-audit-highs-/.test(path.basename(resolved))) {
-      fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-    }
+    /* Edge can hold profile files for a moment after it exits; the shared cleanup retries that on Windows. */
+    cleanupProfile(dir, 'wo-audit-highs-');
   }
 }
 profile.mustFinish(run, 'browser-audit-highs').catch((error) => { console.error(error.stack || error); process.exitCode = 1; });

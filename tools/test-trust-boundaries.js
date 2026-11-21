@@ -63,6 +63,8 @@ for (const [name, store, base, size] of [
   ['firewall', 'dynamic', 'FIREWALL_RULE_BASE', 'FIREWALL_RULE_MAX'],
   ['firewallOnce', 'session', 'FIREWALL_SESSION_RULE_BASE', 'FIREWALL_SESSION_RULE_MAX'],
   ['sitePause', 'session', 'ALLOWLIST_RULE_BASE', null],
+  ['listBlockOnce', 'session', 'LIST_ONCE_RULE_BASE', 'LIST_ONCE_RULES_BUDGET'],
+  ['socialEmbedLoad', 'session', 'SOCIAL_EMBED_ONCE_RULE_BASE', 'SOCIAL_EMBED_ONCE_RULES_BUDGET'],
 ]) {
   const owner = api.policy.explicitOwners.find(entry => entry.name === name);
   assert.equal(owner.store, store);
@@ -80,6 +82,22 @@ for (const store of ['dynamic', 'session']) {
   }
 }
 api.policy.validate({ addRules: [allow(number('ALLOWLIST_RULE_BASE'), 100000, 'allowAllRequests')] }, 'session');
+/* A social embed Load may pass the guard's own blocks and nothing above them. */
+{
+  const owner = api.policy.explicitOwners.find(entry => entry.name === 'socialEmbedLoad');
+  assert.equal(owner.max, number('SOCIAL_EMBED_ONCE_PRIORITY'), 'the Load ceiling is the Load priority');
+  assert(owner.max > number('SOCIAL_EMBED_PRIORITY') && owner.max < 3000, 'a Load passes the guard but not the security lists');
+  api.policy.validate({ addRules: [allow(number('SOCIAL_EMBED_ONCE_RULE_BASE'), number('SOCIAL_EMBED_ONCE_PRIORITY'))] }, 'session');
+  assert.throws(() => api.policy.validate({ addRules: [allow(number('SOCIAL_EMBED_ONCE_RULE_BASE'), number('SOCIAL_EMBED_ONCE_PRIORITY') + 1)] }, 'session'), /authority/);
+  assert.throws(() => api.policy.validate({ addRules: [allow(number('SOCIAL_EMBED_ONCE_RULE_BASE'), 1000, 'allowAllRequests')] }, 'session'), /Unbounded/);
+  assert.throws(() => api.policy.validate({ addRules: [allow(number('SOCIAL_EMBED_ONCE_RULE_BASE'), number('SOCIAL_EMBED_ONCE_PRIORITY'))] }, 'dynamic'), /authority/);
+}
+/* A list block Continue may pass the lists but nothing above them, and never opens a whole document. */
+api.policy.validate({ addRules: [allow(number('LIST_ONCE_RULE_BASE'), number('LIST_ONCE_PRIORITY'))] }, 'session');
+assert(number('LIST_ONCE_PRIORITY') > 3000 && number('LIST_ONCE_PRIORITY') <= 3500);
+assert.throws(() => api.policy.validate({ addRules: [allow(number('LIST_ONCE_RULE_BASE'), 3501)] }, 'session'), /authority/);
+assert.throws(() => api.policy.validate({ addRules: [allow(number('LIST_ONCE_RULE_BASE'), 3500, 'allowAllRequests')] }, 'session'), /document exception/);
+assert.throws(() => api.policy.validate({ addRules: [allow(number('LIST_ONCE_RULE_BASE'), 3500)] }, 'dynamic'), /authority/);
 for (const host of ['co.uk', 'github.io', 'webflow.io', 'amazonaws.com']) {
   const rule = allow(number('ALLOWLIST_RULE_BASE'), 100000, 'allowAllRequests');
   rule.condition.requestDomains = [host];

@@ -14,6 +14,7 @@ const http = require('http');
 const os = require('os');
 const path = require('path');
 const profile = require('./perf-profile.js');
+const { cleanupProfile } = require('./lib/browser-profile-cleanup.js');
 
 const root = path.resolve(__dirname, '..');
 const host = 'adwall.wardenone-audit.net';
@@ -104,9 +105,7 @@ async function run() {
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     if (server) await new Promise((resolve) => server.close(resolve));
-    const resolved = path.resolve(dir);
-    if (path.dirname(resolved) !== path.resolve(os.tmpdir()) || !path.basename(resolved).startsWith('wo-adwall-')) throw new Error('Unexpected temporary profile');
-    fs.rmSync(resolved, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    cleanupProfile(dir, 'wo-adwall-');
   }
 }
 

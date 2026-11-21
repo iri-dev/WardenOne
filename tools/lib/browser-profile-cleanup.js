@@ -6,7 +6,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 function cleanupProfile(directory, prefix) {
   const target = path.resolve(directory);
-  if (!/^wo-[a-z-]+-$/.test(prefix) || path.dirname(target) !== path.resolve(os.tmpdir()) || !path.basename(target).startsWith(prefix))
+  if (!/^wo-[a-z0-9-]+-$/.test(prefix) || path.dirname(target) !== path.resolve(os.tmpdir()) || !path.basename(target).startsWith(prefix))
     throw Error('Refusing to remove a profile outside its expected temporary directory');
   try { fs.rmSync(target, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
   catch (error) {

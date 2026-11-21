@@ -19,6 +19,7 @@ const ARRAYS = {
 };
 const DIRECT = {
   OPENPHISH_FEED_URL: ['Optional phishing intelligence', 'openPhish'],
+  PHISHING_URL_FEED_URL: ['Phishing page addresses', 'blockMalwareSites'],
   REMOTE_LIST_URL: ['Additional logger list', 'blockGrabberResources'],
   SUPPLEMENTAL_MANIFEST_URL: ['Publisher supplemental manifest', 'always'],
 };

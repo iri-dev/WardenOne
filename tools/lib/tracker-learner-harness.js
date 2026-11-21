@@ -8,14 +8,14 @@ const WOLearner = require('../../tracker-learner-utils.js');
 function create(options = {}) {
   const source = fs.readFileSync(options.background || path.join(ROOT, 'background.js'), 'utf8');
   const data = options.data || require('../build-tracker-network-data.js').build();
-  const state = { local: options.local || {}, session: {}, writes: [], history: [], rules: [], frames: {}, cookies: {}, scriptValues: {}, scriptCalls: [], ruleWrites: 0, now: Date.UTC(2026, 9, 26), listeners: {} };
+  const state = { local: options.local || {}, session: {}, writes: [], history: [], rules: [], frames: {}, cookies: {}, cookieRemovals: [], scriptValues: {}, scriptCalls: [], ruleWrites: 0, now: Date.UTC(2026, 9, 26), listeners: {} };
   const event = name => ({
     addListener(fn, filter, spec) { state.listeners[name] = { fn, filter, spec }; },
     removeListener(fn) { if (state.listeners[name]?.fn === fn) delete state.listeners[name]; },
     hasListener: fn => state.listeners[name]?.fn === fn,
   });
   let saltSequence = 0;
-  const context = vm.createContext({ URL, console: { warn() {} }, Uint8Array, TextEncoder,
+  const context = vm.createContext({ URL, console: { warn() {} }, Uint8Array, TextEncoder, setTimeout: fn => fn(),
     crypto: { subtle: require('crypto').webcrypto.subtle, getRandomValues(bytes) { for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 17 + saltSequence) & 255; saltSequence++; return bytes; } },
     WOLearner, WO_TRACKER_NETWORK_DATA: data,
     Date: Object.assign(function (...args) { return args.length ? new Date(...args) : new Date(state.now); }, { now: () => state.now, parse: Date.parse, UTC: Date.UTC }),
@@ -35,13 +35,18 @@ function create(options = {}) {
     loadKnownAliases: async () => context.WOCname.validateData(JSON.parse(fs.readFileSync(path.join(ROOT, 'cname-trackers.json')))),
     resolveKnownAlias: host => context.WOCname.resolve(context.mapping, host, 'fixture'),
     isMediaCompatDomain: host => /(^|\.)(youtube\.com|googlevideo\.com|twitch\.tv|ttvnw\.net)$/.test(host),
+    cookieRemovalUrl: cookie => 'https://' + String(cookie.domain || '').replace(/^\./, '') + (cookie.path || '/'),
     sessionMirror: (key, snapshot, restore) => {
       let ready;
       return { ready: () => (ready ||= Promise.resolve().then(() => restore(state.session[key]))),
         persist: () => { state.session[key] = JSON.parse(JSON.stringify(snapshot())); } };
     },
     chrome: { runtime: { getManifest: () => ({ host_permissions: ['<all_urls>'] }) },
-      cookies: { getAll: async query => JSON.parse(JSON.stringify(state.cookies[query.domain || new URL(query.url).hostname] || [])) },
+      cookies: { getAll: async query => JSON.parse(JSON.stringify(state.cookies[query.domain || new URL(query.url).hostname] || [])),
+        remove: async query => { state.cookieRemovals.push(query); for (const rows of Object.values(state.cookies)) {
+          const index = rows.findIndex(cookie => cookie.name === query.name && query.url.includes(String(cookie.domain || '').replace(/^\./, '')));
+          if (index >= 0) rows.splice(index, 1);
+        } } },
       scripting: { executeScript: async query => { state.scriptCalls.push(query); return state.executeScript ? state.executeScript(query) : state.scriptValues[query.target.documentIds[0]] || []; } },
       storage: { local: { get: (key, callback) => callback({ [key]: state.local[key] }) } },
       webNavigation: { getFrame: async query => state.frames[query.tabId + ':' + query.frameId], onCompleted: event('onCompleted') },
@@ -60,6 +65,7 @@ function create(options = {}) {
     + 'restart:()=>{__trackerSession=null;__initTrackerLearner=null;},'
     + 'cookieRequest:typeof noteTrackerCookieRequest===\'function\'?noteTrackerCookieRequest:null,rules:applyTrackerLearnerRules,'
     + 'setCookie:typeof trackerSetCookieEvidence===\'function\'?trackerSetCookieEvidence:null,'
+    + 'removeUnknownFrameIdentifier:typeof removeUnknownFrameIdentifier===\'function\'?removeUnknownFrameIdentifier:null,'
     + 'storage:noteTrackerStorageFrame,canvas:noteTrackerCanvasObservation,identifierRequest:noteTrackerIdentifierRequest,'
     + 'observe:typeof reconcileTrackerCookieObserver===\'function\'?reconcileTrackerCookieObserver:null,'
     + 'listeners:{jar:typeof trackerCookieListener===\'function\'?trackerCookieListener:null,header:typeof trackerSetCookieListener===\'function\'?trackerSetCookieListener:null},'

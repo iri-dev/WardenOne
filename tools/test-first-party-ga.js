@@ -4,8 +4,10 @@ const assert = require('assert/strict');
 const fs = require('fs');
 const rules = JSON.parse(fs.readFileSync('rules-trackers.json', 'utf8'));
 const candidates = rules.filter(rule => rule.condition.domainType === 'firstParty' && rule.condition.regexFilter);
+/* One reviewed signature. A second one (rule 56, /analytics/collect?cid=) was removed on 2026-11-19: it matched only
+   the Round 5 lab's own first-party scenario, with no evidence that real sites use that path. */
 assert.equal(candidates.length, 1, 'one reviewed first-party collection signature');
-const rule = candidates[0], condition = rule.condition;
+const rule = candidates.find(row => row.id === 50), condition = rule.condition;
 assert.equal(rule.action.type, 'block');
 assert.equal(rule.priority, 1000, 'site pauses and established compatibility allowances retain priority');
 assert.equal(new Set(rules.map(entry => entry.id)).size, rules.length, 'static rule IDs are unique');
@@ -46,6 +48,12 @@ for (const url of [
   'https://publisher.example/?next=https://tracker.example/g/collect?tid=G-TEST123',
   'https://publisher.example/#/g/collect?tid=G-TEST123',
 ]) assert(!match.test(url), 'unrelated endpoint blocked: ' + url);
+for (const url of [
+  'https://publisher.example/api/analytics/report.json',
+  'https://publisher.example/analytics/collect?cid=LABID-random12345',
+  'https://publisher.example/analytics/collect?v=1&cid=12345678&event=page',
+]) assert(!rules.some(entry => entry.action.type === 'block' && entry.condition.domainType === 'firstParty'
+  && entry.condition.regexFilter && new RegExp(entry.condition.regexFilter).test(url)), 'an unevidenced first-party path is blocked: ' + url);
 const background = fs.readFileSync('background.js', 'utf8');
 assert(/const trackersOn = on && cfg\.blockTrackers !== false/.test(background));
 assert(/\(trackersOn \? enableRulesetIds : disableRulesetIds\)\.push\(TRACKERS_STATIC_RULESET_ID\)/.test(background),

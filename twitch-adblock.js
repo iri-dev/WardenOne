@@ -1698,13 +1698,66 @@
     return runtimes;
   }
 
+  /* Requiring a module before its dependencies' chunks load caches an empty copy that blanks Twitch's home page,
+     so the manager is required only after Twitch ran it or once every synchronous dependency has a factory. */
+  const adManagerFactoryWatch = { ran: new Set(), wrappers: new WeakMap(), missing: '' };
+  function nativeTwitchFactory(factories, id) {
+    const factory = factories && factories[id];
+    return adManagerFactoryWatch.wrappers.get(factory) || factory;
+  }
+
+  function watchAdManagerFactory(requireFn, id) {
+    const factories = requireFn && requireFn.m;
+    const current = factories && factories[id];
+    if (typeof current !== 'function' || adManagerFactoryWatch.wrappers.has(current)) return;
+    const native = current;
+    function twitchAdManagerFactory() {
+      const result = native.apply(this, arguments);
+      adManagerFactoryWatch.ran.add(id);
+      return result;
+    }
+    try {
+      twitchAdManagerFactory.toString = Function.prototype.toString.bind(native);
+      adManagerFactoryWatch.wrappers.set(twitchAdManagerFactory, native);
+      factories[id] = twitchAdManagerFactory;
+      woRestore.push(() => { if (factories[id] === twitchAdManagerFactory) factories[id] = native; });
+    } catch (_) {}
+  }
+
+  function adManagerDependenciesLoaded(requireFn, id) {
+    const factories = requireFn && requireFn.m || {};
+    const waiting = adManagerFactoryWatch.missing;
+    if (waiting && typeof factories[waiting] !== 'function') return false;
+    adManagerFactoryWatch.missing = '';
+    const seen = new Set();
+    const queue = [String(id)];
+    while (queue.length) {
+      const next = queue.pop();
+      if (seen.has(next)) continue;
+      seen.add(next);
+      if (seen.size > 6000) return false;
+      const factory = nativeTwitchFactory(factories, next);
+      if (typeof factory !== 'function') { adManagerFactoryWatch.missing = next; return false; }
+      let source = '';
+      try { source = Function.prototype.toString.call(factory); } catch (_) { return false; }
+      const params = /^[^(]*\(\s*[\w$]*\s*,\s*[\w$]*\s*,\s*([\w$]+)/.exec(source);
+      if (!params) continue;
+      const call = new RegExp('(?:^|[^\\w$.])' + params[1].replace(/\$/g, '\\$') + '\\((\\d+)\\)', 'g');
+      let found;
+      while ((found = call.exec(source))) queue.push(found[1]);
+    }
+    return true;
+  }
+
   function findTwitchAdManager(requireFns) {
     for (const requireFn of requireFns || []) {
       const factories = requireFn && requireFn.m || {};
       for (const id of Object.keys(factories)) {
         let source = '';
-        try { source = Function.prototype.toString.call(factories[id]); } catch (_) { continue; }
+        try { source = Function.prototype.toString.call(nativeTwitchFactory(factories, id)); } catch (_) { continue; }
         if (source.indexOf('startProcessingRequests') < 0 || source.indexOf('declineReason') < 0) continue;
+        watchAdManagerFactory(requireFn, id);
+        if (!adManagerFactoryWatch.ran.has(id) && !adManagerDependenciesLoaded(requireFn, id)) continue;
         let exports = null;
         try { exports = requireFn(id); } catch (_) { continue; }
         if (!exports) continue;
@@ -2357,6 +2410,16 @@
       }
     }
 
+    function requestSignals(input, init) {
+      const signals = [];
+      try {
+        if (init && init.signal) signals.push(init.signal);
+        if (typeof Request !== 'undefined' && input instanceof Request && input.signal &&
+            !signals.includes(input.signal)) signals.push(input.signal);
+      } catch (_) {}
+      return signals;
+    }
+
     function mediaRequestAborted(input, init) {
       try {
         if (init && init.signal && init.signal.aborted) return true;
@@ -2905,6 +2968,9 @@
       if (head < floor) return null;
       state.seqHeads[renditionKey] = head;
       state.seqServedHead = head;
+      /* Whether this rendition last saw numbering that is not Twitch's own, as a reset must not undo it. */
+      if (!state.seqForeign) state.seqForeign = Object.create(null);
+      state.seqForeign[renditionKey] = field !== 'seqOffset' || head !== sequence;
       if (head === sequence) return text;
       return sequenceWrite(text, head) || text;
     }
@@ -3011,8 +3077,14 @@
       }
     }
 
+    /* Returns the playlist to serve. Twitch's raw numbering can sit far below what a rendition was already
+       given (52238 -> 553, measured 2026-11-19), and a player holding higher numbers waits for them forever,
+       so numbering only moves forward: the broadcast mapping when it reaches the floor, else the floor. */
     function sequenceResetToNative(state, url, text) {
-      if (!state) return;
+      if (!state) return text;
+      const key = canonical(url);
+      const floor = state.seqForeign && state.seqForeign[key] ? state.seqHeads[key] : undefined;
+      const broadcast = sequenceLiveOffset(state, text);
       state.seqOffset = 0;
       state.seqBackupOffset = 0;
       state.seqHeads = Object.create(null);
@@ -3027,10 +3099,20 @@
       state.seqSource = null;
       state.backupActive = false;
       const sequence = sequenceRead(text);
-      if (sequence === null) return;
-      state.seqHeads[canonical(url)] = sequence;
-      state.seqServedHead = sequence;
-      sequenceRecordServed(state, url, text, text);
+      if (sequence === null) return text;
+      let offset = 0;
+      if (Number.isFinite(floor) && sequence < floor) {
+        offset = Number.isFinite(broadcast) && sequence + broadcast >= floor ? broadcast : floor - sequence;
+      }
+      const served = offset ? sequenceWrite(text, sequence + offset) : text;
+      if (!served) offset = 0;
+      state.seqOffset = offset;
+      state.seqForeign = Object.create(null);
+      state.seqForeign[key] = offset !== 0;
+      state.seqHeads[key] = sequence + offset;
+      state.seqServedHead = sequence + offset;
+      sequenceRecordServed(state, url, text, served || text);
+      return served || text;
     }
 
     function nativeBridgeKey(info) {
@@ -3110,6 +3192,7 @@
       if (!state) return text;
       if (state.seqInBreak && release) {
         const previous = state.seqOffset;
+        const previousSource = state.seqSource;
         let proposed = previous;
         if (state.seqSource !== 'native') {
           proposed = sequenceNativeOffset(state, url, text);
@@ -3129,8 +3212,11 @@
         state.seqSource = 'native';
         const served = sequenceApplyNative(state, url, text);
         if (served === null) {
+          /* The source goes back too: left as native, the next rendition's release skipped the offset
+             recomputation and reused the pre-pod mapping, 15 numbers high (measured 2026-11-19). */
           state.seqOffset = previous;
           state.seqInBreak = true;
+          state.seqSource = previousSource;
           return null;
         }
         return served;
@@ -3367,8 +3453,14 @@
     }
 
     function ordinaryMediaPlaylist(text) {
+      return normalizedMediaPlaylist(text).text;
+    }
+
+    /* breaking: the alternate has announced an ad of its own past its listed edge. */
+    function normalizedMediaPlaylist(text) {
+      const refused = { text: '', breaking: false };
       const skipped = sequenceSkippedSegments(text);
-      if (skipped === null) return '';
+      if (skipped === null) return refused;
       /* Keep clean-session prefetch hints so low-latency playback retains its segment lead across switches. Drop hints
          inside announced ads. */
       let stripped = stripLowLatency(text, true);
@@ -3377,23 +3469,26 @@
            the delta tag without advancing the head labels those bytes with old
            numbers, making a healthy alternate look frozen or retrograde. */
         const head = sequenceRead(text);
-        if (head === null || !Number.isSafeInteger(head + skipped)) return '';
+        if (head === null || !Number.isSafeInteger(head + skipped)) return refused;
         stripped = sequenceWrite(stripped, head + skipped);
-        if (!stripped) return '';
+        if (!stripped) return refused;
       }
       const lines = stripped.replace(/\r/g, '').split('\n');
       const first = lines.find((line) => String(line || '').trim());
-      if (String(first || '').trim().replace(/^\uFEFF/, '') !== '#EXTM3U') return '';
-      if (!lines.some((line) => /^#EXT-X-TARGETDURATION:/i.test(String(line || '').trim()))) return '';
-      if (lines.some((line) => /^#EXT-X-STREAM-INF:/i.test(String(line || '').trim()))) return '';
-      if (lines.some((line) => /^#EXT-X-ENDLIST\b/i.test(String(line || '').trim()))) return '';
+      if (String(first || '').trim().replace(/^\uFEFF/, '') !== '#EXTM3U') return refused;
+      if (!lines.some((line) => /^#EXT-X-TARGETDURATION:/i.test(String(line || '').trim()))) return refused;
+      if (lines.some((line) => /^#EXT-X-STREAM-INF:/i.test(String(line || '').trim()))) return refused;
+      if (lines.some((line) => /^#EXT-X-ENDLIST\b/i.test(String(line || '').trim()))) return refused;
       const evidence = playlistEvidence(stripped);
-      if (evidence.fullPlayable < 1) return '';
+      if (evidence.fullPlayable < 1) return refused;
+      const breaking = evidence.inlineAds.size > 0 || (Number.isFinite(evidence.edgeWall) &&
+        timedAdRanges(evidence.lines.filter((line) => !/CLASS="twitch-trigger"/i.test(line)))
+          .some((range) => range.end > evidence.edgeWall));
       /* Hints are the only inline entries left here, so any inline ad is an announced ad ahead of
          the listed edge: the alternate is about to break too. Its listed media is still judged as
          before; the hints go, and the player waits for what is listed. */
       if (evidence.inlineAds.size) stripped = withoutPrefetch(stripped);
-      return stripped;
+      return { text: stripped, breaking: breaking };
     }
 
     function mediaPlaylistEnvelope(text) {
@@ -3843,7 +3938,8 @@
           running++;
           fetchTextWithTimeout(selected.url, 1800, controllers).then((mediaResult) => {
             if (!active || epoch !== backupEpoch) throw new Error('stale backup session');
-            const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(mediaResult.text, selected.url));
+            const checked = normalizedMediaPlaylist(absolutizeMediaPlaylist(mediaResult.text, selected.url));
+            const normalized = checked.text;
             const backupEvidence = normalized ? playlistEvidence(normalized) : null;
             const tail = normalized ? sequenceTail(normalized) : null;
             if (!normalized || !backupEvidence || backupEvidence.confirmed > 0) {
@@ -3860,7 +3956,7 @@
             const createdAt = Date.now();
             resolve({ url: selected.url, text: normalized, playerType: playerType,
               resolution: selected.resolution, ts: createdAt, createdAt: createdAt,
-              container: replacementContainer,
+              container: replacementContainer, breaking: checked.breaking,
               masterGeneration: Number(info.masterGeneration || 0), edgeWall: backupEvidence.edgeWall,
               lastTail: tail, lastAdvanceAt: createdAt });
           }).catch(fail);
@@ -3894,11 +3990,13 @@
     // rendition walks cannot fit the player's 900ms media deadline. The first
     // proven clean, exact-rendition live result wins and the losing media probes
     // are aborted.
-    async function firstCleanBackup(info, pendingWarm) {
+    async function firstCleanBackup(info, pendingWarm, excludeType) {
       const controllers = new Set();
+      const plan = [[pendingWarm ? '' : 'mobile_feed', 0], ['popout', pendingWarm ? 50 : 75], ['autoplay', 150]]
+        .filter((step) => !excludeType || step[0] !== excludeType);
       return new Promise((resolve) => {
         let done = false;
-        let remaining = 3;
+        let remaining = plan.length;
         const startTimers = [];
         const stop = () => {
           clearTimeout(deadlineTimer);
@@ -3934,10 +4032,10 @@
           stop();
           resolve(null);
         }, BACKUP_SEARCH_TIMEOUT_MS);
-        if (pendingWarm) Promise.resolve(pendingWarm).then(finish, () => finish(null));
-        else start('mobile_feed', 0);
-        start('popout', pendingWarm ? 50 : 75);
-        start('autoplay', 150);
+        for (const [type, delay] of plan) {
+          if (!type) Promise.resolve(pendingWarm).then(finish, () => finish(null));
+          else start(type, excludeType ? 0 : delay);
+        }
       });
     }
 
@@ -4021,7 +4119,8 @@
       }
       const pending = fetchTextWithTimeout(withoutLowLatencyQuery(url), pollTimeout)
         .then((current) => {
-          const normalized = ordinaryMediaPlaylist(absolutizeMediaPlaylist(current.text, url));
+          const checked = normalizedMediaPlaylist(absolutizeMediaPlaylist(current.text, url));
+          const normalized = checked.text;
           if (!normalized) return null;
           const evidence = playlistEvidence(normalized);
           if (evidence.confirmed > 0) return null;
@@ -4041,8 +4140,9 @@
           cached.ts = Date.now();
           cached.text = normalized;
           cached.edgeWall = evidence.edgeWall;
+          cached.breaking = checked.breaking;
           return { text: normalized, container: mediaContainer(normalized), edgeWall: evidence.edgeWall,
-            tail: tail };
+            tail: tail, breaking: checked.breaking };
         }, () => null)
         .finally(() => {
           if (pendingBackupPolls.get(url) === pending) pendingBackupPolls.delete(url);
@@ -4174,9 +4274,7 @@
       for (const url of mediaUrls.slice(-count)) startWarmedBackupResource(url);
     }
 
-    async function takeWarmedBackupResource(input, init, url) {
-      const entry = warmedBackupResources.get(url);
-      if (!entry || entry.claimed) return null;
+    function plainSegmentRequest(input, init) {
       let method = '';
       try {
         method = String(init && init.method ||
@@ -4191,7 +4289,148 @@
           : (typeof Request !== 'undefined' && input instanceof Request ? input.headers : null);
         ranged = !!(headers && headers.get('range'));
       } catch (_) {}
-      if (method !== 'GET' || ranged || Date.now() - Number(entry.at || 0) > BACKUP_WARM_TTL_MS) {
+      return method === 'GET' && !ranged;
+    }
+
+    /* Twitch's player never abandons a stalled segment body; it waits, then skips the gap (7 to 58 s stalls on
+       clean session segments, measured 2026-11-19). A body silent this long is fetched once more and continued. */
+    const SEGMENT_STALL_MS = 1000;
+
+    /* Ask only for the bytes still missing; Twitch's media hosts answer a single range with 206 (checked
+       2026-11-19), and a single byte range is a CORS-safelisted header, so no preflight is added. */
+    function remainingSegmentRequest(input, init, from) {
+      if (!(from > 0)) return { input: input, init: init };
+      try {
+        if (typeof Request !== 'undefined' && input instanceof Request) {
+          const headers = new Headers(input.headers);
+          headers.set('Range', 'bytes=' + from + '-');
+          return { input: new Request(input, { headers: headers }), init: init };
+        }
+        const headers = new Headers(init && init.headers || undefined);
+        headers.set('Range', 'bytes=' + from + '-');
+        return { input: input, init: Object.assign({}, init || {}, { headers: headers }) };
+      } catch (_) {
+        return { input: input, init: init };
+      }
+    }
+
+    function remainingSegmentSkip(response, from) {
+      if (!(from > 0) || response.status === 200) return from;
+      if (response.status !== 206) return null;
+      const start = /^bytes\s+(\d+)-/i.exec(String(response.headers.get('content-range') || ''));
+      return start && Number(start[1]) === from ? 0 : null;
+    }
+
+    function resumableSegmentResponse(response, input, init) {
+      if (!response || !response.ok || !response.body || typeof ReadableStream !== 'function') return response;
+      let generation = 0;
+      let delivered = 0;
+      let retried = false;
+      let finished = false;
+      let timer = 0;
+      let reader = null;
+      let body;
+      try {
+        body = new ReadableStream({
+          start(controller) {
+            const finish = (error) => {
+              if (finished) return;
+              finished = true;
+              generation++;
+              clearTimeout(timer);
+              try {
+                if (error) controller.error(error);
+                else controller.close();
+              } catch (_) {}
+            };
+            const pump = async (gen, current, skip) => {
+              reader = current;
+              try {
+                for (;;) {
+                  clearTimeout(timer);
+                  timer = setTimeout(() => stalled(gen), SEGMENT_STALL_MS);
+                  const next = await current.read();
+                  if (gen !== generation) return;
+                  if (next.done) return finish();
+                  let chunk = next.value;
+                  if (skip) {
+                    if (chunk.byteLength <= skip) {
+                      skip -= chunk.byteLength;
+                      continue;
+                    }
+                    chunk = chunk.subarray(skip);
+                    skip = 0;
+                  }
+                  delivered += chunk.byteLength;
+                  controller.enqueue(chunk);
+                }
+              } catch (error) {
+                if (gen === generation) finish(error);
+              }
+            };
+            const stalled = async (gen) => {
+              if (gen !== generation || finished || retried) return;
+              retried = true;
+              const retryGeneration = ++generation;
+              try { Promise.resolve(reader.cancel()).catch(() => {}); } catch (_) {}
+              try {
+                const from = delivered;
+                const retry = remainingSegmentRequest(input, init, from);
+                const again = await realFetch(retry.input, retry.init);
+                if (retryGeneration !== generation) {
+                  try { if (again && again.body) Promise.resolve(again.body.cancel()).catch(() => {}); } catch (_) {}
+                  return;
+                }
+                const skip = again && again.ok && again.body ? remainingSegmentSkip(again, from) : null;
+                if (skip === null) {
+                  try { if (again && again.body) Promise.resolve(again.body.cancel()).catch(() => {}); } catch (_) {}
+                  throw new Error('segment retry failed');
+                }
+                pump(retryGeneration, again.body.getReader(), skip);
+              } catch (error) {
+                if (retryGeneration === generation) finish(error);
+              }
+            };
+            for (const signal of requestSignals(input, init)) {
+              try {
+                signal.addEventListener('abort', () => {
+                  try { if (reader) Promise.resolve(reader.cancel()).catch(() => {}); } catch (_) {}
+                  finish(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }));
+                }, { once: true });
+              } catch (_) {}
+            }
+            pump(generation, response.body.getReader(), 0);
+          },
+          cancel(reason) {
+            finished = true;
+            generation++;
+            clearTimeout(timer);
+            try { if (reader) return reader.cancel(reason); } catch (_) {}
+            return undefined;
+          }
+        });
+      } catch (_) {
+        return response;
+      }
+      try {
+        const replacement = new Response(body, {
+          status: response.status, statusText: response.statusText, headers: new Headers(response.headers)
+        });
+        try {
+          Object.defineProperty(replacement, 'url', { value: response.url || '', configurable: true });
+          Object.defineProperty(replacement, 'redirected', { value: !!response.redirected, configurable: true });
+          Object.defineProperty(replacement, 'type', { value: response.type || 'basic', configurable: true });
+        } catch (_) {}
+        return replacement;
+      } catch (_) {
+        return response;
+      }
+    }
+
+    async function takeWarmedBackupResource(input, init, url) {
+      const entry = warmedBackupResources.get(url);
+      if (!entry || entry.claimed) return null;
+      if (!plainSegmentRequest(input, init) || Date.now() - Number(entry.at || 0) > BACKUP_WARM_TTL_MS) {
         if (Date.now() - Number(entry.at || 0) > BACKUP_WARM_TTL_MS) {
           discardWarmedBackupResource(url, entry, true);
         }
@@ -4199,6 +4438,15 @@
       }
       if (mediaRequestAborted(input, init)) return null;
       entry.claimed = true;
+      /* The handed over download must stop when the player cancels its request. A body that stalls
+         otherwise can never be abandoned and retried, and the player waits on it (measured 2026-11-19). */
+      for (const signal of requestSignals(input, init)) {
+        try {
+          signal.addEventListener('abort', () => {
+            try { if (entry.controller) entry.controller.abort(); } catch (_) {}
+          }, { once: true });
+        } catch (_) {}
+      }
       const response = await entry.promise;
       discardWarmedBackupResource(url, entry, false);
       if (!active || Number(entry.epoch) !== Number(backupEpoch) ||
@@ -4208,7 +4456,7 @@
         }
         return null;
       }
-      return response;
+      return resumableSegmentResponse(response, input, init);
     }
 
     function settleBeforeDeadline(promise, deadlineAt) {
@@ -4277,12 +4525,54 @@
       }, () => null);
     }
 
+    /* A clean session announcing its own ad is swapped for another identity before the ad lands; served
+       on without its hints it starved a Low Latency player (measured 2026-11-19). Once per session. */
+    function backupReplacement(info, cached) {
+      if (cached.replacement) return cached.replacement;
+      const epoch = backupEpoch;
+      const entry = { promise: null, value: null, settled: false };
+      entry.promise = firstCleanBackup(info, null, cached.playerType).then((value) => {
+        entry.settled = true;
+        if (interventionCurrent(info, epoch) && value && !value.breaking &&
+            (!info.mediaContainer || value.container === info.mediaContainer)) entry.value = value;
+        return entry.value;
+      }, () => {
+        entry.settled = true;
+        return null;
+      });
+      cached.replacement = entry;
+      return entry;
+    }
+
+    async function promoteBackupReplacement(info, epoch, key, cached, deadlineAt) {
+      const replacement = backupReplacement(info, cached);
+      if (!replacement.settled && Number.isFinite(deadlineAt)) {
+        await settleBeforeDeadline(replacement.promise, deadlineAt);
+      }
+      const next = replacement.value;
+      if (!next || !interventionCurrent(info, epoch) || backups.get(key) !== cached) return null;
+      let current = null;
+      if (Date.now() - Number(next.createdAt || 0) <= BACKUP_PRIME_MS) {
+        current = { text: next.text, container: next.container, edgeWall: next.edgeWall, tail: next.lastTail,
+          breaking: !!next.breaking };
+      } else {
+        const remaining = Number.isFinite(deadlineAt) ? deadlineAt - Date.now() : BACKUP_POLL_TIMEOUT_MS;
+        if (remaining > 0) current = await pollCachedBackup(next, Math.min(BACKUP_POLL_TIMEOUT_MS, remaining));
+      }
+      if (!current || current.breaking || !interventionCurrent(info, epoch) || backups.get(key) !== cached ||
+          (info.mediaContainer && current.container !== info.mediaContainer)) return null;
+      backups.set(key, next);
+      wlog('  clean stream ' + (cached.playerType || '?') + ' announced its own ad; switching to ' +
+        (next.playerType || '?'));
+      return { cached: next, current: current };
+    }
+
     async function cachedBackupResponse(info, originalResponse, activate, nativeText, nativeUrl, observation,
         deadlineAt, waitState) {
       if (!active) return null;
       const epoch = backupEpoch;
       const key = backupFlightKey(info);
-      const cached = backups.get(key);
+      let cached = backups.get(key);
       if (cached && !cached.failed && Date.now() - cached.ts < BACKUP_TTL) {
         try {
           let current = takeRecentPrimedBackup(cached);
@@ -4322,6 +4612,16 @@
             }
           }
           if (!interventionCurrent(info, epoch)) return null;
+          let switched = false;
+          if ((current && current.breaking) || (!current && cached.replacement)) {
+            const promoted = await promoteBackupReplacement(info, epoch, key, cached, deadlineAt);
+            if (!interventionCurrent(info, epoch)) return null;
+            if (promoted) {
+              cached = promoted.cached;
+              current = promoted.current;
+              switched = true;
+            }
+          }
           current = await holdForBackupAdvance(info, epoch, key, cached, current);
           if (!interventionCurrent(info, epoch)) return null;
           if (current && (!info.mediaContainer || current.container === info.mediaContainer)) {
@@ -4333,7 +4633,7 @@
               nativeText || '', current.text, (cached.playerType || '?') + ':' + cached.url,
               playbackProfileKey(info));
             if (aligned === null) return null;
-            warmBackupResources(current.text, !(state && state.backupActive));
+            warmBackupResources(current.text, switched || !(state && state.backupActive));
             if (activate !== false && state) state.backupActive = true;
             if (current.tail) cached.servedTail = current.tail;
             return markServedSource(responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl'),
@@ -4376,9 +4676,11 @@
             text: late.text,
             container: mediaContainer(late.text),
             edgeWall: late.edgeWall,
-            tail: late.lastTail
+            tail: late.lastTail,
+            breaking: !!late.breaking
           };
           late.primedAt = Date.now();
+          if (late.breaking) backupReplacement(info, late);
         }, () => {});
         return null;
       }
@@ -4399,6 +4701,7 @@
       if (state) state.backupActive = true;
       const servedTail = candidate.lastTail || sequenceTail(candidate.text);
       if (servedTail) candidate.servedTail = servedTail;
+      if (candidate.breaking) backupReplacement(info, candidate);
       return markServedSource(responseWithText(originalResponse, aligned, 'application/vnd.apple.mpegurl'),
         backupSource(candidate));
     }
@@ -4569,7 +4872,7 @@
         const segmentUrl = absoluteUrl(entry.uri, url);
         if (!segmentUrl) continue;
         spliceSegments.delete(segmentUrl);
-        spliceSegments.set(segmentUrl, { track: track, number: entry.number, source: source });
+        spliceSegments.set(segmentUrl, { track: track, number: entry.number, source: source, prefetch: !!entry.prefetch });
       }
       while (spliceSegments.size > SPLICE_SEGMENTS_MAX) spliceSegments.delete(spliceSegments.keys().next().value);
       const oldest = track.newest - SPLICE_HISTORY;
@@ -4827,9 +5130,9 @@
           if (sequenceState) sequenceState.backupActive = false;
           const nativeText = sequenceNativeBreak(sequenceState, url, text);
           if (nativeText === null) {
-            sequenceResetToNative(sequenceState, url, text);
+            const reset = sequenceResetToNative(sequenceState, url, text);
             setAdState('clear', info && info.channel || '');
-            return deltaResponse;
+            return reset !== text ? responseWithText(deltaResponse, reset, 'application/vnd.apple.mpegurl') : deltaResponse;
           }
           wlog('  -> no clean backup; passing native media through');
           setAdState('clear', info && info.channel || '');
@@ -4893,9 +5196,9 @@
           if (sequenceState) sequenceState.backupActive = false;
           const nativeText = sequenceNativeBreak(sequenceState, url, text);
           if (nativeText === null) {
-            sequenceResetToNative(sequenceState, url, text);
+            const reset = sequenceResetToNative(sequenceState, url, text);
             setAdState('clear', info && info.channel || '');
-            return response;
+            return reset !== text ? responseWithText(response, reset, 'application/vnd.apple.mpegurl') : response;
           }
           wlog('  ad marker slid out; no clean backup, passing native media through');
           setAdState('clear', info && info.channel || '');
@@ -4952,8 +5255,7 @@
           } catch (_) {}
         }
         if (aligned === null) {
-          sequenceResetToNative(sequenceState, url, text);
-          aligned = text;
+          aligned = sequenceResetToNative(sequenceState, url, text);
         }
         setAdState('clear', (info && info.channel) || '');
         return aligned !== text
@@ -4996,9 +5298,9 @@
       if (sequenceState) sequenceState.backupActive = false;
       const nativeText = sequenceNativeBreak(sequenceState, url, text);
       if (nativeText === null) {
-        sequenceResetToNative(sequenceState, url, text);
+        const reset = sequenceResetToNative(sequenceState, url, text);
         setAdState('clear', info && info.channel || '');
-        return response;
+        return reset !== text ? responseWithText(response, reset, 'application/vnd.apple.mpegurl') : response;
       }
       wlog('  -> no clean backup; passing native ad media through');
       setAdState('clear', info && info.channel || '');
@@ -5124,6 +5426,12 @@
           /* After a user switch-off the worker is plain pass-through, byte for byte. */
           return active || nativeRecovery ? withSpliceMarkers(url, response) : response;
         }
+      }
+      /* Twitch's own segments stall the same way, and skipping one ended in Error #3000 (2026-11-19). Prefetch
+         hints are left alone: their bodies legitimately wait for the segment to be produced. */
+      const listed = spliceSegments.get(url);
+      if (listed && !listed.prefetch && plainSegmentRequest(input, init)) {
+        return resumableSegmentResponse(await realFetch(input, init), input, init);
       }
       return realFetch(input, init);
     }

@@ -152,6 +152,34 @@ async function run() {
       await cdp.send('Target.closeTarget', { targetId: page.targetId });
       console.log('[ok] a click before the stored settings load changes only that switch');
     }
+    {
+      /* The same early window for the other controls: an API key typed and an ordinary switch flipped before the
+         settings arrive are both kept, and nothing else changes. */
+      const storedConfig = "new Promise(r => chrome.storage.local.get(['wardenone_config'], d => r(d.wardenone_config || {})))";
+      await openPopup(2500);
+      const before = await value(storedConfig);
+      const flipped = await value(`(() => {
+        const key = document.querySelector('[data-config-text="urlHausKey"]');
+        key.value = '  early-key-0123456789  '; key.dispatchEvent(new Event('change', { bubbles: true }));
+        /* A switch that is off in the saved settings, so the early click is a real change (off to on). */
+        const off = new Set(${JSON.stringify(Object.keys(before).filter((key) => before[key] === false))});
+        const sw = [...document.querySelectorAll('input[type="checkbox"][data-key]')].find((el) => off.has(el.getAttribute('data-key')) && !el.disabled);
+        sw.click();
+        return { key: sw.getAttribute('data-key'), checked: sw.checked };
+      })()`);
+      await until(`new Promise(r => chrome.storage.local.get(['wardenone_config'], d => r(d.wardenone_config && d.wardenone_config.urlHausKey === 'early-key-0123456789'
+        && d.wardenone_config[${JSON.stringify(flipped.key)}] === ${flipped.checked})))`, 'the early key and switch to be saved once the settings arrive', 15000);
+      const after = await value(storedConfig);
+      const changed = Object.keys(Object.assign({}, before, after)).filter((key) => key !== flipped.key && key !== 'urlHausKey'
+        && typeof (before[key] ?? after[key]) === 'boolean' && before[key] !== after[key]);
+      assert.deepEqual(changed, [], 'early edits must change only what was edited: ' + changed.join(', '));
+      await value(`(() => { const key = document.querySelector('[data-config-text="urlHausKey"]'); key.value = ${JSON.stringify(before.urlHausKey || '')};
+        key.dispatchEvent(new Event('change', { bubbles: true })); document.querySelector('input[data-key=${JSON.stringify(flipped.key)}]').click(); return true; })()`);
+      await until(`new Promise(r => chrome.storage.local.get(['wardenone_config'], d => r(d.wardenone_config && (d.wardenone_config.urlHausKey || '') === ${JSON.stringify(before.urlHausKey || '')}
+        && d.wardenone_config[${JSON.stringify(flipped.key)}] === ${!flipped.checked})))`, 'the key and switch put back');
+      await cdp.send('Target.closeTarget', { targetId: page.targetId });
+      console.log('[ok] an API key and a switch edited before the settings load are both kept, and only they change');
+    }
     await openPopup(1200);
     try { await until('window.__woPopupFrames.some(frame => frame.visible)', 'first visible popup frame'); }
     catch (error) {

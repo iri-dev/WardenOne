@@ -51,6 +51,7 @@ var wardenProtectionEventIds;
   add('blocked_payment_card_submit warned_payment_card_entry', 'paymentCardGuard', 'paymentCardGuard');
   add('blocked_safe_browsing_link blocked_safe_browsing_form blocked_safe_browsing_paste warned_url_reputation', 'urlHaus openPhish phishTank whoisXmlReputation whoisXmlThreatIntel');
   add('blocked_safe_browsing_page', 'blockMalwareSites urlHaus openPhish phishTank whoisXmlReputation whoisXmlThreatIntel');
+  add('blocked_ip_program blocked_repo_program', 'downloadReputation');
   add('warned_abuseipdb_server', 'abuseIpDb', 'abuseIpDb');
   add('blocked_phishing', 'detectPhishing blockHighConfidencePhishing blockMalwareSites');
   add('warned_phishing', 'detectPhishing', 'detectPhishing');
@@ -60,7 +61,7 @@ var wardenProtectionEventIds;
   add('warned_redirect_param', 'warnRedirectParams', 'warnRedirectParams');
   add('warned_logger_api', 'monitorLoggerApi', 'monitorLoggerApi');
   add('blocked_clipboard_hijack', 'clipboardGuard', 'clipboardGuard');
-  add('warned_clipboard_swap', 'clipboardSwapDetect', 'clipboardSwapDetect');
+  add('warned_clipboard_swap blocked_clipboard_swap', 'clipboardSwapDetect', 'clipboardSwapDetect');
   add('warned_clickfix_clipboard warned_clickfix_correlated warned_clickfix_fake_captcha warned_clickfix_instruction', 'commandPasteGuard pasteProtection');
   add('blocked_command_paste_frame warned_command_paste', 'commandPasteGuard', 'commandPasteGuard');
   add('warned_paste_protection', 'pasteProtection', 'pasteProtection');
@@ -109,7 +110,7 @@ var wardenProtectionEventIds;
   Object.freeze(entries);
   const ids = Object.freeze(Object.keys(entries).sort());
   const pagePartKeys = Object.freeze(Object.fromEntries([
-    'abuseIpDb', 'autoRejectConsent', 'blockGeolocation', 'blockGrabberResources', 'blockPopupTricks',
+    'abuseIpDb', 'blockGeolocation', 'blockGrabberResources', 'blockPopupTricks',
     'blockSponsoredSearchResults', 'blockWebRTCLeak', 'detectRedirectChains', 'detectSkimmers',
     'forceHttps', 'intranetProtection', 'loginAgeCheck', 'mailTrackingShield', 'oauthGuard',
     'paymentCardGuard', 'permissionChainGuard', 'scriptDriftGuard', 'scriptletEngine',
@@ -153,6 +154,7 @@ var wardenProtectionEventIds;
     "detectSkimmers": "Detect & block form skimmers",
     "deviceAccessGuard": "Device access monitoring",
     "fakeUpdateDetector": "Fake update detector",
+    "downloadReputation": "Download Shield",
     "fakeWindowGuard": "Fake sign-in windows",
     "forceHttps": "Force HTTPS",
     "formTrapDetector": "Form trap detector",

@@ -29,8 +29,9 @@ assert(from >= 0 && to > from, 'the shipped notification guard markers are missi
 const GUARD = CONTENT.slice(from, to).replace(/\s*$/, '');
 /* The ask is noted at document_start, outside the guard, so a page that asks before the
    config arrives still counts. Lifted as the second slice. */
-const OBS_START = '/* notification ask observer:';
-const OBS_END = '/* end notification ask observer */';
+/* Code anchors: comments are stripped from content.min.js (2026-11-20). */
+const OBS_START = 'let __woNotifAsked=!1,__woNotifAskHook=null;';
+const OBS_END = 'let __woRuntimeStarted=!1;';
 const obsFrom = CONTENT.indexOf(OBS_START);
 const obsTo = CONTENT.indexOf(OBS_END, obsFrom);
 assert(obsFrom >= 0 && obsTo > obsFrom, 'the ask observer markers are missing');

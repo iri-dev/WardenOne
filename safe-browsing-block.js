@@ -50,17 +50,62 @@
     const site = document.getElementById('site');
     if (site) site.textContent = rec ? (rec.shown || '') : 'This warning has expired';
 
+    // WardenOne's own checks name themselves, so "WardenOne + WardenOne ..." never appears.
+    const local = /^WardenOne\b/.test(provider);
+    const program = !!rec && rec.ipProgram === true;
     const providerEl = document.getElementById('provider');
-    if (providerEl) providerEl.textContent = 'Blocked by WardenOne + ' + provider;
+    if (providerEl) providerEl.textContent = local ? 'Blocked by ' + provider : 'Blocked by WardenOne + ' + provider;
 
     const reason = document.getElementById('reason');
     if (reason) {
       reason.textContent = !rec
         ? 'The address this warning was about is no longer held. Go back to where you were.'
-        : (threats.length
-          ? provider + ' flagged this URL as ' + threats.join(', ') + '.'
-          : provider + ' flagged this URL as dangerous.');
+        : program && rec.ipProgramKind === 'repo'
+          ? 'This link downloads a program stored straight in a GitHub repository, not published as a release. Malware is often handed out this way, while real projects usually ship through their Releases page.'
+        : program
+          ? 'This link downloads a program straight from a bare IP address, with no website name behind it. Malware is often handed out this way.'
+          : (threats.length
+            ? provider + ' flagged this URL as ' + threats.join(', ') + '.'
+            : provider + ' flagged this URL as dangerous.');
     }
+    if (program) {
+      const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+      set('title', 'Program Download Stopped');
+      set('risk', rec.ipProgramBeforeSending === true
+        ? 'Nothing was downloaded. WardenOne stopped the request before it was sent.'
+        : 'WardenOne stopped this page. If a download had already started, Download Shield holds it for review.');
+      set('escape-text', (rec.ipProgramKind === 'repo' ? 'Some projects do share programs this way, but most publish them as releases. '
+        : 'Some honest servers do share programs this way, but it is rare. ')
+        + 'If you were not expecting a download, or you came here from a link, an email or an advert, please go back. '
+        + 'If you continue, Download Shield still checks the file before you can open it.');
+      document.title = 'Program download stopped';
+    }
+    if (rec && local) {
+      const foot = document.getElementById('foot');
+      if (foot) foot.textContent = 'WardenOne’s own check matched this address, so it was stopped before anything loaded. '
+        + 'You are not trapped here. If you think it is wrong, use “This looks wrong”.';
+    }
+
+    // The worker adds the feed a moment after the block, once the browser has recorded which rule fired.
+    let listedBy = null;
+    const showListedBy = (value) => {
+      const name = value && typeof value.name === 'string' ? value.name.slice(0, 120) : '';
+      const feedUrl = value ? safeHttpUrl(value.url) : '';
+      if (!name || !feedUrl) return;
+      listedBy = { name, url: feedUrl };
+      const el = document.getElementById('listed-by');
+      if (el) el.textContent = name;
+      const row = document.getElementById('listed-by-row');
+      if (row) row.hidden = false;
+    };
+    showListedBy(rec && rec.listedBy);
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== 'session' || !RECORD_KEY || !changes[RECORD_KEY]) return;
+        const next = changes[RECORD_KEY].newValue;
+        if (next && next.kind === 'safe-browsing') showListedBy(next.listedBy);
+      });
+    } catch (_) {}
 
     document.getElementById('back')?.addEventListener('click', () => {
       if (history.length > 1) history.back();
@@ -112,6 +157,7 @@
         '',
         'Site: ' + (host || '(unknown)'),
         'Reported by: ' + provider,
+        ...(listedBy ? ['Listed by: ' + listedBy.url] : []),
         'Flagged as: ' + (threats.length ? threats.join(', ') : '(not stated)'),
         '',
         'Why I think this is wrong:',

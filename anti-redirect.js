@@ -2226,9 +2226,36 @@
     }
   }
 
+  /* On a long article with no player each player query walks the whole document, and click layers ask for every
+     node added to <body>. A "no player" answer is reused for 250 ms (each candidate gets another look at 300 ms),
+     on a clock captured before the page runs and at most 12 times, so a page that stops time cannot keep it. */
+  const clickLayerClock = typeof performance === 'object' && performance && typeof performance.now === 'function'
+    ? performance.now.bind(performance) : Date.now;
+  const NO_PLAYER_REUSE_MS = 250;
+  const NO_PLAYER_REUSE_MAX = 12;
+  let noPlayerAt = -1;
+  let noPlayerReuses = 0;
+  function clickLayerPlayerPage() {
+    const now = clickLayerClock();
+    const age = now - noPlayerAt;
+    if (noPlayerAt >= 0 && age >= 0 && age < NO_PLAYER_REUSE_MS && noPlayerReuses < NO_PLAYER_REUSE_MAX) {
+      noPlayerReuses++;
+      return false;
+    }
+    const player = playerDocument();
+    noPlayerAt = player ? -1 : now;
+    noPlayerReuses = 0;
+    return player;
+  }
+  /* One answer per batch of added nodes: it cannot change while one batch is being judged. */
+  function playerDocumentOnce() {
+    let known;
+    return () => (known === undefined ? (known = clickLayerPlayerPage()) : known);
+  }
+
   // Look at one element the page added: is it (or does it hold) a cross-site
   // link inside a transparent layer, on a page that has a player to protect?
-  function considerClickLayer(node) {
+  function considerClickLayer(node, onPlayerPage) {
     try {
       if (!node || node.nodeType !== 1) return false;
       // Already neutralized and still so: nothing to judge. A remembered element
@@ -2238,7 +2265,7 @@
       const link = crossSiteLinkIn(node);
       const shellShape = !link && plausibleShell(node);
       if (!link && !playerAdEvidence && !shellShape) return false;
-      if (!strictPopupEnabled() || !playerDocument()) return false;
+      if (!strictPopupEnabled() || !(onPlayerPage ? onPlayerPage() : playerDocument())) return false;
       if (!link) {
         const shell = shellShape && emptyFullScreenShell(node);
         if (!shell && !(playerAdEvidence && emptyClickTrap(node))) return false;
@@ -2257,13 +2284,15 @@
     try {
       // Check strict-popup/player eligibility before resolving links during the sweep.
       if (!strictPopupEnabled() || !playerDocument()) return;
+      /* Just asked above, so no child asks the document again. */
+      const onPlayerPage = () => true;
       const roots = [document.body, document.documentElement];
       for (const root of roots) {
         const kids = root && root.children;
         const max = Math.min((kids && kids.length) || 0, 200);
         for (let i = 0; i < max; i++) {
           const kid = kids[i];
-          if (kid && !CLICK_LAYER_SKIP.test(kid.tagName || '')) considerClickLayer(kid);
+          if (kid && !CLICK_LAYER_SKIP.test(kid.tagName || '')) considerClickLayer(kid, onPlayerPage);
         }
       }
     } catch (_) {}
@@ -2278,6 +2307,8 @@
     try {
       let bodyWatched = null;
       const onAdded = (records) => {
+        const onPlayerPage = playerDocumentOnce();
+        const later = [];
         for (const rec of records) {
           const added = rec.addedNodes || [];
           for (let i = 0; i < added.length && i < 40; i++) {
@@ -2285,13 +2316,19 @@
             if (!node || node.nodeType !== 1) continue;
             if (node === document.body) { watchBody(); continue; }
             if (CLICK_LAYER_SKIP.test(node.tagName || '')) continue;
-            if (considerClickLayer(node)) continue;
+            if (considerClickLayer(node, onPlayerPage)) continue;
             // Looked at again only if it could still turn out to be one.
             if (!playerAdEvidence && !crossSiteLinkIn(node) && !plausibleShell(node)) continue;
-            woTimeout(() => considerClickLayer(node), 300);
-            woTimeout(() => considerClickLayer(node), 1500);
+            later.push(node);
           }
         }
+        if (!later.length) return;
+        const recheck = () => {
+          const again = playerDocumentOnce();
+          for (const node of later) considerClickLayer(node, again);
+        };
+        woTimeout(recheck, 300);
+        woTimeout(recheck, 1500);
       };
       const observer = woObserver(onAdded);
       const watchBody = () => {
@@ -3726,6 +3763,25 @@
     });
   }
 
+  /* A pixel or script address can carry skimmed card data in its query, URL-encoded. Only the card and
+     password check applies here: signed image links are normal, so the token rule stays with the send paths. */
+  function credentialFrameSrcBlocks(rawUrl, channel) {
+    const raw = String(rawUrl || '');
+    if (raw.length < 16) return false;
+    const target = credentialFrameTarget(raw);
+    if (!target) return false;
+    let decoded = raw;
+    try { decoded = decodeURIComponent(raw); } catch (_) {}
+    credentialFrameScanFields(document, false);
+    const text = raw + '\n' + decoded;
+    const hasSecret = credentialFrameHasRemembered(text, 'card') || credentialFrameHasRemembered(text, 'password');
+    if (hasSecret && credentialFrameEnabled('detectSkimmers') && !credentialFrameTrustedHost(target.host)) {
+      credentialFrameNoteBlock('blocked_skimmer_exfil', target, channel);
+      return true;
+    }
+    return false;
+  }
+
   function credentialFrameBlocks(rawTarget, data, headers, channel, method) {
     const target = credentialFrameTarget(rawTarget);
     if (!target) return false;
@@ -3875,6 +3931,37 @@
         WebSocket.prototype.send = function credentialFrameWebSocketSend(data) {
           if (credentialFrameBlocks(this && this.url, data, null, 'websocket', 'SEND')) return undefined;
           return realWebSocketSend.apply(this, arguments);
+        };
+      }
+    } catch (_) {}
+
+    try {
+      const srcBlocked = (value, channel) => {
+        try { return credentialFrameSrcBlocks(value, channel); } catch (_) { return false; }
+      };
+      const guardSrc = (proto, prop, channel) => {
+        const desc = proto && Object.getOwnPropertyDescriptor(proto, prop);
+        if (!desc || typeof desc.set !== 'function' || !desc.configurable) return;
+        const realSet = desc.set;
+        Object.defineProperty(proto, prop, Object.assign({}, desc, {
+          set: function credentialFrameSrcSet(value) {
+            if (srcBlocked(value, channel)) return;
+            return realSet.call(this, value);
+          },
+        }));
+      };
+      if (window.HTMLImageElement && HTMLImageElement.prototype) {
+        guardSrc(HTMLImageElement.prototype, 'src', 'image');
+        guardSrc(HTMLImageElement.prototype, 'srcset', 'image');
+      }
+      if (window.HTMLScriptElement && HTMLScriptElement.prototype) guardSrc(HTMLScriptElement.prototype, 'src', 'script');
+      if (window.Element && Element.prototype && typeof Element.prototype.setAttribute === 'function') {
+        const realSetAttribute = Element.prototype.setAttribute;
+        Element.prototype.setAttribute = function credentialFrameSetAttribute(name, value) {
+          if (/^(?:src|srcset)$/i.test(String(name))
+            && ((window.HTMLImageElement && this instanceof HTMLImageElement) || (window.HTMLScriptElement && this instanceof HTMLScriptElement))
+            && srcBlocked(value, 'element')) return undefined;
+          return realSetAttribute.apply(this, arguments);
         };
       }
     } catch (_) {}

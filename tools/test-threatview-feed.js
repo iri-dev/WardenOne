@@ -16,7 +16,7 @@ async function run() {
   };
   const root = path.resolve(__dirname, '..');
   const shared = 'duplicate.feed-fixture.net', malicious = 'tv-malicious.feed-fixture.net';
-  const fixture = [malicious, shared, 'b\u00fccher.de', 'fileditch.com', 'www.fileditch.com', 'bad.fileditch.com', 'host.example', 'host.invalid',
+  const fixture = [malicious, shared, 'b\u00fccher.de', 'fileditch.com', 'www.fileditch.com', 'bad.fileditch.com', 'tawk.to', 'www.tawk.to', 'host.example', 'host.invalid',
     '1.0.0.127.in-addr.arpa', '0000153.0000255.0000011.0000125', 'xn--zz.net'].join('\n');
   const adHost = 'ads.onehosts-feed-fixture.net';
   const liteFixture = [adHost, shared, 'tenant.github.io', 'github.io', 'youtube.com', 'accounts.google.com',
@@ -57,6 +57,19 @@ async function run() {
   assert([...state.values()].some(rule => rule.condition.requestDomains?.includes('bad.fileditch.com')));
   assert.equal(h.ctx.remoteListBlockAllowed('fileditch.com', '', 'security', 'https://other.feed-fixture.net/domains.txt'), true);
   assert.equal(h.ctx.remoteListBlockAllowed('fileditch.com.attacker.net', '', 'security', url), true);
+  /* Tawk's chat: only ThreatView's bare entry is dropped, never a child, a lookalike, a path rule or another feed. */
+  assert(![...state.values()].some(rule => rule.condition.requestDomains?.some(host => host === 'tawk.to' || host === 'www.tawk.to')));
+  for (const host of ['tawk.to', 'www.tawk.to']) {
+    assert.equal(h.ctx.remoteListBlockAllowed(host, '', 'security', url), false, host);
+    assert.equal(h.ctx.remoteListBlockAllowed(host, '', 'security', otherSecurityUrl), true, host + ' from another feed');
+    assert.equal(h.ctx.remoteListBlockAllowed(host, '', 'security', url + '?different=1'), true, host + ' from a different URL');
+    assert.equal(vm.runInContext('SECURITY_DOMAINS.has(' + JSON.stringify(host) + ')', h.ctx), false, host);
+    assert.equal(h.ctx.searchResultVerdictForHost(host, { allowlist: [] }), null, host + ': no search warning');
+  }
+  for (const host of ['scam.tawk.to', 'embed.tawk.to.sgdo.attacker.net', 'tawk.to.attacker.net']) {
+    assert.equal(h.ctx.remoteListBlockAllowed(host, '', 'security', url), true, host + ' stays blockable');
+  }
+  assert.equal(h.ctx.remoteListBlockAllowed('tawk.to', '||tawk.to/chat/phish', 'security', url), true, 'a path rule is kept');
   const nativeGameBlocks = () => [...state.values()].filter(rule => rule.action.type === 'block'
     && rule.condition.requestDomains?.some(host => gameHosts.includes(host)));
   for (const host of gameHosts) {

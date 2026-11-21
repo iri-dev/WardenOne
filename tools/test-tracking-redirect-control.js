@@ -2,7 +2,7 @@
 'use strict';
 const assert = require('assert/strict'), fs = require('fs'), vm = require('vm');
 const source = fs.readFileSync('background.js', 'utf8');
-const start = source.indexOf('const TRACKING_REDIRECT_RULE_BASE ='), end = source.indexOf('// ---- Certificate Guard', start);
+const start = source.indexOf('const TRACKING_REDIRECT_RULE_BASE ='), end = source.indexOf('// ---- Bare IP program guard', start);
 assert(start > 0 && end > start);
 function rig() {
   const state = { session: [], dynamic: [], cfg: { enabled: true, unshimLinks: true }, current: '', alarms: [], writes: 0, warnings: [] };
@@ -47,6 +47,14 @@ async function run() {
     assert(rule.action.redirect.regexSubstitution.endsWith('#\\0'));
   }
   assert.equal(r.api.rules({ enabled: false }).length, 0); assert.equal(r.api.rules({ unshimLinks: false }).length, 0);
+  for (const [host, path, key] of [['steamcommunity.com', '/linkfilter/', 'url'], ['t.umblr.com', '/redirect', 'z']]) {
+    const rule = rules.find(rule => rule.condition.requestDomains.includes(host));
+    const pattern = new RegExp(rule.condition.regexFilter, 'i');
+    const query = '?' + key + '=' + encodeURIComponent(target);
+    assert(pattern.test('https://' + host + ':8443' + path + query));
+    assert(!pattern.test('https://unrelated.' + host + path + query));
+    assert(!pattern.test('https://' + host + '/unrelated' + path + query));
+  }
   const except = r.api.rules({ allowlist: ['publisher.example.org'], siteOverrides: { 'shop.example.org': { unshimLinks: false } } })[0].condition;
   assert(except.excludedInitiatorDomains.includes('publisher.example.org') && except.excludedRequestDomains.includes('shop.example.org'));
   assert.equal((await r.api.resolve(r.sender(original))).url, target);
@@ -93,4 +101,43 @@ async function run() {
   assert.equal(r.state.session.length, 0);
   console.log('[ok] tracking redirect authority: native scope/priorities, exact broker document, stale/foreign frames, unsafe targets, isolated fallback and expiry rollback');
 }
-run().catch(error => { console.error(error); process.exitCode = 1; });
+
+async function checkLinkReputationResume() {
+  const content = fs.readFileSync('src/content.js', 'utf8');
+  const start = content.indexOf('const REDIRECT_PARAMS=');
+  const end = content.indexOf('!0),\n      WO.monitorLoggerApi)', start);
+  assert(start >= 0 && end > start);
+  const handler = content.slice(start, end).replace('if(woOn(window,"click",', 'woOn(window,"click",');
+  const sourcePage = 'https://publisher.example.net/';
+  const target = 'https://destination.example.org/';
+  const wrapper = 'https://out.reddit.com/t3_fixture?url=' + encodeURIComponent(target);
+  for (const scenario of ['clean', 'hit', 'changed href', 'detached', 'different page', 'changed target', 'no referrer', 'blocked click', 'scripted click']) {
+    let listener, synthetic = 0, warning = 0;
+    const lookups = [], location = { href: sourcePage, hostname: 'publisher.example.net' };
+    const attributes = new Set();
+    const link = { href: wrapper, rel: scenario === 'no referrer' ? 'nofollow NoReferrer' : '', isConnected: true,
+      getAttribute: name => name === 'href' ? link.href : null, hasAttribute: name => attributes.has(name), click: () => { synthetic++; } };
+    vm.runInNewContext(handler + '!0);', {
+      Date, setTimeout() {}, WO: { warnRedirectParams: true }, location, window: {}, document: { querySelector: () => null },
+      woOn: (_window, _event, onClick) => { listener = onClick; }, u2: url => new URL(url), regDom: host => host,
+      log() {}, urlReputationOn: () => true, safeBrowsingCheck: async url => {
+        lookups.push(url);
+        return { ok: true, hit: scenario === 'hit' };
+      }, urlReputationProvider() {}, safeBrowsingThreatText() {}, showSafeBrowsingPanel: () => { warning++; },
+    });
+    const event = { target: { closest: () => link }, button: 0, isTrusted: scenario !== 'scripted click',
+      defaultPrevented: scenario === 'blocked click', preventDefault() { this.defaultPrevented = true; }, stopPropagation() {} };
+    listener(event);
+    if (scenario === 'changed href') link.href = target;
+    if (scenario === 'detached') link.isConnected = false;
+    if (scenario === 'different page') location.href = sourcePage + '#new';
+    if (scenario === 'changed target') attributes.add('target');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(synthetic, scenario === 'no referrer' ? 1 : 0, scenario);
+    assert.equal(warning, scenario === 'hit' ? 1 : 0, scenario);
+    assert.equal(location.href, scenario === 'clean' ? wrapper : scenario === 'different page' ? sourcePage + '#new' : sourcePage, scenario);
+    assert.deepEqual(lookups, ['blocked click', 'scripted click'].includes(scenario) ? [] : [wrapper, target], scenario);
+  }
+  console.log('[ok] trusted redirect click resumes the checked address without a synthetic click');
+}
+run().then(checkLinkReputationResume).catch(error => { console.error(error); process.exitCode = 1; });

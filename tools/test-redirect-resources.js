@@ -81,6 +81,312 @@ vm.runInContext(BG.slice(from, to)
   sandbox, { filename: 'background.js:modifiers' });
 const api = sandbox.__api;
 
+const trackers = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules-trackers.json'), 'utf8'));
+for (const [file, host, endpoint] of [
+  ['surrogates/analytics.js', 'www.google-analytics.com', '/analytics.js'],
+  ['surrogates/facebook.js', 'connect.facebook.net', '/en_US/sdk.js'],
+  ['surrogates/facebook.js', 'connect.facebook.net', '/en_US/fbevents.js'],
+  ['surrogates/publisher-tag.js', 'securepubads.g.doubleclick.net', '/tag/js/gpt.js'],
+  ['surrogates/publisher-tag.js', 'pagead2.googlesyndication.com', '/tag/js/gpt.js'],
+  ['surrogates/tag-manager.js', 'www.googletagmanager.com', '/gtm.js'],
+  ['surrogates/tag-manager.js', 'www.googletagmanager.com', '/gtag/js'],
+  ['surrogates/segment.js', 'cdn.segment.com', '/analytics.js/v1/WRITEKEY123/analytics.min.js'],
+  ['surrogates/adobe-launch.js', 'assets.adobedtm.com', '/a1b2c3/d4e5f6/launch-EN0123abcd.min.js'],
+  ['surrogates/adobe-launch.js', 'assets.adobedtm.com', '/0123abcd/satelliteLib-4567ef.js'],
+  ['surrogates/matomo.js', 'cdn.matomo.cloud', '/shop.matomo.cloud/matomo.js'],
+  ['surrogates/apstag.js', 'c.amazon-adsystem.com', '/aax2/apstag.js'],
+  ['surrogates/optimizely.js', 'cdn.optimizely.com', '/js/1234567890.js'],
+  ['surrogates/urchin.js', 'ssl.google-analytics.com', '/ga.js'],
+  ['surrogates/urchin.js', 'www.google-analytics.com', '/ga.js'],
+]) {
+  const library = 'https://' + host + endpoint;
+  const rule = trackers.find(rule => rule.action.redirect?.extensionPath === '/' + file && new RegExp(rule.condition.regexFilter).test(library));
+  check(file + ' is packaged', ALLOWLIST.has(file));
+  check(file + ' has a dynamic resource URL', MANIFEST.web_accessible_resources.some(entry =>
+    entry.use_dynamic_url === true && entry.resources.includes(file)));
+  check(file + ' is third party script only', rule?.condition.domainType === 'thirdParty'
+    && JSON.stringify(rule.condition.resourceTypes) === '["script"]'
+    && JSON.stringify(rule.condition.requestMethods) === '["get"]');
+  if (!rule) continue;
+  const pixel = endpoint.endsWith('/fbevents.js');
+  check(file + ' has the reviewed priority for ' + endpoint,
+    pixel ? rule.priority > 1900 && rule.priority < 3000 : rule.priority > REDIRECT_RULE_PRIORITY && rule.priority < 1900);
+  const filter = new RegExp(rule.condition.regexFilter);
+  check(file + ' intercepts the library and its query variants', filter.test(library) && filter.test(library + '?v=1'));
+  for (const url of ['https://' + host + '/collect', library + '.map', 'https://' + host + '.example.org' + endpoint,
+    'https://' + (host.startsWith('www.') ? host.replace(/^www\./, 'region1.') : 'other.' + host) + endpoint]) {
+    check(file + ' ignores ' + url, !filter.test(url));
+  }
+}
+
+{
+  const jobs = [], calls = [];
+  let networkAttempts = 0;
+  const network = () => { networkAttempts++; throw Error('the surrogate tried to contact the network'); };
+  const page = vm.createContext({ queueMicrotask: callback => jobs.push(callback), calls,
+    fetch: network, XMLHttpRequest: network, Image: network, navigator: { sendBeacon: network } });
+  const surrogate = fs.readFileSync(path.join(ROOT, 'surrogates/analytics.js'), 'utf8');
+  vm.runInContext(`window = globalThis; GoogleAnalyticsObject = 'siteAnalytics';
+    siteAnalytics = function () { (siteAnalytics.q ||= []).push(arguments); };
+    siteAnalytics('send', 'pageview', { hitCallback() { calls.push('queued'); } });
+    siteAnalytics('send', { hitCallback() { throw Error('page callback failed'); } });
+    siteAnalytics(() => { calls.push('ready'); });`, page);
+  vm.runInContext(surrogate, page);
+  vm.runInContext(surrogate, page);
+  vm.runInContext(`siteAnalytics('checkout.send', 'event', 'cart', 'continue', { hitCallback() { calls.push('later'); } });
+    siteAnalytics('set', { hitCallback() { calls.push('unexpected'); } });`, page);
+  check('analytics callbacks run asynchronously', calls.length === 0);
+  for (const job of jobs) job();
+  check('analytics callbacks finish once, in order, without a collector', calls.join(',') === 'queued,ready,later');
+  check('the analytics surrogate attempts no network requests', networkAttempts === 0);
+}
+
+{
+  const jobs = [], calls = [];
+  let networkAttempts = 0;
+  const network = () => { networkAttempts++; throw Error('the surrogate tried to contact the network'); };
+  const page = vm.createContext({ URL, queueMicrotask: callback => jobs.push(callback), calls,
+    document: { currentScript: { src: 'https://www.googletagmanager.com/gtm.js?id=GTM-FIXTURE&l=checkoutLayer' } },
+    fetch: network, XMLHttpRequest: network, Image: network, navigator: { sendBeacon: network } });
+  const surrogate = fs.readFileSync(path.join(ROOT, 'surrogates/tag-manager.js'), 'utf8');
+  vm.runInContext(`window = globalThis; dataLayer = [];
+    original = checkoutLayer = [
+      { event: 'ready', eventCallback(id) { calls.push('queued:' + id); } },
+      { eventCallback() { calls.push('unexpected'); } },
+      { event: 'broken', eventCallback() { throw Error('page callback failed'); } },
+    ];`, page);
+  vm.runInContext(surrogate, page);
+  vm.runInContext('firstPush = checkoutLayer.push;', page);
+  vm.runInContext(surrogate, page);
+  check('Tag Manager retains a custom queue and installs once', vm.runInContext(
+    'checkoutLayer === original && checkoutLayer.push === firstPush && dataLayer.push === Array.prototype.push', page));
+  check('Tag Manager preserves the result of pushing multiple entries', vm.runInContext(`checkoutLayer.push(
+    { event: 'checkout', eventTimeout: 1, eventCallback(id) { calls.push('paid:' + id); } },
+    { event: 'next', eventCallback(id) { calls.push('next:' + id); } },
+    { currency: 'GBP' }) === 6`, page));
+  check('Tag Manager callbacks run asynchronously', calls.length === 0);
+  for (const job of jobs) job();
+  check('Tag Manager completes each event in order', calls.join(',') === 'queued:GTM-FIXTURE,paid:GTM-FIXTURE,next:GTM-FIXTURE');
+  check('the Tag Manager surrogate attempts no network requests', networkAttempts === 0);
+}
+
+{
+  const jobs = [], statuses = [];
+  const document = { currentScript: { src: 'https://connect.facebook.net/en_GB/sdk.js' }, readyState: 'complete' };
+  const page = vm.createContext({ queueMicrotask: callback => jobs.push(callback), statuses, document });
+  const facebook = fs.readFileSync(path.join(ROOT, 'surrogates/facebook.js'), 'utf8');
+  vm.runInContext(`window = globalThis;
+    fbAsyncInit = () => { FB.init({ appId: '1' }); statuses.push('ready'); }`, page);
+  vm.runInContext(facebook, page);
+  vm.runInContext(facebook, page);
+  vm.runInContext(`FB.login(result => statuses.push(result.status + ':' + result.authResponse));`, page);
+  for (const job of jobs.splice(0)) job();
+  check('Facebook startup completes once and an unavailable login returns no credentials', statuses.join(',') === 'ready,unknown:null');
+  document.currentScript.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  vm.runInContext(facebook, page);
+  check('Facebook Pixel commands are accepted locally', vm.runInContext(`fbq('track', 'Purchase'); fbq.loaded && fbq === _fbq`, page));
+}
+
+{
+  const jobs = [], calls = [];
+  let networkAttempts = 0;
+  const network = () => { networkAttempts++; throw Error('the surrogate tried to contact the network'); };
+  const page = vm.createContext({ queueMicrotask: callback => jobs.push(callback), calls,
+    fetch: network, XMLHttpRequest: network, Image: network, navigator: { sendBeacon: network } });
+  const surrogate = fs.readFileSync(path.join(ROOT, 'surrogates/publisher-tag.js'), 'utf8');
+  const evaluate = code => vm.runInContext(code, page);
+  evaluate(`window = globalThis; original = googletag = { cmd: [
+    function () { if (this === window && googletag.apiReady) calls.push('first'); googletag.cmd.push(() => calls.push('nested')); },
+    () => { throw Error('page command failed'); },
+    () => calls.push('second'),
+  ] };`);
+  evaluate(surrogate);
+  evaluate(surrogate);
+  check('Publisher Tag drains its original queue once in order', calls.join(',') === 'first,second,nested');
+  check('Publisher Tag keeps its namespace and counts processed commands', evaluate(`googletag === original
+    && googletag.cmd.push(() => calls.push('later'), () => calls.push('last')) === 6`));
+  check('Publisher Tag completes late commands immediately', calls.join(',') === 'first,second,nested,later,last');
+
+  evaluate(`service = googletag.pubads();
+    googletag.setConfig({ disableInitialLoad: true });
+    slot = googletag.defineSlot('/123/placeholder', [300, 250], 'slot').setTargeting('page', 'news').addService(service);
+    report = event => calls.push(event.isEmpty && event.size === null && event.slot === slot ? 'empty' : 'unexpected');
+    service.addEventListener('slotRenderEnded', report);
+    service.addEventListener('impressionViewable', () => calls.push('impression'));
+    googletag.enableServices();
+    googletag.display('slot');`);
+  check('Publisher Tag honours disabled initial load', jobs.length === 0 && evaluate('googletag.pubadsReady && service.getSlots()[0] === slot'));
+  evaluate('service.refresh(null);');
+  for (const job of jobs.splice(0)) job();
+  check('Publisher Tag reports an empty slot after refresh', calls.at(-1) === 'empty');
+  evaluate('service.refresh([slot]); googletag.destroySlots([slot]);');
+  for (const job of jobs.splice(0)) job();
+  check('Publisher Tag cancels results for destroyed slots', calls.filter(call => call === 'empty').length === 1
+    && evaluate('service.getSlots().length === 0'));
+  check('Publisher Tag can define a slot before a page assigns an element ID', evaluate(`generated = googletag.defineSlot('/123/other', [1, 1]);
+    generated.getSlotElementId() && generated.getSlotElementId() !== googletag.defineSlot('/123/next', [1, 1]).getSlotElementId()`));
+  check('the Publisher Tag surrogate attempts no network requests', networkAttempts === 0);
+}
+
+/* Round 5b surrogates. Each one is run in a sandbox whose network calls throw, with the page's own queue in place first,
+   loaded twice, then called again the way pages call it later. */
+const offline = () => {
+  const counter = { attempts: 0 };
+  const network = () => { counter.attempts++; throw Error('the surrogate tried to contact the network'); };
+  return { counter, globals: { fetch: network, XMLHttpRequest: network, Image: network, WebSocket: network, navigator: { sendBeacon: network } } };
+};
+const surrogateSource = file => fs.readFileSync(path.join(ROOT, 'surrogates', file), 'utf8');
+
+{
+  const jobs = [], calls = [];
+  const { counter, globals } = offline();
+  const page = vm.createContext(Object.assign({ queueMicrotask: callback => jobs.push(callback), calls }, globals));
+  const surrogate = surrogateSource('segment.js');
+  vm.runInContext(`window = globalThis; analytics = [];
+    analytics.push(['page']);
+    analytics.push(['track', 'Checkout Started', { step: 1 }, {}, () => calls.push('queued')]);
+    analytics.push(['ready', () => calls.push('ready')]);
+    analytics.push(['identify', 'user-1', () => { throw Error('page callback failed'); }]);
+    analytics.push(['push', ['track', 'nested', () => calls.push('unexpected')]]);`, page);
+  vm.runInContext(surrogate, page);
+  const first = vm.runInContext('analytics', page);
+  vm.runInContext(surrogate, page);
+  check('Segment installs once', vm.runInContext('analytics', page) === first && first.initialized === true);
+  check('Segment answers a later call with a promise', vm.runInContext(`typeof analytics.track('Later', {}, () => calls.push('later')).then === 'function'`, page));
+  check('Segment callbacks run asynchronously', calls.length === 0);
+  for (const job of jobs.splice(0)) job();
+  check('Segment finishes queued and later callbacks in order', calls.join(',') === 'queued,ready,later');
+  check('Segment reports no user identity', vm.runInContext('analytics.user().anonymousId() === null && analytics.user().id() === null', page));
+  check('the Segment surrogate attempts no network requests', counter.attempts === 0);
+}
+
+{
+  const surrogate = surrogateSource('adobe-launch.js');
+  const pageWith = (styles, setup) => {
+    const removed = [];
+    const document = { readyState: 'complete', addEventListener() {},
+      getElementById: id => styles.includes(id) ? { remove() { removed.push(id); } } : null };
+    const { counter, globals } = offline();
+    const page = vm.createContext(Object.assign({ document }, globals));
+    vm.runInContext('window = globalThis;' + (setup || ''), page);
+    vm.runInContext(surrogate, page);
+    return { page, removed, counter };
+  };
+  const plain = pageWith(['at-body-style', 'alloy-prehiding']);
+  check('Adobe Launch keeps page code that calls _satellite running', vm.runInContext(`_satellite.pageBottom(); _satellite.track('rule', {});
+    _satellite.getVar('pageName').toLowerCase() === '' && _satellite.getVisitorId() === null && _satellite.cookie.get('x') === undefined`, plain.page));
+  check('Adobe Launch lifts the Target and Web SDK pre-hiding styles', plain.removed.join(',') === 'at-body-style,alloy-prehiding');
+  check('the Adobe Launch surrogate attempts no network requests', plain.counter.attempts === 0);
+  const target = pageWith(['at-body-style', 'alloy-prehiding'], 'adobe = { target: {} }; alloy = function () {};');
+  check('Adobe Launch leaves pre-hiding to a Target or Web SDK that is running', target.removed.length === 0);
+  const real = pageWith([], '_satellite = { buildInfo: { turbineVersion: "27.5.0" }, real: true };');
+  check('Adobe Launch never replaces a Launch that loaded', vm.runInContext('_satellite.real === true && _satellite.getVar === undefined', real.page));
+}
+
+{
+  const jobs = [], calls = [];
+  const { counter, globals } = offline();
+  const page = vm.createContext(Object.assign({ queueMicrotask: callback => jobs.push(callback), calls, location: { href: 'https://shop.example/' } }, globals));
+  const surrogate = surrogateSource('matomo.js');
+  vm.runInContext(`window = globalThis; _paq = [['trackPageView'], ['enableLinkTracking'], ['setSiteId', '1'],
+    [function () { calls.push(this.getVisitorId() === '' ? 'function' : 'unexpected'); }],
+    ['trackEvent', 'cart', 'add', 'shoes', 1, {}, () => calls.push('event')],
+    ['MediaAnalytics::scanForMedia'], ['unknownMethod', 1],
+    ['trackLink', 'https://partner.example/', 'link', {}, () => { throw Error('page callback failed'); }]];
+    matomoAsyncInit = () => calls.push('init');`, page);
+  vm.runInContext(surrogate, page);
+  vm.runInContext(surrogate, page);
+  vm.runInContext(`_paq.push(['trackGoal', 1, 0, {}, () => calls.push('goal')]);
+    _paq.push([function () { calls.push(this === Matomo.getAsyncTracker() ? 'tracker' : 'unexpected'); }]);`, page);
+  check('Matomo runs function commands with its tracker as this, at once', calls.join(',') === 'function,tracker');
+  for (const job of jobs.splice(0)) job();
+  check('Matomo finishes tracking callbacks and its init hook once', calls.join(',') === 'function,tracker,event,init,goal');
+  check('Matomo trackers are not mistaken for promises', vm.runInContext('Matomo.getAsyncTracker().then === undefined && Piwik === Matomo', page));
+  check('the Matomo surrogate attempts no network requests', counter.attempts === 0);
+}
+
+{
+  const jobs = [], bids = [];
+  const { counter, globals } = offline();
+  const page = vm.createContext(Object.assign({ queueMicrotask: callback => jobs.push(callback), bids }, globals));
+  const surrogate = surrogateSource('apstag.js');
+  vm.runInContext(`window = globalThis;
+    apstag = { _Q: [], init() { apstag._Q.push(['i', arguments]); }, fetchBids() { apstag._Q.push(['f', arguments]); } };
+    apstag.init({ pubID: 'lab', adServer: 'googletag' });
+    apstag.fetchBids({ slots: [{ slotID: 'div-1', sizes: [[300, 250]] }, { slotID: 'div-2' }], timeout: 2000 }, result => bids.push(result));`, page);
+  vm.runInContext(surrogate, page);
+  const first = vm.runInContext('apstag', page);
+  vm.runInContext(surrogate, page);
+  check('apstag installs once', vm.runInContext('apstag', page) === first && !first._Q);
+  vm.runInContext(`apstag.fetchBids({ slots: [{ slotID: 'late' }] }, result => bids.push(result));
+    apstag.fetchBids({}, () => { throw Error('page callback failed'); });`, page);
+  check('apstag answers bids asynchronously', bids.length === 0);
+  for (const job of jobs.splice(0)) job();
+  check('apstag returns no bid for every queued and later slot', bids.length === 2
+    && bids[0].map(bid => bid.slotID).join(',') === 'div-1,div-2' && bids[0].every(bid => bid.amznbid === '' && bid.size === '0x0')
+    && bids[1].length === 1 && bids[1][0].slotID === 'late');
+  check('apstag has no targeting to add', vm.runInContext('apstag.targetingKeys().length === 0', page));
+  check('the apstag surrogate attempts no network requests', counter.attempts === 0);
+}
+
+{
+  const jobs = [], calls = [];
+  const { counter, globals } = offline();
+  const page = vm.createContext(Object.assign({ queueMicrotask: callback => jobs.push(callback), calls }, globals));
+  const surrogate = surrogateSource('optimizely.js');
+  vm.runInContext(`window = globalThis; optimizely = [];
+    optimizely.push({ type: 'addListener', filter: { type: 'lifecycle', name: 'activated' }, handler: () => calls.push('activated') });
+    optimizely.push({ type: 'addListener', filter: { type: 'lifecycle', name: 'campaignDecided' }, handler: () => calls.push('unexpected') });
+    optimizely.push({ type: 'event', eventName: 'view' });`, page);
+  vm.runInContext(surrogate, page);
+  const first = vm.runInContext('optimizely', page);
+  vm.runInContext(surrogate, page);
+  check('Optimizely installs once', vm.runInContext('optimizely', page) === first);
+  check('Optimizely reports no active experiment', vm.runInContext(`const state = optimizely.get('state');
+    state.getActiveExperimentIds().length === 0 && Object.keys(state.getVariationMap()).length === 0
+      && state.getDecisionString({ campaignId: '1' }) === null && state.isGlobalHoldback() === false`, page));
+  check('Optimizely accepts commands', vm.runInContext(`optimizely.push({ type: 'event', eventName: 'buy' }) === true && optimizely.push(null) === true`, page));
+  check('Optimizely Classic properties read as empty', vm.runInContext('optimizely.activeExperiments.length === 0 && Object.keys(optimizely.variationMap).length === 0', page));
+  check('Optimizely lifecycle listeners run asynchronously', calls.length === 0);
+  for (const job of jobs.splice(0)) job();
+  check('Optimizely runs only its activation listener, once', calls.join(',') === 'activated');
+  check('the Optimizely surrogate attempts no network requests', counter.attempts === 0);
+}
+
+{
+  const jobs = [], calls = [], visits = [];
+  const { counter, globals } = offline();
+  const page = vm.createContext(Object.assign({ queueMicrotask: callback => jobs.push(callback), calls, location: { assign: url => visits.push(url) } }, globals));
+  const surrogate = surrogateSource('urchin.js');
+  vm.runInContext(`window = globalThis; _gaq = [['_setAccount', 'UA-1-1'], ['_trackPageview'],
+    ['_set', 'hitCallback', () => calls.push('hit')], ['_trackEvent', 'outbound', 'click'],
+    ['b._setAccount', 'UA-2-1'], ['b._trackPageview'], () => calls.push('function')];`, page);
+  vm.runInContext(surrogate, page);
+  vm.runInContext(surrogate, page);
+  check('ga.js runs function commands at once', calls.join(',') === 'function');
+  for (const job of jobs.splice(0)) job();
+  check('ga.js runs hitCallback after a hit, on that tracker only', calls.join(',') === 'function,hit');
+  check('ga.js trackers keep their own accounts', vm.runInContext(`_gat._getTrackerByName('b')._getAccount() === 'UA-2-1'
+    && _gat._getTrackerByName('')._getAccount() === 'UA-1-1'`, page));
+  vm.runInContext(`_gaq.push(['_link', 'https://partner.example/next']);`, page);
+  check('ga.js _link still opens the link', visits.join(',') === 'https://partner.example/next');
+  check('ga.js returns linker URLs unchanged', vm.runInContext(`_gat._getTrackerByName('')._getLinkerUrl('https://x.example/') === 'https://x.example/'`, page));
+  check('ga.js trackers are not mistaken for promises', vm.runInContext(`_gat._getTrackerByName('').then === undefined`, page));
+  check('the ga.js surrogate attempts no network requests', counter.attempts === 0);
+}
+
+{
+  const tagManager = fs.readFileSync(path.join(ROOT, 'surrogates/tag-manager.js'), 'utf8');
+  const page = vm.createContext({ URL, queueMicrotask: () => {}, document: { currentScript: { src: 'https://www.googletagmanager.com/gtm.js?id=GTM-OPT' } } });
+  vm.runInContext(`window = globalThis; ended = 0; dataLayer = []; dataLayer.hide = { 'GTM-OPT': true, end() { ended++; } };`, page);
+  vm.runInContext(tagManager, page);
+  check('Tag Manager ends Google Optimize anti-flicker without waiting for its timeout', vm.runInContext('ended', page) === 1);
+  const expired = vm.createContext({ URL, URLSearchParams, queueMicrotask: () => {}, document: { currentScript: null } });
+  vm.runInContext(`window = globalThis; dataLayer = []; dataLayer.hide = { 'GTM-OPT': true, end: null };`, expired);
+  vm.runInContext(tagManager, expired);
+  check('Tag Manager accepts an anti-flicker hide that already timed out', vm.runInContext('typeof dataLayer.push === "function"', expired));
+}
+
 // ---------------------------------------------------------------------------
 // The table, the files, the manifest and the package all name the same things.
 // ---------------------------------------------------------------------------
@@ -280,6 +586,33 @@ const api = sandbox.__api;
   check('both bands are recognised as WardenOne rule ids',
     BG.includes('id >= REDIRECT_RULE_BASE && id < REDIRECT_RULE_BASE + REDIRECT_RULES_BUDGET')
     && BG.includes('id >= CSP_RULE_BASE && id < CSP_RULE_BASE + CSP_RULES_BUDGET'));
+}
+
+/* ---- WardenOne's own redirects (CNN's Brightline config retry loop) ---- */
+{
+  const m = /const PINNED_REDIRECT_RULES = (\[[\s\S]*?\n\]);/.exec(BG);
+  check('PINNED_REDIRECT_RULES is present', !!m);
+  const pinned = m ? vm.runInNewContext(m[1]) : [];
+  const accessible = new Set(MANIFEST.web_accessible_resources.flatMap((entry) => entry.resources));
+  for (const rule of pinned) {
+    const target = rule.action && rule.action.redirect && rule.action.redirect.extensionPath;
+    const file = String(target || '').replace(/^\//, '');
+    check('pinned redirect ' + rule.condition.urlFilter + ' serves a shipped, page-reachable empty file',
+      rule.__woModifier === 'redirect' && rule.action.type === 'redirect' && /^redirect-resources\/noop[^/]*$/.test(file)
+      && accessible.has(file) && ALLOWLIST.has(file) && fs.existsSync(path.join(ROOT, file)));
+    const types = rule.condition.resourceTypes || [];
+    check('pinned redirect ' + rule.condition.urlFilter + ' never answers a page or frame navigation',
+      types.length > 0 && !types.includes('main_frame') && !types.includes('sub_frame'));
+    check('pinned redirect ' + rule.condition.urlFilter + ' is limited to the sites it was measured on',
+      Array.isArray(rule.condition.initiatorDomains) && rule.condition.initiatorDomains.length > 0);
+  }
+  check('the Brightline config answer is CNN-only and XHR-only',
+    pinned.some((r) => r.condition.urlFilter === '||cdn-media.brightline.tv/config/'
+      && JSON.stringify(r.condition.initiatorDomains) === '["cnn.com"]' && JSON.stringify(r.condition.resourceTypes) === '["xmlhttprequest"]'
+      && r.action.redirect.extensionPath === '/redirect-resources/noop.json'));
+  check('pinned redirects go first in the band, ahead of any list line, so the band cap never drops them',
+    /const modifierSeen = \{ redirect: new Set\(\), csp: new Set\(\) \};\n  for \(const r of PINNED_REDIRECT_RULES\) \{\n    modifierRuleBuckets\.redirect\.push\(r\);/.test(BG));
+  check('they are numbered and prioritised like list redirects', /modifierRuleBuckets\[kind\]\.slice\(0, limit\)\.forEach\(\(rule, index\) =>\s*modifierRules\.push\(finalizeModifierRule\(rule, base \+ index\)\)\);/.test(BG));
 }
 
 if (failed) {

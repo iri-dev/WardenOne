@@ -24,7 +24,9 @@ async function run() {
   const paths = { google: '/url', 'google-ads': '/pagead/aclk', youtube: '/redirect', facebook: '/l.php', reddit: '/t3_fixture', linkedin: '/safety/go',
     duckduckgo: '/l/', bing: '/ck/a', awin: '/cread.php', cj: '/click-1-2', rakuten: '/deeplink', skimlinks: '/', sovrn: '/',
     'skimlinks-legacy': '/', shareasale: '/r.cfm', tradedoubler: '/click', impact: '/c/1/2/3', clickserve: '/link/click',
-    partnerize: '/click/camref:fixture/destination:', ebay: '/rover/1/2/3' };
+    partnerize: '/click/camref:fixture/destination:', ebay: '/rover/1/2/3', steam: '/linkfilter/', tumblr: '/redirect' };
+  const benchmark = [['google', 'www.google.com'], ['facebook', 'l.facebook.com'], ['reddit', 'out.reddit.com'],
+    ['youtube', 'www.youtube.com'], ['tumblr', 't.umblr.com'], ['steam', 'steamcommunity.com']];
   const destination = 'merchant.redirect-fixture.example.org', publisher = 'publisher.redirect-fixture.example.net', threat = 'threat.redirect-fixture.example.com';
   const receipts = [], report = { createdAt: new Date().toISOString(), cases: [], checks: [], complete: false };
   let port, cdp, browserTab, worker;
@@ -46,7 +48,7 @@ async function run() {
   };
   try {
     port = await profile.freePort();
-    const hosts = [...new Set(catalog.profiles.flatMap(entry => entry.hosts).concat(destination, publisher, threat))];
+    const hosts = [...new Set(catalog.profiles.flatMap(entry => entry.hosts).concat(benchmark.map(([, host]) => host), destination, publisher, threat))];
     const browser = await profile.launch(path.resolve(browserArg), 'on', runtime, port, directory,
       ['--ignore-certificate-errors', '--host-resolver-rules=' + hosts.map(host => 'MAP ' + host + ' 127.0.0.1').concat('MAP * ~NOTFOUND', 'EXCLUDE 127.0.0.1').join(', ')]);
     report.browser = browser.Browser;
@@ -75,6 +77,18 @@ async function run() {
       report.cases.push({ provider: entry.id, skipped: true });
     }
     report.checks.push('every reviewed provider reaches the exact signed destination without contacting its redirector');
+    for (const [provider, hostname] of benchmark) {
+      const entry = catalog.profiles.find(entry => entry.id === provider);
+      const url = origin(destination) + '/clicked?case=' + provider + '&signature=KEEP%2FTHIS#section';
+      const source = origin(publisher) + '/?go=' + encodeURIComponent(wrapped({ ...entry, hosts: [hostname] }, url));
+      await navigate(source);
+      await until(() => evaluate(cdp, browserTab, '!!document.getElementById("go")'), provider + ' publisher page');
+      const before = receipts.length;
+      await clickLink();
+      await until(async () => await pageURL() === url, provider + ' clicked destination');
+      assert(!receipts.slice(before).some(row => row.host === hostname), provider + ' contacted the redirector');
+    }
+    report.checks.push('all six benchmark links reach the exact destination from a real click without contacting a redirector');
     const rawPathTarget = origin(destination) + '/raw?signature=KEEP%2FTHIS';
     let rawBefore = receipts.length;
     await navigate(origin('prf.hn') + paths.partnerize + rawPathTarget);

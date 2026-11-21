@@ -48,10 +48,11 @@ function gestureFns() {
    (the control run on the pre-fix build), so the same checks report the old behaviour. */
 function shieldSlice() {
   const from = CONTENT.indexOf('const MEDIA_PRESENCE_MS=1e4,') >= 0 ? 'const MEDIA_PRESENCE_MS=1e4,' : 'if(WO.mediaShield)try{let mediaEventCount=0;';
-  return slice(from, '/* Speech recognition,', 'the Media Shield block');
+  /* Ends at the next block's code: comments are stripped from content.min.js (2026-11-20). */
+  return slice(from, 'if(WO.mediaShield)try{const SR_HOSTS=', 'the Media Shield block');
 }
 function speechSlice() {
-  return slice('if(WO.mediaShield)try{const SR_HOSTS=', '/* Back-button trapping.', 'the speech guard');
+  return slice('if(WO.mediaShield)try{const SR_HOSTS=', 'if(WO.backTrapGuard&&WO_TOP)try{', 'the speech guard');
 }
 
 /* Denials land on a setTimeout(0) scheduled after Chrome's record resolves, so settling has to

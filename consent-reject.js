@@ -100,6 +100,8 @@
   let openSettingsUntil = 0;
   let lastLogAt = 0;
   let needsTimedScan = true;
+  /* Bumped on every observer callback; containerMatches reuses its list only while this is unchanged. */
+  let domVersion = 0;
   let firstChoiceMade = false;
   /* Choices made on this page. Complianz answers Deny by showing a "Manage consent" tab, and
      opening that as a settings control reopened the banner, so the page strobed between the two
@@ -190,6 +192,7 @@
   // Broad substrings cover cookieyes/cookielaw/cookiehub, qc-cmp and privacy-manager.
   const CONTAINER_SELECTOR = [
     '[role="dialog"]',
+    '[role="alertdialog"]',
     '[aria-modal="true"]',
     'dialog',
     '[id*="cookie" i]',
@@ -268,6 +271,9 @@
   // An unrelated sign-in link may coexist with consent controls. Ignore authentication-only text only with strong consent
   // language and an explicit reject/accept pair; retain high-risk vetoes.
   const HARD_PROTECT_RE = /\b(create\s+account|account\s+settings|(?:account|user)\s+profile|profile\s+settings|subscription\s+(?:settings|plan)|wallet|bank\s+account|sort\s+code|routing\s+number|iban|(?:bank|wire)\s+transfer|transfer\s+(?:funds|money)|withdraw\s+(?:funds|money|cash)|deposit\s+(?:funds|money|cash)|password|passcode|2fa|two[\s-]?factor|verification\s+code|one[\s-]?time\s+code|payment|billing|checkout|secure\s+checkout|purchase|place\s+order|buy\s+now|pay\s+now|donate|card\s+number|shipping|delivery\s+address|refund|delete\s+account|deactivate|close\s+account|unsubscribe|confirm\s+your\s+(?:order|purchase|payment|account|identity|password|email|address))\b/i;
+  /* Consent-or-pay walls ("Reject all and subscribe", "Reject & Pay", "Pay to Reject"): refusing there means paying,
+     so automation must never press those controls or anything else in that dialog. */
+  const PAY_OR_SUBSCRIBE_RE = /\b(?:subscri(?:be|bed|bing|ption)|pay(?:ing)?|paid|ad[\s-]?lite|ads?[\s-]+free|ad[\s-]?free|contentpass|pur[\s-]?abo|abonn\w*|per\s+month|a\s+month|monthly)\b|[£€$]\s?\d/i;
   const EXPLICIT_REJECT_RE = /^\s*(?:reject|decline|deny|refuse)(?:\s+(?:all|optional))?[.!]?\s*$/i;
   const EXPLICIT_ACCEPT_RE = /^\s*(?:accept|allow)(?:\s+all)?[.!]?\s*$/i;
   const INFO_LINK_RE = /\b(cookie\s+choices?|cookie\s+notice|cookie\s+policy|privacy\s+(?:notice|policy|choices?)|legal|terms|learn\s+more)\b/i;
@@ -285,9 +291,23 @@
     });
   }
 
+  /* The switch set for one site (popup, site settings), for this frame's site or the page it sits in. The worker's
+     OneTrust answer honours the same switch, so switching it off lets the site's own banner work as you choose. */
+  function siteSwitchedOff() {
+    const rules = config.siteOverrides && typeof config.siteOverrides === 'object' ? config.siteOverrides : {};
+    const hosts = [cleanHost(location.hostname)];
+    try { const top = location.ancestorOrigins; if (top && top.length) hosts.push(cleanHost(new URL(top[top.length - 1]).hostname)); } catch (_) {}
+    return Object.keys(rules).some((pattern) => {
+      const entry = rules[pattern];
+      if (!entry || typeof entry !== 'object' || (entry.enabled !== false && entry.autoRejectConsent !== false)) return false;
+      const site = cleanHost(String(pattern).replace(/^\*\./, ''));
+      return !!site && hosts.some((h) => h === site || h.endsWith('.' + site));
+    });
+  }
+
   function updateActive() {
     const rejectOn = config.autoRejectConsent === true || config.autoRejectConsent === 'true' || config.autoRejectConsent === 1;
-    active = config.enabled !== false && rejectOn && !hostAllowed();
+    active = config.enabled !== false && rejectOn && !hostAllowed() && !siteSwitchedOff();
   }
 
   /* The settings snapshot, asked for through the bridge when it has run here (MV3-04). The
@@ -322,12 +342,32 @@
     });
   }
 
+  /* textContent, read only until the 500 characters elementText keeps can no longer change. A big container's whole
+     text cost a page section per call, about 1.3 s of every CNN load (Browser Guard 1v1, step 5). */
+  function leadingText(el, limit) {
+    try {
+      const walker = (el.ownerDocument || document).createTreeWalker(el, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_CDATA_SECTION);
+      let out = '';
+      let next = limit;
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        out += node.data;
+        if (out.length > next) {
+          if (out.replace(/\s+/g, ' ').trim().length > limit) break;
+          next = out.length * 2;
+        }
+      }
+      return out;
+    } catch (_) {
+      return el.textContent;
+    }
+  }
+
   function elementText(el) {
     try {
       const bits = [
         // Use textContent here to avoid layout; joined labels normalize the same whitespace. controlLabel retains innerText
         // because its first-truthy selection differs.
-        el.textContent,
+        leadingText(el, 500),
         el.getAttribute && el.getAttribute('aria-label'),
         el.getAttribute && el.getAttribute('title'),
         el.getAttribute && el.getAttribute('value'),
@@ -379,14 +419,27 @@
     }
   }
 
+  /* Hosts a consent manager draws its banner in (Usercentrics, consentmanager.net). */
+  const CMP_SHADOW_HOSTS = '#usercentrics-root,#usercentrics-cmp-ui,#cmpwrapper';
   function collectRoots(root) {
     const roots = [root];
     try {
-      let seen = 0;
-      for (let index = 0; index < roots.length && seen < 1800; index++) {
-        const part = roots[index], start = part && part.nodeType === 9 ? part.documentElement : part;
+      const added = new Set(), pending = [];
+      const addShadow = (el) => { if (el && el.shadowRoot && !added.has(el.shadowRoot)) { added.add(el.shadowRoot); roots.push(el.shadowRoot); pending.push(el.shadowRoot); } };
+      /* A banner hangs off <body>, often last, and a big page runs past the walk's budget before it gets there
+         (usercentrics.com, 2026-11-20). Its direct children and the known hosts are checked first. */
+      if (root && root.nodeType === 9) {
+        try { for (const el of root.querySelectorAll(CMP_SHADOW_HOSTS)) addShadow(el); } catch (_) {}
+        try { for (const el of (root.body && root.body.children) || []) addShadow(el); } catch (_) {}
+      }
+      /* Shadow roots are walked before the rest of a document, so the parts nested inside a banner's own root are
+         found before a big page spends the budget (iubenda.com nests three, 2026-11-20). */
+      let seen = 0, rootWalked = false;
+      while (seen < 1800) {
+        const part = pending.length ? pending.shift() : rootWalked ? null : (rootWalked = true, root);
+        if (!part) break;
+        const start = part.nodeType === 9 ? part.documentElement : part;
         if (!start) continue;
-        const addShadow = (el) => { if (el && el.shadowRoot) roots.push(el.shadowRoot); };
         if (start.nodeType === 1) { addShadow(start); seen++; }
         const walker = document.createTreeWalker(start, 1);
         let el;
@@ -399,6 +452,37 @@
     return roots;
   }
 
+  /* A banner built from web components keeps its words in its parts' shadow roots, where textContent never looks
+     (iubenda.com, 2026-11-20). A box with almost no text of its own is read through those roots, within a budget. */
+  function shadowBuilt(el) {
+    return String(leadingText(el, 60) || '').replace(/\s+/g, ' ').trim().length < 40;
+  }
+  function composedText(el, limit) {
+    let out = '', budget = 1500;
+    const visit = (parent, depth) => {
+      for (let n = parent.firstChild; n && budget > 0 && out.length < limit * 2; n = n.nextSibling) {
+        budget--;
+        if (n.nodeType === 3) out += ' ' + n.data;
+        else if (n.nodeType === 1 && n.localName !== 'script' && n.localName !== 'style') {
+          if (n.shadowRoot && depth < 8) visit(n.shadowRoot, depth + 1);
+          visit(n, depth);
+        }
+      }
+    };
+    try { if (el.shadowRoot) visit(el.shadowRoot, 1); visit(el, 0); } catch (_) {}
+    return out.replace(/\s+/g, ' ').trim().slice(0, limit);
+  }
+  function containerText(el) {
+    const own = elementText(el);
+    return shadowBuilt(el) ? (own + ' ' + composedText(el, 500)).trim().slice(0, 500) : own;
+  }
+  /* The next element up, through the host of a shadow root. */
+  function composedParent(n) {
+    if (!n) return null;
+    if (n.parentElement) return n.parentElement;
+    try { const top = n.getRootNode && n.getRootNode(); return top && top !== document && top.host || null; } catch (_) { return null; }
+  }
+
   function hasConsentLanguage(text) {
     text = String(text || '');
     return STRONG_CONSENT_TEXT_RE.test(text) || (WEAK_CONSENT_TEXT_RE.test(text) && CONSENT_ACTION_TEXT_RE.test(text));
@@ -408,9 +492,9 @@
     return STRONG_CONSENT_TEXT_RE.test(String(text || ''));
   }
 
-  function explicitConsentDecisionPair(container, rejectControl) {
+  function explicitConsentDecisionPair(container, rejectControl, text) {
     try {
-      if (!container || !hasStrongConsentLanguage(elementText(container))) return false;
+      if (!container || !hasStrongConsentLanguage(text == null ? elementText(container) : text)) return false;
       let reject = rejectControl && isVisible(rejectControl) && EXPLICIT_REJECT_RE.test(controlLabel(rejectControl));
       let accept = false;
       const roots = collectRoots(container);
@@ -436,18 +520,25 @@
     }
   }
 
+  const SENSITIVE_INPUT = 'input[type="password"],input[autocomplete="current-password"],input[autocomplete="one-time-code"],input[autocomplete^="cc-"]';
   function protectedContainerContext(container, rejectControl) {
-    try {
-      if (container.querySelector('input[type="password"],input[autocomplete="current-password"],input[autocomplete="one-time-code"],input[autocomplete^="cc-"]')) return true;
-    } catch (_) {}
-    const text = elementText(container);
+    const shadowed = shadowBuilt(container);
+    try { if (container.querySelector(SENSITIVE_INPUT)) return true; } catch (_) {}
+    if (shadowed) {
+      for (const root of collectRoots(container)) {
+        try { if (root !== container && root.querySelector(SENSITIVE_INPUT)) return true; } catch (_) {}
+      }
+    }
+    const text = shadowed ? containerText(container) : elementText(container);
     if (!PROTECT_RE.test(text)) return false;
     if (HARD_PROTECT_RE.test(text)) return true;
-    return !explicitConsentDecisionPair(container, rejectControl);
+    /* The text already read, through the parts when the box has none of its own ("withdraw your consent" on
+       iubenda.com's shadow banner, 2026-11-20). */
+    return !explicitConsentDecisionPair(container, rejectControl, text);
   }
 
   function looksLikeConsentContainer(el) {
-    const text = elementText(el);
+    const text = containerText(el);
     if (protectedContainerContext(el, null)) return false;
     if (hasConsentLanguage(text)) return true;
     try {
@@ -475,11 +566,64 @@
     }
   }
 
+  /* One pass of CONTAINER_SELECTOR (about 40 wildcard attribute tests) costs 15 to 20 ms on a big page, and the load
+     scans repeat it about 30 times. The match list is reused while the observer reports no change and for at most a
+     second; visibility is still read fresh on every scan, so a banner revealed by CSS alone is still seen. */
+  const CONTAINER_MATCH_MAX_AGE_MS = 1000;
+  const containerMatchCache = new WeakMap();
+  function containerMatches(root) {
+    if (!observer) return queryContainers(root);
+    const held = containerMatchCache.get(root);
+    const now = Date.now();
+    if (held && held.version === domVersion && now - held.at < CONTAINER_MATCH_MAX_AGE_MS) return held.list;
+    const list = queryContainers(root);
+    containerMatchCache.set(root, { version: domVersion, at: now, list });
+    return list;
+  }
+
+  /* CONTAINER_SELECTOR's matches, in the same order, from one pass over the elements. Measured on six news and
+     shopping pages: the same lists, 1 to 5 ms instead of 6 to 19 ms. tools/test-consent-scan-cost.js holds this
+     to every entry of CONTAINER_SELECTOR, so a new entry must be added here too. */
+  const CONTAINER_WORDS_RE = /cookie|consent|privacy|gdpr|cmp|onetrust|didomi|usercentrics|trustarc|sourcepoint|osano|termly|axeptio|truste/i;
+  const CONTAINER_LABEL_WORDS_RE = /cookie|consent|privacy/i;
+  const CKY_ID_RE = /^cky(?:-|$)/i;
+  const CKY_CLASS_RE = /(?:^|[ \t\n\f\r])cky(?:[ \t\n\f\r]|$)|^cky-| cky-/i;
+  function isContainerMatch(el) {
+    if (el.localName === 'dialog') return true;
+    if (!el.hasAttributes()) return false;
+    const id = el.getAttribute('id');
+    if (id !== null && (CONTAINER_WORDS_RE.test(id) || CKY_ID_RE.test(id))) return true;
+    const cls = el.getAttribute('class');
+    if (cls !== null && (CONTAINER_WORDS_RE.test(cls) || CKY_CLASS_RE.test(cls))) return true;
+    const role = el.getAttribute('role');
+    return role === 'dialog' || role === 'alertdialog' || el.getAttribute('aria-modal') === 'true'
+      || CONTAINER_LABEL_WORDS_RE.test(el.getAttribute('aria-label') || '')
+      || CONTAINER_LABEL_WORDS_RE.test(el.getAttribute('data-testid') || '');
+  }
+  function queryContainers(root) {
+    /* A shadow root has no getElementsByTagName; its '*' list is in the same tree order. */
+    const all = typeof root.getElementsByTagName === 'function' ? root.getElementsByTagName('*') : root.querySelectorAll('*');
+    const out = [];
+    for (let i = 0; i < all.length; i++) if (isContainerMatch(all[i])) out.push(all[i]);
+    return out;
+  }
+
+  /* A hidden match keeps the load-time polls running in case CSS reveals it, so only an element that could become a
+     banner counts: Wikipedia's collapsed contents entries and headings with "Privacy" in their id, or a <style>
+     element named after a CMP, kept every page polling for nothing. Visible matches are judged as before.
+     A closed native <dialog> opens by gaining its open attribute, which the observer already wakes on. */
+  const NEVER_A_BANNER_TAG_RE = /^(?:STYLE|SCRIPT|LINK|META|TITLE|TEMPLATE|NOSCRIPT|HEAD|LI|UL|OL|DL|DT|DD|H[1-6]|SUP|SUB|A|P|TD|TH|TR|TABLE|TBODY|THEAD|TFOOT|CAPTION|LABEL|IMG|PICTURE|SVG|OPTION|OPTGROUP|SELECT|INPUT|TEXTAREA|BUTTON|BR|HR|SOURCE|TRACK)$/;
+  function mayBecomeBanner(el) {
+    const tag = String((el && el.tagName) || '').toUpperCase();
+    if (tag === 'DIALOG' && typeof el.hasAttribute === 'function' && !el.hasAttribute('open')) return false;
+    return !NEVER_A_BANNER_TAG_RE.test(tag);
+  }
+
   function getContainers(roots, noteCandidate) {
     const out = [];
     roots.forEach((root) => {
       try {
-        const list = root.querySelectorAll(CONTAINER_SELECTOR);
+        const list = containerMatches(root);
         for (let i = 0; i < list.length; i++) {
           const el = list[i];
           const box = el.getBoundingClientRect();
@@ -488,7 +632,7 @@
           if (!isVisible(el)) {
             const inViewport = !box.width || !box.height || (box.bottom > 0 && box.right > 0
               && box.top < innerHeight && box.left < innerWidth);
-            if (noteCandidate && (bannerSized || hasAction || inViewport)) noteCandidate();
+            if (noteCandidate && (bannerSized || hasAction || inViewport) && mayBecomeBanner(el)) noteCandidate();
             continue;
           }
           if (!bannerSized && !hasAction) continue;
@@ -580,9 +724,18 @@
     }
   }
 
+  /* One option of a Disagree / Agree pair (Didomi draws its purposes this way). Choosing the refusal turns the
+     purpose off, so a checked "Disagree" must not read as consent given, or the choice is never saved. */
+  const REFUSAL_OPTION_RE = /^\s*(?:disagree|reject|decline|deny|refuse|object|opt\s*out|no|off)\b|\b(?:disagree|reject|decline|deny|refuse|object|opt\s*out)\s*$/i;
+  /* The label may name the purpose first ("Analytics Disagree"), and a styled word can lose a letter in its text. */
+  const refusalOption = el => [el.innerText, el.textContent, el.getAttribute && el.getAttribute('aria-label')]
+    .some(text => REFUSAL_OPTION_RE.test(String(text || '').replace(/\s+/g, ' ')));
   function toggleIsOn(el) {
     try {
       if (!el) return false;
+      const optionRole = String(el.getAttribute && el.getAttribute('role') || '').toLowerCase();
+      const optionType = String(el.type || el.getAttribute && el.getAttribute('type') || '').toLowerCase();
+      if ((optionRole === 'radio' || optionType === 'radio') && refusalOption(el)) return false;
       if (typeof el.checked === 'boolean') return el.checked;
       const aria = el.getAttribute && el.getAttribute('aria-checked');
       if (/^(true|mixed)$/i.test(String(aria || ''))) return true;
@@ -681,10 +834,57 @@
     return false;
   }
 
+  /* Every REJECT_RE phrase needs one of these stems, and innerText can only hold words its text nodes have, so a
+     control whose text and label attributes have none cannot match. Checked first: the document-wide reject scan
+     otherwise read innerText (a forced layout) on every link and button of the page, on every scan of a load. */
+  const REJECT_STEM_RE = /reject|decline|deny|refuse|disagree|not|consent|necessary|essential|required|without|opt|object|disable|turn|withdraw|ablehnen|rechazar|rifiuta|afwijzen|weigeren|odrzu|rejeitar|avvisa/i;
+  function mayBeRejectControl(el) {
+    try {
+      if (REJECT_STEM_RE.test(el.textContent || '')) return true;
+      for (const name of ['aria-label', 'title', 'value', 'data-testid', 'data-test', 'data-cy', 'data-action']) {
+        const value = el.getAttribute && el.getAttribute(name);
+        if (value && REJECT_STEM_RE.test(value)) return true;
+      }
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /* Every PAY_OR_SUBSCRIBE_RE phrase holds one of these stems; checked on textContent and attributes first so ordinary
+     controls never pay for controlLabel's innerText layout. */
+  const PAY_STEM_RE = /subscri|pay|paid|lite|free|contentpass|abo|abonn|month|[£€$]/i;
+  function offersPayment(el) {
+    try {
+      let stem = PAY_STEM_RE.test(el.textContent || '');
+      for (const name of ['aria-label', 'title', 'value']) {
+        if (stem) break;
+        const value = el.getAttribute && el.getAttribute(name);
+        stem = !!value && PAY_STEM_RE.test(value);
+      }
+      return stem && (PAY_OR_SUBSCRIBE_RE.test(controlLabel(el)) || PAY_OR_SUBSCRIBE_RE.test(elementText(el)));
+    } catch (_) { return true; }
+  }
+
+  /* A consent surface that offers paying anywhere among its own controls is left to the person, once per surface. */
+  const payWalls = new WeakSet();
+  function consentOrPay(container, profile, controls) {
+    if (!container) return false;
+    if (payWalls.has(container)) return true;
+    let pays = false;
+    try { pays = (controls || getControls(container, true)).some(offersPayment); } catch (_) {}
+    if (!pays) return false;
+    payWalls.add(container);
+    reportOutcome('left', 'none', profile || null);
+    return true;
+  }
+
   function safeRejectCandidate(el) {
+    if (!mayBeRejectControl(el)) return false;
     const label = controlLabel(el);
     if (!label) return false;
     if (!REJECT_RE.test(label)) return false;
+    if (offersPayment(el)) return false;
     if (isUnsafeAutoClickLink(el)) return false;
     if (PROTECT_RE.test(elementText(el))) return false; // never click a control that is also an account/payment/destructive action
     if (ACCEPT_RE.test(label) && !/without\s+accepting|do\s+not\s+consent|don'?t\s+consent|reject|decline|deny|refuse|disable|turn\s+off|opt\s*out/i.test(label)) return false;
@@ -696,10 +896,10 @@
   // a reject click on sites whose banner carries no cookie/consent id/class/role attribute.
   function consentBannerAncestor(el) {
     try {
-      let n = el && el.parentElement;
-      for (let depth = 0; n && n !== document.body && n !== document.documentElement && depth < 9; depth++, n = n.parentElement) {
+      let n = composedParent(el);
+      for (let depth = 0; n && n !== document.body && n !== document.documentElement && depth < 9; depth++, n = composedParent(n)) {
         if (!isVisible(n)) continue;
-        const own = elementText(n);
+        const own = containerText(n);
         if (!hasStrongConsentLanguage(own) || protectedContainerContext(n, el)) continue;
         const rect = n.getBoundingClientRect();
         const area = rect.width * rect.height;
@@ -723,7 +923,7 @@
       });
       for (const el of controls) {
         const container = consentBannerAncestor(el);
-        if (!container) continue;
+        if (!container || consentOrPay(container)) continue;
         if (performChoice(el, container)) {
           return true;
         }
@@ -736,7 +936,7 @@
     const label = controlLabel(el);
     if (!label || !OPEN_SETTINGS_RE.test(label)) return false;
     if (SAVE_CHOICES_RE.test(label)) return false;
-    if (isUnsafeAutoClickLink(el)) return false;
+    if (isUnsafeAutoClickLink(el) || offersPayment(el)) return false;
     if (PROTECT_RE.test(elementText(el))) return false; // don't open an account/billing "settings" control
     if (!hasConsentLanguage(elementText(container))) return false;
     if (/^\s*(settings|preferences?|privacy)\s*$/i.test(controlLabel(el)) && !hasStrongConsentLanguage(elementText(container))) return false;
@@ -746,7 +946,7 @@
   function clickControl(el) {
     if (!el || clicked.has(el)) return false;
     if (el.disabled || el.getAttribute && el.getAttribute('aria-disabled') === 'true') return false;
-    if (isUnsafeAutoClickLink(el)) return false;
+    if (isUnsafeAutoClickLink(el) || offersPayment(el)) return false;
     clicked.add(el);
     try { el.focus({ preventScroll: true }); } catch (_) {}
     try { el.click(); return true; } catch (_) { return false; }
@@ -770,6 +970,7 @@
         status, action, cmp: profile ? profile.name : 'Generic consent banner',
         evidence: status === 'rejected' ? 'changed-saved-cookie-state' : 'none',
         why: status === 'rejected' ? 'The consent manager saved a state with optional categories off.'
+          : status === 'left' ? 'This site only lets you refuse by paying, so WardenOne left the choice to you.'
           : status === 'failed' ? 'The consent control could not be clicked.'
           : action === 'settings' ? 'Consent settings opened; no opt-out is verified.' : 'Consent action dispatched; saved opt-out is unverified.',
       } });
@@ -784,21 +985,48 @@
     }
     profile ||= profileFor(container);
     const before = consentCookie(profile), generation = ++outcomeGeneration;
+    const answer = controlLabel(el), refusal = REJECT_RE.test(answer) && !SAVE_CHOICES_RE.test(answer);
     rememberConsentSurface(container, el);
     if (!clickControl(el)) { reportOutcome('failed', 'reject', profile); return false; }
     lastChoiceAt = Date.now();
+    /* One purpose's Disagree inside an open settings panel is a step of a single answer, so it neither uses up the
+       answer limit nor reports an outcome. The panel now has changes for the save step (didomi.io, 2026-11-20). */
+    if (isConsentToggle(el)) {
+      everActed = true;
+      changedChoices.add(container);
+      woTimeout(queueScan, 250);
+      return true;
+    }
     finishConsentWork();
     /* A page that keeps asking after this many answers is not going to take one; stop rather than fight it. */
-    if (++choicesMade >= CHOICE_LIMIT) { active = false; stopConsentObservers(); }
+    const limited = ++choicesMade >= CHOICE_LIMIT;
+    if (limited) { active = false; stopConsentObservers(); }
+    /* The limit stops further clicks, not the check of this one. Switching the feature off still cancels the check:
+       every settings change that deactivates it also advances outcomeGeneration. */
     const check = final => {
-      if (!active || generation !== outcomeGeneration) return;
+      if ((!active && !limited) || generation !== outcomeGeneration) return;
       if (profile && WOConsentState.verify(profile, before, consentCookie(profile))) {
         outcomeGeneration++; reportOutcome('rejected', 'reject', profile);
       } else if (final) { outcomeGeneration++; reportOutcome('unverified', 'reject', profile); }
     };
     check(false);
     if (generation === outcomeGeneration) for (const ms of [100, 400, 1200, 2500]) woTimeout(() => check(ms === 2500), ms);
+    if (refusal && !limited) for (const ms of [1800, 3600]) woTimeout(() => saveAfterRefusal(container, el, profile), ms);
     return true;
+  }
+  /* Some panels' Reject All only switches every purpose off and waits for their own save (ketch.com, 2026-11-20).
+     A refusal whose panel stays open is finished with a save inside that panel, never one beyond its dialog box. */
+  function saveAfterRefusal(container, control, profile) {
+    if (!active || !container || !consentSurfaceVisible(container, control)) return false;
+    for (let box = container, depth = 0; box && box !== document.body && box !== document.documentElement && depth < 6; depth++, box = box.parentElement) {
+      if (!isVisible(box) || box.getBoundingClientRect().height > innerHeight * 1.05) return false;
+      const save = getControls(box).find(el => !clicked.has(el) && !ACCEPT_RE.test(controlLabel(el)) && saveChoicesCandidate(el, box, true));
+      if (save) { turnOffOptionalToggles(box); return choicesAreOff(box) && performChoice(save, box, profile); }
+      let edge = false;
+      try { edge = box.localName === 'dialog' || box.getAttribute('role') === 'dialog' || box.getAttribute('aria-modal') === 'true' || /^(fixed|sticky)$/.test(getComputedStyle(box).position); } catch (_) {}
+      if (edge) return false;
+    }
+    return false;
   }
   function tryKnownCmp(roots) {
     if (typeof WOConsentState === 'undefined') return false;
@@ -807,6 +1035,7 @@
       try { containers = root.querySelectorAll(profile.container); } catch (_) {}
       for (const container of containers) {
         if (!isVisible(container) || !looksLikeConsentContainer(container) || protectedContainerContext(container, null)) continue;
+        if (consentOrPay(container, profile)) continue;
         const find = selector => {
           for (const part of collectRoots(container)) {
             let list = []; try { list = part.querySelectorAll(selector); } catch (_) {}
@@ -975,6 +1204,7 @@
     const containers = getContainers(roots, noteCandidate);
     for (const container of containers) {
       const controls = getControls(container);
+      if (consentOrPay(container, null, controls)) continue;
       const reject = controls.find(safeRejectCandidate);
       if (reject && performChoice(reject, container)) {
         return;
@@ -986,6 +1216,7 @@
     needsTimedScan = possibleSurface;
 
     for (const container of containers) {
+      if (payWalls.has(container)) continue;
       const changed = turnOffOptionalToggles(container) || changedChoices.has(container);
       if (!choicesReadyToSave(container, changed)) continue;
       const save = getControls(container).find((el) => saveChoicesCandidate(el, container, true));
@@ -999,7 +1230,7 @@
 
     if (Date.now() < openSettingsUntil) return;
     for (const container of containers) {
-      if (opened.has(container)) continue;
+      if (opened.has(container) || payWalls.has(container)) continue;
       const settings = getControls(container).find((el) => !reopensChoice(el, container) && settingsCandidate(el, container));
       if (settings) {
         rememberConsentSurface(container, settings);
@@ -1098,7 +1329,7 @@
           || (read && (consentHint(aria = node.getAttribute('aria-label'))
             || consentHint(test = node.getAttribute('data-testid'))
             || consentHint(node.getAttribute('data-test')))))) return true;
-      if (String(node.tagName || '').toLowerCase() === 'dialog' || role === 'dialog'
+      if (String(node.tagName || '').toLowerCase() === 'dialog' || role === 'dialog' || role === 'alertdialog'
           || (read && node.getAttribute('aria-modal') === 'true')) return true;
       if (nested && batch) {
         if (node.localName === 'dialog') return true;
@@ -1152,7 +1383,8 @@
       if (batch && batch.has(el)) continue;
       if (el.localName === 'dialog') return true;
       if (consentContainerNamesMatch(el.getAttribute('id'), el.getAttribute('class'))) return true;
-      if (el.getAttribute('role') === 'dialog' || el.getAttribute('aria-modal') === 'true') return true;
+      const role = el.getAttribute('role');
+      if (role === 'dialog' || role === 'alertdialog' || el.getAttribute('aria-modal') === 'true') return true;
       const aria = el.getAttribute('aria-label');
       if (aria && CONTAINER_LABEL_RE.test(aria)) return true;
       const test = el.getAttribute('data-testid');
@@ -1199,6 +1431,7 @@
     // (records, observer), and a records array is truthy, so the throttle has to be
     // asked for by identity rather than inferred from the argument.
     observer = woObserver((records) => {
+      domVersion++;
       if (!active) return;
       for (const [container, state] of handledSurfaces) {
         if (container.isConnected === false || state.control.isConnected === false) state.hidden = true;
@@ -1278,6 +1511,21 @@
       });
     });
   } catch (_) {}
+
+  /* surrogates/onetrust.js answered OneTrust in the page itself. Report it like a pressed Reject, verified against the
+     saved cookie, once the settings have arrived. */
+  let localAnswerReported = false;
+  woOn(document, 'wardenone-onetrust-answered', () => {
+    const report = () => {
+      if (localAnswerReported || !active || typeof WOConsentState === 'undefined') return;
+      const profile = WOConsentState.profiles.find((p) => p.id === 'onetrust');
+      if (!profile) return;
+      localAnswerReported = true;
+      const saved = WOConsentState.rejected('onetrust', consentCookie(profile));
+      reportOutcome(saved ? 'rejected' : 'dispatched', 'reject', { name: 'OneTrust, answered by WardenOne' });
+    };
+    [0, 400, 1500, 4000].forEach((ms) => woTimeout(report, ms));
+  });
 
   if (document.documentElement) start();
   else woOn(document, 'DOMContentLoaded', start, { once: true });

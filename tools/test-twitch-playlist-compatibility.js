@@ -429,6 +429,7 @@ function createRuntime(options) {
     Response,
     Headers,
     Request,
+    ReadableStream,
     AbortController,
     Map,
     Set,
@@ -1030,6 +1031,297 @@ test('a clean backup hands its already-started edge segment to the player withou
   await runtime.fetch(warmCalls[1].url);
   assert(warmCalls.length === 4,
     'the already-started response was replayed instead of remaining one-shot');
+  runtime.configure(false);
+});
+
+/* Measured live 2026-11-19: a handed over segment body stalled for 7 s and the player could not
+   abandon it, because its cancel never reached the download it was given. */
+test('a warmed segment handed to the player stops downloading when the player cancels it', async () => {
+  for (const form of ['init', 'request']) {
+    const cleanBackup = sequencedPlaylist({ sequence: 99100, startMs: SEQUENCE_BASE_TIME, title: 'live',
+      path: 'stalled-edge-' + form });
+    const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: cleanBackup });
+    const warmCalls = [];
+    const runtime = createRuntime({
+      fetchRoute(url, init, state) {
+        if (/\/stalled-edge-[a-z]+\/\d+\.ts(?:[?#]|$)/.test(url)) {
+          warmCalls.push({ url, init });
+          const signal = init && init.signal;
+          const body = new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array([1, 2]));
+              if (signal) signal.addEventListener('abort', () => controller.error(new Error('download aborted')));
+            },
+          });
+          return new Response(body, { status: 200, headers: { 'content-type': 'video/mp2t' } });
+        }
+        return standardRoute(url, init, state);
+      },
+      gqlRoute(message) {
+        return jsonResponse(nestedToken(message.body.variables.playerType));
+      },
+    });
+    await mapMaster(runtime);
+    runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+    assert((await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text()).includes('/stalled-edge-' + form + '/'),
+      form + ': clean backup was not served ahead of its warm edge');
+    for (let turn = 0; turn < 8 && warmCalls.length < 2; turn++) await Promise.resolve();
+    assert(warmCalls.length === 2, form + ': the cold handoff did not start its two edge choices');
+
+    const player = new AbortController();
+    const response = await (form === 'init'
+      ? runtime.fetch(warmCalls[1].url, { signal: player.signal })
+      : runtime.fetch(new Request(warmCalls[1].url, { signal: player.signal })));
+    assert(warmCalls.length === 2, form + ': the player did not receive the already-started edge request');
+    const reading = response.arrayBuffer().then(() => 'finished', (error) => 'failed: ' + error.message);
+    player.abort();
+    assert(warmCalls[1].init.signal.aborted, form + ': the player cancelled, but the download it was handed kept going');
+    assert(/^failed: /.test(await reading),
+      form + ': a cancelled handoff left the player waiting on a body that cannot finish');
+    runtime.configure(false);
+  }
+});
+
+/* The player waited on such a body and then skipped the gap; it never retried. */
+function stallingSegmentRuntime(path, behaviours) {
+  const cleanBackup = sequencedPlaylist({ sequence: 99100, startMs: SEQUENCE_BASE_TIME, title: 'live', path: path });
+  const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: cleanBackup });
+  const segmentCalls = [];
+  const runtime = createRuntime({
+    fetchRoute(url, init, state) {
+      if (new RegExp('/' + path + '/\\d+\\.ts(?:[?#]|$)').test(url)) {
+        const behaviour = behaviours[Math.min(segmentCalls.filter((call) => call.url === url).length, behaviours.length - 1)];
+        segmentCalls.push({ url, init });
+        const signal = init && init.signal;
+        const body = new ReadableStream({
+          async start(controller) {
+            if (signal) signal.addEventListener('abort', () => { try { controller.error(new Error('aborted')); } catch (_) {} });
+            for (const step of behaviour) {
+              if (step === 'hang') return;
+              if (typeof step === 'number') await new Promise((resolve) => setTimeout(resolve, step));
+              else controller.enqueue(new Uint8Array(step));
+            }
+            controller.close();
+          },
+        });
+        return new Response(body, { status: 200, headers: { 'content-type': 'video/mp2t' } });
+      }
+      return standardRoute(url, init, state);
+    },
+    gqlRoute(message) {
+      return jsonResponse(nestedToken(message.body.variables.playerType));
+    },
+  });
+  return { runtime, segmentCalls };
+}
+
+function within(promise, ms, message) {
+  let timer = 0;
+  return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); })])
+    .finally(() => clearTimeout(timer));
+}
+
+async function startOnBackup(runtime, path, segmentCalls) {
+  await mapMaster(runtime);
+  runtime.updateClientState({ tokenTemplate: playbackTokenTemplate(CHANNEL) });
+  assert((await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text()).includes('/' + path + '/'),
+    path + ': clean backup was not served');
+  for (let turn = 0; turn < 8 && segmentCalls.length < 2; turn++) await Promise.resolve();
+}
+
+test('a clean segment whose download goes quiet is fetched again and continued where it stopped', async () => {
+  /* 99102 was started ahead and handed over; 99100 is one the player fetches itself. */
+  for (const number of ['99102', '99100']) {
+    const path = 'quiet-edge-' + number;
+    const { runtime, segmentCalls } = stallingSegmentRuntime(path, [[[1, 2, 3], 'hang'], [[1, 2, 3, 4, 5], [6]]]);
+    await startOnBackup(runtime, path, segmentCalls);
+    const url = 'https://video-edge-fixture.ttvnw.net/' + path + '/' + number + '.ts';
+    const started = Date.now();
+    const response = await runtime.fetch(url);
+    const bytes = await within(response.arrayBuffer(), 5000,
+      number + ': the player was left waiting on a quiet segment download');
+    equal(Array.from(new Uint8Array(bytes)), [1, 2, 3, 4, 5, 6],
+      number + ': a quiet segment download was not continued from a second download without repeating bytes');
+    const took = Date.now() - started;
+    assert(took < 4000, number + ': the quiet download was not replaced promptly: ' + took + 'ms');
+    equal(segmentCalls.filter((call) => call.url === url).length, 2,
+      number + ': a quiet segment download was not fetched exactly once more');
+    runtime.configure(false);
+  }
+});
+
+test('Twitch\'s own segment whose download goes quiet is fetched again, but its prefetch hints are left alone', async () => {
+  const calls = [];
+  const behaviours = { listed: [[[1, 2], 'hang'], [[1, 2, 3, 4]]], hint: [[2500, [9], [8]]] };
+  const runtime = createRuntime({
+    fetchRoute: ((url, init, state) => {
+      const kind = /\/own-native\/102\.ts/.test(url) ? 'listed' : /\/own-native\/104\.ts/.test(url) ? 'hint' : '';
+      if (kind) {
+        const behaviour = behaviours[kind][Math.min(calls.filter((call) => call === kind).length, behaviours[kind].length - 1)];
+        calls.push(kind);
+        const body = new ReadableStream({
+          async start(controller) {
+            for (const step of behaviour) {
+              if (step === 'hang') return;
+              if (typeof step === 'number') await new Promise((resolve) => setTimeout(resolve, step));
+              else controller.enqueue(new Uint8Array(step));
+            }
+            controller.close();
+          },
+        });
+        return new Response(body, { status: 200, headers: { 'content-type': 'video/mp2t' } });
+      }
+      return standardFetchRoute({ originalMedia: () => lowLatencyPlaylist({ sequence: 100, live: 1000, path: 'own-native' }) })(url, init, state);
+    }),
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  const listed = await runtime.fetch('https://video-edge-fixture.ttvnw.net/own-native/102.ts');
+  equal(Array.from(new Uint8Array(await within(listed.arrayBuffer(), 5000, 'the player was left waiting on a quiet segment of Twitch\'s own stream'))),
+    [1, 2, 3, 4], 'a quiet segment of Twitch\'s own stream was not continued without repeating bytes');
+  equal(calls.filter((call) => call === 'listed').length, 2, 'a quiet segment of Twitch\'s own stream was not fetched exactly once more');
+  const hint = await runtime.fetch('https://video-edge-fixture.ttvnw.net/own-native/104.ts');
+  equal(Array.from(new Uint8Array(await hint.arrayBuffer())), [9, 8], 'a prefetch hint did not deliver its bytes');
+  equal(calls.filter((call) => call === 'hint').length, 1,
+    'a prefetch hint that was waiting for its segment to be produced was fetched a second time');
+  runtime.configure(false);
+});
+
+test('a quiet segment is continued by asking only for its missing bytes, and a wrong range is refused', async () => {
+  for (const [answer, expected] of [['honest', 'bytes'], ['shifted', 'failed']]) {
+    const path = 'range-edge-' + answer;
+    const full = [1, 2, 3, 4, 5, 6, 7];
+    const calls = [];
+    const cleanBackup = sequencedPlaylist({ sequence: 99100, startMs: SEQUENCE_BASE_TIME, title: 'live', path: path });
+    const standardRoute = standardFetchRoute({ originalMedia: STITCHED_AD, backupMedia: cleanBackup });
+    const runtime = createRuntime({
+      fetchRoute(url, init, state) {
+        if (new RegExp('/' + path + '/\\d+\\.ts(?:[?#]|$)').test(url)) {
+          const range = new Headers(init && init.headers || undefined).get('range') || '';
+          calls.push({ url, range });
+          const from = Number((/^bytes=(\d+)-$/.exec(range) || [])[1] || 0);
+          if (!from) {
+            const body = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(full.slice(0, 3))); } });
+            return new Response(body, { status: 200, headers: { 'content-type': 'video/mp2t' } });
+          }
+          const start = answer === 'honest' ? from : from - 1;
+          return new Response(new Uint8Array(full.slice(start)), { status: 206,
+            headers: { 'content-type': 'video/mp2t', 'content-range': 'bytes ' + start + '-' + (full.length - 1) + '/' + full.length } });
+        }
+        return standardRoute(url, init, state);
+      },
+      gqlRoute(message) {
+        return jsonResponse(nestedToken(message.body.variables.playerType));
+      },
+    });
+    await startOnBackup(runtime, path, calls);
+    const url = 'https://video-edge-fixture.ttvnw.net/' + path + '/99102.ts';
+    const response = await runtime.fetch(url);
+    const outcome = await within(response.arrayBuffer().then((bytes) => Array.from(new Uint8Array(bytes)), () => 'failed'),
+      5000, answer + ': the player was left waiting on a quiet segment download');
+    const retries = calls.filter((call) => call.url === url && call.range);
+    equal(retries.map((call) => call.range), ['bytes=3-'], answer + ': the retry did not ask only for the missing bytes');
+    if (expected === 'bytes') equal(outcome, full, 'the missing bytes were not joined onto what the player already had');
+    else equal(outcome, 'failed', 'a retry answering from the wrong byte was spliced into the segment');
+    runtime.configure(false);
+  }
+});
+
+/* A hand-back refused while Twitch's stream lags must land on the broadcast mapping once it catches up,
+   not on the numbering from before the pod (live 2026-11-19 it came out 15 high, then froze the player). */
+test('a hand-back refused while Twitch\'s stream lags recalculates its numbering on the next attempt', async () => {
+  let poll = 0;
+  /* Twitch's stream runs two behind the clean one until poll 6, and its own numbers run 3 ahead after the pod. */
+  const shift = (index) => (index >= 3 ? 3 : 0);
+  const nativeLive = (index) => (index === 0 ? 1000 : index <= 5 ? 1000 + Math.max(0, index - 2) : 1000 + index);
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({
+      originalMedia: () => {
+        const live = nativeLive(poll);
+        const raw = live - 900 + shift(poll);
+        return poll === 1 || poll === 2
+          ? liveSequencePlaylist({ sequence: raw, liveSequence: live, startMs: SEQUENCE_BASE_TIME + (live - 1000) * 2000,
+            title: 'advertisement', path: 'lag-ad', marker: '#EXT-X-DATERANGE:ID="stitched-ad-lag",CLASS="twitch-stitched-ad",DURATION=30.0' })
+          : liveSequencePlaylist({ sequence: raw, liveSequence: live, startMs: SEQUENCE_BASE_TIME + (live - 1000) * 2000,
+            title: 'live', path: 'lag-native' });
+      },
+      backupMedia: () => liveSequencePlaylist({ sequence: 8000 + 1000 + poll, liveSequence: 1000 + poll,
+        startMs: SEQUENCE_BASE_TIME + poll * 2000, path: 'lag-backup' }),
+    })),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  const bodies = [];
+  for (poll = 0; poll <= 6; poll++) bodies.push(await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text());
+  assert(bodies[0].includes('/lag-native/') && servedSequence(bodies[0]) === 100, 'fixture did not start on Twitch\'s stream');
+  assert(bodies[1].includes('/lag-backup/') && bodies[5].includes('/lag-backup/'),
+    'fixture did not hold the clean stream while Twitch\'s stream lagged behind it');
+  assert(bodies[6].includes('/lag-native/'), 'fixture did not hand back once Twitch\'s stream caught up');
+  equal(servedSequence(bodies[6]), 106,
+    'the hand-back after a refused one reused the numbering from before the ad pod');
+  runtime.configure(false);
+});
+
+test('falling back to Twitch\'s own numbering never takes a rendition backwards', async () => {
+  let poll = 0;
+  /* Without dates on Twitch's side the two sessions cannot be lined up, so the fallback resets. */
+  const undated = (text) => text.split('\n').filter((line) => !line.startsWith('#EXT-X-PROGRAM-DATE-TIME:')).join('\n');
+  const runtime = createRuntime({
+    fetchRoute: withSegmentDownloads(standardFetchRoute({
+      originalMedia: () => undated(poll <= 2
+        ? sequencedPlaylist({ sequence: 500 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000, title: 'advertisement',
+          path: 'floor-ad', marker: '#EXT-X-DATERANGE:ID="stitched-ad-floor",CLASS="twitch-stitched-ad",DURATION=30.0' })
+        : sequencedPlaylist({ sequence: 498 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000, title: 'live',
+          path: 'floor-native' })),
+      backupMedia: () => poll <= 2
+        ? sequencedPlaylist({ sequence: 52000 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000, title: 'live', path: 'floor-backup' })
+        : new Response('gone', { status: 404 }),
+    })),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  const heads = [];
+  const bodies = [];
+  for (poll = 0; poll <= 4; poll++) {
+    const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    bodies.push(body);
+    heads.push(servedSequence(body));
+  }
+  assert(bodies[0].includes('/floor-backup/') && heads[0] === 52000, 'fixture did not start the pre-roll on the clean stream');
+  assert(bodies[4].includes('/floor-native/'), 'fixture did not fall back to Twitch\'s stream once the clean one was gone');
+  for (let index = 1; index < heads.length; index++) {
+    assert(heads[index] >= heads[index - 1], 'a fallback took the player\'s numbering backwards: ' + heads.join(','));
+  }
+  runtime.configure(false);
+});
+
+test('a slow but steady clean segment download is left alone', async () => {
+  const path = 'steady-edge';
+  const { runtime, segmentCalls } = stallingSegmentRuntime(path,
+    [[[1], 700, [2], 700, [3], 700, [4]]]);
+  await startOnBackup(runtime, path, segmentCalls);
+  const url = 'https://video-edge-fixture.ttvnw.net/' + path + '/99102.ts';
+  const response = await runtime.fetch(url);
+  equal(Array.from(new Uint8Array(await response.arrayBuffer())), [1, 2, 3, 4],
+    'a steady segment download did not deliver its bytes');
+  equal(segmentCalls.filter((call) => call.url === url).length, 1,
+    'a segment that kept delivering bytes was fetched a second time');
+  runtime.configure(false);
+});
+
+test('a clean segment that stays quiet after its one retry is not fetched again', async () => {
+  const path = 'dead-edge';
+  const { runtime, segmentCalls } = stallingSegmentRuntime(path, [[[1], 'hang'], [[1], 'hang']]);
+  await startOnBackup(runtime, path, segmentCalls);
+  const url = 'https://video-edge-fixture.ttvnw.net/' + path + '/99102.ts';
+  const player = new AbortController();
+  const response = await runtime.fetch(url, { signal: player.signal });
+  const reading = response.arrayBuffer().then(() => 'finished', () => 'failed');
+  await new Promise((resolve) => setTimeout(resolve, 3600));
+  equal(segmentCalls.filter((call) => call.url === url).length, 2,
+    'a segment that stayed quiet was retried more than once');
+  player.abort();
+  equal(await reading, 'failed', 'the player could not abandon a segment that stayed quiet after its retry');
   runtime.configure(false);
 });
 
@@ -5232,6 +5524,178 @@ test('an alternate that announces its own ad keeps its listed media and loses it
   assert(body.includes('/ll-ad-backup/9002.ts'), 'the alternate\'s clean listed media was not served');
   equal(prefetchHints(body), [], 'hints inside an ad the alternate announced were served');
   assert(!body.includes('#EXT-X-DISCONTINUITY'), 'the hints\' own marker was left behind without them');
+  runtime.configure(false);
+});
+
+/* Measured live 2026-11-19: 25 s into a pod the popout alternate announced its own ad over its hints;
+   served on without them until the ad landed, the Low Latency player ran dry and spun. */
+function ownAdRoute(options) {
+  return withSegmentDownloads(standardFetchRoute({
+    originalMedia: options.native,
+    backupMedia: (url) => {
+      const type = (/\/backup\/sig-([a-z_]+)\//.exec(url) || [])[1];
+      const route = options.identities[type];
+      return route ? route() : STITCHED_AD;
+    },
+  }));
+}
+
+function requestedIdentities(runtime, from) {
+  return runtime.state.gqlRequests.slice(from || 0)
+    .map((request) => request.body && request.body.variables && request.body.variables.playerType);
+}
+
+test('an alternate that announces its own ad is replaced from another identity before its hints go', async () => {
+  for (const [breaking, replacement] of [['popout', 'mobile_feed'], ['mobile_feed', 'popout']]) {
+    let poll = 0;
+    let replacementClean = false;
+    const runtime = createRuntime({
+      fetchRoute: ownAdRoute({
+        native: () => lowLatencyPlaylist({ sequence: 100 + poll, live: 1000 + poll, path: 'own-native',
+          ranges: poll >= 1 ? [mafOnFirstHint(1001)] : [] }),
+        identities: {
+          [breaking]: () => lowLatencyPlaylist({ sequence: 9000 + poll, live: 1000 + poll, path: 'own-first',
+            ranges: poll >= 2 ? [mafOnFirstHint(1000 + poll)] : [] }),
+          [replacement]: () => replacementClean
+            ? lowLatencyPlaylist({ sequence: 7000 + poll, live: 1000 + poll, path: 'own-next' })
+            : STITCHED_AD,
+        },
+      }),
+      gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+    });
+    await mapMaster(runtime);
+    await runtime.fetch(ORIGINAL_MEDIA_URL);
+    for (const number of [100, 101, 102, 103, 104]) await download(runtime, 'own-native/' + number + '.ts');
+
+    poll = 1;
+    const first = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(first.includes('/own-first/') && prefetchHints(first).length === 2,
+      breaking + ': fixture did not start the break on the hinted alternate');
+    await download(runtime, 'own-first/9004.ts');
+    await download(runtime, 'own-first/9005.ts');
+    const searchedBefore = runtime.state.gqlRequests.length;
+
+    poll = 2;
+    replacementClean = true;
+    const replaced = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(replaced.includes('/own-next/') && !replaced.includes('/own-first/'),
+      breaking + ': an alternate announcing its own ad was served on instead of being replaced');
+    equal(prefetchHints(replaced), ['own-next/7005.ts', 'own-next/7006.ts'],
+      breaking + ': the replacement lost the prefetch lead a Low Latency player needs');
+    assert(servedSequence(replaced) >= servedSequence(first),
+      breaking + ': the replacement moved the numbering backwards');
+    assert(replaced.includes('#EXT-X-DISCONTINUITY'), breaking + ': the switch between alternates was not marked');
+    const replacementSearch = requestedIdentities(runtime, searchedBefore);
+    assert(replacementSearch.includes(replacement) && !replacementSearch.includes(breaking),
+      breaking + ': the replacement search asked the identity that announced the ad again: ' +
+      replacementSearch.join(','));
+
+    poll = 3;
+    const kept = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+    assert(kept.includes('/own-next/') && prefetchHints(kept).length === 2,
+      breaking + ': the break did not stay on the replacement with its hints');
+    runtime.configure(false);
+  }
+});
+
+test('an alternate announcing its own ad with no clean replacement is kept and searched for once', async () => {
+  let poll = 0;
+  const runtime = createRuntime({
+    fetchRoute: ownAdRoute({
+      native: () => lowLatencyPlaylist({ sequence: 100 + poll, live: 1000 + poll, path: 'lone-native',
+        ranges: poll >= 1 ? [mafOnFirstHint(1001)] : [] }),
+      identities: {
+        popout: () => lowLatencyPlaylist({ sequence: 9000 + poll, live: 1000 + poll, path: 'lone-popout',
+          ranges: poll >= 2 ? [mafOnFirstHint(1000 + poll)] : [] }),
+      },
+    }),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  poll = 1;
+  assert((await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text()).includes('/lone-popout/'),
+    'fixture did not start the break on the popout alternate');
+  poll = 2;
+  const announced = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(announced.includes('/lone-popout/'), 'the only clean alternate was dropped when nothing could replace it');
+  equal(prefetchHints(announced), [], 'hints inside the ad the alternate announced were served');
+  const searched = runtime.state.gqlRequests.length;
+  poll = 3;
+  const again = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(again.includes('/lone-popout/'), 'the alternate was dropped on its next announcing refresh');
+  equal(requestedIdentities(runtime, searched), [],
+    'a failed replacement was searched for again on every refresh: token traffic is unbounded');
+  runtime.configure(false);
+});
+
+test('an alternate that lists an ad notice ahead of its edge, without hints, is replaced too', async () => {
+  let poll = 0;
+  let mobileClean = false;
+  const adMarker = '#EXT-X-DATERANGE:ID="stitched-ad-own",CLASS="twitch-stitched-ad",DURATION=30.0';
+  const notice = (live) => '#EXT-X-DATERANGE:ID="maf-ahead",CLASS="twitch-maf-ad",START-DATE="' +
+    new Date(SEQUENCE_BASE_TIME + (live - 1000 + 3) * 2000).toISOString() +
+    '",PLANNED-DURATION=60.000,END-ON-NEXT=YES,X-TTV-MAF-AD-AD-SESSION-ID="fixture"';
+  const runtime = createRuntime({
+    fetchRoute: ownAdRoute({
+      native: () => poll === 0
+        ? liveSequencePlaylist({ sequence: 100, liveSequence: 1000, startMs: SEQUENCE_BASE_TIME, path: 'ahead-native' })
+        : sequencedPlaylist({ sequence: 100 + poll, startMs: SEQUENCE_BASE_TIME + poll * 2000,
+          title: 'advertisement', path: 'ahead-ad', marker: adMarker }),
+      identities: {
+        popout: () => liveSequencePlaylist({ sequence: 9000 + poll, liveSequence: 1000 + poll,
+          startMs: SEQUENCE_BASE_TIME + poll * 2000, path: 'ahead-popout',
+          marker: poll >= 2 ? notice(1000 + poll) : '' }),
+        mobile_feed: () => mobileClean
+          ? liveSequencePlaylist({ sequence: 7000 + poll, liveSequence: 1000 + poll,
+            startMs: SEQUENCE_BASE_TIME + poll * 2000, path: 'ahead-mobile' })
+          : STITCHED_AD,
+      },
+    }),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  poll = 1;
+  assert((await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text()).includes('/ahead-popout/'),
+    'fixture did not start the break on the popout alternate');
+  poll = 2;
+  mobileClean = true;
+  const replaced = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(replaced.includes('/ahead-mobile/'),
+    'an alternate announcing an ad past its listed edge was served on instead of being replaced');
+  runtime.configure(false);
+});
+
+test('an alternate notice that has already ended does not trigger a replacement', async () => {
+  let poll = 0;
+  const ended = '#EXT-X-DATERANGE:ID="maf-ended",CLASS="twitch-maf-ad",START-DATE="' +
+    new Date(SEQUENCE_BASE_TIME - 120000).toISOString() + '",PLANNED-DURATION=30.000,X-TTV-MAF-AD-AD-SESSION-ID="fixture"';
+  const runtime = createRuntime({
+    fetchRoute: ownAdRoute({
+      native: () => lowLatencyPlaylist({ sequence: 100 + poll, live: 1000 + poll, path: 'ended-native',
+        ranges: poll >= 1 ? [mafOnFirstHint(1001)] : [] }),
+      identities: {
+        popout: () => lowLatencyPlaylist({ sequence: 9000 + poll, live: 1000 + poll, path: 'ended-popout',
+          ranges: [() => ended] }),
+        mobile_feed: () => poll >= 2
+          ? lowLatencyPlaylist({ sequence: 7000 + poll, live: 1000 + poll, path: 'ended-mobile' })
+          : STITCHED_AD,
+      },
+    }),
+    gqlRoute: (message) => jsonResponse(nestedToken(message.body.variables.playerType)),
+  });
+  await mapMaster(runtime);
+  await runtime.fetch(ORIGINAL_MEDIA_URL);
+  poll = 1;
+  assert((await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text()).includes('/ended-popout/'),
+    'fixture did not start the break on the popout alternate');
+  const searched = runtime.state.gqlRequests.length;
+  poll = 2;
+  const body = await (await runtime.fetch(ORIGINAL_MEDIA_URL)).text();
+  assert(body.includes('/ended-popout/') && prefetchHints(body).length === 2,
+    'a lingering notice that ended before the listed media moved the player off a healthy alternate');
+  equal(requestedIdentities(runtime, searched), [], 'a lingering notice started a replacement search');
   runtime.configure(false);
 });
 

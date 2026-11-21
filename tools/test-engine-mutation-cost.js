@@ -350,6 +350,7 @@ check('guardSocialNode still bails on the flag first',
     WO: { socialWidgetGuard: true },
     makeSocialPlaceholder() { placeholders++; return {}; },
     log() {},
+    loadedSocialProviders: new Set(),
   };
   vm.createContext(sandbox);
   vm.runInContext('let guardSocialNode;\n' + body.replace(/,\s*$/, ';') + '\nthis.guard = guardSocialNode;', sandbox);
@@ -366,6 +367,9 @@ check('guardSocialNode still bails on the flag first',
   check('loaded social widgets keep their marker exemption', placeholders === 0);
   sandbox.guard(node('fb-post'));
   check('unmarked social widgets still get a placeholder', placeholders === 1);
+  sandbox.loadedSocialProviders.add('Facebook');
+  sandbox.guard(node('fb-post'));
+  check('a provider the reader loaded on this page is not guarded again', placeholders === 1);
 }
 
 /* ---- 2b. gate the CONSUMER, not just the sweep --------------------------- *

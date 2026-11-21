@@ -12,7 +12,7 @@ redirects. It keeps an eye on your other extensions too. And it all runs on your
 [![License: GPLv3](https://img.shields.io/badge/license-GPLv3-6f42c1.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-2ea44f.svg)](manifest.json)
 [![Download latest build](https://img.shields.io/badge/download-latest_build-e84393.svg)](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.zip)
-![Protections](https://img.shields.io/badge/protections-110-8e44ad.svg)
+![Protections](https://img.shields.io/badge/protections-112-8e44ad.svg)
 ![No telemetry](https://img.shields.io/badge/telemetry-none-2ea44f.svg)
 [![Open source](https://img.shields.io/badge/source-open-2ea44f.svg)](LICENSE)
 [![Report a bug](https://img.shields.io/badge/report_a-bug-e74c3c.svg)](https://github.com/iri-dev/WardenOne/issues/new/choose)
@@ -30,9 +30,9 @@ redirects. It keeps an eye on your other extensions too. And it all runs on your
 > [!WARNING]
 > **Official builds only.** WardenOne is a browser extension, never an `.exe`, installer or setup program. Download it only from [github.com/iri-dev/WardenOne](https://github.com/iri-dev/WardenOne). If you received another copy, read the [impersonation incident notice](https://iri-dev.github.io/WardenOne/stolen).
 
-> ## One master switch. 110 protections.
+> ## One master switch. 112 protections.
 >
-> **107 individually controllable · 3 watch-only**
+> **109 individually controllable · 3 watch-only**
 >
 > Three of them are watch-only: **Background Reports**, **Hardware & File Access** and **Browser
 > Capabilities**. They write down what happened. They don't block anything so there's nothing
@@ -249,9 +249,10 @@ that look like a familiar name. It looks at the brand text, password forms, who 
 site etc all together. Just mentioning a company isn't enough to get a page flagged.
 
 There's also an optional login-page age check. It looks for a password form on a domain that was
-registered really recently. When it's on, a sign-in page offers a Check domain age button.
+registered really recently. When it's on, a page with a password field offers a Check domain age button.
 Only pressing it sends the domain to RDAP or your enabled WhoisXML service, without the
-path, page contents or anything you typed. The answer is cached locally.
+path, page contents or anything you typed. The answer is cached locally. You can also
+choose Don’t ask again here for that exact host.
 
 The clearest look-alikes get a blocking screen with a choice to leave, visit the real site or
 continue. Behavioural detection can warn about an unknown site that acts like a tracker or scam
@@ -1249,8 +1250,8 @@ Redirect skipping and the address cleaner have separate switches in the popup. N
 link or form on the page; redirect skipping acts when a top-level link opens.
 
 Other optional link controls warn when a link hides a destination in a redirect parameter or behind
-a shortener. They still let you follow it. De-AMP can take you from Google's AMP copy to the
-original article.
+a shortener. They still let you follow it. De-AMP is on by default and takes you from Google's AMP
+copy to the original article.
 
 **Before**
 
@@ -1295,11 +1296,19 @@ native metadata. The broader graphics, audio, font and screen changes remain opt
 **Anti-fingerprinting mode**; hosted editor and identity-provider compatibility exemptions apply.
 Workers retain their native metadata.
 
+**Referrer cap** is on by default. Some pages ask your browser to send their full address, the
+page you're reading and everything after it, to every other site they load from. WardenOne puts
+the browser's own default back, so those sites see only the site's name. It works whether the page
+asks in its headers or in a meta tag. Pictures in the very first part of a page can still go out
+before WardenOne sees the meta tag, and turning the switch off for a site leaves that site's choice
+alone.
+
 ## Consent protection
 
 Cookie banners come in a few different shapes and one action doesn't fit them all:
 
 - WardenOne uses explicit OneTrust, Cookiebot and TrustArc controls where recognized, with a guarded generic fallback. It opens choices when needed and saves disabled optional categories while preserving required choices.
+- On sites that load OneTrust from OneTrust's own servers, WardenOne answers it without loading it. It saves OneTrust's own refusal cookies and answers the calls the site makes, so the banner and everything it fetches never load. A choice you already made stays as it is. To change your choice on one of those sites, switch Auto-reject cookie banners off for that site.
 - If a banner comes back after rejection, WardenOne rejects it again, including banners that reuse their original controls. It waits for the banner to disappear and return before reusing a clicked button, and spaces repeated choices to avoid click loops.
 - Activity distinguishes a failed action, a dispatched action with an **unverified** opt-out, and an opt-out verified in the consent manager's changed saved state. A disappearing banner alone does not establish rejection. Custom or unreadable states remain unverified.
 - If it's a consent-or-pay wall with no way to say no, and the article's already there underneath, an opt-in can lift the wall without clicking anything or saving a consent cookie. If the article never actually loaded WardenOne puts the wall back. Better than a blank page.
@@ -1358,9 +1367,19 @@ Shield doesn't claim to stop all email tracking.
 
 ## Anti-fingerprinting
 
-This one's opt-in. It covers canvas text measurements, audio, WebGL, WebGPU, fonts, monitor layout,
-keyboard layout, voices and similar things sites measure. Either with per-session noise or with
-fixed answers everyone using the protection shares.
+There are two levels. The fingerprint shield is on for everyone. What your browser draws on a canvas
+and the audio it renders read back very slightly differently on every site and every visit, a colour
+moving by one step at most, so the pictures look the same to you. Your core count, memory and screen
+work area are reported in a few common sizes. That way those readings stop linking your visits,
+without touching anything a site needs to work. Your fonts, language and browser version still show.
+
+The shield starts the moment a page does, before WardenOne has even read your settings, so the first page after
+your browser starts is covered too. On a site where you've turned it off, it steps aside before the page's own code
+runs. In the second or so after your browser starts, it steps aside as soon as WardenOne has read your settings.
+
+The stronger noise is the one you turn on yourself. It covers canvas text measurements, WebGL, WebGPU,
+fonts, monitor layout, keyboard layout, voices and similar things sites measure. Either with noise or
+with fixed answers everyone using the protection shares.
 
 Being consistent matters more than being random. If a page got different GPU answers to the same
 question that'd be rarer than your real machine. Which makes it an even better fingerprint. So
@@ -1370,17 +1389,19 @@ WebGPU limits are reduced toward the spec defaults without overstating a real ad
 capabilities; unavailable fields and native fallback/subgroup information stay truthful. Text,
 layout and derived analyser noise use a private per-document seed. Repeated identical inputs in
 that document agree; private text/layout noise can differ in another frame or after reload.
-Core count and memory are left alone because a worker can show their real values anyway.
+Core count and memory are reported in common sizes at both levels. A web worker can still show the
+real values, and that's a gap I know about.
 
 ```mermaid
 flowchart LR
     Ask["Page measures you<br/>canvas · audio · WebGL · fonts · screen · voices"] --> Shield["WardenOne answers"]
     Shield --> Stable["GPU identity stays stable<br/>for one site and its frames"]
     Shield --> Noise["Stable text/layout and analyser noise<br/>within one document"]
-    Shield --> Native["Core count and memory<br/>stay native"]
-    Stable --> Limit["Workers can still expose<br/>real graphics"]
+    Shield --> Reads["Canvas and audio reads<br/>change per site and visit"]
+    Shield --> Common["Core count, memory and screen<br/>in common sizes"]
+    Stable --> Limit["Workers can still expose<br/>real graphics and core count"]
     classDef warden fill:#51203c,stroke:#c45ca7,color:#ffffff
-    class Ask,Shield,Stable,Noise,Native,Limit warden
+    class Ask,Shield,Stable,Noise,Reads,Common,Limit warden
     linkStyle default stroke:#c45ca7
 ```
 
@@ -1673,7 +1694,7 @@ protection switches.
 
 ## Per-site control
 
-**107 of the 110 protections have their own toggle**. The other three are watch-only. They record
+**109 of the 112 protections have their own toggle**. The other three are watch-only. They record
 events but never block or change a page, so there's nothing for a switch to decide.
 
 When one protection gets one site wrong the **This site** panel lets you back off one step at a

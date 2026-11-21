@@ -1252,7 +1252,7 @@
 <h2>Download Shield</h2>
     <div class="card-group">
     <div class="row">
-      <div><div class="name">Download Shield</div><div class="desc">No-account scanner. Grades downloads A-F from the URL, source, filename, file type, Chrome signals, trust list, and local blocklists. Known-bad sources are blocked outright; risky ones show a review you can cancel.</div></div>
+      <div><div class="name">Download Shield</div><div class="desc">No-account scanner. Grades downloads A-F from the URL, source, filename, file type, Chrome signals, trust list, and local blocklists. Known-bad sources are blocked outright; risky ones show a review you can cancel. A program link on a bare IP address, or a program stored straight in a GitHub repository instead of released, is stopped before your browser connects, and you can still choose to continue.</div></div>
       <label class="tg"><input type="checkbox" data-key="downloadReputation"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1451,7 +1451,11 @@
       <label class="tg"><input type="checkbox" data-key="clientHintProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Optional changes to page and frame graphics, audio, text and display measurements. Core count and memory stay native because workers can reveal them. Canvas pixels and image exports stay unchanged. Web workers are not covered and can still reveal real graphics. It may make rare setups more unique, so it stays opt-in.</div></div>
+      <div><div class="name">Fingerprint shield</div><div class="desc">On by default. Every site, and every visit, gets a slightly different reading of what your browser draws and plays, and sees a common core count, memory size and screen work area, so those readings can't link your visits. Your fonts, language and browser version still show. Colours move by one step at most, so pictures look the same. Web workers can still see the real core count.</div></div>
+      <label class="tg"><input type="checkbox" data-key="fingerprintShield"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Anti-fingerprinting noise</div><div class="desc">Stronger changes on top of the fingerprint shield, in pages and their frames: your graphics card's name, text and display measurements, screen size, browser detail hints and 3D pictures. Web workers are not covered and can still reveal real graphics. It can confuse a few 3D apps and makes rare setups stand out more, so it's off until you turn it on.</div></div>
       <label class="tg"><input type="checkbox" data-key="antiFingerprintNoise"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1467,7 +1471,7 @@
       <label class="tg"><input type="checkbox" data-key="blockFraudVendorScripts"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Block third-party cookies</div><div class="desc">Removes cookie headers for known trackers, confirmed tracking aliases and reviewed Google, Stripe, Spotify and Facebook resources. Supported protected frames also lose cookie API access before their scripts run. Direct visits, first-party service use and media workarounds retain cookies. Turn off for one site if needed. Unknown hosts keep existing policy.</div></div>
+      <div><div class="name">Block third-party cookies</div><div class="desc">Strips cookies from images and beacons loaded from another site. Known trackers and confirmed tracking aliases also lose cookies in other requests, and protected frames lose cookie API access. Direct visits and ordinary embedded sessions can keep their cookies. Turn off for one site if needed.</div></div>
       <label class="tg"><input type="checkbox" data-key="blockThirdPartyCookies"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1518,11 +1522,15 @@
       <label class="tg"><input type="checkbox" data-key="trackerCacheProtection"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">De-AMP pages</div><div class="desc">Skip Google/AMP cache pages and go straight to the real article. Rewrites AMP links and redirects AMP pages to their original URL. Opt-in.</div></div>
+      <div><div class="name">De-AMP pages</div><div class="desc">On by default. Skips Google and AMP cache pages and takes you straight to the real article. Rewrites AMP links and sends AMP pages to their original address.</div></div>
       <label class="tg"><input type="checkbox" data-key="deAmp"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Strict cross-site referrer protection</div><div class="desc">Removes the Referer header on cross-site requests while keeping same-site referrers. Sign-in, CAPTCHA, and payment destinations are excluded for compatibility. A download link you press keeps the site&rsquo;s address, so file hosts that check it still work. Opt-in because other hotlink and hand-off flows rely on a referrer.</div></div>
+      <div><div class="name">Referrer cap</div><div class="desc">When a site asks your browser to send its full address to every other site, those sites get only its name, the way your browser does by default. Turn it off for a site and that site keeps its own choice.</div></div>
+      <label class="tg"><input type="checkbox" data-key="capLeakyReferrer"><span class="track"></span><span class="knob"></span></label>
+    </div>
+    <div class="row">
+      <div><div class="name">Strict cross-site referrer protection</div><div class="desc">Removes the Referer header on cross-site requests while keeping same-site referrers. Sign-in, CAPTCHA, and payment destinations are excluded for compatibility. A download link you press keeps the site&rsquo;s address, so file hosts that check it still work. Embedded players, videos and the data a page fetches keep it too, so a player whose server checks where it&rsquo;s playing still plays. Opt-in because other hotlink and hand-off flows rely on a referrer.</div></div>
       <label class="tg"><input type="checkbox" data-key="capReferrer"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1836,7 +1844,7 @@
       <label class="tg"><input type="checkbox" data-key="detectPhishing"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Login page age check</div><div class="desc">Offers a Check domain age button when a site asks for a password. Only pressing it sends the domain to rdap.org, or your enabled WhoisXML service, to check its registration date. No page contents or typed values are sent. A recently registered domain can be a phishing signal. Off by default; answers are cached locally.</div></div>
+      <div><div class="name">Login page age check</div><div class="desc">I offer a Check domain age button when a site asks for a password. Only pressing it sends the domain to rdap.org, or your enabled WhoisXML service. No page contents or typed values are sent. You can tell me not to ask again on that site. Off by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="loginAgeCheck"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
@@ -1907,11 +1915,11 @@
       <label class="tg"><input type="checkbox" data-key="paymentCardGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Clipboard hijack protection</div><div class="desc">Stop sites that secretly swap your clipboard — e.g. replacing a copied crypto wallet address with an attacker's. Keeps normal Copy buttons working. Opt-in.</div></div>
+      <div><div class="name">Clipboard hijack protection</div><div class="desc">Stops sites from writing to your clipboard when you didn&rsquo;t ask, and from swapping a crypto wallet address you copied for someone else&rsquo;s. Normal Copy buttons keep working. Off unless you turn it on.</div></div>
       <label class="tg"><input type="checkbox" data-key="clipboardGuard"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name">Clipboard swap detection</div><div class="desc">Catches clipboard-swapping malware at paste time: if you paste a crypto address that differs from the one you just copied (same coin, within 2 minutes), it warns and shows both so you can check before sending. Works even against malware outside the browser. On by default.</div></div>
+      <div><div class="name">Clipboard swap detection</div><div class="desc">When you copy a crypto wallet address, the page can&rsquo;t quietly swap it for another one, so you keep the address you selected. If you later paste an address that differs from the one you copied (same coin, within 2 minutes), you get a warning that shows both, so you can check before sending. That paste check also catches malware outside the browser. On by default.</div></div>
       <label class="tg"><input type="checkbox" data-key="clipboardSwapDetect"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">

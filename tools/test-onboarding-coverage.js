@@ -69,7 +69,7 @@ assert(html.indexOf('src="settings-data.js"') < html.indexOf('src="onboarding.js
 assert(!/40\+|always-on protections|active guards, always on|Scores files before they run|You're protected\./.test(html), 'retired counts and safety promises stay out');
 const note = html.match(/id="maxprivacy-note"[^>]*>([\s\S]*?)<\/div>/)[1];
 const maxCopy = {
-  antiFingerprintNoise: /fingerprint noise/, blockFraudVendorScripts: /fraud and bot-check script/,
+  antiFingerprintNoise: /fingerprint noise/, blockFraudVendorScripts: /fraud and bot check script/,
   blockFirstPartyTrackers: /first-party tracker/, breachCheck: /breach checks/,
   clipboardGuard: /clipboard protection/, blockSuspiciousWebRTC: /WebRTC hardening/,
   clientHintProtection: /Client Hint/, capReferrer: /referrer protection/,

@@ -32,8 +32,42 @@ const cases = [
   /* Complianz: Deny hides the banner and shows a small fixed "Manage consent" tab that reopens it.
      Opening that tab after the choice strobed the page between the two about once a second. */
   { name: 'complianz-manage-tab', complianz: true, expected: ['reject'] },
+  /* ketch.com: Reject All only switches the purposes off and the dialog waits for its own "Save choices". */
+  { name: 'panel-reject-then-save', panel: 'stays', expected: ['reject', 'save'] },
+  { name: 'panel-reject-closes', panel: 'closes', expected: ['reject'] },
+  /* iubenda.com: an alertdialog whose words and buttons all sit in nested shadow roots of its parts. */
+  { name: 'shadow-parts-banner', parts: 'cookies', expected: ['reject'] },
+  { name: 'shadow-parts-big-page', parts: 'cookies', bigPage: true, expected: ['reject'] },
+  { name: 'shadow-parts-call', parts: 'call', expected: [] },
 ];
 function fixture(test) {
+  if (test.parts) {
+    const words = test.parts === 'call' ? 'Join the call now? Your camera stays off until you say so.'
+      : 'We and selected third parties use cookies or similar technologies for technical purposes and, with your consent, for other purposes.';
+    const label = test.parts === 'call' ? 'Decline' : 'Reject';
+    const page = test.bigPage ? '<main>' + '<div><span>A readable article.</span> <a href="#a">link</a></div>'.repeat(1400) + '</main>' : '<main>' + 'A readable article. '.repeat(120) + '</main>';
+    return '<!doctype html><meta charset="utf-8"><title>Consent stress: ' + test.name + '</title><input id="editor" value="works">' + page
+      + '<script>window.fixtureActions=[];const part=(tag,html)=>{const el=document.createElement(tag);el.attachShadow({mode:"open"}).innerHTML=html;return el;};'
+      + 'setTimeout(()=>{const wrapper=part("tb-banner-wrapper",\'<div class="tb-banner-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:99999"><div class="tb-banner-wrapper" role="alertdialog" style="margin:80px auto;width:480px;background:white;color:black;padding:20px"></div></div>\');'
+      + 'document.body.append(wrapper);const box=wrapper.shadowRoot.querySelector(".tb-banner-wrapper");'
+      + 'box.append(part("tb-banner-content","<p>' + words + '</p>"));const footer=part("tb-banner-footer","<div class=\\"tb-footer-buttons-container\\"></div>");box.append(footer);'
+      + 'const row=footer.shadowRoot.firstChild;for(const name of ["' + label + '","Accept"]){const b=part("tb-action-button","<button class=\\"action-button\\"><span>"+name+"</span></button>");row.append(b);'
+      + 'b.shadowRoot.querySelector("button").onclick=()=>{fixtureActions.push(name==="Accept"?"accept":"reject");if(name!=="Accept")document.cookie="OptanonConsent="+encodeURIComponent("groups=C0001:1,C0002:0")+"; Secure; path=/; SameSite=Lax";wrapper.remove();};}'
+      + 'window.fixtureReady=true;},300);</script>';
+  }
+  if (test.panel) {
+    const box = 'position:fixed;inset:40px auto auto 40px;width:640px;background:white;color:black;z-index:99999;padding:20px';
+    return '<!doctype html><meta charset="utf-8"><title>Consent stress: ' + test.name + '</title><input id="editor" value="works"><main>' + 'A readable article. '.repeat(120) + '</main>'
+      + '<div id="purposes" role="dialog" aria-modal="true" style="' + box + '"><p>Your Privacy. We and our vendors use cookies and personal data for the purposes below.</p>'
+      + '<div><span>Purposes</span> <button id="rejectall">Reject All</button> <button id="acceptall">Accept All</button></div>'
+      + '<label>Analytics<input type="checkbox" checked></label><label>Behavioral Advertising<input type="checkbox" checked></label><label>Essential Services<input type="checkbox" checked disabled></label>'
+      + '<button id="save">Save choices</button></div>'
+      + '<script>window.fixtureActions=[];const d=document.getElementById("purposes"),optional=()=>[...d.querySelectorAll("input:not([disabled])")];'
+      + 'const store=()=>{window.fixtureOptionalOn=optional().some(x=>x.checked);document.cookie="OptanonConsent="+encodeURIComponent("groups=C0001:1,C0002:"+(fixtureOptionalOn?1:0))+"; Secure; path=/; SameSite=Lax";d.remove();};'
+      + 'document.getElementById("rejectall").onclick=()=>{fixtureActions.push("reject");optional().forEach(x=>x.checked=false);' + (test.panel === 'closes' ? 'store();' : '') + '};'
+      + 'document.getElementById("acceptall").onclick=()=>{fixtureActions.push("accept");optional().forEach(x=>x.checked=true);};'
+      + 'document.getElementById("save").onclick=()=>{fixtureActions.push("save");store();};window.fixtureReady=true;</script>';
+  }
   if (test.complianz) {
     const fixed = 'position:fixed;right:20px;bottom:20px;background:white;color:black;z-index:99999;';
     return '<!doctype html><meta charset="utf-8"><title>Consent stress: ' + test.name + '</title><style>.cmplz-hidden,.cmplz-manage-consent{display:none}.cmplz-manage-consent.cmplz-show{display:block}</style><header><a href="#policy">Cookie Policy</a></header><input id="editor" value="works"><main>' + 'A readable article. '.repeat(120) + '</main>'
@@ -118,7 +152,7 @@ async function run() {
       const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
       await cdp.send('Page.enable', {}, sessionId); await cdp.send('Runtime.enable', {}, sessionId);
       await until(() => evaluate(cdp, sessionId, 'window.fixtureReady===true'), 'fixture ' + test.name);
-      await sleep(test.complianz ? 8000 : test.repeat ? 5000 : test.settings ? 4000 : 2000);
+      await sleep(test.complianz ? 8000 : test.repeat || test.panel ? 5000 : test.settings ? 4000 : 2000);
       const state = await evaluate(cdp, sessionId, '({actions:window.fixtureActions,cookie:document.cookie,optionalOn:window.fixtureOptionalOn,editor:document.getElementById("editor").value})');
       const passed = JSON.stringify(state.actions) === JSON.stringify(test.expected) && state.editor === 'works' && !(state.actions.includes('save') && state.optionalOn);
       report.cases.push({ name: test.name, expected: test.expected, ...state, passed });

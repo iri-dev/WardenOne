@@ -73,7 +73,7 @@ function world() {
     woOn: (target, type, fn) => { state.listeners = state.listeners || {}; state.listeners[type] = fn; },
   };
   vm.createContext(sandbox);
-  const script = 'const bodyTextCapped=' + slice('bodyTextCapped=cap=>{', ',/* One scheduler for the three page-text detectors', 'bodyTextCapped').slice('bodyTextCapped='.length)
+  const script = 'const bodyTextCapped=' + slice('bodyTextCapped=cap=>{', ',__woTextScan=(()=>{', 'bodyTextCapped').slice('bodyTextCapped='.length)
     + ';\nconst __woTextScan=' + slice('__woTextScan=(()=>{', ',SITE_BOUNDARY=', 'the text-scan scheduler').slice('__woTextScan='.length)
     + ';\nthis.scheduler = __woTextScan;';
   vm.runInContext(script, sandbox, { filename: 'text-scan-slice.js' });

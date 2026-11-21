@@ -52,7 +52,8 @@ const realmEntry = entries.find((e) => Array.isArray(e.js) && e.js.includes('fin
 
 /* The build strips every newline and its indentation; a region copied out of src/content.js and
    built the same way is what both shipped files must contain. */
-const built = (s) => String(s || '').replace(/\r?\n[ \t]*/g, '');
+/* The build's own transform (it strips block comments as well as line breaks), so the comparison stays byte for byte. */
+const built = require('./build-content.js').buildFromSource;
 function region(name) {
   const a = SRC.indexOf('/* ' + name + '-BEGIN');
   const b = SRC.indexOf('/* ' + name + '-END */');
@@ -77,8 +78,8 @@ section('build parity', () => {
     'a wrapper present in one realm and not the other is exactly the gap this closes');
   check('the verifier is the engine\'s own text too', auth.length > 0 && CONTENT.indexOf(auth) > 0 && REALM.indexOf(auth) > 0);
   check('the noise is declared once in each file',
-    (CONTENT.match(/function __woFingerprintNoise\(inherited\)\{/g) || []).length === 1
-      && (REALM.match(/function __woFingerprintNoise\(inherited\)\{/g) || []).length === 1);
+    (CONTENT.match(/function __woFingerprintNoise\(inherited,level,control\)\{/g) || []).length === 1
+      && (REALM.match(/function __woFingerprintNoise\(inherited,level,control\)\{/g) || []).length === 1);
   check('the region uses no engine helper (no WO, no log, no woOn)',
     noise.length > 0 && !/\bWO\./.test(noise) && !/\blog\(/.test(noise) && !/\bwoOn\(/.test(noise),
     'the same text runs in a realm that has none of them');
@@ -103,7 +104,8 @@ section('seed split', () => {
   check('and so does the geometry noise', /rectSeed=\(a,b,c,d\)=>\{let h=\(_sk\^2166136261\)>>>0/.test(noise));
   check('an inherited seed is taken only when it is a 32-bit integer',
     /_sc=inherited&&"object"==typeof inherited&&Number\.isInteger\(inherited\.seed\)&&inherited\.seed>=0&&inherited\.seed<=4294967295\?inherited\.seed>>>0:woSeed\(\)/.test(noise));
-  check('the record carries the shared seed and nothing private', /return Object\.freeze\(\{v:1,noise:!0,seed:_sc\}\)/.test(noise)
+  check('the record carries the shared seed, its level and nothing private', /return Object\.freeze\(\{v:1,noise:!0,seed:_sc,level:"standard"\}\)/.test(noise)
+    && /return Object\.freeze\(\{v:1,noise:!0,seed:_sc,level:"max"\}\)/.test(noise)
     && !/seed:_sk/.test(noise));
 });
 
@@ -114,7 +116,8 @@ section('engine', () => {
   check('before any listener or runtime code, so a page cannot pin the name first',
     accessorAt > 0 && accessorAt < CONTENT.indexOf('woOn(') && accessorAt < CONTENT.indexOf('const __woStartRuntime='));
   check('the gate hands the record to the same function the frames run',
-    /if\(WO\.antiFingerprintNoise\|\|WO\.antiFingerprint\)try\{__woRealmRecord=__woFingerprintNoise\(__woInheritedRealm\(\)\),log\("antifingerprint_active"/.test(CONTENT));
+    /const applyFingerprintNoise=\(\)=>\{const strongNoise=WO\.antiFingerprintNoise\|\|WO\.antiFingerprint;(?:\/\*[^*]*\*\/)?if\(__woFpProvisional\)\{[^]*?__woFpProvisional=null;return false\}if\(__woRealmRecord\?\.noise\|\|!\(strongNoise\|\|WO\.fingerprintShield\)\)return false;try\{__woRealmRecord=__woFingerprintNoise\(__woInheritedRealm\(\),strongNoise\?"max":"standard"\)/.test(CONTENT)
+    && /woOn\(document,"wo-config-change",\(\)=>\{if\(!applyFingerprintNoise\(\)\)return/.test(CONTENT));
   /* A popup a page opens onto its own site is a second top-level realm the page can compare with
      the first. The engine there borrows the opener's seed -- and reads the opener it captured at
      document_start, because `opener` is replaceable. */
@@ -284,7 +287,7 @@ function realm(opts) {
   Object.defineProperty(Screen.prototype, 'availWidth', { get() { return o.availWidth || 2520; }, configurable: true, enumerable: true });
   Object.defineProperty(Screen.prototype, 'availHeight', { get() { return o.availHeight || 1400; }, configurable: true, enumerable: true });
   ctx.__nativeScreenWidthGetter = Object.getOwnPropertyDescriptor(Screen.prototype, 'width').get;
-  ctx.innerWidth = 1200; ctx.innerHeight = 800;
+  ctx.innerWidth = o.innerWidth || 1200; ctx.innerHeight = o.innerHeight || 800;
   const rand = o.rand || 0x12345678;
   ctx.crypto = { getRandomValues(a) { for (let i = 0; i < a.length; i++) a[i] = (rand + i * 7919) >>> 0; return a; } };
   ctx.setTimeout = setTimeout;
@@ -364,16 +367,20 @@ section('same-origin child adopts synchronously', () => {
   check('and the record is frozen', Object.isFrozen(c.__wardenOneRealm));
   check('Maximum Privacy runs before the page can borrow APIs', wrapped(c));
   check('canvas export retains its native result', c.HTMLCanvasElement.prototype.toDataURL.call({}) === c.__native.toDataURL.call({}));
-  check('canvas readback retains its native result', JSON.stringify(c.CanvasRenderingContext2D.prototype.getImageData.call({})) === JSON.stringify(c.__native.getImageData.call({})));
+  {
+    const noisy = c.CanvasRenderingContext2D.prototype.getImageData.call({}).data, clean = c.__native.getImageData.call({}).data;
+    check('canvas readback moves a colour by one step at most', noisy.length === clean.length
+      && Array.from(noisy).every((v, i) => Math.abs(v - clean[i]) <= 1 && (i % 4 !== 3 || v === clean[i])));
+  }
   const rects = new c.Element().getClientRects();
   check('getClientRects retains its native collection contract', Array.isArray(rects) && rects.length === 0
     && Object.getPrototypeOf(rects) === Object.getPrototypeOf(c.__native.getClientRects.call(new c.Element())) && rects.item === undefined);
-  check('core count and memory agree with the worker realm',
-    c.navigator.hardwareConcurrency === c.workerNavigator.hardwareConcurrency
-      && c.navigator.deviceMemory === c.workerNavigator.deviceMemory);
-  check('the native hardware getters are untouched',
-    Object.getOwnPropertyDescriptor(c.Navigator.prototype, 'hardwareConcurrency').get === c.__nativeHardwareGetter
-      && Object.getOwnPropertyDescriptor(c.Navigator.prototype, 'deviceMemory').get === c.__nativeMemoryGetter);
+  check('core count and memory are reported in common buckets', c.navigator.hardwareConcurrency === 8 && c.navigator.deviceMemory === 8);
+  check('workers still show the real values, the known gap the switch copy names',
+    c.workerNavigator.hardwareConcurrency === 20 && c.workerNavigator.deviceMemory === 32);
+  check('the hardware getters are replaced on the prototype, never on navigator itself',
+    Object.getOwnPropertyDescriptor(c.Navigator.prototype, 'hardwareConcurrency').get !== c.__nativeHardwareGetter
+      && !Object.prototype.hasOwnProperty.call(c.navigator, 'hardwareConcurrency') && !Object.prototype.hasOwnProperty.call(c.navigator, 'deviceMemory'));
   check('the screen rounds down without claiming pixels the display lacks', c.screen.width === 2500 && c.screen.height === 1400, c.screen.width + 'x' + c.screen.height);
   check('the realm tells its document it settled', c.__settled === 1);
   check('and asked for no bridge replay -- it did not need one', c.__replays === 0);
@@ -391,20 +398,20 @@ section('same-origin child inherits the WebGL verdict', () => {
   parent.set(Object.freeze({ v: 1, noise: false, webglBlocked: true }));
   check('a later blocked parent makes future WebGL contexts unavailable in the child realm', canvas.getContext('webgl') === null && canvas.getContext('webgl2') === null);
   check('the targeted wrapper leaves Canvas 2D available', !!canvas.getContext('2d'));
+  parent.set(Object.freeze({ v: 1, noise: true, seed: 0x12345678, webglBlocked: true }));
+  check('a child settled before configuration adopts the later noise', c.__wardenOneRealm.noise === true && c.__wardenOneRealm.seed === 0x12345678);
 });
 
 section('realms sharing a seed agree', () => {
   const parent = ancestor(Object.freeze({ v: 1, noise: true, seed: 0xABCDEF01 }));
   const a = run(realm({ parent, top: parent, rand: 0x1111 }));
   const b = run(realm({ parent, top: parent, rand: 0x2222 }));
-  check('both frames retain native core count and memory',
-    a.navigator.hardwareConcurrency === a.workerNavigator.hardwareConcurrency
-      && b.navigator.hardwareConcurrency === b.workerNavigator.hardwareConcurrency
-      && a.navigator.deviceMemory === a.workerNavigator.deviceMemory
-      && b.navigator.deviceMemory === b.workerNavigator.deviceMemory);
+  check('both frames report the same core count and memory buckets',
+    a.navigator.hardwareConcurrency === b.navigator.hardwareConcurrency && a.navigator.deviceMemory === b.navigator.deviceMemory
+      && a.navigator.hardwareConcurrency === 8 && a.navigator.deviceMemory === 8);
   const pa = draw(a), pb = draw(b);
-  check('and identical native canvas exports despite different local randomness', pa === pb && pa === 'data:clean:' + Array.from(FIXTURE_PIXELS).join(','));
-  check('user-authored pixels are not changed', pa === 'data:clean:' + Array.from(FIXTURE_PIXELS).join(','));
+  check('and identical canvas exports despite different local randomness', pa === pb);
+  check('an export never writes to the visible canvas', pa === 'data:clean:' + Array.from(FIXTURE_PIXELS).join(','));
   const other = ancestor(Object.freeze({ v: 1, noise: true, seed: 0x00000001 }));
   const cOther = run(realm({ parent: other, top: other, rand: 0x1111 }));
   check('a different seed still keeps authored pixels', draw(cOther) === pa);
@@ -489,6 +496,10 @@ section('native capabilities remain usable under noise', () => {
     check(width + 'x' + height + ' retains a smaller usable height', c.screen.availHeight < c.screen.height && c.screen.availHeight <= available);
     check(width + 'x' + height + ' retains a valid usable width', c.screen.availWidth <= c.screen.width);
   }
+  const full = run(realm({ screenWidth: 1920, screenHeight: 1080, availWidth: 1920, availHeight: 1040 }));
+  full.innerWidth = 1920;
+  full.innerHeight = 1080;
+  check('a full viewport still fits the protected screen', full.screen.width >= full.innerWidth && full.screen.height >= full.innerHeight);
   const parent = ancestor(Object.freeze({ v: 1, noise: true, seed: 0xABCDEF01 }));
   const c = run(realm({ parent, top: parent }));
   check('touch capability remains nonzero on a touch device', c.navigator.maxTouchPoints === 10);
@@ -668,7 +679,7 @@ function bridgeVerdict(o) {
   if (PSL) vm.runInContext(PSL, ctx);
   vm.runInContext(DOMAIN, ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'engine-compat.js'), 'utf8'), ctx);
-  vm.runInContext(helpers + '\n' + code + '\nthis.verdict = bridgeFrameNoiseAllowed; this.topHost = bridgeTopHost; this.ownHost = bridgeOwnHost;', ctx);
+  vm.runInContext(helpers + '\n' + code + '\nthis.verdict = bridgeFrameNoiseAllowed; this.level = bridgeFrameNoiseLevel; this.topHost = bridgeTopHost; this.ownHost = bridgeOwnHost;', ctx);
   return ctx;
 }
 section('bridge verdict', () => {
@@ -682,13 +693,18 @@ section('bridge verdict', () => {
     check(hostname + ' keeps embedded browser signals native', inFrame({ ancestors: ['https://' + hostname] }).verdict(on) === false);
     check(hostname + ' keeps its own browser signals native', inFrame({ hostname }).verdict(on) === false);
   }
-  check('the switch off: it does not', v.verdict(Object.assign({}, on, { antiFingerprintNoise: false })) === false);
+  check('the opt-in noise off still leaves the default shield in the frame', v.verdict(Object.assign({}, on, { antiFingerprintNoise: false })) === true
+    && v.level(Object.assign({}, on, { antiFingerprintNoise: false })) === 'standard');
+  check('the opt-in noise on puts the frame on the stronger level', v.level(on) === 'max');
+  check('both switches off: no noise in the frame', v.verdict(Object.assign({}, on, { antiFingerprintNoise: false, fingerprintShield: false })) === false
+    && v.level(Object.assign({}, on, { antiFingerprintNoise: false, fingerprintShield: false })) === '');
   check('the alias switch counts like the engine\'s gate', v.verdict(Object.assign({}, on, { antiFingerprintNoise: false, antiFingerprint: true })) === true);
   check('protection off entirely: no', v.verdict(Object.assign({}, on, { enabled: false })) === false);
   check('the frame\'s own host paused: no', v.verdict(Object.assign({}, on, { allowlist: ['frame.example.com'] })) === false);
   check('the page\'s top host paused: no -- the frame is part of the page', v.verdict(Object.assign({}, on, { allowlist: ['page.example.org'] })) === false);
   check('a pause on an unrelated host changes nothing', v.verdict(Object.assign({}, on, { allowlist: ['elsewhere.example.net'] })) === true);
-  check('the top host\'s per-site switch off: no', v.verdict(Object.assign({}, on, { siteOverrides: { 'page.example.org': { antiFingerprintNoise: false } } })) === false);
+  check('the top host\'s per-site switches off: no', v.verdict(Object.assign({}, on, { siteOverrides: { 'page.example.org': { antiFingerprintNoise: false, fingerprintShield: false } } })) === false);
+  check('the top host\'s opt-in noise off falls back to the shield', v.level(Object.assign({}, on, { siteOverrides: { 'page.example.org': { antiFingerprintNoise: false } } })) === 'standard');
   check('a per-site switch off elsewhere changes nothing', v.verdict(Object.assign({}, on, { siteOverrides: { 'other.example.org': { antiFingerprintNoise: false } } })) === true);
   check('the top host is read from the last ancestor origin', v.topHost() === 'page.example.org' && v.ownHost() === 'frame.example.com');
   const nested = inFrame({ ancestors: ['https://mid.example.net', 'https://www.page.example.org'] });
@@ -704,10 +720,10 @@ section('bridge verdict', () => {
   check('about:blank has no host of its own, so its inherited origin is used', blank.ownHost() === 'site.example.com'
     && blank.verdict(Object.assign({}, on, { allowlist: ['site.example.com'] })) === false);
   check('sendConfig decides while siteOverrides is still there to consult',
-    BRIDGE.indexOf('clean.frameNoise = bridgeFrameNoiseAllowed(clean);') > 0
-      && BRIDGE.indexOf('clean.frameNoise = bridgeFrameNoiseAllowed(clean);')
+    BRIDGE.indexOf('clean.frameNoiseLevel = bridgeFrameNoiseLevel(clean);') > 0
+      && BRIDGE.indexOf('clean.frameNoiseLevel = bridgeFrameNoiseLevel(clean);')
         < BRIDGE.indexOf('delete clean.siteOverrides;', BRIDGE.indexOf('  const sendConfig = (overrides) => {'))
-      && BRIDGE.indexOf('clean.frameNoise = bridgeFrameNoiseAllowed(clean);') > BRIDGE.indexOf('clean.allowlist = sanitizeBridgeHostList(bridgeActiveAllowlist(clean), 1000);'),
+      && BRIDGE.indexOf('clean.frameNoiseLevel = bridgeFrameNoiseLevel(clean);') > BRIDGE.indexOf('clean.allowlist = sanitizeBridgeHostList(bridgeActiveAllowlist(clean), 1000);'),
     'the allowlist must be resolved before, and siteOverrides deleted after');
 });
 

@@ -37,14 +37,14 @@ function syncConfigCheckboxes(key, checked) {
 const KEYS = [
   'antiAdblockShield',
   'blockForcedPopups', 'strictPopupShield', 'blockGesturelessNav', 'blockPopupTricks', 'backTrapGuard', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'detectRedirectChains', 'blockMetaRefresh',
-  'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'blockSuspiciousWebRTC', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine', 'twitchAdBlock', 'twitchSteadyPlayback', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'blockCnameTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'forcedDownloadProtection', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
+  'blockGrabberResources', 'warnGrabberDomains', 'blockWebRTCLeak', 'blockSuspiciousWebRTC', 'certificateGuard', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine', 'twitchAdBlock', 'twitchSteadyPlayback', 'twitchRewind', 'twitchVodRewind', 'sendPrivacySignals', 'antiFingerprintNoise', 'fingerprintShield', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'blockThirdPartyCookies', 'blockAllCookies', 'blockFirstPartyTrackers', 'blockCnameTrackers', 'sessionShield', 'blockTokenExfil', 'continuousTokenScan', 'detectSkimmers', 'paymentCardGuard', 'breachCheck', 'forceHttps', 'insecureLoginGuard', 'loginAgeCheck', 'downloadReputation', 'forcedDownloadProtection', 'downloadDomainAge', 'downloadSafeBrowsing', 'downloadVirusTotal', 'downloadVirusTotalHash', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation', 'whoisXmlThreatIntel', 'clipboardGuard', 'clipboardSwapDetect', 'keystrokePressure', 'honeytokenMode', 'scamLockGuard', 'commandPasteGuard', 'pasteProtection', 'formTrapDetector', 'fakeUpdateDetector', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'intranetNetworkRules', 'dnsRebindGuard', 'storageAccessGuard', 'blockAllStorageAccess', 'loginCompatibility', 'watchExtensionPermissions', 'startupCheck',
   'mediaShield', 'fullscreenGuard', 'fakeWindowGuard', 'notificationAbuseGuard', 'blockCameraMic', 'blockScreenCapture', 'blockGeolocation', 'blockAutoplayMedia',
   'gateAdultSites', 'adultHeuristics', 'safeSearch',
   'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi', 'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'xssBehaviorGuard', 'removeOverlays', 'autoSkipDownloadAds', 'blockMalwareSites', 'blockCryptominers', 'cryptominerCpuWatch', 'autoUpdateLists',
   'showToasts', 'showBadge', 'silentMode', 'elementZapper',
   'memoryShield', 'memoryNeverPinned', 'memoryNeverAudio', 'memoryNeverForms', 'memoryNeverPayment',
   'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch', 'lazyLoadMedia', 'disableYouTubeAmbientMode', 'stopAnimatedVideoPreviews', 'pauseAnimatedImages',
-  'deAmp', 'clientHintProtection', 'capReferrer', 'trackerCacheProtection', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
+  'deAmp', 'clientHintProtection', 'capReferrer', 'capLeakyReferrer', 'trackerCacheProtection', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
   'trackerLearner', 'trackerLearnerAuto', 'unshimLinks', 'stripTrackingParams', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies'
 ];
 
@@ -54,7 +54,7 @@ const DEFAULTS = {
   antiAdblockShield: true,
   blockGesturelessNav: true, blockForcedPopups: true, strictPopupShield: true, blockPopupTricks: true, backTrapGuard: true, clearCookiesOnLeave: false, clearServiceWorkersOnLeave: false, blockMetaRefresh: true,
   detectRedirectChains: true, warnGrabberDomains: true, blockGrabberResources: true,
-  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: true, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchSteadyPlayback: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, blockCnameTrackers: true, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, forcedDownloadProtection: false, __forcedDownloadOptInV1: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: true, phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
+  blockWebRTCLeak: true, certificateGuard: true, blockTrackers: true, adShield: true, googleSearchResultCleanup: false, blockSearchAiAnswers: false, blockSponsoredSearchResults: true, googleWebResultsOnly: false, flagSearchJunk: false, warnSearchResults: true, scriptletEngine: true, twitchAdBlock: true, twitchSteadyPlayback: true, twitchRewind: false, twitchRewindMinutes: 5, twitchVodRewind: true, sendPrivacySignals: true, antiFingerprintNoise: false, fingerprintShield: true, fingerprintProbeDetection: true, blockFingerprintScripts: true, blockFraudVendorScripts: false, antiFingerprint: false, blockThirdPartyCookies: true, blockAllCookies: false, blockFirstPartyTrackers: false, blockCnameTrackers: true, sessionShield: true, blockTokenExfil: true, continuousTokenScan: true, detectSkimmers: true, paymentCardGuard: true, breachCheck: false, forceHttps: false, insecureLoginGuard: true, loginAgeCheck: false, loginAgeMaxDays: 14, downloadReputation: true, forcedDownloadProtection: false, __forcedDownloadOptInV1: true, downloadDomainAge: false, downloadSafeBrowsing: false, downloadSafeBrowsingKey: '', downloadVirusTotal: false, downloadVirusTotalHash: false, downloadVirusTotalKey: '', urlHaus: false, urlHausKey: '', abuseIpDb: false, abuseIpDbKey: '', openPhish: true, phishTank: false, phishTankKey: '', whoisXml: false, whoisXmlKey: '', whoisXmlReputation: false, whoisXmlThreatIntel: false, clipboardGuard: false, clipboardSwapDetect: true, keystrokePressure: false, honeytokenMode: false, scamLockGuard: true, commandPasteGuard: true, pasteProtection: true, formTrapDetector: true, fakeUpdateDetector: true, permissionChainGuard: true, oauthGuard: true, scriptDriftGuard: true, riskySiteMode: true, antiClickjacking: true, intranetProtection: true, intranetNetworkRules: true, dnsRebindGuard: true, storageAccessGuard: true, blockAllStorageAccess: false, loginCompatibility: true, watchExtensionPermissions: true, startupCheck: true, gateAdultSites: true, adultHeuristics: true, safeSearch: false,
   mediaShield: true, fullscreenGuard: true, fakeWindowGuard: true, notificationAbuseGuard: true, blockCameraMic: true, blockScreenCapture: true, blockGeolocation: true, blockAutoplayMedia: true, blockSuspiciousWebRTC: false,
   eyeShield: false, eyeShieldMode: 'off', eyeShieldBrightness: 100, eyeShieldBrightnessByHost: {},
   eyeShieldContrast: 100, eyeShieldContrastByHost: {}, eyeShieldSaturation: 100, eyeShieldSaturationByHost: {},
@@ -69,7 +69,7 @@ const DEFAULTS = {
   tabLimitGuard: false, tabLimitMax: 20, tabLimitClose: false, tabLimitMinIdleMinutes: 30, tabLimitWarn: true,
   blockAutoplay: false, throttleBackgroundTabs: false, killPrefetch: false, lazyLoadMedia: false, disableYouTubeAmbientMode: false, stopAnimatedVideoPreviews: false, pauseAnimatedImages: false,
   webglSaverMode: 'off', webglSaverBlockHosts: [], webglSaverAllowHosts: [],
-  deAmp: false, clientHintProtection: true, capReferrer: false, trackerCacheProtection: true, autoRejectConsent: true, removeConsentWalls: false, mailTrackingShield: true,
+  deAmp: true, clientHintProtection: true, capReferrer: false, capLeakyReferrer: true, trackerCacheProtection: true, autoRejectConsent: true, removeConsentWalls: false, mailTrackingShield: true,
   trackerLearner: true, trackerLearnerAuto: true, unshimLinks: true, cleanCopyLinks: true, socialWidgetGuard: true, blockSupercookies: true,
   forgetMeMode: 'off', forgetMeList: [], forgetMeHistory: false, forgetMeAllConfirmedAt: 0,
   oneOpenPerGesture: true, stripTrackingParams: true, gestureWindowMs: 2400, allowlist: [],
@@ -107,20 +107,21 @@ const SITE_OVERRIDE_SCOPE = {
     'gateAdultSites', 'adultHeuristics', 'warnRedirectParams', 'warnShorteners', 'monitorLoggerApi',
     'detectPhishing', 'blockHighConfidencePhishing', 'behavioralScan', 'xssBehaviorGuard', 'removeOverlays',
     'autoSkipDownloadAds', 'showToasts', 'showBadge', 'blockAutoplay', 'throttleBackgroundTabs', 'killPrefetch',
-    'lazyLoadMedia', 'deAmp', 'cleanCopyLinks', 'socialWidgetGuard', 'blockSupercookies',
+    'lazyLoadMedia', 'deAmp', 'cleanCopyLinks', 'blockSupercookies',
   ],
   mixed: [
     'blockPopupTricks', 'clearCookiesOnLeave', 'detectRedirectChains', 'blockGrabberResources', 'warnGrabberDomains',
     'blockWebRTCLeak', 'blockTrackers', 'adShield', 'googleSearchResultCleanup', 'blockSearchAiAnswers',
     'blockSponsoredSearchResults', 'flagSearchJunk', 'warnSearchResults', 'scriptletEngine',
-    'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'clientHintProtection',
+    'antiFingerprintNoise', 'fingerprintShield', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'clientHintProtection',
     'blockAllCookies', 'detectSkimmers', 'paymentCardGuard', 'forceHttps', 'loginAgeCheck', 'downloadReputation',
     'downloadSafeBrowsing', 'urlHaus', 'abuseIpDb', 'openPhish', 'phishTank', 'whoisXml', 'whoisXmlReputation',
     'whoisXmlThreatIntel', 'permissionChainGuard', 'oauthGuard', 'scriptDriftGuard', 'intranetProtection',
-    'blockGeolocation', 'silentMode', 'capReferrer', 'autoRejectConsent', 'removeConsentWalls', 'mailTrackingShield',
+    'blockGeolocation', 'silentMode', 'capReferrer', 'capLeakyReferrer', 'removeConsentWalls', 'mailTrackingShield',
     'trackerLearner', 'unshimLinks', 'stripTrackingParams',
   ],
-  coordinated: ['blockForcedPopups', 'strictPopupShield', 'blockThirdPartyCookies', 'forcedDownloadProtection', 'sendPrivacySignals', 'antiAdblockShield'],
+  coordinated: ['blockForcedPopups', 'strictPopupShield', 'blockThirdPartyCookies', 'forcedDownloadProtection', 'sendPrivacySignals', 'antiAdblockShield',
+    'socialWidgetGuard', 'autoRejectConsent'],
   network: ['blockCnameTrackers'],
 };
 const SITE_OVERRIDE_KEYS = new Set([].concat(SITE_OVERRIDE_SCOPE.page, SITE_OVERRIDE_SCOPE.mixed, SITE_OVERRIDE_SCOPE.coordinated, SITE_OVERRIDE_SCOPE.network));
@@ -128,7 +129,7 @@ const SITE_OVERRIDE_MIXED = new Set(SITE_OVERRIDE_SCOPE.mixed);
 
 // Keep costly or compatibility-sensitive switches out of "Turn everything on".
 const MANUAL_ONLY_TOGGLES = new Set(['blockCnameTrackers', 'trackerLearnerAuto', 'blockAllCookies', 'silentMode', 'cryptominerCpuWatch', 'trackerCacheProtection', 'blockAllStorageAccess', 'blockSuspiciousWebRTC']);
-const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'xssBehaviorGuard', 'commandPasteGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'paymentCardGuard', 'blockGeolocation']);
+const ACTIVE_TAB_RELOAD_TOGGLES = new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise', 'fingerprintShield', 'fingerprintProbeDetection', 'blockFingerprintScripts', 'blockFraudVendorScripts', 'xssBehaviorGuard', 'commandPasteGuard', 'riskySiteMode', 'antiClickjacking', 'intranetProtection', 'googleSearchResultCleanup', 'blockSearchAiAnswers', 'blockSponsoredSearchResults', 'googleWebResultsOnly', 'flagSearchJunk', 'warnSearchResults', 'paymentCardGuard', 'blockGeolocation']);
 
 const REPUTATION_PROVIDERS = [
   { key: 'urlHaus', keyField: 'urlHausKey', statusId: 'urlhaus-key-status', label: 'URLhaus', use: 'malware URL and download intelligence', emptyText: 'Paste a URLhaus Auth-Key to enable malware URL/download checks.', activeText: 'URLhaus malware URL checks are on. Known malware delivery URLs will be blocked.' },
@@ -152,6 +153,17 @@ let savedConfigSnapshot = configClone(DEFAULTS);
 let popupConfigLoaded = false;
 const pendingPopupChanges = new Map();
 let pendingPopupAfterSave = null;
+/* A switch flipped before the settings load: what it does once saved (reload the tab, turn YouTube on), replayed then. */
+const pendingPopupFollowUps = new Map();
+function earlySwitchFollowUp(key, checked) {
+  if (key === 'scriptletEngine' && checked) {
+    return () => activeTabHost((host) => {
+      if (/(^|\.)youtube(-nocookie)?\.com$/i.test(host || '')) enableYoutubeFromPopup();
+      else reloadActiveHttpTab();
+    });
+  }
+  return ACTIVE_TAB_RELOAD_TOGGLES.has(key) ? reloadActiveHttpTab : null;
+}
 let eyeShieldHost = '';
 let eyeShieldSaveTimer = 0;
 let eyeShieldEditGeneration = 0;
@@ -770,10 +782,22 @@ function load() {
     pendingPopupChanges.forEach((value, key) => { config[key] = value; });
     applyToUI();
     if (pendingPopupChanges.size) {
+      /* An API key typed early also gets the check a normal save runs: an empty key switches its lookups off. */
+      if ([...pendingPopupChanges.keys()].some((key) => document.querySelector('[data-config-text="' + key + '"]'))) {
+        normalizeProviderSettings({});
+        applyToUI();
+      }
       pendingPopupChanges.clear();
       const after = pendingPopupAfterSave;
       pendingPopupAfterSave = null;
-      saveConfig('Saved', after || undefined);
+      const followUps = [...new Set([...pendingPopupFollowUps].map(([key, checked]) => earlySwitchFollowUp(key, checked)).filter(Boolean))];
+      const replaySwitches = pendingPopupFollowUps.size > 0;
+      pendingPopupFollowUps.clear();
+      saveConfig('Saved', (after || followUps.length || replaySwitches) ? () => {
+        if (after) after();
+        followUps.forEach((run) => { try { run(); } catch (_) {} });
+        if (replaySwitches) syncBreachVisibility();
+      } : undefined);
     }
     reconcileForgetHistoryPermission();
     updateAllowlistBtn();
@@ -3038,7 +3062,7 @@ document.querySelectorAll('input[data-key]').forEach((el) => {
   el.addEventListener('change', () => {
     const key = el.getAttribute('data-key');
     syncConfigCheckboxes(key, el.checked);
-    if (!popupConfigLoaded) { pendingPopupChanges.set(key, el.checked); return; }
+    if (!popupConfigLoaded) { pendingPopupChanges.set(key, el.checked); pendingPopupFollowUps.set(key, el.checked); return; }
     if (key === 'scriptletEngine' && el.checked) {
       activeTabHost(host => {
         if (/(^|\.)youtube(-nocookie)?\.com$/i.test(host || '')) enableYoutubeFromPopup();
@@ -3053,11 +3077,16 @@ document.querySelectorAll('input[data-key]').forEach((el) => {
 });
 document.querySelectorAll('select[data-config-bool]').forEach((el) => {
   el.addEventListener('change', () => {
+    /* Before the settings load the page is not read, so keep this one value; load() saves it with the others. */
+    if (!popupConfigLoaded) { pendingPopupChanges.set(el.getAttribute('data-key'), el.value === 'true'); return; }
     save(() => { renderTrackerLearner(); renderTrackerProposals(); });
   });
 });
 document.querySelectorAll('[data-config-text]').forEach((el) => {
-  el.addEventListener('change', save);
+  el.addEventListener('change', () => {
+    if (!popupConfigLoaded) { pendingPopupChanges.set(el.getAttribute('data-config-text'), el.value.trim()); return; }
+    save();
+  });
 });
 
 $('update-now').addEventListener('click', () => {
@@ -5940,7 +5969,7 @@ const SITE_DASH_EDU_PAUSED = new Set([
   'fullscreenGuard', 'gateAdultSites', 'adultHeuristics', 'antiClickjacking',
 ]);
 const SITE_DASH_EDU_PARTLY = new Set(['blockTokenExfil']);
-const SITE_DASH_HOSTED_APP_PAUSED = new Set(['removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint', 'clientHintProtection']);
+const SITE_DASH_HOSTED_APP_PAUSED = new Set(['removeOverlays', 'autoRejectConsent', 'antiFingerprintNoise', 'antiFingerprint', 'fingerprintShield', 'clientHintProtection']);
 const SITE_DASH_PROTECTIONS = [
   { key: 'adShield', label: 'AdShield' },
   { key: 'blockTrackers', label: 'Tracker blocking' },
@@ -5985,6 +6014,7 @@ const SITE_DASH_EVENT_LABELS = {
   blocked_skimmer_exfil: 'Blocked card or password theft',
   blocked_phishing: 'Blocked a phishing look-alike',
   blocked_clipboard_hijack: 'Blocked a clipboard hijack',
+  blocked_clipboard_swap: 'Stopped a wallet address swap',
   blocked_cryptominer: 'Stopped a cryptominer',
   blocked_grabber_fetch: 'Blocked an IP-grabber request',
   blocked_grabber_xhr: 'Blocked an IP-grabber request',

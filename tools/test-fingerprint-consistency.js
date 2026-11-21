@@ -35,7 +35,7 @@ const analyser=new AnalyserNode(),a=new Float32Array(128),c=new Float32Array(128
 const context=new CanvasRenderingContext2D(),off=new OffscreenCanvasRenderingContext2D();
 const descriptor=Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype,'measureText');
 let badReceiver=false;try{context.measureText.call({},'test');}catch(e){badReceiver=e instanceof TypeError;}
-return {zero,same,mutated,copy:copy[0]===.25&&copy[100]===.5,nativeAudio:before.audio===AudioBuffer.prototype.getChannelData,
+return {zero,same,mutated,copy:copy[0]===.25&&copy[100]===.5,nativeAudio:AudioBuffer.prototype.getChannelData.name==='getChannelData'&&AudioBuffer.prototype.getChannelData.length===1&&!Object.hasOwn(AudioBuffer.prototype.getChannelData,'prototype'),
   rate:new AudioContext().sampleRate,nativeRate:!Object.hasOwn(AudioContext.prototype,'sampleRate')||Object.getOwnPropertyDescriptor(AudioContext.prototype,'sampleRate').get===before.rate.get,
   stableFrequency:a.every((x,i)=>x===c[i]),repeatedText:context.measureText('editing').width===context.measureText('editing').width,
   canvasAgreement:context.measureText('editing').width===off.measureText('editing').width,nonnegativeText:context.measureText('').width>=0,

@@ -2002,26 +2002,31 @@
   // Resolve frame noise in ISOLATED and include it in signed config. Both frame and top-site choices
   // apply: pausing a page must also pause its embedded payment/captcha frames.
   // Frame-host overrides are already in clean; consult top-host overrides here.
-  function bridgeFrameNoiseAllowed(clean) {
+  /* 'max' for the opt-in noise, 'standard' for the default shield, '' for none. A frame follows its own host and the
+     page around it, so a site that turned either off is never noised through a frame. */
+  function bridgeFrameNoiseLevel(clean) {
     try {
-      if (!clean || clean.enabled === false) return false;
+      if (!clean || clean.enabled === false) return '';
       let noise = clean.antiFingerprintNoise === true;
       let alias = clean.antiFingerprint === true;
-      if (!noise && !alias) return false;
+      let shield = clean.fingerprintShield !== false;
+      if (!noise && !alias && !shield) return '';
       const own = bridgeOwnHost();
-      if (typeof wardenOneHostedAppHost === 'function' && wardenOneHostedAppHost(own)) return false;
-      if (own && bridgeHostMatchesList(own, clean.allowlist)) return false;
+      if (typeof wardenOneHostedAppHost === 'function' && wardenOneHostedAppHost(own)) return '';
+      if (own && bridgeHostMatchesList(own, clean.allowlist)) return '';
       const top = bridgeTopHost();
-      if (typeof wardenOneHostedAppHost === 'function' && wardenOneHostedAppHost(top)) return false;
+      if (typeof wardenOneHostedAppHost === 'function' && wardenOneHostedAppHost(top)) return '';
       if (top && top !== own) {
-        if (bridgeHostMatchesList(top, clean.allowlist)) return false;
+        if (bridgeHostMatchesList(top, clean.allowlist)) return '';
         const topOff = bridgeSiteOverridesFor(clean, top);
         if (topOff.antiFingerprintNoise === false) noise = false;
         if (topOff.antiFingerprint === false) alias = false;
+        if (topOff.fingerprintShield === false) shield = false;
       }
-      return noise || alias;
-    } catch (_) { return false; }
+      return noise || alias ? 'max' : shield ? 'standard' : '';
+    } catch (_) { return ''; }
   }
+  function bridgeFrameNoiseAllowed(clean) { return bridgeFrameNoiseLevel(clean) !== ''; }
 
   function bridgeFrameClientHintsAllowed(clean) {
     try {
@@ -2409,7 +2414,7 @@
   });
 
   const FRAME_CONFIG_FIELDS = [
-    'enabled', 'allowlist', 'frameSite', 'frameNoise', 'frameClientHints', 'frameTrackerLearning', 'webglDisabled',
+    'enabled', 'allowlist', 'frameSite', 'frameNoise', 'frameNoiseLevel', 'frameClientHints', 'frameTrackerLearning', 'webglDisabled',
     'blockForcedPopups', 'strictPopupShield', 'blockPopupTricks',
     'blockTokenExfil', 'detectSkimmers', 'paymentCardGuard', 'gestureWindowMs',
     'blockThirdPartyCookies', 'frameCookieIsolation', 'blockSupercookies', 'storageAccessGuard',
@@ -2508,7 +2513,8 @@
     clean.siteOverridesApplied = Object.keys(siteOff).filter((k) => typeof clean[k] === 'boolean');
     // Decided while siteOverrides is still here to consult for the top host (SEC-05). The engine
     // in the top frame ignores this field and decides for itself, as it always has.
-    clean.frameNoise = bridgeFrameNoiseAllowed(clean);
+    clean.frameNoiseLevel = bridgeFrameNoiseLevel(clean);
+    clean.frameNoise = clean.frameNoiseLevel !== '';
     clean.frameClientHints = bridgeFrameClientHintsAllowed(clean);
     clean.frameTrackerLearning = bridgeFrameLearningAllowed(clean);
     clean.webglDisabled = bridgeFrameWebGLDisabled(clean);
@@ -3103,6 +3109,15 @@
          over exactly these fields, with a sequence that only moves forward. */
       /* How this tab arrived, for the adult-site card's wording. Read-only; the worker answers for the sending tab. */
       if (msg.kind === 'adult-arrival') return { kind: 'adult-arrival' };
+      /* "Load X embed" on WardenOne's placeholder. A page could lift the embed block for itself with a forged one,
+         so it needs the engine's signature and a real click; the worker takes the tab and site from the sender. */
+      if (msg.kind === 'social-embed-load') {
+        const provider = String(msg.provider || '');
+        if (!['X', 'Instagram', 'TikTok', 'Facebook'].includes(provider)) return null;
+        if (!(navigator.userActivation && navigator.userActivation.isActive)) return null;
+        if (!relayRequestSigned(msg, { kind: 'social-embed-load', provider: msg.provider })) return null;
+        return { kind: 'social-embed-load', provider };
+      }
       if (msg.kind === 'toast-shown') {
         const type = String(msg.type || '');
         if (!/^[a-z_]{3,60}$/.test(type)) return null;
@@ -3460,6 +3475,7 @@
       let scriptDriftLastRun = 0;
       let scriptDriftWarnedKey = '';
       const regSite = (h) => siteIdentity(h);
+      const SCRIPT_DRIFT_JS_TYPE = /^(?:|module|(?:text|application)\/(?:x-)?(?:javascript|ecmascript)|text\/jscript)$/i;
       const collectScriptUrls = () => {
         const pageSite = regSite(location.hostname);
         const seen = new Set();
@@ -3470,6 +3486,8 @@
             const s = scripts[i];
             const src = s && s.src;
             if (!src) continue;
+            // The page never requests these: consent tools park trackers as text/plain until you agree.
+            if (s.noModule || !SCRIPT_DRIFT_JS_TYPE.test(String(s.type || '').trim())) continue;
             let u;
             try { u = new URL(src, location.href); } catch (_) { continue; }
             if (u.protocol !== 'https:' && u.protocol !== 'http:') continue;
@@ -3806,18 +3824,17 @@
           loginAgeOverlay.mount();
         } catch (_) {}
       };
-      const laCheck = () => {
-        if (laChecked || laShown || !loginAgeGuardOn() || !laVisiblePassword()) return;
-        laChecked = true;
+      const laOffer = () => {
+        if (laShown || !loginAgeGuardOn() || !laVisiblePassword()) return;
         try {
           const offer = woOwnedOverlay('wo-login-age-check');
           const root = offer.root();
           if (!root) return;
           const box = document.createElement('div');
-          box.setAttribute('style', 'position:fixed!important;bottom:16px!important;right:16px!important;z-index:2147483647!important;'
-            + WO_MODAL.panel('360px', '12px'));
+          box.setAttribute('style', WO_MODAL.panel('360px', '12px')
+            + 'position:fixed!important;bottom:16px!important;right:16px!important;z-index:2147483647!important;');
           const text = document.createElement('p');
-          text.textContent = 'Check this sign-in domain’s age? Sends ' + location.hostname + ' to RDAP or your enabled WhoisXML service.';
+          text.textContent = 'Want me to check this domain’s age? I’ll send ' + location.hostname + ' to RDAP or your enabled WhoisXML service if you press Check.';
           const check = document.createElement('button');
           check.textContent = 'Check domain age';
           check.setAttribute('style', WO_MODAL.button(true, '12px'));
@@ -3830,12 +3847,33 @@
             });
           });
           const dismiss = document.createElement('button');
-          dismiss.textContent = 'Dismiss';
+          dismiss.textContent = 'Not now';
           dismiss.setAttribute('style', WO_MODAL.button(false, '12px'));
           woOn(dismiss, 'click', event => { if (event.isTrusted) offer.destroy(); });
           box.appendChild(text); box.appendChild(check); box.appendChild(dismiss);
+          if (!chrome.extension?.inIncognitoContext) {
+            const never = document.createElement('button');
+            never.textContent = 'Don’t ask again here';
+            never.setAttribute('style', WO_MODAL.button(false, '12px'));
+            woOn(never, 'click', event => {
+              if (!event.isTrusted) return;
+              offer.destroy();
+              chrome.runtime.sendMessage({ kind: 'login-age-choice', action: 'dismiss' }, () => { void chrome.runtime.lastError; });
+            });
+            box.appendChild(never);
+          }
           root.appendChild(box); offer.mount();
         } catch (_) {}
+      };
+      const laCheck = () => {
+        if (laChecked || laShown || !loginAgeGuardOn() || !laVisiblePassword()) return;
+        laChecked = true;
+        if (chrome.extension?.inIncognitoContext) { laOffer(); return; }
+        try {
+          chrome.runtime.sendMessage({ kind: 'login-age-choice', action: 'status' }, res => {
+            if (chrome.runtime.lastError || !res || !res.dismissed) laOffer();
+          });
+        } catch (_) { laOffer(); }
       };
       if (document.readyState === 'loading') woOn(document, 'DOMContentLoaded', laCheck, { once: true });
       else laCheck();

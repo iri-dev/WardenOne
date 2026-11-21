@@ -55,8 +55,8 @@
      stand in for the noun; anything vaguer belongs in ADBLOCK_RE with the obstruction test. */
   const PLAYER_WALL_RE = /\b(?:video player will be blocked after \d+ videos?|ad blockers? violate .{0,30}terms of service)\b/i;
 
-  /* Admiral's anti-adblock loader hosts. See the publisher fallback below. */
-  const LOADER_HOSTS = ['html-load.com', 'content-loader.com'];
+  /* Ad-Shield loader hosts. See the publisher fallback below. */
+  const LOADER_HOSTS = ['html-load.com', 'html-load.cc', 'content-loader.com'];
 
   /* Vendors whose wall carries no usable words -- an opaque frame, an obfuscated class. */
   const VENDOR_RE = /(blockadblock|fuckadblock|babasbm|adblock[-_]?detect|antiadb|anti[-_]?adblock|admiral|html-load|adbdetect|detectadblock|adblockkey)/i;
@@ -100,6 +100,15 @@
       try { host = new URL(target.src).hostname.toLowerCase(); } catch (_) { return false; }
       return LOADER_HOSTS.some((d) => host === d || host.endsWith('.' + d));
     },
+    stopLoaderError(event, ScriptElement) {
+      if (!api.isLoaderError(event, ScriptElement)) return false;
+      try {
+        event.target.onerror = null;
+        event.target.removeAttribute('onerror');
+      } catch (_) {}
+      event.stopImmediatePropagation();
+      return true;
+    },
   };
 
   if (typeof document === 'undefined') {
@@ -124,7 +133,7 @@
   const HOST_BLOCK_RE = /(^|\.)(accounts\.google\.(?:com|co\.uk)|auth\.openai\.com|login\.microsoftonline\.com|login\.live\.com|appleid\.apple\.com|okta\.com|auth0\.com|onelogin\.com|duosecurity\.com|hcaptcha\.com|recaptcha\.net|challenges\.cloudflare\.com|turnstile\.cloudflare\.com|paypal\.com|stripe\.com|checkout\.com|adyen\.com|klarna\.com)$/i;
   try { if (HOST_BLOCK_RE.test(String(location.hostname || ''))) return; } catch (_) {}
 
-  /* Admiral's loader blanks the publisher's page from its own script error handler when the
+  /* Ad-Shield's loader blanks the publisher's page from its own script error handler when the
      loader is blocked (TechRadar, Tom's Hardware and Mirror rendered 0 characters). Stopping that
      native error in the capture phase keeps the loader blocked and the page readable. It has to
      be installed now, before page scripts and before the switches arrive, so it starts on. */
@@ -132,8 +141,7 @@
   let loaderHandled = false;
   try {
     window.addEventListener('error', (event) => {
-      if (loaderGuardOff || !api.isLoaderError(event, HTMLScriptElement)) return;
-      event.stopImmediatePropagation();
+      if (loaderGuardOff || !api.stopLoaderError(event, HTMLScriptElement)) return;
       if (loaderHandled) return;
       loaderHandled = true;
       const settle = () => later(() => report(pageHasContent() ? 'restored' : 'rollback'), 2000);

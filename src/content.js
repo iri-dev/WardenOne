@@ -642,12 +642,14 @@
     killPrefetch:!1,
     lazyLoadMedia:!1,
     webglDisabled:!1,
-    deAmp:!1,
+    deAmp:!0,
     clientHintProtection:!0,
     capReferrer:!1,
+    capLeakyReferrer:!0,
     autoRejectConsent:!0,
     sendPrivacySignals:!0,
     antiFingerprintNoise:!1,
+    fingerprintShield:!0,
     fingerprintProbeDetection:!0,
     blockFingerprintScripts:!0,
     antiFingerprint:!1,
@@ -813,9 +815,11 @@
       deAmp:gate(cfg.deAmp),
       clientHintProtection:gate(!1!==cfg.clientHintProtection),
       capReferrer:gate(cfg.capReferrer),
+      capLeakyReferrer:gate(!1!==cfg.capLeakyReferrer),
       autoRejectConsent:gate(cfg.autoRejectConsent),
       sendPrivacySignals:gate(cfg.sendPrivacySignals),
       antiFingerprintNoise:gate(cfg.antiFingerprintNoise||cfg.antiFingerprint),
+      fingerprintShield:gate(!1!==cfg.fingerprintShield),
       fingerprintProbeDetection:gate(!1!==cfg.fingerprintProbeDetection),
       blockFingerprintScripts:gate(!1!==cfg.blockFingerprintScripts),
       antiFingerprint:gate(cfg.antiFingerprint),
@@ -1629,6 +1633,983 @@
   }
   /* end notification ask observer */
   let __woRuntimeStarted=!1;
+    /* FINGERPRINT-NOISE-BEGIN
+       Everything between this marker and FINGERPRINT-NOISE-END is copied verbatim into
+       fingerprint-realm.js by tools/build-content.js. It must stay self-contained: bare
+       globals only (they resolve to whichever realm runs it), no engine helpers, no WO, no
+       log. `inherited` is the realm record of a same-origin parent, or null. */
+    function __woFingerprintNoise(inherited,level,control){
+      /* "standard" is the default shield; "max" adds the stronger, riskier changes. A child realm follows its parent. */
+      const __woLevel=(level||inherited&&inherited.level)==="standard"?"standard":"max";
+      /* Only the engine passes `control`, for the standard shield it arms before settings arrive. With `live` false
+         every wrapper answers natively, and `restore` puts the original descriptors back. */
+      const __woCtl=control&&"object"==typeof control?control:null,
+      __woLive=()=>!__woCtl||!1!==__woCtl.live,
+      __woUndo=[],
+      keep=(obj,key)=>{try{const d=Object.getOwnPropertyDescriptor(obj,key);d&&__woUndo.push([obj,key,d])}catch(_){}};
+      const woSeed=()=>{
+        try{
+          const a=new Uint32Array(2);
+          return crypto.getRandomValues(a),
+          (a[0]^2654435761*a[1])>>>0
+        }
+        catch{
+          return 4294967296*Math.random()>>>0
+        }
+
+      };
+      let _s=woSeed();
+      /* Only the shared seed is published. Keep _sk private: known text and geometry inputs would otherwise let pages
+         subtract their noise. */
+      const _sc=inherited&&"object"==typeof inherited&&Number.isInteger(inherited.seed)&&inherited.seed>=0&&inherited.seed<=4294967295?inherited.seed>>>0:woSeed();
+      const __woCloak=new WeakMap;
+      try{const _oFTS=Function.prototype.toString,_cFTS={toString(){const n=__woCloak.get(this);return void 0!==n?"function "+n+"() { [native code] }":_oFTS.call(this)}}.toString;__woCloak.set(_cFTS,"toString"),Function.prototype.toString=_cFTS}catch(_){}
+      const _sk=_s>>>0,
+      rnd=()=>(_s=1664525*_s+1013904223>>>0,
+      _s/4294967296),
+      tinyNoise=(scale=0.01)=>(rnd()-.5)*scale,
+      mixSeed=str=>{let h=(_sk^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
+      /* The site seed keeps the page's WebGL and WebGPU answers stable across frames and reloads. Core count and
+         memory are rounded to common buckets below; workers still show the real values, a known gap. */
+      woSiteKey=()=>{
+        try{
+          let host="";
+          try{const a=location.ancestorOrigins;if(a&&a.length){const m=/^[a-z][a-z0-9+.-]*:\/\/([^/:?#]+)/i.exec(String(a[a.length-1]||""));if(m)host=m[1]}}catch(_){}
+          if(!host)try{host=String(location.hostname||"")}catch(_){}
+          if(!host)try{const m=/^[a-z][a-z0-9+.-]*:\/\/([^/:?#]+)/i.exec(String(location.origin||""));if(m)host=m[1]}catch(_){}
+          host=host.toLowerCase().replace(/\.$/,"");
+          /* An address is a whole site of its own (127.0.0.1, [::1]); labels mean nothing there. */
+          if(/^\[|^\d+(?:\.\d+){3}$/.test(host))return host;
+          const p=host.split(".");
+          if(p.length<=2)return host;
+          return"function"==typeof siteIdentity?siteIdentity(host):host
+        }
+        catch(_){
+          return""
+        }
+      },
+      _st=(()=>{let h=2166136261>>>0;const s="wo-site:"+woSiteKey();for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619)>>>0;return h>>>0})(),
+      mixSite=str=>{let h=(_st^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
+      makeRnd=seed=>{let s=(seed>>>0)||1;return()=>(s=1664525*s+1013904223>>>0,s/4294967296)},
+      seededTiny=(key,scale=0.01)=>(makeRnd(mixSeed(key))()-.5)*scale,
+      cloak=(fn,name)=>{try{__woCloak.set(fn,name)}catch(_){}return fn};
+      /* Read-back noise, at both levels. About one in eight pixels along edges and text has one colour channel's low bit
+         flipped, at places drawn from this page load and site, so a picture reads the same for the whole page but never
+         the same twice across sites or visits. A colour moves by one step at most and reading it again cannot drift. */
+      try{
+        const __woLoad=(_sc^_st)>>>0,
+        TAP=Object.getPrototypeOf(Uint8Array.prototype),
+        taTag=Object.getOwnPropertyDescriptor(TAP,Symbol.toStringTag).get,
+        taLen=Object.getOwnPropertyDescriptor(TAP,"length").get,
+        /* Native getters read the internal slots, so arrays made in another frame of the page are recognised and a
+           shadowed length is ignored. Only the w by h pixels at `off` are touched, and only where a pixel differs from
+           the one beside it: flat colour stays exact, so exported pictures compress as before. */
+        flipPixels=(data,w,h,off)=>{
+          if(!__woLive())return;
+          off=off>>>0;
+          const len=taLen.call(data),px=Math.min(len>off?len-off:0,w*h*4)>>>2,cols=Math.max(1,w>>>0);
+          if(!px||w*h>4194304)return;
+          const r=makeRnd((__woLoad^Math.imul(w*65599+h,2246822519))>>>0),
+          same=(i,j)=>data[i]===data[j]&&data[i+1]===data[j+1]&&data[i+2]===data[j+2]&&data[i+3]===data[j+3];
+          for(let p=r()*8|0;p<px;p+=4+(r()*8|0)){
+            const i=off+(p<<2),x=p%cols;
+            0===data[i+3]||(0===x||same(i,i-4))&&(x===cols-1||p+1>=px||same(i,i+4))||(data[i+(r()*3|0)]^=1)
+          }
+        },
+        C2D=window.CanvasRenderingContext2D&&CanvasRenderingContext2D.prototype,
+        gid=C2D&&C2D.getImageData,
+        pid=C2D&&C2D.putImageData,
+        dri=C2D&&C2D.drawImage,
+        HC=window.HTMLCanvasElement&&HTMLCanvasElement.prototype,
+        tdu=HC&&HC.toDataURL,
+        tbl=HC&&HC.toBlob,
+        gctx=HC&&HC.getContext,
+        mkEl=window.Document&&Document.prototype.createElement,
+        noisedCopy=canvas=>{
+          if(!__woLive())return null;
+          const w=canvas.width,h=canvas.height;
+          if(!w||!h||w*h>4194304||!gid||!pid||!dri||!gctx||!mkEl)return null;
+          const copy=mkEl.call(document,"canvas");
+          copy.width=w;
+          copy.height=h;
+          const cx=gctx.call(copy,"2d");
+          dri.call(cx,canvas,0,0);
+          const img=gid.call(cx,0,0,w,h);
+          flipPixels(img.data,w,h);
+          pid.call(cx,img,0,0);
+          return copy
+        };
+        gid&&(keep(C2D,"getImageData"),C2D.getImageData=cloak({getImageData(sx,sy,sw,sh){const img=gid.apply(this,arguments);try{flipPixels(img.data,img.width,img.height)}catch(_){}return img}}.getImageData,"getImageData"));
+        tdu&&(keep(HC,"toDataURL"),HC.toDataURL=cloak({toDataURL(){let c=null;try{c=noisedCopy(this)}catch(_){}return tdu.apply(c||this,arguments)}}.toDataURL,"toDataURL"));
+        tbl&&(keep(HC,"toBlob"),HC.toBlob=cloak({toBlob(callback){let c=null;try{c=noisedCopy(this)}catch(_){}return tbl.apply(c||this,arguments)}}.toBlob,"toBlob"));
+        const OC=window.OffscreenCanvasRenderingContext2D&&OffscreenCanvasRenderingContext2D.prototype,
+        ogid=OC&&OC.getImageData;
+        ogid&&(keep(OC,"getImageData"),OC.getImageData=cloak({getImageData(sx,sy,sw,sh){const img=ogid.apply(this,arguments);try{flipPixels(img.data,img.width,img.height)}catch(_){}return img}}.getImageData,"getImageData"));
+        /* WebGL read-back only at the stronger level: 3D apps pick objects by reading back exact colours. */
+        const patchRead=proto=>{
+          const rp=proto&&proto.readPixels;
+          if(!rp)return;
+          proto.readPixels=cloak({readPixels(x,y,width,height,format,type,pixels){const r=rp.apply(this,arguments);try{const out=arguments[6],tag=null!==out&&"object"==typeof out?taTag.call(out):void 0,off=arguments.length>7&&"number"==typeof arguments[7]?arguments[7]:0;("Uint8Array"===tag||"Uint8ClampedArray"===tag)&&6408===format&&5121===type&&"number"==typeof width&&"number"==typeof height&&width>0&&height>0&&flipPixels(out,width,height,off)}catch(_){}return r}}.readPixels,"readPixels")
+        };
+        "max"===__woLevel&&(window.WebGLRenderingContext&&patchRead(WebGLRenderingContext.prototype),window.WebGL2RenderingContext&&patchRead(WebGL2RenderingContext.prototype));
+        /* Rendered audio only. Buffers a page decodes or plays keep their samples. */
+        const AB=window.AudioBuffer&&AudioBuffer.prototype,
+        gcd=AB&&AB.getChannelData,
+        cfc=AB&&AB.copyFromChannel,
+        OAC=window.OfflineAudioContext&&OfflineAudioContext.prototype,
+        srn=OAC&&OAC.startRendering,
+        ael=window.EventTarget&&EventTarget.prototype.addEventListener,
+        rendered=new WeakSet,
+        shaken=new WeakMap,
+        shake=(buf,ch,arr)=>{
+          if(!__woLive())return;
+          let seen=shaken.get(buf);
+          seen||(seen=new Set,shaken.set(buf,seen));
+          if(seen.has(ch)||arr.length>4194304)return;
+          seen.add(ch);
+          const r=makeRnd((__woLoad^Math.imul(ch+1,2654435761)^arr.length)>>>0);
+          for(let i=0;i<arr.length;i++)arr[i]+=(r()-.5)*4e-7
+        };
+        srn&&(keep(OAC,"startRendering"),OAC.startRendering=cloak({startRendering(){try{ael&&ael.call(this,"complete",e=>{try{e&&e.renderedBuffer&&rendered.add(e.renderedBuffer)}catch(_){}})}catch(_){}const p=srn.apply(this,arguments);return p&&"function"==typeof p.then?p.then(b=>(b&&rendered.add(b),b)):p}}.startRendering,"startRendering"));
+        gcd&&(keep(AB,"getChannelData"),AB.getChannelData=cloak({getChannelData(channel){const arr=gcd.apply(this,arguments);try{rendered.has(this)&&shake(this,channel>>>0,arr)}catch(_){}return arr}}.getChannelData,"getChannelData"));
+        cfc&&gcd&&(keep(AB,"copyFromChannel"),AB.copyFromChannel=cloak({copyFromChannel(destination,channelNumber){try{rendered.has(this)&&shake(this,channelNumber>>>0,gcd.call(this,channelNumber>>>0))}catch(_){}return cfc.apply(this,arguments)}}.copyFromChannel,"copyFromChannel"));
+        /* Core count and memory in a few common buckets, as other privacy browsers report them. */
+        const defStd=(obj,name,val)=>{
+          const native=Object.getOwnPropertyDescriptor(obj,name);
+          if(!native||!native.get)return;
+          const getter=Object.getOwnPropertyDescriptor({get [name](){return __woLive()?"function"==typeof val?val():val:native.get.call(this)}},name).get;
+          keep(obj,name);
+          Object.defineProperty(obj,name,{get:cloak(getter,"get "+name),configurable:native.configurable,enumerable:native.enumerable})
+        },
+        NP=window.Navigator&&Navigator.prototype;
+        if(NP){
+          const hcd=Object.getOwnPropertyDescriptor(NP,"hardwareConcurrency"),
+          dmd=Object.getOwnPropertyDescriptor(NP,"deviceMemory"),
+          realHc=hcd&&hcd.get?Number(hcd.get.call(navigator)):0,
+          realDm=dmd&&dmd.get?Number(dmd.get.call(navigator)):0;
+          realHc&&defStd(NP,"hardwareConcurrency",realHc>=8?8:4);
+          realDm&&defStd(NP,"deviceMemory",realDm>=8?8:4)
+        }
+        /* The work area is reported as the whole screen. The stronger level rounds the screen itself further down. */
+        if("standard"===__woLevel&&window.Screen){
+          const SP=Screen.prototype,
+          wd=Object.getOwnPropertyDescriptor(SP,"width"),
+          hd=Object.getOwnPropertyDescriptor(SP,"height");
+          wd&&wd.get&&hd&&hd.get&&(defStd(SP,"availWidth",()=>wd.get.call(screen)),defStd(SP,"availHeight",()=>hd.get.call(screen)),defStd(SP,"availTop",0),defStd(SP,"availLeft",0))
+        }
+      }
+      catch(_){
+
+      }
+      if("standard"===__woLevel){
+        __woCtl&&(__woCtl.restore=()=>{
+          __woCtl.live=!1;
+          for(let i=__woUndo.length-1;i>=0;i--)try{Object.defineProperty(__woUndo[i][0],__woUndo[i][1],__woUndo[i][2])}catch(_){}
+        });
+        return Object.freeze({
+          v:1,
+          noise:!0,
+          seed:_sc,
+          level:"standard"
+        })
+      }
+      try{
+        const patchMeasureText=proto=>{
+          if(!proto||!proto.measureText)return;
+          const orig=proto.measureText,font=Object.getOwnPropertyDescriptor(proto,"font")?.get;
+          proto.measureText={measureText(text){
+            const args=arguments;
+            let converted=text;
+            if(text!==null&&("object"===typeof text||"function"===typeof text)){
+              const originalText=text;
+              args[0]={toString(){return converted=String(originalText)}}
+            }
+            const metrics=orig.apply(this,
+            args);
+            try{
+              const n=seededTiny(((font?font.call(this):this.font)||"")+"|"+String(converted),.02);
+              return new Proxy(metrics,
+              {
+                get(target,
+                prop){
+                  const v=target[prop];
+                  return prop==="width"?v===0?0:Math.max(0,v+n):"number"==typeof v&&/^(actualBoundingBox|fontBoundingBox|emHeight|hangingBaseline|alphabeticBaseline|ideographicBaseline)/.test(String(prop))?v+n:v
+                }
+
+              })
+            }
+            catch(_){
+              return metrics
+            }
+
+          }}.measureText
+
+        };
+        patchMeasureText(window.CanvasRenderingContext2D&&CanvasRenderingContext2D.prototype),
+        window.OffscreenCanvasRenderingContext2D&&patchMeasureText(OffscreenCanvasRenderingContext2D.prototype)
+      }
+      catch(_){
+
+      }
+      try{
+        /* Seed once from geometry and draw four values without string allocations on this hot DOM read.
+           Keep results deterministic for a geometry within the session. */
+        const rectSeed=(a,b,c,d)=>{
+          let h=(_sk^2166136261)>>>0;
+          h=Math.imul(h^(0|a*8192),
+          16777619)>>>0,
+          h=Math.imul(h^(0|b*8192),
+          16777619)>>>0,
+          h=Math.imul(h^(0|c*8192),
+          16777619)>>>0,
+          h=Math.imul(h^(0|d*8192),
+          16777619)>>>0;
+          return h>>>0
+        },
+        wrapRect=r=>{
+          try{
+            if(!r)return r;
+            const X=r.x||r.left||0,
+            Y=r.y||r.top||0,
+            W=r.width||0,
+            H=r.height||0,
+            draw=makeRnd(rectSeed(X,
+            Y,
+            W,
+            H));
+            return new DOMRect(X+(draw()-.5)*.04,
+            Y+(draw()-.5)*.04,
+            Math.max(0,
+            W+(draw()-.5)*.03),
+            Math.max(0,
+            H+(draw()-.5)*.03))
+          }
+          catch(_){
+            return r
+          }
+
+        },
+        patchRectProto=proto=>{
+          if(!proto)return;
+          if(proto.getBoundingClientRect){
+            const origBox=proto.getBoundingClientRect;
+            proto.getBoundingClientRect={getBoundingClientRect(){
+              return wrapRect(origBox.apply(this,
+              arguments))
+            }}.getBoundingClientRect
+
+          }
+          if(proto.getClientRects){
+            const original=proto.getClientRects;
+            proto.getClientRects={getClientRects(){
+              const list=original.apply(this,arguments);
+              let firstValue,firstRect,cache,item,proxy;
+              const rect=value=>{
+                if(!value||"object"!==typeof value)return value;
+                if(value===firstValue)return firstRect;
+                if(!firstValue){firstValue=value;firstRect=wrapRect(value);return firstRect}
+                if(!cache)cache=new WeakMap([[firstValue,firstRect]]);
+                if(!cache.has(value))cache.set(value,wrapRect(value));
+                return cache.get(value)
+              };
+              proxy=new Proxy(list,{get(t,k){
+                if(k==="item"&&"function"===typeof t.item){
+                  if(!item)item=cloak({item(index){return rect(list.item.apply(this===proxy?list:this,arguments))}}.item,"item");
+                  return item
+                }
+                const value=Reflect.get(t,k,t);
+                return"string"===typeof k&&/^(0|[1-9][0-9]*)$/.test(k)?rect(value):value
+              }});
+              return proxy
+            }}.getClientRects
+          }
+
+        };
+        patchRectProto(window.Element&&Element.prototype),
+        window.Range&&patchRectProto(Range.prototype)
+      }
+      catch(_){
+
+      }
+      try{
+        const patchSvgText=proto=>{
+          if(!proto)return;
+          ["getComputedTextLength",
+          "getSubStringLength"].forEach(name=>{
+            const orig=proto[name];
+            if(orig){
+              const method={ [name](...args){
+                const v=orig.apply(this,args);
+                return"number"==typeof v&&v!==0?Math.max(0,v+seededTiny((this.textContent||"")+name,.02)):v
+              }}[name];
+              Object.defineProperty(method,"length",{value:orig.length,configurable:!0});
+              proto[name]=cloak(method,name)
+            }
+          })
+        };
+        window.SVGTextContentElement&&patchSvgText(SVGTextContentElement.prototype)
+      }
+      catch(_){
+
+      }
+      /* Use a site-stable graphics identity on Windows; keep native graphics on other platforms. */
+      const woPick=(arr,key)=>arr[Math.floor(makeRnd(mixSite(key))()*arr.length)%arr.length];
+      const woPlatform=String(navigator.platform||""),
+      woUaPlatform=String(navigator.userAgentData&&navigator.userAgentData.platform||""),
+      woWindows=/^Win/i.test(woPlatform)&&(!woUaPlatform||/^Windows$/i.test(woUaPlatform)),
+      woGpu=woWindows?woPick([
+        {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"intel",architecture:"gen-9"}},
+        {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) HD Graphics 630 (0x0000591B) Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"intel",architecture:"gen-9"}},
+        {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"nvidia",architecture:"turing"}},
+        {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"nvidia",architecture:"ampere"}},
+        {v:"Google Inc. (AMD)",r:"ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"amd",architecture:"gcn-4"}}
+      ],"gpu"):null;
+      const patchGL=proto=>{
+        if(!woGpu||!proto||!proto.getParameter)return;
+        const orig=proto.getParameter,canvas=Object.getOwnPropertyDescriptor(proto,"canvas")?.get,
+        validate=receiver=>{if(canvas)canvas.call(receiver);else orig.call(receiver,7938)};
+        proto.getParameter={getParameter(p){
+          if(!arguments.length)return orig.apply(this,arguments);
+          let enumValue=p;
+          if(p!==null&&("object"===typeof p||"function"===typeof p)){
+            validate(this);
+            enumValue=(+p)>>>0
+          }
+          const value=orig.call(this,enumValue);
+          enumValue=(+enumValue)>>>0;
+          return null==value?value:37445===enumValue?woGpu.v:37446===enumValue?woGpu.r:value
+        }}.getParameter;
+        try{
+          const getExt=proto.getExtension;
+          getExt&&(proto.getExtension={getExtension(name){
+            if(!arguments.length||"symbol"===typeof name)return getExt.apply(this,arguments);
+            validate(this);
+            const converted=String(name);
+            return/^WEBGL_debug_renderer_info$/i.test(converted)?null:getExt.call(this,converted)
+          }}.getExtension)
+        }
+        catch(_){
+
+        }
+        try{
+          const getSupported=proto.getSupportedExtensions;
+          getSupported&&(proto.getSupportedExtensions={getSupportedExtensions(){
+            const out=getSupported.apply(this,
+            arguments);
+            return Array.isArray(out)?out.filter(x=>!/^WEBGL_debug_renderer_info$/i.test(String(x||""))):out
+          }}.getSupportedExtensions)
+        }
+        catch(_){
+
+        }
+
+      };
+      /* Keep WebGPU adapter identity aligned with the seeded WebGL identity. Report
+         required minimum limits to reduce fingerprinting without denying real device
+         capabilities; requestDevice still checks the underlying adapter. Features
+         remain truthful because hiding them can break fallback selection. */
+      try{
+        const woGpuLimits={
+          maxTextureDimension1D:8192,
+          maxTextureDimension2D:8192,
+          maxTextureDimension3D:2048,
+          maxTextureArrayLayers:256,
+          maxBindGroups:4,
+          maxBindGroupsPlusVertexBuffers:24,
+          maxBindingsPerBindGroup:1e3,
+          maxDynamicUniformBuffersPerPipelineLayout:8,
+          maxDynamicStorageBuffersPerPipelineLayout:4,
+          maxSampledTexturesPerShaderStage:16,
+          maxSamplersPerShaderStage:16,
+          maxStorageBuffersPerShaderStage:8,
+          maxStorageTexturesPerShaderStage:4,
+          maxUniformBuffersPerShaderStage:12,
+          maxUniformBufferBindingSize:65536,
+          maxStorageBufferBindingSize:134217728,
+          minUniformBufferOffsetAlignment:256,
+          minStorageBufferOffsetAlignment:256,
+          maxVertexBuffers:8,
+          maxBufferSize:268435456,
+          maxVertexAttributes:16,
+          maxVertexBufferArrayStride:2048,
+          maxInterStageShaderComponents:64,
+          maxInterStageShaderVariables:16,
+          maxColorAttachments:8,
+          maxColorAttachmentBytesPerSample:32,
+          maxComputeWorkgroupStorageSize:16384,
+          maxComputeInvocationsPerWorkgroup:256,
+          maxComputeWorkgroupSizeX:256,
+          maxComputeWorkgroupSizeY:256,
+          maxComputeWorkgroupSizeZ:64,
+          maxComputeWorkgroupsPerDimension:65535
+        },
+        woGpuInfo=(woGpu&&woGpu.g)||{vendor:"intel",architecture:"gen-9"},
+        /* A real GPUAdapterInfo keeps device and description empty in Chrome
+           unless the origin trial for unmasked info is on, so filling them in
+           would stand out rather than blend in. */
+        wrapInfo=real=>{
+          if(!real||"object"!=typeof real)return real;
+          return new Proxy(real,{get(t,k){
+            const value=Reflect.get(t,k,t);
+            if("string"!==typeof value)return value;
+            return k==="vendor"?woGpuInfo.vendor:k==="architecture"?woGpuInfo.architecture:k==="device"||k==="description"?"":value
+          }})
+        },
+        /* Memoize bound methods and substituted members so repeated property reads preserve native object identity. */
+        stableGet=(target,fixed)=>{
+          const memo=new Map;
+          return(t,k)=>{
+            if(memo.has(k))return memo.get(k);
+            if(fixed&&Object.prototype.hasOwnProperty.call(fixed,k)){
+              memo.set(k,fixed[k]);
+              return fixed[k]
+            }
+            const v=Reflect.get(t,k);
+            if("function"!=typeof v)return v;
+            const bound=v.bind(t);
+            memo.set(k,bound);
+            return bound
+          }
+        },
+        /* GPUSupportedLimits uses prototype accessors. Proxy known limits and pass unknown names through for newer Chrome
+           versions. */
+        wrapLimits=real=>{
+          try{
+            const get=stableGet(real);
+            return new Proxy(real,{
+              get:(t,k)=>{
+                const value=get(t,k);
+                if("number"!==typeof value||!Object.prototype.hasOwnProperty.call(woGpuLimits,k))return value;
+                return k.startsWith("min")?Math.max(value,woGpuLimits[k]):Math.min(value,woGpuLimits[k])
+              }
+            })
+          }
+          catch(_){
+            return real
+          }
+
+        },
+        wrapDevice=dev=>{
+          if(!dev||"object"!=typeof dev)return dev;
+          try{
+            const fixed={limits:wrapLimits(dev.limits)};
+            if("adapterInfo"in dev)fixed.adapterInfo=wrapInfo(dev.adapterInfo);
+            const get=stableGet(dev,fixed);
+            return new Proxy(dev,{get,set:(t,k,value)=>Reflect.set(t,k,value,t)})
+          }
+          catch(_){
+            return dev
+          }
+
+        },
+        wrapAdapter=real=>{
+          if(!real||"object"!=typeof real)return real;
+          try{
+            let proxy;
+            const realDevice=real.requestDevice,
+            fixed={
+              limits:wrapLimits(real.limits),
+              info:wrapInfo(real.info)
+            };
+            if("function"==typeof real.requestAdapterInfo){
+              const originalInfo=real.requestAdapterInfo;
+              fixed.requestAdapterInfo=cloak(function requestAdapterInfo(...args){
+                return Promise.resolve(originalInfo.apply(this===proxy?real:this,args)).then(wrapInfo)
+              },"requestAdapterInfo")
+            }
+            /* Devices expose their own limits and adapterInfo; wrap those too to keep adapter and device identities
+               consistent. */
+            "function"==typeof realDevice&&(fixed.requestDevice=cloak(function requestDevice(...args){
+              return Promise.resolve(realDevice.apply(this===proxy?real:this,args)).then(wrapDevice)
+            },"requestDevice"));
+            const get=stableGet(real,fixed);
+            proxy=new Proxy(real,{get});
+            return proxy
+          }
+          catch(_){
+            return real
+          }
+
+        };
+        if(woGpu&&navigator.gpu&&navigator.gpu.requestAdapter){
+          const gpu=navigator.gpu,
+          realRequest=gpu.requestAdapter;
+          /* Probe reporting belongs to the separate detection block; this shared noise implementation has no reporter in
+             scope. */
+          gpu.requestAdapter=cloak(function requestAdapter(...args){
+            return Promise.resolve(realRequest.apply(this,args)).then(wrapAdapter)
+          },"requestAdapter")
+        }
+
+      }
+      catch(_){
+
+      }
+      /* Preserve supported so sites choose playable codecs. Flatten smooth and
+         powerEfficient to false to reduce hardware fingerprints; this may lower
+         quality, so the behavior belongs to the opt-in noise shield. */
+      try{
+        const mc=navigator.mediaCapabilities,
+        flattenMediaInfo=info=>{
+          try{
+            if(!info||"object"!=typeof info)return info;
+            /* A copy. The browser's own result object is handed to nothing else, but
+            mutating it would be editing something the page may already hold. */
+            return Object.assign({},
+            info,
+            {
+              smooth:!1,
+              powerEfficient:!1
+            })
+          }
+          catch(_){
+            return info
+          }
+
+        },
+        wrapMediaInfo=name=>{
+          try{
+            const real=mc&&mc[name];
+            if("function"!=typeof real||real.__wardenoneMediaFlat)return;
+            const wrapped=cloak(function(...args){
+              let out;
+              try{
+                out=real.apply(this,
+                args)
+              }
+              catch(e){
+                throw e
+              }
+              /* The page's own rejection is left alone; only a fulfilled answer is
+              rewritten, and a non-promise return is handed back untouched. */
+              return out&&"function"==typeof out.then?out.then(flattenMediaInfo):out
+            },
+            name);
+            wrapped.__wardenoneMediaFlat=!0,
+            mc[name]=wrapped
+          }
+          catch(_){
+
+          }
+
+        };
+        mc&&(wrapMediaInfo("decodingInfo"),
+        wrapMediaInfo("encodingInfo"))
+      }
+      catch(_){
+
+      }
+      if(window.WebGLRenderingContext&&patchGL(WebGLRenderingContext.prototype),
+      window.WebGL2RenderingContext&&patchGL(WebGL2RenderingContext.prototype),
+      window.AnalyserNode){
+        const af=AnalyserNode.prototype.getFloatFrequencyData,
+        bins=Object.getOwnPropertyDescriptor(AnalyserNode.prototype,"frequencyBinCount")?.get,
+        length=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Float32Array.prototype),"length")?.get;
+        af&&(AnalyserNode.prototype.getFloatFrequencyData={getFloatFrequencyData(arr){
+          af.call(this,
+          arr);
+          try{
+            const count=Math.min(length?length.call(arr):arr.length,bins?bins.call(this):arr.length);
+            for(let i=0;
+            i<count;
+            i+=64)if(Number.isFinite(arr[i]))arr[i]=arr[i]+seededTiny("frequency|"+i+"|"+arr[i],8e-4)
+          }
+          catch(_){
+
+          }
+
+        }}.getFloatFrequencyData)
+      }
+      /* AudioBuffer exposes reusable playback samples. Keep it and sample-rate getters native. */
+      try{[
+        [HTMLCanvasElement.prototype,"toDataURL"],
+        [HTMLCanvasElement.prototype,"toBlob"],
+        [CanvasRenderingContext2D.prototype,"getImageData"],
+        [CanvasRenderingContext2D.prototype,"measureText"],
+        [Element.prototype,"getBoundingClientRect"],
+        [Element.prototype,"getClientRects"],
+        window.Range&&[Range.prototype,"getBoundingClientRect"],
+        window.Range&&[Range.prototype,"getClientRects"],
+        window.WebGLRenderingContext&&[WebGLRenderingContext.prototype,"getParameter"],
+        window.WebGLRenderingContext&&[WebGLRenderingContext.prototype,"getExtension"],
+        window.WebGLRenderingContext&&[WebGLRenderingContext.prototype,"getSupportedExtensions"],
+        window.WebGL2RenderingContext&&[WebGL2RenderingContext.prototype,"getParameter"],
+        window.WebGL2RenderingContext&&[WebGL2RenderingContext.prototype,"getExtension"],
+        window.WebGL2RenderingContext&&[WebGL2RenderingContext.prototype,"getSupportedExtensions"],
+        window.OffscreenCanvasRenderingContext2D&&[OffscreenCanvasRenderingContext2D.prototype,"getImageData"],
+        window.OffscreenCanvasRenderingContext2D&&[OffscreenCanvasRenderingContext2D.prototype,"measureText"],
+        window.AudioBuffer&&[AudioBuffer.prototype,"getChannelData"],
+        window.AnalyserNode&&[AnalyserNode.prototype,"getFloatFrequencyData"]
+      ].forEach(p=>{try{p&&p[0]&&"function"==typeof p[0][p[1]]&&cloak(p[0][p[1]],p[1])}catch(_){}})}catch(_){}
+      const defp=(obj,
+      name,
+      val)=>{
+        try{
+          const g=cloak(function(){return"function"==typeof val?val():val},"get "+name);
+          const native=Object.getOwnPropertyDescriptor(obj,name);
+          Object.defineProperty(obj,
+          name,
+          {
+            get:g,
+            configurable:native?native.configurable:!0,
+            enumerable:native?native.enumerable:!0
+          })
+        }
+        catch(_){
+
+        }
+
+      };
+      try{
+        const realScreenW=screen.width||innerWidth||1200,
+        realScreenH=screen.height||innerHeight||800,
+        realAvailW=screen.availWidth||realScreenW,
+        realAvailH=screen.availHeight||realScreenH,
+        screenW=Math.max(1,100*Math.floor(realScreenW/100)),
+        screenH=Math.max(2,100*Math.floor(realScreenH/100)),
+        availW=Math.min(screenW,Math.max(1,100*Math.floor(realAvailW/100))),
+        availH=Math.min(screenH-1,Math.max(1,100*Math.floor(realAvailH/100))),
+        protectedW=()=>Math.max(screenW,Math.min(realScreenW,innerWidth||0)),
+        protectedH=()=>Math.max(screenH,Math.min(realScreenH,innerHeight||0));
+        window.Screen&&(defp(Screen.prototype,
+        "width",
+        protectedW),
+        defp(Screen.prototype,
+        "height",
+        protectedH),
+        defp(Screen.prototype,
+        "availWidth",
+        availW),
+        defp(Screen.prototype,
+        "availHeight",
+        availH),
+        defp(Screen.prototype,
+        "colorDepth",
+        24),
+        defp(Screen.prototype,
+        "pixelDepth",
+        24),
+        /* isExtended answers "does this person have more than one monitor" with
+           no permission prompt in front of it at all, which makes it a cheap and
+           unusually stable bit to collect. Everyone reports one screen. */
+        defp(Screen.prototype,
+        "isExtended",
+        !1)),
+        /* Report the same rounded display size as Screen to avoid contradictory fingerprints.
+           Keep the real devicePixelRatio because the engine does not mask window.devicePixelRatio. */
+        "function"==typeof window.getScreenDetails&&(window.getScreenDetails=cloak(function getScreenDetails(){
+          const one={
+            availLeft:0,
+            availTop:0,
+            availWidth:availW,
+            availHeight:availH,
+            width:protectedW(),
+            height:protectedH(),
+            colorDepth:24,
+            pixelDepth:24,
+            devicePixelRatio:window.devicePixelRatio||1,
+            isExtended:!1,
+            isInternal:!0,
+            isPrimary:!0,
+            label:"",
+            left:0,
+            top:0,
+            onchange:null
+          };
+          return Promise.resolve({
+            screens:[one],
+            currentScreen:one,
+            oncurrentscreenchange:null,
+            onscreenschange:null,
+            addEventListener(){
+
+            },
+            removeEventListener(){
+
+            },
+            dispatchEvent(){
+              return!0
+            }
+
+          })
+        },"getScreenDetails"))
+      }
+      catch(_){
+
+      }
+      /* Deny Local Font Access with Chrome’s normal Block error. A small curated font list
+         would itself be distinctive and would not match typical installed-font counts. */
+      try{
+        "function"==typeof window.queryLocalFonts&&(window.queryLocalFonts=cloak(function queryLocalFonts(){
+          return Promise.reject(new DOMException("Permission denied.","NotAllowedError"))
+        },"queryLocalFonts"))
+      }
+      catch(_){
+
+      }
+      /* Report US QWERTY to stay consistent with the masked en-US language and Accept-Language header. */
+      try{
+        const kbFp=navigator.keyboard;
+        if(kbFp&&"function"==typeof kbFp.getLayoutMap){
+          const US_LAYOUT=[
+            ["KeyA","a"],["KeyB","b"],["KeyC","c"],["KeyD","d"],["KeyE","e"],["KeyF","f"],
+            ["KeyG","g"],["KeyH","h"],["KeyI","i"],["KeyJ","j"],["KeyK","k"],["KeyL","l"],
+            ["KeyM","m"],["KeyN","n"],["KeyO","o"],["KeyP","p"],["KeyQ","q"],["KeyR","r"],
+            ["KeyS","s"],["KeyT","t"],["KeyU","u"],["KeyV","v"],["KeyW","w"],["KeyX","x"],
+            ["KeyY","y"],["KeyZ","z"],
+            ["Digit1","1"],["Digit2","2"],["Digit3","3"],["Digit4","4"],["Digit5","5"],
+            ["Digit6","6"],["Digit7","7"],["Digit8","8"],["Digit9","9"],["Digit0","0"],
+            ["Minus","-"],["Equal","="],["BracketLeft","["],["BracketRight","]"],
+            ["Backslash","\\"],["Semicolon",";"],["Quote","'"],["Backquote","`"],
+            ["Comma",","],["Period","."],["Slash","/"],["Space"," "]
+          ];
+          kbFp.getLayoutMap=cloak(function getLayoutMap(){
+            /* A KeyboardLayoutMap is a read-only Map. A real Map answers get,
+               has, size, keys, values, entries and forEach the same way, so
+               handing one back behaves correctly for every caller. */
+            return Promise.resolve(new Map(US_LAYOUT))
+          },"getLayoutMap")
+        }
+
+      }
+      catch(_){
+
+      }
+      /* Filter voices to the reported language, but retain the native list if that would empty it.
+         An empty result breaks speech playback and can itself identify the browser. */
+      try{
+        const synth=window.speechSynthesis;
+        if(synth&&"function"==typeof synth.getVoices){
+          const realVoices=synth.getVoices.bind(synth),
+          claimedLang=String(navigator.language||"en-US").slice(0,2).toLowerCase();
+          synth.getVoices=cloak(function getVoices(){
+            try{
+              const all=realVoices();
+              if(!all||!all.length)return all;
+              const kept=all.filter(v=>{
+                try{
+                  return String(v&&v.lang||"").slice(0,2).toLowerCase()===claimedLang
+                }
+                catch(_){
+                  return!1
+                }
+
+              });
+              return kept.length?kept:all
+            }
+            catch(_){
+              return realVoices()
+            }
+
+          },"getVoices")
+        }
+
+      }
+      catch(_){
+
+      }
+      try{
+        if(navigator.userAgentData){
+          const uaProto=Object.getPrototypeOf(navigator.userAgentData),
+          origHigh=uaProto&&uaProto.getHighEntropyValues;
+          origHigh&&(uaProto.getHighEntropyValues=function(hints){
+            return Promise.resolve(origHigh.call(this,
+            hints)).then(res=>{
+              const out=Object.assign({
+
+              },
+              res||{
+
+              }),
+              major=String((out.uaFullVersion||navigator.userAgent.match(/(?:Chrome|Chromium|Edg|Brave)\/(\d+)/)&&navigator.userAgent.match(/(?:Chrome|Chromium|Edg|Brave)\/(\d+)/)[1]||"120")).split(".")[0];
+              return"architecture"in out&&(out.architecture=""),
+              "bitness"in out&&(out.bitness=""),
+              "model"in out&&(out.model=""),
+              "platformVersion"in out&&(out.platformVersion=""),
+              "uaFullVersion"in out&&(out.uaFullVersion=major+".0.0.0"),
+              Array.isArray(out.fullVersionList)&&(out.fullVersionList=out.fullVersionList.map(b=>({
+                brand:String(b.brand||"Chromium"),
+                version:String(b.version||major).split(".")[0]+".0.0.0"
+              }))),
+              out
+            })
+          })
+        }
+
+      }
+      catch(_){
+
+      }
+      try{
+        if(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices){
+          const origEnum=navigator.mediaDevices.enumerateDevices;
+          navigator.mediaDevices.enumerateDevices={enumerateDevices(){
+            /* Device IDs are also camera/microphone selection constraints. Keep the
+               browser's opaque IDs usable while hiding descriptive metadata. */
+            return Promise.resolve(origEnum.apply(this,arguments)).then(list=>(list||[]).map(d=>{
+              if(!d||"object"!==typeof d)return d;
+              let proxy;
+              const methods=new Map;
+              const json=cloak({toJSON(){const value=d.toJSON.apply(this===proxy?d:this,arguments);return Object.assign({},value,{label:"",groupId:""})}}.toJSON,"toJSON");
+              proxy=new Proxy(d,{get(t,k){
+                if(k==="label"||k==="groupId")return"";
+                if(k==="toJSON"&&"function"===typeof t.toJSON)return json;
+                const value=Reflect.get(t,k,t);
+                if("function"!==typeof value||k==="constructor")return value;
+                if(!methods.has(k)){
+                  const method={ [value.name](...args){return Reflect.apply(value,this===proxy?t:this,args)} }[value.name];
+                  Object.defineProperty(method,"length",{value:value.length,configurable:!0});
+                  methods.set(k,cloak(method,value.name))
+                }
+                return methods.get(k)
+              }});
+              return proxy
+            }))
+          }}.enumerateDevices
+
+        }
+
+      }
+      catch(_){
+
+      }
+      try{
+        if(Navigator.prototype.getBattery)Navigator.prototype.getBattery=function(){
+          return Promise.resolve({
+            charging:!0,
+            chargingTime:0,
+            dischargingTime:1/0,
+            level:1,
+            onchange:null,
+            onchargingchange:null,
+            onchargingtimechange:null,
+            ondischargingtimechange:null,
+            onlevelchange:null,
+            addEventListener:()=>{
+
+            },
+            removeEventListener:()=>{
+
+            },
+            dispatchEvent:()=>!0
+          })
+        }
+
+      }
+      catch(_){
+
+      }
+      return Object.freeze({
+        v:1,
+        noise:!0,
+        seed:_sc,
+        level:"max"
+      })
+    }
+    /* FINGERPRINT-NOISE-END */
+
+  /* Chrome clears the registered early scripts on every install and update, and after a restart the worker needs a
+     second or two to register them again, so the engine arms the standard shield itself. The early scripts then
+     confirm it, raise it or undo it before page code runs; with none, the settings decide when they arrive. Hosted
+     editors and sign in providers keep their pause. */
+  let __woFpProvisional=null;
+  try{
+    if(!__woRealmRecord?.noise&&!("function"==typeof wardenOneHostedAppHost&&wardenOneHostedAppHost(location.hostname))){
+      const ctl={live:!0};
+      __woRealmRecord=__woFingerprintNoise(__woInheritedRealm(),"standard",ctl);
+      __woFpProvisional=ctl;
+      __woRealmSettled()
+    }
+  }catch(_){}
+  /* A page can dispatch these events too, so they only count before page code could have run. */
+  const __woFpEarly=()=>"loading"===document.readyState&&!__woAuth.pageCouldHaveRun(document),
+  __woFpUndo=()=>{
+    const ctl=__woFpProvisional,seed=__woRealmRecord&&__woRealmRecord.seed;
+    if(!ctl)return null;
+    __woFpProvisional=null;
+    try{ctl.restore?ctl.restore():ctl.live=!1}catch(_){ctl.live=!1}
+    __woRealmRecord=null;
+    return Number.isInteger(seed)?seed:null
+  },
+  __woFpMax=seed=>{
+    try{
+      __woRealmRecord=__woFingerprintNoise(null===seed?__woInheritedRealm():{v:1,noise:!0,seed:seed,level:"max"},"max");
+      __woRealmSettled()
+    }catch(_){}
+  };
+  woOn(document,"wo-fingerprint-early-on",()=>{
+    if(__woFpProvisional){
+      __woFpEarly()&&__woFpMax(__woFpUndo());
+      return
+    }
+    document.readyState!=="loading"||__woRealmRecord?.noise||__woFpMax(null)
+  });
+  woOn(document,"wo-fingerprint-early-standard",()=>{
+    if(__woFpProvisional){
+      __woFpEarly()&&(__woFpProvisional=null);
+      return
+    }
+    if(document.readyState!=="loading"||__woRealmRecord?.noise)return;
+    try{
+      __woRealmRecord=__woFingerprintNoise(__woInheritedRealm(),"standard");
+      __woRealmSettled()
+    }catch(_){}
+  });
+  woOn(document,"wo-fingerprint-early-off",()=>{
+    __woFpProvisional&&__woFpEarly()&&(__woFpUndo(),__woRealmSettled())
+  });
+  /* WardenOne switched off for this site, or everywhere: the registered engine-early-off.js says so before page code
+     runs, where the worker's answer lands about 150 ms in. The real settings still replace this when they arrive. */
+  woOn(document,"wo-engine-early-off",()=>{
+    if(__woConfigStore.__configReady||!__woFpEarly())return;
+    Object.assign(__woConfigStore,buildConfig({enabled:!1})),
+    window.__WO_CONFIG__=Object.assign({},__woConfigStore);
+    try{
+      document.dispatchEvent(new CustomEvent("wo-config-change",{detail:{config:__woConfigStore}}))
+    }catch(_){}
+  });
+  /* Referrer cap. A page asking for its full address to go to every other site (unsafe-url, or the older
+     no-referrer-when-downgrade) gets the browser's default added after its own, and a later meta wins, so other sites
+     see only its origin from then on. Images in the first HTML can leave before this runs; the worker rewrites the same
+     policy sent as a header. The whole page is watched until it has parsed, then only its head. */
+  const __woRefCap={on:!0,ours:new WeakSet,page:"",added:!1,mo:null};
+  try{
+    const weak=/^\s*(?:unsafe-url|always|no-referrer-when-downgrade)\s*$/i,
+    visit=n=>{
+      if(!__woRefCap.on||!n||"META"!==n.nodeName||__woRefCap.ours.has(n)||"referrer"!==String(n.getAttribute("name")||"").toLowerCase())return;
+      __woRefCap.page=String(n.getAttribute("content")||"");
+      if(!weak.test(__woRefCap.page))return;
+      const m=document.createElement("meta");
+      m.setAttribute("name","referrer");
+      m.setAttribute("content","strict-origin-when-cross-origin");
+      __woRefCap.ours.add(m);
+      n.after(m);
+      __woRefCap.added=!0
+    };
+    __woRefCap.mo=__woObserver(list=>{
+      for(const r of list)if("attributes"===r.type)visit(r.target);else for(const n of r.addedNodes)visit(n)
+    });
+    __woRefCap.mo.observe(document,{childList:!0,subtree:!0,attributes:!0,attributeFilter:["content"]});
+    woOn(document,"DOMContentLoaded",()=>{
+      if(!__woRefCap.on||!__woRefCap.mo||!document.head)return;
+      __woRefCap.mo.disconnect();
+      __woRefCap.mo.observe(document.head,{childList:!0,subtree:!0,attributes:!0,attributeFilter:["content"]})
+    },{once:!0})
+  }catch(_){}
+  /* With the cap off for this site, the page's own policy goes back on top. */
+  const __woRefCapOff=()=>{
+    if(!__woRefCap.on)return;
+    __woRefCap.on=!1;
+    try{__woRefCap.mo&&__woRefCap.mo.disconnect()}catch(_){}
+    if(!__woRefCap.added)return;
+    try{
+      const m=document.createElement("meta");
+      m.setAttribute("name","referrer");
+      m.setAttribute("content",__woRefCap.page);
+      __woRefCap.ours.add(m);
+      (document.head||document.documentElement).appendChild(m)
+    }catch(_){}
+  };
   const __woStartRuntime=()=>{
     if(__woRuntimeStarted)return;
     __woRuntimeStarted=!0;
@@ -1793,7 +2774,7 @@
     /* Hosted editors and identity portals keep their controls and browser signals native.
        Page-level security checks remain active outside the manifest's login routes. */
     HOSTED_APP_COMPAT_HOST=/^(?:(?:docs|drive)\.google\.com|(?:[a-z0-9-]+\.)*(?:okta|auth0|onelogin|duosecurity|pingone|b2clogin|ciamlogin|amazoncognito|shopify)\.com)$/i,
-    HOSTED_APP_COMPAT_PAUSED=["removeOverlays","autoRejectConsent","antiFingerprintNoise","antiFingerprint","clientHintProtection"],
+    HOSTED_APP_COMPAT_PAUSED=["removeOverlays","autoRejectConsent","antiFingerprintNoise","antiFingerprint","fingerprintShield","clientHintProtection"],
     /* Pause these guards on education sites for login, exam and proctoring flows; keep the rest running.
        Fingerprint realms remain excluded in the manifest to avoid identity-provider challenges.
        Keep this list aligned with SITE_DASH_EDU_PAUSED via test-education-compat.js. */
@@ -4058,7 +5039,7 @@
       if(navigator.sendBeacon){
         const realBeacon=navigator.sendBeacon.bind(navigator),
         beaconSeen=new Set;
-        navigator.sendBeacon=function(url,
+        (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
         data){
           const hit=isGrabberURL(url);
           if(hit)return log("blocked_grabber_beacon",
@@ -4300,8 +5281,17 @@
         attrs=(a&&(a.id||"")+" "+(a.className||"")+" "+(a.getAttribute("download")||"")||"").toLowerCase();
         return!(!a||!a.hasAttribute("download"))||/\.(exe|scr|msi|bat|cmd|com|pif|jar|vbs|js|ps1|hta|apk|dmg|pkg|deb|rpm|zip|rar|7z)(\?|$)/i.test(url.pathname)||/\b(download|get file|installer|setup|continue download)\b/i.test(text+" "+attrs)
       },
-      continueLinkClick=a=>{
+      plainSameTabLink=a=>!a.hasAttribute("target")&&!document.querySelector("base[target]")
+        &&!a.hasAttribute("download")&&!a.hasAttribute("referrerpolicy")
+        &&!a.hasAttribute("attributionsrc")&&!/(^|\s)noreferrer(\s|$)/i.test(a.rel),
+      continueLinkClick=(a,href,page,followInPlace)=>{
         try{
+          if(!a.isConnected||a.href!==href||location.href!==page)return;
+          /* A second click is synthetic and Redirect Check can stop it. */
+          if(followInPlace){
+            if(plainSameTabLink(a))location.href=href;
+            return
+          }
           safeBrowsingAllowedLinks.add(a),
           setTimeout(()=>{
             try{
@@ -4315,19 +5305,12 @@
           2500),
           a.click()
         }
-        catch(_){
-          try{
-            location.href=a.href
-          }
-          catch(_){
-
-          }
-
-        }
+        catch(_){}
 
       };
       if(woOn(window,"click",
       e=>{
+        if(e.defaultPrevented)return;
         const a=e.target&&e.target.closest&&e.target.closest("a[href]");
         if(!a)return;
         if(safeBrowsingAllowedLinks.has(a))return;
@@ -4340,6 +5323,7 @@
         here=regDom(location.hostname),
         dest=regDom(url.hostname),
         sbTargets=[];
+        let redirectLink=!1;
         if(WO.warnShorteners&&SHORTENERS.some(s=>dest===s||dest.endsWith("."+s))&&(canWarn()&&(lastLinkWarn=now,
         log("warned_shortener",
         {
@@ -4355,6 +5339,7 @@
               if(!wrapped)continue;
               const wHost=regDom(wrapped.hostname);
               if(wHost!==here&&wHost!==linkHost&&linkHost!==here){
+                redirectLink=!0;
                 canWarn()&&(lastLinkWarn=now,
                 log("warned_redirect_param",
                 {
@@ -4371,9 +5356,12 @@
           }
 
         }
-        if(linkLooksDownloadish(a,
-        url)&&sbTargets.push(url.href),
+        const download=linkLooksDownloadish(a,url);
+        if(download&&sbTargets.push(url.href),
         urlReputationOn()&&sbTargets.length&&e.isTrusted&&0===e.button&&!e.metaKey&&!e.ctrlKey&&!e.shiftKey&&!e.altKey){
+          const page=location.href,
+          followInPlace=redirectLink&&!download&&plainSameTabLink(a),
+          resume=()=>continueLinkClick(a,url.href,page,followInPlace);
           e.preventDefault(),
           e.stopPropagation();
           const targets=Array.from(new Set(sbTargets));
@@ -4398,8 +5386,8 @@
             warning&&logReputationWarning(reputationWarningType(warning),
             warning,
             warning.url||targets[0]),
-            continueLinkClick(a)
-          }).catch(()=>continueLinkClick(a))
+            resume()
+          }).catch(resume)
         }
 
       },
@@ -4442,7 +5430,7 @@
         }
         if(navigator.sendBeacon){
           const rb=navigator.sendBeacon.bind(navigator);
-          navigator.sendBeacon=function(url,
+          (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
           data){
             const d=isSuspectApi(url);
             return d&&warnApi(d),
@@ -4492,7 +5480,7 @@
       }
       if(navigator.sendBeacon){
         const rb=navigator.sendBeacon.bind(navigator);
-        navigator.sendBeacon=function(url,
+        (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
         data){
           return looksLikeTracker(url)?(noteBlock(),
           !0):rb(url,
@@ -4592,7 +5580,7 @@
       }
       if(navigator.sendBeacon){
         const rb=navigator.sendBeacon.bind(navigator);
-        navigator.sendBeacon=function(url,
+        (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
         data){
           return noteTracker(url,
           "beacon",
@@ -4836,7 +5824,7 @@
       }
       if(navigator.sendBeacon){
         const rb=navigator.sendBeacon.bind(navigator);
-        navigator.sendBeacon=function(url,
+        (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
         data){
           return blockLocal(url,
           "beacon")?!1:rb(url,
@@ -5246,7 +6234,7 @@
         }
         if(navigator.sendBeacon){
           const rb=navigator.sendBeacon.bind(navigator);
-          navigator.sendBeacon=function(url,
+          (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
           data){
             return blockRisk(url,
             "beacon")?!1:rb(url,
@@ -5605,6 +6593,9 @@
         "recaptcha.net",
         "arkoselabs.com",
         "funcaptcha.com",
+        /* AWS WAF's bot check posts its own challenge token to <id>.token.awswaf.com; refusing it left
+           IMDb's first visit blank. */
+        "awswaf.com",
         "gravatar.com",
         /* Spotify’s public OAuth API accepts third-party apps’ access tokens. Treat those calls as
            tokens returning to their issuer rather than requiring an exception for each app. */
@@ -5613,7 +6604,10 @@
         "spotifycdn.com",
         /* DRM licence services receive a player's playback licence token by design. Vimeo uses
            ExpressPlay's PlayReady licence path whenever Edge cannot use Widevine. */
-        "expressplay.com"],
+        "expressplay.com",
+        /* A consent manager stores the visitor's choice with its own consent token; refusing it loses the refusal. */
+        "onetrust.com",
+        "cookielaw.org"],
         families=[{
           pages:["spotify.com",
           "scdn.co",
@@ -5664,6 +6658,11 @@
         {
           pages:["tiktok.com"],
           destinations:["tiktokv.com","tiktokv.eu","tiktokw.eu"]
+        },
+        {
+          /* Bleacher Report's own sports data and its owner's video platform; the data platform there stays blocked. */
+          pages:["bleacherreport.com"],
+          destinations:["sportsplatform.io","ngtv.io"]
         },
         {
           /* Spotify is already covered by globalDestinations; keep that policy in one place. */
@@ -6245,10 +7244,13 @@
       method)=>stringHasToken(dataToString(data))||stringHasToken(headersToString(headers))||url&&urlHasToken(url)&&!linkWasIssued(url)&&!playlistFallback(data,url,method),
       destIsForeign=url=>{
         try{
+          /* regDomain only drops www, so on edition.cnn.com CNN's own API at api.bolt.cnn.com counted as another domain
+             and its video player could not start. sameSiteIdentity follows the public suffix list: github.io tenants stay apart. */
           const target=new URL(url,
           location.href),
           h=regDomain(target.hostname);
-          return!(!h||h===here||h.endsWith("."+here)||here.endsWith("."+h))&&!TOKEN_EXFIL_TRUST_POLICY(location.hostname,
+          return!(!h||h===here||h.endsWith("."+here)||here.endsWith("."+h)||"function"==typeof sameSiteIdentity&&sameSiteIdentity(target.hostname,
+          location.hostname))&&!TOKEN_EXFIL_TRUST_POLICY(location.hostname,
           target.hostname)&&h
         }
         catch{
@@ -6301,7 +7303,7 @@
         }
         if(navigator.sendBeacon){
           const rb=navigator.sendBeacon.bind(navigator);
-          navigator.sendBeacon=function(url,
+          (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
           data){
             const dest=destIsForeign(url);
             return dest&&bodyHasToken(data,
@@ -6586,7 +7588,7 @@
           }
           if(navigator.sendBeacon){
             const rb=navigator.sendBeacon.bind(navigator);
-            navigator.sendBeacon=function(url,
+            (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
             data){
               return WO.detectSkimmers&&url&&carriesCardData(data,
               url)?(flagSkimExfil(url),
@@ -6631,6 +7633,69 @@
               return oSend.apply(this,
               arguments)
             }
+
+          }
+          /* Skimmers also send card data as a pixel or script address with the data in its query. The address
+             arrives URL-encoded, so it is decoded before the same check runs. */
+          const skimUrlCarriesCard=raw=>{
+            const url=String(raw||"");
+            if(url.length<16)return!1;
+            let decoded=url;
+            try{
+              decoded=decodeURIComponent(url);
+            }
+            catch(_){
+
+            }
+            return carriesCardData(decoded,url);
+          };
+          const guardSkimSrc=(proto,prop,what)=>{
+            try{
+              const desc=proto&&Object.getOwnPropertyDescriptor(proto,prop);
+              if(!desc||"function"!=typeof desc.set||!desc.configurable)return;
+              const oSet=desc.set;
+              Object.defineProperty(proto,prop,Object.assign({},desc,{
+                set:function(v){
+                  try{
+                    if(WO.detectSkimmers&&skimUrlCarriesCard(v)){
+                      flagSkimExfil(String(v));
+                      warnSkim("blocked card data in "+what+" address");
+                      return;
+                    }
+                  }
+                  catch(_){
+
+                  }
+                  return oSet.call(this,v);
+                }
+              }));
+            }
+            catch(_){
+
+            }
+          };
+          if(window.HTMLImageElement){
+            guardSkimSrc(HTMLImageElement.prototype,"src","an image");
+            guardSkimSrc(HTMLImageElement.prototype,"srcset","an image");
+          }
+          if(window.HTMLScriptElement)guardSkimSrc(HTMLScriptElement.prototype,"src","a script");
+          try{
+            const oSetAttr=Element.prototype.setAttribute;
+            Element.prototype.setAttribute=function(name,value){
+              try{
+                if(WO.detectSkimmers&&/^(?:src|srcset)$/i.test(String(name))&&(window.HTMLImageElement&&this instanceof HTMLImageElement||window.HTMLScriptElement&&this instanceof HTMLScriptElement)&&skimUrlCarriesCard(value)){
+                  flagSkimExfil(String(value));
+                  warnSkim("blocked card data in an element address");
+                  return;
+                }
+              }
+              catch(_){
+
+              }
+              return oSetAttr.apply(this,arguments);
+            };
+          }
+          catch(_){
 
           }
 
@@ -7238,7 +8303,7 @@
         }
         if(navigator.sendBeacon){
           const rb=navigator.sendBeacon.bind(navigator);
-          navigator.sendBeacon=function(url,
+          (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
           data){
             if(WO.paymentCardGuard&&payloadHasCard(data,
             url)){
@@ -7504,7 +8569,10 @@
               const valAddr=extractAddr(val);
               if(!valAddr||valAddr===selAddr)return setData(type,
               val);
-              noteBlock("copy-event address swap")
+              noteBlock("copy-event address swap");
+              /* Dropping the write would leave an empty clipboard once the page cancels the copy. */
+              return setData("text/plain",
+              sel)
             }
 
           }
@@ -7533,25 +8601,299 @@
         return m?m[0]:null
       },
       swapKind=a=>/^0x/.test(a)?"eth":/^bc1/i.test(a)||/^[13]/.test(a)?"btc":/^[LM]/.test(a)?"ltc":/^r/.test(a)?"xrp":/^T/.test(a)?"trx":/^4/.test(a)?"xmr":"other",
-      SWAP_WINDOW_MS=12e4;
-      let swapCopied=null,
-      swapWarned=0;
-      woOn(document,"copy",
-      ()=>{
+      SWAP_WINDOW_MS=12e4,
+      swapNow=Date.now,
+      SWAP_ALL_RE=new RegExp(CRYPTO_ADDR_RE.source,"g"),
+      swapNorm=a=>/^0x/i.test(a)?a.toLowerCase():a,
+      swapAll=s=>{
+        const out=[],
+        str=String(null==s?"":s).slice(0,2e4);
+        SWAP_ALL_RE.lastIndex=0;
+        for(let m;out.length<24&&(m=SWAP_ALL_RE.exec(str));)out.push(swapNorm(m[0]));
+        return out
+      },
+      /* A swap puts in an address of the same coin that the copied text did not contain. Truncated
+         addresses, case changes of hex addresses and other coins do not count. */
+      swapForeign=(text,ref)=>{
+        if(!ref)return null;
+        for(const a of swapAll(text))if(ref.addrs.indexOf(a)<0&&ref.kinds.indexOf(swapKind(a))>=0)return a;
+        return null
+      },
+      swapSelection=()=>{
         try{
-          const a=swapExtract(String(document.getSelection?document.getSelection():""));
-          a&&(swapCopied={
-            addr:a,
-            kind:swapKind(a),
-            at:Date.now()
+          let ae=document.activeElement;
+          for(let i=0;ae&&ae.shadowRoot&&ae.shadowRoot.activeElement&&i<8;i++)ae=ae.shadowRoot.activeElement;
+          if(ae&&/^(?:input|textarea)$/i.test(ae.tagName||"")&&"number"==typeof ae.selectionStart&&ae.selectionEnd>ae.selectionStart)return String(ae.value||"").slice(ae.selectionStart,
+          ae.selectionEnd)
+        }
+        catch(_){
+
+        }
+        try{
+          return String(document.getSelection?document.getSelection():"")
+        }
+        catch(_){
+          return""
+        }
+
+      },
+      SWAP_DT=typeof DataTransfer=="function"&&DataTransfer.prototype||null,
+      swapDtSet=SWAP_DT&&SWAP_DT.setData,
+      swapDtGet=SWAP_DT&&SWAP_DT.getData,
+      swapDtClear=SWAP_DT&&SWAP_DT.clearData;
+      let swapCopied=null,
+      swapWarned=0,
+      swapGestureSeq=0,
+      swapHeld=null,
+      swapPending=null,
+      swapRefusals=0;
+      /* An address copy stays guarded until the person does something new on the page. Page code that
+         writes a different address of that coin before then is replacing what they copied. */
+      const swapHeldNow=()=>swapHeld&&swapGestureSeq===swapHeld.seq&&swapNow()-swapHeld.at<SWAP_WINDOW_MS?swapHeld:null,
+      swapRefuse=(ref,how)=>{
+        ++swapRefusals<=20&&log("blocked_clipboard_swap",
+        {
+          why:"This page tried to swap the wallet address you copied. You still have the one you selected.",
+          kind:ref.kinds[0]||"other",
+          how:how
+        })
+      },
+      swapArm=(e,ref)=>{
+        const cd=e.clipboardData;
+        let noted=!1;
+        const note=how=>{
+          noted||(noted=!0,
+          swapRefuse(ref,
+          how))
+        },
+        keepCopied=()=>{
+          try{
+            swapDtSet.call(cd,
+            "text/plain",
+            ref.text)
+          }
+          catch(_){
+
+          }
+
+        };
+        try{
+          const pageSet=cd.setData;
+          cd.setData=function(type,
+          value){
+            if(!swapForeign(value,
+            ref))return pageSet.apply(cd,
+            arguments);
+            note("copy handler"),
+            keepCopied()
+          }
+
+        }
+        catch(_){
+
+        }
+        try{
+          const items=cd.items,
+          pageAdd=items&&items.add;
+          "function"==typeof pageAdd&&(items.add=function(data){
+            if("string"==typeof data&&swapForeign(data,
+            ref))return note("copy handler"),
+            keepCopied(),
+            null;
+            return pageAdd.apply(items,
+            arguments)
           })
+        }
+        catch(_){
+
+        }
+        swapPending={
+          e:e,
+          ref:ref,
+          sel:swapSelection(),
+          note:note,
+          keepCopied:keepCopied
+        }
+
+      };
+      ["pointerdown",
+      "keydown"].forEach(type=>woOn(window,
+      type,
+      e=>{
+        e&&!1===e.isTrusted||swapGestureSeq++
+      },
+      !0));
+      /* Window capture runs before page copy handlers; the bubble check below sees what they left. */
+      woOn(window,"copy",
+      e=>{
+        try{
+          if(!e||!0!==e.isTrusted)return;
+          swapPending=null;
+          const sel=swapSelection(),
+          held=swapHeldNow(),
+          cd=e.clipboardData;
+          if(held){
+            if(!cd||!swapDtSet)return;
+            swapArm(e,
+            held);
+            swapForeign(sel,
+            held)&&swapPending&&(e.preventDefault(),
+            swapPending.keepCopied(),
+            swapPending.note("page copy"));
+            return
+          }
+          const addrs=swapAll(sel);
+          if(!addrs.length){
+            swapHeld=null,
+            swapCopied=null;
+            return
+          }
+          const first=swapExtract(sel);
+          first&&(swapCopied={
+            addr:first,
+            kind:swapKind(first),
+            at:swapNow()
+          });
+          let text=sel;
+          if(e.defaultPrevented&&cd&&swapDtGet)try{
+            const prepared=String(swapDtGet.call(cd,
+            "text/plain")||"");
+            prepared&&!swapForeign(prepared,
+            {
+              addrs:addrs,
+              kinds:addrs.map(swapKind)
+            })&&(text=prepared)
+          }
+          catch(_){
+
+          }
+          swapHeld={
+            text:text,
+            addrs:addrs,
+            kinds:addrs.map(swapKind),
+            at:swapNow(),
+            seq:swapGestureSeq
+          },
+          cd&&swapDtSet&&swapArm(e,
+          swapHeld)
         }
         catch(_){
 
         }
 
       },
-      !0);
+      !0),
+      woOn(window,"copy",
+      e=>{
+        try{
+          const p=swapPending;
+          if(!p||p.e!==e)return;
+          swapPending=null;
+          const cd=e.clipboardData;
+          if(!cd)return;
+          if(e.defaultPrevented){
+            let plain="",
+            html="";
+            try{
+              plain=String(swapDtGet.call(cd,
+              "text/plain")||"")
+            }
+            catch(_){
+
+            }
+            try{
+              html=String(swapDtGet.call(cd,
+              "text/html")||"")
+            }
+            catch(_){
+
+            }
+            const badHtml=swapForeign(html,
+            p.ref);
+            if(!badHtml&&!swapForeign(plain,
+            p.ref))return;
+            p.note("copy handler");
+            try{
+              badHtml&&swapDtClear&&swapDtClear.call(cd,
+              "text/html")
+            }
+            catch(_){
+
+            }
+            p.keepCopied();
+            return
+          }
+          const now=swapSelection();
+          now!==p.sel&&swapForeign(now,
+          p.ref)&&(p.note("selection swap"),
+          e.preventDefault(),
+          p.keepCopied())
+        }
+        catch(_){
+
+        }
+
+      },
+      !1);
+      if(navigator.clipboard&&"function"==typeof navigator.clipboard.writeText){
+        const swapRealWriteText=navigator.clipboard.writeText.bind(navigator.clipboard);
+        navigator.clipboard.writeText=function(text){
+          let stable=text;
+          try{
+            stable=String(text);
+            const held=swapHeldNow();
+            if(held&&swapForeign(stable,
+            held))return swapRefuse(held,
+            "clipboard write"),
+            Promise.reject(new DOMException("Blocked by WardenOne clipboard swap detection",
+            "NotAllowedError"))
+          }
+          catch(_){
+
+          }
+          return swapRealWriteText(stable)
+        }
+
+      }
+      if(navigator.clipboard&&"function"==typeof navigator.clipboard.write){
+        const swapRealWrite=navigator.clipboard.write.bind(navigator.clipboard);
+        navigator.clipboard.write=function(items){
+          const held=swapHeldNow();
+          if(!held)return swapRealWrite.apply(null,
+          arguments);
+          let list;
+          try{
+            list=Array.from(items||[])
+          }
+          catch(_){
+            return swapRealWrite.apply(null,
+            arguments)
+          }
+          const readText=item=>{
+            try{
+              const types=Array.from(item&&item.types||[]).filter(t=>/^text\/(?:plain|html)$/i.test(String(t||"")));
+              return Promise.all(types.map(t=>Promise.resolve(item.getType(t)).then(b=>b&&"function"==typeof b.text?("function"==typeof b.slice?b.slice(0,
+              65536):b).text():"",
+              ()=>"")))
+            }
+            catch(_){
+              return Promise.resolve([])
+            }
+
+          };
+          return Promise.all(list.slice(0,
+          8).map(readText)).then(parts=>{
+            if(swapForeign([].concat(...parts).join("\n"),
+            held))throw swapRefuse(held,
+            "clipboard write"),
+            new DOMException("Blocked by WardenOne clipboard swap detection",
+            "NotAllowedError");
+            return swapRealWrite(list)
+          },
+          ()=>swapRealWrite(list))
+        }
+
+      }
       const showSwapPanel=(copiedAddr,
       pastedAddr)=>{
         try{
@@ -7628,7 +8970,7 @@
           const pasted=swapExtract(String(cd.getData("text")||cd.getData("text/plain")||"").slice(0,
           4e3));
           if(!pasted)return;
-          if(pasted===swapCopied.addr)return;
+          if(swapNorm(pasted)===swapNorm(swapCopied.addr))return;
           if(swapKind(pasted)!==swapCopied.kind)return;
           if(Date.now()-swapCopied.at>SWAP_WINDOW_MS)return;
           swapWarned++,
@@ -10021,6 +11363,72 @@
       })
     }
     const youtubeAdUiPaused=()=>trustedMediaHost&&WO.__youtubeCompatibilityMode&&(!__woConfigStore.__configReady||WO.scriptletEngine===!1);
+    /* CNN stitches its prerolls into the stream on its own servers. Its playback API also gives the player a plain copy
+       of the same video as a fallback, which the player only reaches after the ad stream fails five times, about 12 seconds
+       in. Handing it that copy first starts the video at once, with no ads and no ad beacons. The player reads
+       fallback.ssaiInfo without checking for fallback, so the fallback entry itself stays. */
+    if(WO.adShield&&WO_TOP&&/(^|\.)cnn\.com$/i.test(location.hostname)&&window.fetch)try{
+      const CNN_PLAYBACK_RE=/^https:\/\/[a-z0-9.-]+\.api\.bolt\.cnn\.com\/[^?#]*\/playback\/v\d+\/playbackInfo(?:[?#]|$)/i,
+      cnnUseFallback=info=>{
+        const fb=info&&info.fallback;
+        if(!info||!info.manifest||"ssai"!==info.manifest.type||!fb||!fb.manifest||"string"!=typeof fb.manifest.url||"ssai"===fb.manifest.type)return null;
+        const out=Object.assign({},info,{manifest:fb.manifest});
+        for(const key of["videos","cdn","drm","capabilities"])void 0!==fb[key]&&(out[key]=fb[key]);
+        void 0!==fb.ssaiInfo?out.ssaiInfo=fb.ssaiInfo:delete out.ssaiInfo;
+        return out
+      },
+      cnnRealFetch=window.fetch;
+      let cnnSwaps=0;
+      window.fetch=function(input,
+      init){
+        const pending=cnnRealFetch.apply(this,
+        arguments);
+        let url="";
+        try{
+          url="string"==typeof input?input:input&&input.url||String(input||"")
+        }
+        catch(_){
+
+        }
+        if(!CNN_PLAYBACK_RE.test(url))return pending;
+        return pending.then(res=>{
+          if(!res||!res.ok)return res;
+          return res.clone().json().then(info=>{
+            const swapped=cnnUseFallback(info);
+            if(!swapped)return res;
+            const headers=new Headers(res.headers);
+            headers.delete("content-length"),
+            headers.delete("content-encoding");
+            const out=new Response(JSON.stringify(swapped),
+            {
+              status:res.status,
+              statusText:res.statusText,
+              headers:headers
+            });
+            try{
+              Object.defineProperty(out,
+              "url",
+              {
+                value:res.url
+              })
+            }
+            catch(_){
+
+            }
+            ++cnnSwaps<=5&&log("adshield_plain_stream",
+            {
+              host:"cnn.com",
+              why:"Started the video's plain copy instead of the one with ads stitched in"
+            });
+            return out
+          },
+          ()=>res)
+        })
+      }
+    }
+    catch(_){
+
+    }
     if(WO.adShield)try{
       function userCosmeticCss(selectors){
         if(!Array.isArray(selectors)||!selectors.length)return"";
@@ -10060,28 +11468,37 @@
       let styleEl=null,
       siteSelectors=[];
       const CHUNK=120,
-      /* On a player page only the site's own rules apply, and only those that reach neither the
-         largest player nor anything inside a player shell, the parts a hiding rule could break. */
+      /* On a player page only the site's own rules apply, and only those that reach neither the largest player nor
+         anything inside a player shell. The largest player is measured only once a rule matches something outside a
+         shell: measuring every candidate forced a layout on each DOM change of a video page (300 ms of an eBay load). */
       playerSafeSelectors=list=>{
         if(!Array.isArray(list)||!list.length)return[];
-        let main=null,
-        best=0;
-        try{
-          for(const el of document.querySelectorAll(PLAYER_PAGE_SELECTOR)){
-            const r=el.getBoundingClientRect(),
-            area=r.width*r.height;
-            area>best&&(best=area,
-            main=el)
+        let largest=null,
+        measured=!1;
+        const largestPlayer=()=>{
+          if(measured)return largest;
+          measured=!0;
+          let best=0;
+          try{
+            for(const el of document.querySelectorAll(PLAYER_PAGE_SELECTOR)){
+              const r=el.getBoundingClientRect(),
+              area=r.width*r.height;
+              area>best&&(best=area,
+              largest=el)
+            }
           }
-        }
-        catch(_){
+          catch(_){
 
-        }
+          }
+          return largest
+        };
         return list.slice(0,
         600).filter(sel=>{
           try{
             for(const el of document.querySelectorAll(sel)){
-              if(el.closest(PLAYER_SHELL_SELECTOR)||main&&(el.contains(main)||main.contains(el)))return!1
+              if(el.closest(PLAYER_SHELL_SELECTOR))return!1;
+              const main=largestPlayer();
+              if(main&&(el.contains(main)||main.contains(el)))return!1
             }
             return!0
           }
@@ -10212,13 +11629,33 @@
           case"falseFunc":return function(){
             return!1
           };
-          case"emptyArr":case"[]":return[];
+          case"emptyArr":case"emptyArray":case"[]":return[];
           case"emptyObj":case"{}":return{
 
-          }
+          };
+          case"noopCallbackFunc":return function(){
+            return function(){
+
+            }
+          };
+          case"throwFunc":return function(){
+            throw new Error
+          };
+          case"noopPromiseResolve":return function(){
+            return Promise.resolve("function"==typeof Response?new Response("{}"):void 0)
+          };
+          case"noopPromiseReject":return function(){
+            return Promise.reject()
+          };
+          case"yes":case"no":return v
 
         }
-        return/^-?\d+(?:\.\d+)?$/.test(v)?Number(v):v
+        /* A word the engine does not know skips the rule. Setting it as text turned navigator.getBattery into the
+           string "noopPromiseResolve" on every site, and nfl.com crashed calling it. */
+        return/^-?\d+(?:\.\d+)?$/.test(v)?Number(v):scSkip
+      },
+      scSkip={
+
       },
       scResolveParent=(parts,
       create)=>{
@@ -11052,8 +12489,11 @@
         scDefineValue("babasbm",scNoop)
       },
       SCRIPTLET_LIB={
-        "set-constant":a=>scSetConstant(a[0],
-        scToken(a[1])),
+        "set-constant":a=>{
+          const value=scToken(a[1]);
+          value!==scSkip&&scSetConstant(a[0],
+          value)
+        },
         "abort-on-property-read":a=>scAbort(a[0],
         !1),
         "abort-on-property-write":a=>scAbort(a[0],
@@ -13579,7 +15019,9 @@
     const installSocialWidgetGuard=()=>{
       if(socialWidgetGuardInstalled||!WO.socialWidgetGuard||/(^|\.)(x\.com|twitter\.com)$/i.test(location.hostname))return;
       socialWidgetGuardInstalled=!0;
-      const makeSocialPlaceholder=(provider,
+      /* After Load the provider's own script builds new frames for the embed; guarding those again undid the Load. */
+      const loadedSocialProviders=new Set,
+      makeSocialPlaceholder=(provider,
       restore,
       minHeight)=>{
         const holder=document.createElement("div"),
@@ -13596,16 +15038,28 @@
         btn.addEventListener("click",
         e=>{
           if(!e||!1!==e.isTrusted){
-            try{
-              restore()
-            }
-            catch(_){
+            if(btn.disabled)return;
+            btn.disabled=!0,
+            loadedSocialProviders.add(provider);
+            /* The network blocks this provider until the worker allows it for this tab, so restore once it answers. */
+            const load=()=>{
+              try{
+                restore()
+              }
+              catch(_){
 
-            }
-            log("loaded_social_widget",
-            {
+              }
+              log("loaded_social_widget",
+              {
+                provider:provider
+              })
+            };
+            __woBackgroundRequest(__woSignedRequest({
+              kind:"social-embed-load",
               provider:provider
-            })
+            }),
+            load,
+            3e3)
           }
 
         }),
@@ -13648,7 +15102,7 @@
             }
             return""
           })(el);
-          if(!provider)return;
+          if(!provider||loadedSocialProviders.has(provider))return;
           if(el.getAttribute("data-wo-social-loaded")||el.getAttribute("data-wo-social-placeholder"))return;
           if("SCRIPT"===el.tagName)return el.setAttribute("data-wo-social-guarded",
           "1"),
@@ -13957,6 +15411,22 @@
       },
       goCanonical=()=>{
         const url=findCanonical();
+        /* A canonical page that keeps sending the visitor back to this AMP page must not loop: after two redirects from
+           the same AMP page within 30 seconds, stay. */
+        if(url){
+          try{
+            const seenKey="__woDeAmpFrom",
+            seen=String(sessionStorage.getItem(seenKey)||"").split("\n"),
+            recent=seen[0]===location.href&&Date.now()-Number(seen[1])<3e4,
+            count=recent?Number(seen[2])||1:0;
+            if(count>=2)return;
+            sessionStorage.setItem(seenKey,
+            location.href+"\n"+(recent?seen[1]:Date.now())+"\n"+(count+1))
+          }
+          catch(_){
+
+          }
+        }
         if(url){
           log("deamp_redirect",
           {
@@ -16501,7 +17971,7 @@
         }
         if(navigator.sendBeacon){
           const rb=navigator.sendBeacon.bind(navigator);
-          navigator.sendBeacon=function(url,
+          (Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
           data){
             try{
               sawForeignCall(url,
@@ -16595,93 +18065,26 @@
           why,
           "fingerprint-"+why)
         };
+        const observeFingerprintMethod=(proto,name,reason,shouldNote)=>{
+          try{
+            const descriptor=proto&&Object.getOwnPropertyDescriptor(proto,name);
+            if(typeof descriptor?.value!=="function")return;
+            const observed=new Proxy(descriptor.value,{apply(native,receiver,args){
+              try{if(!shouldNote||shouldNote(args[0]))noteFingerprint(reason)}catch(_){}
+              return Reflect.apply(native,receiver,args)
+            }});
+            Object.defineProperty(proto,name,Object.assign({},descriptor,{value:observed}))
+          }catch(_){}
+        };
+        observeFingerprintMethod(window.HTMLCanvasElement?.prototype,"toDataURL","Canvas fingerprint probe");
+        observeFingerprintMethod(window.HTMLCanvasElement?.prototype,"toBlob","Canvas fingerprint probe");
+        observeFingerprintMethod(window.CanvasRenderingContext2D?.prototype,"getImageData","Canvas readback probe");
+        const gpuParameter=value=>value===37445||value===37446;
+        observeFingerprintMethod(window.WebGLRenderingContext?.prototype,"getParameter","GPU fingerprint probe",gpuParameter);
+        observeFingerprintMethod(window.WebGL2RenderingContext?.prototype,"getParameter","GPU fingerprint probe",gpuParameter);
         try{
-          const cProto=HTMLCanvasElement.prototype,
-          realDataUrl=cProto.toDataURL;
-          realDataUrl&&(cProto.toDataURL=function(...args){
-            try{
-              noteFingerprint("Canvas fingerprint probe")
-            }
-            catch(_){
-
-            }
-            return realDataUrl.apply(this,
-            args)
-          });
-          const realBlob=cProto.toBlob;
-          realBlob&&(cProto.toBlob=function(...args){
-            try{
-              noteFingerprint("Canvas fingerprint probe")
-            }
-            catch(_){
-
-            }
-            return realBlob.apply(this,
-            args)
-          })
-        }
-        catch(_){
-
-        }
-        try{
-          const ctxProto=CanvasRenderingContext2D&&CanvasRenderingContext2D.prototype,
-          realImageData=ctxProto&&ctxProto.getImageData;
-          realImageData&&(ctxProto.getImageData=function(...args){
-            try{
-              noteFingerprint("Canvas readback probe")
-            }
-            catch(_){
-
-            }
-            return realImageData.apply(this,
-            args)
-          })
-        }
-        catch(_){
-
-        }
-        try{
-          const patchGLProbe=proto=>{
-            if(!proto||!proto.getParameter)return;
-            const realGetParameter=proto.getParameter;
-            proto.getParameter={getParameter(p){
-              try{
-                37445!==p&&37446!==p||noteFingerprint("GPU fingerprint probe")
-              }
-              catch(_){
-
-              }
-              return realGetParameter.apply(this,
-              arguments)
-            }}.getParameter
-
-          };
-          patchGLProbe(window.WebGLRenderingContext&&WebGLRenderingContext.prototype),
-          patchGLProbe(window.WebGL2RenderingContext&&WebGL2RenderingContext.prototype)
-        }
-        catch(_){
-
-        }
-        /* WebGPU probe detection and noise use separate switches. Preserve wrapper chaining so both can run independently. */
-        try{
-          if(navigator.gpu&&navigator.gpu.requestAdapter){
-            const gpuProbe=navigator.gpu,
-            realAdapterRequest=gpuProbe.requestAdapter;
-            gpuProbe.requestAdapter=function requestAdapter(...args){
-              try{
-                noteFingerprint("WebGPU adapter probe")
-              }
-              catch(_){
-
-              }
-              return realAdapterRequest.apply(gpuProbe,args)
-            }
-          }
-
-        }
-        catch(_){
-
-        }
+          if(navigator.gpu)observeFingerprintMethod(Object.getPrototypeOf(navigator.gpu),"requestAdapter","WebGPU adapter probe")
+        }catch(_){}
         /* Record bursts of media-capability enumeration, not ordinary player probes.
            This detector leaves answers unchanged; normalisation belongs to the separate noise setting. */
         try{
@@ -17521,19 +18924,35 @@
     }
     /* SEC-05: the build shares __woFingerprintNoise with child realms verbatim. Publish every verdict so children awaiting
        configuration can adopt it. */
-    if(WO.antiFingerprintNoise||WO.antiFingerprint)try{
-      __woRealmRecord=__woFingerprintNoise(__woInheritedRealm()),
-      log("antifingerprint_active",
-      {
-
-      })
-    }
-    catch(e){
-      log("antifingerprint_failed",
-      {
-        error:String(e)
-      })
-    }
+    const applyFingerprintNoise=()=>{
+      const strongNoise=WO.antiFingerprintNoise||WO.antiFingerprint;
+      /* No early script settled the shield armed at page start, so the settings do: off undoes it, the stronger level
+         replaces it while page code cannot have run yet, and otherwise it stays. */
+      if(__woFpProvisional){
+        if(!(strongNoise||WO.fingerprintShield)){
+          __woFpUndo();
+          __woRealmRecord=Object.freeze({v:1,noise:!1,webglBlocked:!1});
+          return true
+        }
+        if(strongNoise&&__woFpEarly()){
+          __woFpMax(__woFpUndo());
+          return true
+        }
+        __woFpProvisional=null;
+        return false
+      }
+      if(__woRealmRecord?.noise||!(strongNoise||WO.fingerprintShield))return false;
+      try{
+        __woRealmRecord=__woFingerprintNoise(__woInheritedRealm(),strongNoise?"max":"standard");
+        log("antifingerprint_active",{});
+        return true
+      }
+      catch(e){
+        log("antifingerprint_failed",{error:String(e)});
+        return false
+      }
+    };
+    applyFingerprintNoise();
     __woRealmRecord||(__woRealmRecord=Object.freeze({
       v:1,
       noise:!1,
@@ -17542,749 +18961,16 @@
     __woRealmRecord=Object.freeze(Object.assign({},__woRealmRecord,{webglBlocked:!0===WO.webglDisabled,clientHints:!0===WO.clientHintProtection})),
     __woWebGLControl.set(!0===WO.webglDisabled),
     __woRealmSettled();
-    /* FINGERPRINT-NOISE-BEGIN
-       Everything between this marker and FINGERPRINT-NOISE-END is copied verbatim into
-       fingerprint-realm.js by tools/build-content.js. It must stay self-contained: bare
-       globals only (they resolve to whichever realm runs it), no engine helpers, no WO, no
-       log. `inherited` is the realm record of a same-origin parent, or null. */
-    function __woFingerprintNoise(inherited){
-      const woSeed=()=>{
-        try{
-          const a=new Uint32Array(2);
-          return crypto.getRandomValues(a),
-          (a[0]^2654435761*a[1])>>>0
-        }
-        catch{
-          return 4294967296*Math.random()>>>0
-        }
+    WO.capLeakyReferrer||__woRefCapOff();
+    woOn(document,"wo-config-change",()=>{
+      WO.capLeakyReferrer||__woRefCapOff()
+    });
+    woOn(document,"wo-config-change",()=>{
+      if(!applyFingerprintNoise())return;
+      __woRealmRecord=Object.freeze(Object.assign({},__woRealmRecord,{webglBlocked:!0===WO.webglDisabled,clientHints:!0===WO.clientHintProtection}));
+      __woRealmSettled()
+    });
 
-      };
-      let _s=woSeed();
-      /* Only the shared seed is published. Keep _sk private: known text and geometry inputs would otherwise let pages
-         subtract their noise. */
-      const _sc=inherited&&"object"==typeof inherited&&Number.isInteger(inherited.seed)&&inherited.seed>=0&&inherited.seed<=4294967295?inherited.seed>>>0:woSeed();
-      const __woCloak=new WeakMap;
-      try{const _oFTS=Function.prototype.toString,_cFTS={toString(){const n=__woCloak.get(this);return void 0!==n?"function "+n+"() { [native code] }":_oFTS.call(this)}}.toString;__woCloak.set(_cFTS,"toString"),Function.prototype.toString=_cFTS}catch(_){}
-      const _sk=_s>>>0,
-      rnd=()=>(_s=1664525*_s+1013904223>>>0,
-      _s/4294967296),
-      tinyNoise=(scale=0.01)=>(rnd()-.5)*scale,
-      mixSeed=str=>{let h=(_sk^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
-      /* The site seed keeps the page's WebGL and WebGPU answers stable across frames and reloads.
-         Core count and memory stay native: workers expose the real values. */
-      woSiteKey=()=>{
-        try{
-          let host="";
-          try{const a=location.ancestorOrigins;if(a&&a.length){const m=/^[a-z][a-z0-9+.-]*:\/\/([^/:?#]+)/i.exec(String(a[a.length-1]||""));if(m)host=m[1]}}catch(_){}
-          if(!host)try{host=String(location.hostname||"")}catch(_){}
-          if(!host)try{const m=/^[a-z][a-z0-9+.-]*:\/\/([^/:?#]+)/i.exec(String(location.origin||""));if(m)host=m[1]}catch(_){}
-          host=host.toLowerCase().replace(/\.$/,"");
-          /* An address is a whole site of its own (127.0.0.1, [::1]); labels mean nothing there. */
-          if(/^\[|^\d+(?:\.\d+){3}$/.test(host))return host;
-          const p=host.split(".");
-          if(p.length<=2)return host;
-          return"function"==typeof siteIdentity?siteIdentity(host):host
-        }
-        catch(_){
-          return""
-        }
-      },
-      _st=(()=>{let h=2166136261>>>0;const s="wo-site:"+woSiteKey();for(let i=0;i<s.length;i++)h=Math.imul(h^s.charCodeAt(i),16777619)>>>0;return h>>>0})(),
-      mixSite=str=>{let h=(_st^2166136261)>>>0;str=String(str);for(let i=0;i<str.length;i++)h=Math.imul(h^str.charCodeAt(i),16777619)>>>0;return h>>>0},
-      makeRnd=seed=>{let s=(seed>>>0)||1;return()=>(s=1664525*s+1013904223>>>0,s/4294967296)},
-      seededTiny=(key,scale=0.01)=>(makeRnd(mixSeed(key))()-.5)*scale,
-      cloak=(fn,name)=>{try{__woCloak.set(fn,name)}catch(_){}return fn};
-      try{
-        const patchMeasureText=proto=>{
-          if(!proto||!proto.measureText)return;
-          const orig=proto.measureText,font=Object.getOwnPropertyDescriptor(proto,"font")?.get;
-          proto.measureText={measureText(text){
-            const args=arguments;
-            let converted=text;
-            if(text!==null&&("object"===typeof text||"function"===typeof text)){
-              const originalText=text;
-              args[0]={toString(){return converted=String(originalText)}}
-            }
-            const metrics=orig.apply(this,
-            args);
-            try{
-              const n=seededTiny(((font?font.call(this):this.font)||"")+"|"+String(converted),.02);
-              return new Proxy(metrics,
-              {
-                get(target,
-                prop){
-                  const v=target[prop];
-                  return prop==="width"?v===0?0:Math.max(0,v+n):"number"==typeof v&&/^(actualBoundingBox|fontBoundingBox|emHeight|hangingBaseline|alphabeticBaseline|ideographicBaseline)/.test(String(prop))?v+n:v
-                }
-
-              })
-            }
-            catch(_){
-              return metrics
-            }
-
-          }}.measureText
-
-        };
-        patchMeasureText(window.CanvasRenderingContext2D&&CanvasRenderingContext2D.prototype),
-        window.OffscreenCanvasRenderingContext2D&&patchMeasureText(OffscreenCanvasRenderingContext2D.prototype)
-      }
-      catch(_){
-
-      }
-      try{
-        /* Seed once from geometry and draw four values without string allocations on this hot DOM read.
-           Keep results deterministic for a geometry within the session. */
-        const rectSeed=(a,b,c,d)=>{
-          let h=(_sk^2166136261)>>>0;
-          h=Math.imul(h^(0|a*8192),
-          16777619)>>>0,
-          h=Math.imul(h^(0|b*8192),
-          16777619)>>>0,
-          h=Math.imul(h^(0|c*8192),
-          16777619)>>>0,
-          h=Math.imul(h^(0|d*8192),
-          16777619)>>>0;
-          return h>>>0
-        },
-        wrapRect=r=>{
-          try{
-            if(!r)return r;
-            const X=r.x||r.left||0,
-            Y=r.y||r.top||0,
-            W=r.width||0,
-            H=r.height||0,
-            draw=makeRnd(rectSeed(X,
-            Y,
-            W,
-            H));
-            return new DOMRect(X+(draw()-.5)*.04,
-            Y+(draw()-.5)*.04,
-            Math.max(0,
-            W+(draw()-.5)*.03),
-            Math.max(0,
-            H+(draw()-.5)*.03))
-          }
-          catch(_){
-            return r
-          }
-
-        },
-        patchRectProto=proto=>{
-          if(!proto)return;
-          if(proto.getBoundingClientRect){
-            const origBox=proto.getBoundingClientRect;
-            proto.getBoundingClientRect={getBoundingClientRect(){
-              return wrapRect(origBox.apply(this,
-              arguments))
-            }}.getBoundingClientRect
-
-          }
-          if(proto.getClientRects){
-            const original=proto.getClientRects;
-            proto.getClientRects={getClientRects(){
-              const list=original.apply(this,arguments);
-              let firstValue,firstRect,cache,item,proxy;
-              const rect=value=>{
-                if(!value||"object"!==typeof value)return value;
-                if(value===firstValue)return firstRect;
-                if(!firstValue){firstValue=value;firstRect=wrapRect(value);return firstRect}
-                if(!cache)cache=new WeakMap([[firstValue,firstRect]]);
-                if(!cache.has(value))cache.set(value,wrapRect(value));
-                return cache.get(value)
-              };
-              proxy=new Proxy(list,{get(t,k){
-                if(k==="item"&&"function"===typeof t.item){
-                  if(!item)item=cloak({item(index){return rect(list.item.apply(this===proxy?list:this,arguments))}}.item,"item");
-                  return item
-                }
-                const value=Reflect.get(t,k,t);
-                return"string"===typeof k&&/^(0|[1-9][0-9]*)$/.test(k)?rect(value):value
-              }});
-              return proxy
-            }}.getClientRects
-          }
-
-        };
-        patchRectProto(window.Element&&Element.prototype),
-        window.Range&&patchRectProto(Range.prototype)
-      }
-      catch(_){
-
-      }
-      try{
-        const patchSvgText=proto=>{
-          if(!proto)return;
-          ["getComputedTextLength",
-          "getSubStringLength"].forEach(name=>{
-            const orig=proto[name];
-            if(orig){
-              const method={ [name](...args){
-                const v=orig.apply(this,args);
-                return"number"==typeof v&&v!==0?Math.max(0,v+seededTiny((this.textContent||"")+name,.02)):v
-              }}[name];
-              Object.defineProperty(method,"length",{value:orig.length,configurable:!0});
-              proto[name]=cloak(method,name)
-            }
-          })
-        };
-        window.SVGTextContentElement&&patchSvgText(SVGTextContentElement.prototype)
-      }
-      catch(_){
-
-      }
-      /* Use a site-stable graphics identity on Windows; keep native graphics on other platforms. */
-      const woPick=(arr,key)=>arr[Math.floor(makeRnd(mixSite(key))()*arr.length)%arr.length];
-      const woPlatform=String(navigator.platform||""),
-      woUaPlatform=String(navigator.userAgentData&&navigator.userAgentData.platform||""),
-      woWindows=/^Win/i.test(woPlatform)&&(!woUaPlatform||/^Windows$/i.test(woUaPlatform)),
-      woGpu=woWindows?woPick([
-        {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) UHD Graphics 620 (0x00005917) Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"intel",architecture:"gen-9"}},
-        {v:"Google Inc. (Intel)",r:"ANGLE (Intel, Intel(R) HD Graphics 630 (0x0000591B) Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"intel",architecture:"gen-9"}},
-        {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"nvidia",architecture:"turing"}},
-        {v:"Google Inc. (NVIDIA)",r:"ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"nvidia",architecture:"ampere"}},
-        {v:"Google Inc. (AMD)",r:"ANGLE (AMD, AMD Radeon RX 580 Direct3D11 vs_5_0 ps_5_0, D3D11)",g:{vendor:"amd",architecture:"gcn-4"}}
-      ],"gpu"):null;
-      const patchGL=proto=>{
-        if(!woGpu||!proto||!proto.getParameter)return;
-        const orig=proto.getParameter,canvas=Object.getOwnPropertyDescriptor(proto,"canvas")?.get,
-        validate=receiver=>{if(canvas)canvas.call(receiver);else orig.call(receiver,7938)};
-        proto.getParameter={getParameter(p){
-          if(!arguments.length)return orig.apply(this,arguments);
-          let enumValue=p;
-          if(p!==null&&("object"===typeof p||"function"===typeof p)){
-            validate(this);
-            enumValue=(+p)>>>0
-          }
-          const value=orig.call(this,enumValue);
-          enumValue=(+enumValue)>>>0;
-          return null==value?value:37445===enumValue?woGpu.v:37446===enumValue?woGpu.r:value
-        }}.getParameter;
-        try{
-          const getExt=proto.getExtension;
-          getExt&&(proto.getExtension={getExtension(name){
-            if(!arguments.length||"symbol"===typeof name)return getExt.apply(this,arguments);
-            validate(this);
-            const converted=String(name);
-            return/^WEBGL_debug_renderer_info$/i.test(converted)?null:getExt.call(this,converted)
-          }}.getExtension)
-        }
-        catch(_){
-
-        }
-        try{
-          const getSupported=proto.getSupportedExtensions;
-          getSupported&&(proto.getSupportedExtensions={getSupportedExtensions(){
-            const out=getSupported.apply(this,
-            arguments);
-            return Array.isArray(out)?out.filter(x=>!/^WEBGL_debug_renderer_info$/i.test(String(x||""))):out
-          }}.getSupportedExtensions)
-        }
-        catch(_){
-
-        }
-
-      };
-      /* Keep WebGPU adapter identity aligned with the seeded WebGL identity. Report
-         required minimum limits to reduce fingerprinting without denying real device
-         capabilities; requestDevice still checks the underlying adapter. Features
-         remain truthful because hiding them can break fallback selection. */
-      try{
-        const woGpuLimits={
-          maxTextureDimension1D:8192,
-          maxTextureDimension2D:8192,
-          maxTextureDimension3D:2048,
-          maxTextureArrayLayers:256,
-          maxBindGroups:4,
-          maxBindGroupsPlusVertexBuffers:24,
-          maxBindingsPerBindGroup:1e3,
-          maxDynamicUniformBuffersPerPipelineLayout:8,
-          maxDynamicStorageBuffersPerPipelineLayout:4,
-          maxSampledTexturesPerShaderStage:16,
-          maxSamplersPerShaderStage:16,
-          maxStorageBuffersPerShaderStage:8,
-          maxStorageTexturesPerShaderStage:4,
-          maxUniformBuffersPerShaderStage:12,
-          maxUniformBufferBindingSize:65536,
-          maxStorageBufferBindingSize:134217728,
-          minUniformBufferOffsetAlignment:256,
-          minStorageBufferOffsetAlignment:256,
-          maxVertexBuffers:8,
-          maxBufferSize:268435456,
-          maxVertexAttributes:16,
-          maxVertexBufferArrayStride:2048,
-          maxInterStageShaderComponents:64,
-          maxInterStageShaderVariables:16,
-          maxColorAttachments:8,
-          maxColorAttachmentBytesPerSample:32,
-          maxComputeWorkgroupStorageSize:16384,
-          maxComputeInvocationsPerWorkgroup:256,
-          maxComputeWorkgroupSizeX:256,
-          maxComputeWorkgroupSizeY:256,
-          maxComputeWorkgroupSizeZ:64,
-          maxComputeWorkgroupsPerDimension:65535
-        },
-        woGpuInfo=(woGpu&&woGpu.g)||{vendor:"intel",architecture:"gen-9"},
-        /* A real GPUAdapterInfo keeps device and description empty in Chrome
-           unless the origin trial for unmasked info is on, so filling them in
-           would stand out rather than blend in. */
-        wrapInfo=real=>{
-          if(!real||"object"!=typeof real)return real;
-          return new Proxy(real,{get(t,k){
-            const value=Reflect.get(t,k,t);
-            if("string"!==typeof value)return value;
-            return k==="vendor"?woGpuInfo.vendor:k==="architecture"?woGpuInfo.architecture:k==="device"||k==="description"?"":value
-          }})
-        },
-        /* Memoize bound methods and substituted members so repeated property reads preserve native object identity. */
-        stableGet=(target,fixed)=>{
-          const memo=new Map;
-          return(t,k)=>{
-            if(memo.has(k))return memo.get(k);
-            if(fixed&&Object.prototype.hasOwnProperty.call(fixed,k)){
-              memo.set(k,fixed[k]);
-              return fixed[k]
-            }
-            const v=Reflect.get(t,k);
-            if("function"!=typeof v)return v;
-            const bound=v.bind(t);
-            memo.set(k,bound);
-            return bound
-          }
-        },
-        /* GPUSupportedLimits uses prototype accessors. Proxy known limits and pass unknown names through for newer Chrome
-           versions. */
-        wrapLimits=real=>{
-          try{
-            const get=stableGet(real);
-            return new Proxy(real,{
-              get:(t,k)=>{
-                const value=get(t,k);
-                if("number"!==typeof value||!Object.prototype.hasOwnProperty.call(woGpuLimits,k))return value;
-                return k.startsWith("min")?Math.max(value,woGpuLimits[k]):Math.min(value,woGpuLimits[k])
-              }
-            })
-          }
-          catch(_){
-            return real
-          }
-
-        },
-        wrapDevice=dev=>{
-          if(!dev||"object"!=typeof dev)return dev;
-          try{
-            const fixed={limits:wrapLimits(dev.limits)};
-            if("adapterInfo"in dev)fixed.adapterInfo=wrapInfo(dev.adapterInfo);
-            const get=stableGet(dev,fixed);
-            return new Proxy(dev,{get,set:(t,k,value)=>Reflect.set(t,k,value,t)})
-          }
-          catch(_){
-            return dev
-          }
-
-        },
-        wrapAdapter=real=>{
-          if(!real||"object"!=typeof real)return real;
-          try{
-            let proxy;
-            const realDevice=real.requestDevice,
-            fixed={
-              limits:wrapLimits(real.limits),
-              info:wrapInfo(real.info)
-            };
-            if("function"==typeof real.requestAdapterInfo){
-              const originalInfo=real.requestAdapterInfo;
-              fixed.requestAdapterInfo=cloak(function requestAdapterInfo(...args){
-                return Promise.resolve(originalInfo.apply(this===proxy?real:this,args)).then(wrapInfo)
-              },"requestAdapterInfo")
-            }
-            /* Devices expose their own limits and adapterInfo; wrap those too to keep adapter and device identities
-               consistent. */
-            "function"==typeof realDevice&&(fixed.requestDevice=cloak(function requestDevice(...args){
-              return Promise.resolve(realDevice.apply(this===proxy?real:this,args)).then(wrapDevice)
-            },"requestDevice"));
-            const get=stableGet(real,fixed);
-            proxy=new Proxy(real,{get});
-            return proxy
-          }
-          catch(_){
-            return real
-          }
-
-        };
-        if(woGpu&&navigator.gpu&&navigator.gpu.requestAdapter){
-          const gpu=navigator.gpu,
-          realRequest=gpu.requestAdapter;
-          /* Probe reporting belongs to the separate detection block; this shared noise implementation has no reporter in
-             scope. */
-          gpu.requestAdapter=cloak(function requestAdapter(...args){
-            return Promise.resolve(realRequest.apply(this,args)).then(wrapAdapter)
-          },"requestAdapter")
-        }
-
-      }
-      catch(_){
-
-      }
-      /* Preserve supported so sites choose playable codecs. Flatten smooth and
-         powerEfficient to false to reduce hardware fingerprints; this may lower
-         quality, so the behavior belongs to the opt-in noise shield. */
-      try{
-        const mc=navigator.mediaCapabilities,
-        flattenMediaInfo=info=>{
-          try{
-            if(!info||"object"!=typeof info)return info;
-            /* A copy. The browser's own result object is handed to nothing else, but
-            mutating it would be editing something the page may already hold. */
-            return Object.assign({},
-            info,
-            {
-              smooth:!1,
-              powerEfficient:!1
-            })
-          }
-          catch(_){
-            return info
-          }
-
-        },
-        wrapMediaInfo=name=>{
-          try{
-            const real=mc&&mc[name];
-            if("function"!=typeof real||real.__wardenoneMediaFlat)return;
-            const wrapped=cloak(function(...args){
-              let out;
-              try{
-                out=real.apply(this,
-                args)
-              }
-              catch(e){
-                throw e
-              }
-              /* The page's own rejection is left alone; only a fulfilled answer is
-              rewritten, and a non-promise return is handed back untouched. */
-              return out&&"function"==typeof out.then?out.then(flattenMediaInfo):out
-            },
-            name);
-            wrapped.__wardenoneMediaFlat=!0,
-            mc[name]=wrapped
-          }
-          catch(_){
-
-          }
-
-        };
-        mc&&(wrapMediaInfo("decodingInfo"),
-        wrapMediaInfo("encodingInfo"))
-      }
-      catch(_){
-
-      }
-      if(window.WebGLRenderingContext&&patchGL(WebGLRenderingContext.prototype),
-      window.WebGL2RenderingContext&&patchGL(WebGL2RenderingContext.prototype),
-      window.AnalyserNode){
-        const af=AnalyserNode.prototype.getFloatFrequencyData,
-        bins=Object.getOwnPropertyDescriptor(AnalyserNode.prototype,"frequencyBinCount")?.get,
-        length=Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Float32Array.prototype),"length")?.get;
-        af&&(AnalyserNode.prototype.getFloatFrequencyData={getFloatFrequencyData(arr){
-          af.call(this,
-          arr);
-          try{
-            const count=Math.min(length?length.call(arr):arr.length,bins?bins.call(this):arr.length);
-            for(let i=0;
-            i<count;
-            i+=64)if(Number.isFinite(arr[i]))arr[i]=arr[i]+seededTiny("frequency|"+i+"|"+arr[i],8e-4)
-          }
-          catch(_){
-
-          }
-
-        }}.getFloatFrequencyData)
-      }
-      /* AudioBuffer exposes reusable playback samples. Keep it and sample-rate getters native. */
-      try{[
-        [HTMLCanvasElement.prototype,"toDataURL"],
-        [HTMLCanvasElement.prototype,"toBlob"],
-        [CanvasRenderingContext2D.prototype,"getImageData"],
-        [CanvasRenderingContext2D.prototype,"measureText"],
-        [Element.prototype,"getBoundingClientRect"],
-        [Element.prototype,"getClientRects"],
-        window.Range&&[Range.prototype,"getBoundingClientRect"],
-        window.Range&&[Range.prototype,"getClientRects"],
-        window.WebGLRenderingContext&&[WebGLRenderingContext.prototype,"getParameter"],
-        window.WebGLRenderingContext&&[WebGLRenderingContext.prototype,"getExtension"],
-        window.WebGLRenderingContext&&[WebGLRenderingContext.prototype,"getSupportedExtensions"],
-        window.WebGL2RenderingContext&&[WebGL2RenderingContext.prototype,"getParameter"],
-        window.WebGL2RenderingContext&&[WebGL2RenderingContext.prototype,"getExtension"],
-        window.WebGL2RenderingContext&&[WebGL2RenderingContext.prototype,"getSupportedExtensions"],
-        window.OffscreenCanvasRenderingContext2D&&[OffscreenCanvasRenderingContext2D.prototype,"getImageData"],
-        window.OffscreenCanvasRenderingContext2D&&[OffscreenCanvasRenderingContext2D.prototype,"measureText"],
-        window.AudioBuffer&&[AudioBuffer.prototype,"getChannelData"],
-        window.AnalyserNode&&[AnalyserNode.prototype,"getFloatFrequencyData"]
-      ].forEach(p=>{try{p&&p[0]&&"function"==typeof p[0][p[1]]&&cloak(p[0][p[1]],p[1])}catch(_){}})}catch(_){}
-      const defp=(obj,
-      name,
-      val)=>{
-        try{
-          const g=cloak(function(){return val},"get "+name);
-          const native=Object.getOwnPropertyDescriptor(obj,name);
-          Object.defineProperty(obj,
-          name,
-          {
-            get:g,
-            configurable:native?native.configurable:!0,
-            enumerable:native?native.enumerable:!0
-          })
-        }
-        catch(_){
-
-        }
-
-      };
-      try{
-        const realScreenW=screen.width||innerWidth||1200,
-        realScreenH=screen.height||innerHeight||800,
-        realAvailW=screen.availWidth||realScreenW,
-        realAvailH=screen.availHeight||realScreenH,
-        screenW=Math.max(1,100*Math.floor(realScreenW/100)),
-        screenH=Math.max(2,100*Math.floor(realScreenH/100)),
-        availW=Math.min(screenW,Math.max(1,100*Math.floor(realAvailW/100))),
-        availH=Math.min(screenH-1,Math.max(1,100*Math.floor(realAvailH/100)));
-        window.Screen&&(defp(Screen.prototype,
-        "width",
-        screenW),
-        defp(Screen.prototype,
-        "height",
-        screenH),
-        defp(Screen.prototype,
-        "availWidth",
-        availW),
-        defp(Screen.prototype,
-        "availHeight",
-        availH),
-        defp(Screen.prototype,
-        "colorDepth",
-        24),
-        defp(Screen.prototype,
-        "pixelDepth",
-        24),
-        /* isExtended answers "does this person have more than one monitor" with
-           no permission prompt in front of it at all, which makes it a cheap and
-           unusually stable bit to collect. Everyone reports one screen. */
-        defp(Screen.prototype,
-        "isExtended",
-        !1)),
-        /* Report the same rounded display size as Screen to avoid contradictory fingerprints.
-           Keep the real devicePixelRatio because the engine does not mask window.devicePixelRatio. */
-        "function"==typeof window.getScreenDetails&&(window.getScreenDetails=cloak(function getScreenDetails(){
-          const one={
-            availLeft:0,
-            availTop:0,
-            availWidth:availW,
-            availHeight:availH,
-            width:screenW,
-            height:screenH,
-            colorDepth:24,
-            pixelDepth:24,
-            devicePixelRatio:window.devicePixelRatio||1,
-            isExtended:!1,
-            isInternal:!0,
-            isPrimary:!0,
-            label:"",
-            left:0,
-            top:0,
-            onchange:null
-          };
-          return Promise.resolve({
-            screens:[one],
-            currentScreen:one,
-            oncurrentscreenchange:null,
-            onscreenschange:null,
-            addEventListener(){
-
-            },
-            removeEventListener(){
-
-            },
-            dispatchEvent(){
-              return!0
-            }
-
-          })
-        },"getScreenDetails"))
-      }
-      catch(_){
-
-      }
-      /* Deny Local Font Access with Chrome’s normal Block error. A small curated font list
-         would itself be distinctive and would not match typical installed-font counts. */
-      try{
-        "function"==typeof window.queryLocalFonts&&(window.queryLocalFonts=cloak(function queryLocalFonts(){
-          return Promise.reject(new DOMException("Permission denied.","NotAllowedError"))
-        },"queryLocalFonts"))
-      }
-      catch(_){
-
-      }
-      /* Report US QWERTY to stay consistent with the masked en-US language and Accept-Language header. */
-      try{
-        const kbFp=navigator.keyboard;
-        if(kbFp&&"function"==typeof kbFp.getLayoutMap){
-          const US_LAYOUT=[
-            ["KeyA","a"],["KeyB","b"],["KeyC","c"],["KeyD","d"],["KeyE","e"],["KeyF","f"],
-            ["KeyG","g"],["KeyH","h"],["KeyI","i"],["KeyJ","j"],["KeyK","k"],["KeyL","l"],
-            ["KeyM","m"],["KeyN","n"],["KeyO","o"],["KeyP","p"],["KeyQ","q"],["KeyR","r"],
-            ["KeyS","s"],["KeyT","t"],["KeyU","u"],["KeyV","v"],["KeyW","w"],["KeyX","x"],
-            ["KeyY","y"],["KeyZ","z"],
-            ["Digit1","1"],["Digit2","2"],["Digit3","3"],["Digit4","4"],["Digit5","5"],
-            ["Digit6","6"],["Digit7","7"],["Digit8","8"],["Digit9","9"],["Digit0","0"],
-            ["Minus","-"],["Equal","="],["BracketLeft","["],["BracketRight","]"],
-            ["Backslash","\\"],["Semicolon",";"],["Quote","'"],["Backquote","`"],
-            ["Comma",","],["Period","."],["Slash","/"],["Space"," "]
-          ];
-          kbFp.getLayoutMap=cloak(function getLayoutMap(){
-            /* A KeyboardLayoutMap is a read-only Map. A real Map answers get,
-               has, size, keys, values, entries and forEach the same way, so
-               handing one back behaves correctly for every caller. */
-            return Promise.resolve(new Map(US_LAYOUT))
-          },"getLayoutMap")
-        }
-
-      }
-      catch(_){
-
-      }
-      /* Filter voices to the reported language, but retain the native list if that would empty it.
-         An empty result breaks speech playback and can itself identify the browser. */
-      try{
-        const synth=window.speechSynthesis;
-        if(synth&&"function"==typeof synth.getVoices){
-          const realVoices=synth.getVoices.bind(synth),
-          claimedLang=String(navigator.language||"en-US").slice(0,2).toLowerCase();
-          synth.getVoices=cloak(function getVoices(){
-            try{
-              const all=realVoices();
-              if(!all||!all.length)return all;
-              const kept=all.filter(v=>{
-                try{
-                  return String(v&&v.lang||"").slice(0,2).toLowerCase()===claimedLang
-                }
-                catch(_){
-                  return!1
-                }
-
-              });
-              return kept.length?kept:all
-            }
-            catch(_){
-              return realVoices()
-            }
-
-          },"getVoices")
-        }
-
-      }
-      catch(_){
-
-      }
-      try{
-        if(navigator.userAgentData){
-          const uaProto=Object.getPrototypeOf(navigator.userAgentData),
-          origHigh=uaProto&&uaProto.getHighEntropyValues;
-          origHigh&&(uaProto.getHighEntropyValues=function(hints){
-            return Promise.resolve(origHigh.call(this,
-            hints)).then(res=>{
-              const out=Object.assign({
-
-              },
-              res||{
-
-              }),
-              major=String((out.uaFullVersion||navigator.userAgent.match(/(?:Chrome|Chromium|Edg|Brave)\/(\d+)/)&&navigator.userAgent.match(/(?:Chrome|Chromium|Edg|Brave)\/(\d+)/)[1]||"120")).split(".")[0];
-              return"architecture"in out&&(out.architecture=""),
-              "bitness"in out&&(out.bitness=""),
-              "model"in out&&(out.model=""),
-              "platformVersion"in out&&(out.platformVersion=""),
-              "uaFullVersion"in out&&(out.uaFullVersion=major+".0.0.0"),
-              Array.isArray(out.fullVersionList)&&(out.fullVersionList=out.fullVersionList.map(b=>({
-                brand:String(b.brand||"Chromium"),
-                version:String(b.version||major).split(".")[0]+".0.0.0"
-              }))),
-              out
-            })
-          })
-        }
-
-      }
-      catch(_){
-
-      }
-      try{
-        if(navigator.mediaDevices&&navigator.mediaDevices.enumerateDevices){
-          const origEnum=navigator.mediaDevices.enumerateDevices;
-          navigator.mediaDevices.enumerateDevices={enumerateDevices(){
-            /* Device IDs are also camera/microphone selection constraints. Keep the
-               browser's opaque IDs usable while hiding descriptive metadata. */
-            return Promise.resolve(origEnum.apply(this,arguments)).then(list=>(list||[]).map(d=>{
-              if(!d||"object"!==typeof d)return d;
-              let proxy;
-              const methods=new Map;
-              const json=cloak({toJSON(){const value=d.toJSON.apply(this===proxy?d:this,arguments);return Object.assign({},value,{label:"",groupId:""})}}.toJSON,"toJSON");
-              proxy=new Proxy(d,{get(t,k){
-                if(k==="label"||k==="groupId")return"";
-                if(k==="toJSON"&&"function"===typeof t.toJSON)return json;
-                const value=Reflect.get(t,k,t);
-                if("function"!==typeof value||k==="constructor")return value;
-                if(!methods.has(k)){
-                  const method={ [value.name](...args){return Reflect.apply(value,this===proxy?t:this,args)} }[value.name];
-                  Object.defineProperty(method,"length",{value:value.length,configurable:!0});
-                  methods.set(k,cloak(method,value.name))
-                }
-                return methods.get(k)
-              }});
-              return proxy
-            }))
-          }}.enumerateDevices
-
-        }
-
-      }
-      catch(_){
-
-      }
-      try{
-        if(Navigator.prototype.getBattery)Navigator.prototype.getBattery=function(){
-          return Promise.resolve({
-            charging:!0,
-            chargingTime:0,
-            dischargingTime:1/0,
-            level:1,
-            onchange:null,
-            onchargingchange:null,
-            onchargingtimechange:null,
-            ondischargingtimechange:null,
-            onlevelchange:null,
-            addEventListener:()=>{
-
-            },
-            removeEventListener:()=>{
-
-            },
-            dispatchEvent:()=>!0
-          })
-        }
-
-      }
-      catch(_){
-
-      }
-      return Object.freeze({
-        v:1,
-        noise:!0,
-        seed:_sc
-      })
-    }
-    /* FINGERPRINT-NOISE-END */
     if(WO.blockWebRTCLeak)try{
       const IP_LOOKUP_HOST_RE=/(^|\.)(api\.ipify\.org|api64\.ipify\.org|ipify\.org|ipinfo\.io|ifconfig\.me|icanhazip\.com|ident\.me|checkip\.amazonaws\.com|ip-api\.com|ipapi\.co|ipwho\.is|myexternalip\.com|wtfismyip\.com|ipecho\.net|jsonip\.com|seeip\.org|ip2location\.io|ipdata\.co|db-ip\.com)$/i,
       ipLookupUrl=input=>{
@@ -18338,7 +19024,7 @@
       }
       if(navigator.sendBeacon){
         const realBeacon=navigator.sendBeacon.bind(navigator);
-        realBeacon.__wardenoneIpPrivacy||(navigator.sendBeacon=function(url,
+        realBeacon.__wardenoneIpPrivacy||((Object.prototype.hasOwnProperty.call(navigator,"sendBeacon")?navigator:Object.getPrototypeOf(navigator)).sendBeacon=function(url,
         data){
           const hit=ipLookupUrl(url);
           return hit?(noteIpLookup(hit),
@@ -19025,8 +19711,10 @@
           catch(_){
 
           }
+          /* A navigator method lives on Navigator.prototype in a real browser; an own copy on navigator gives the extension away. */
+          const home=owner===navigator&&!Object.prototype.hasOwnProperty.call(owner,name)?Object.getPrototypeOf(owner):owner;
           try{
-            Object.defineProperty(owner,
+            Object.defineProperty(home,
             name,
             {
               configurable:!0,
@@ -19035,7 +19723,7 @@
             })
           }
           catch(_){
-            owner[name]=wrapped
+            home[name]=wrapped
           }
           return!0
         }
@@ -19278,7 +19966,19 @@
           }
 
         },
-        playBlockReason=el=>isMediaElement(el)&&"VIDEO"===el.tagName&&!mediaInsidePlayerShell(el)&&hiddenMedia(el)?"Hidden media player":"";
+        /* Players ask whether they may autoplay, muted and then with sound, by playing a detached copy of a tiny clip held
+           in the page itself (CNN's player does both). It can show and fetch nothing, and whether sound may autoplay is the
+           browser's own call. Refusing either left CNN's player waiting forever. */
+        autoplayProbe=el=>{
+          try{
+            return!el.isConnected&&/^data:video\//i.test(String(el.getAttribute("src")||""))
+          }
+          catch(_){
+            return!1
+          }
+
+        },
+        playBlockReason=el=>isMediaElement(el)&&"VIDEO"===el.tagName&&!mediaInsidePlayerShell(el)&&!autoplayProbe(el)&&hiddenMedia(el)?"Hidden media player":"";
         try{
           const proto=window.HTMLMediaElement.prototype,
           realPlay=proto&&proto.play;
@@ -20180,7 +20880,7 @@
          consent or blocking music applications. */
       try{
         const realMidi="undefined"!=typeof navigator&&navigator.requestMIDIAccess;
-        "function"!=typeof realMidi||realMidi.__wardenoneDeviceGuard||(navigator.requestMIDIAccess=Object.assign(function(...args){
+        "function"!=typeof realMidi||realMidi.__wardenoneDeviceGuard||((Object.prototype.hasOwnProperty.call(navigator,"requestMIDIAccess")?navigator:Object.getPrototypeOf(navigator)).requestMIDIAccess=Object.assign(function(...args){
           try{
             noteDevice("request",
             args[0]&&args[0].sysex?"midi-sysex":"midi",
@@ -20327,7 +21027,7 @@
          frame-by-frame polling from flooding the log. */
       try{
         const realPads="undefined"!=typeof navigator&&navigator.getGamepads;
-        "function"!=typeof realPads||realPads.__wardenoneDeviceGuard||(navigator.getGamepads=Object.assign(function(...args){
+        "function"!=typeof realPads||realPads.__wardenoneDeviceGuard||((Object.prototype.hasOwnProperty.call(navigator,"getGamepads")?navigator:Object.getPrototypeOf(navigator)).getGamepads=Object.assign(function(...args){
           const out=realPads.apply(this,
           args);
           try{

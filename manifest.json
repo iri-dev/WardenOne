@@ -137,6 +137,11 @@
         "path": "rules-easyprivacy.json"
       },
       {
+        "id": "easyprivacy_general",
+        "enabled": true,
+        "path": "rules-easyprivacy-general.json"
+      },
+      {
         "id": "cname_trackers",
         "enabled": true,
         "path": "rules-cname.json"
@@ -184,7 +189,18 @@
         "redirect-resources/noop-vast2.xml",
         "redirect-resources/noop-vast3.xml",
         "redirect-resources/noop-vast4.xml",
-        "redirect-resources/noop-vmap1.xml"
+        "redirect-resources/noop-vmap1.xml",
+        "surrogates/analytics.js",
+        "surrogates/facebook.js",
+        "surrogates/publisher-tag.js",
+        "surrogates/tag-manager.js",
+        "surrogates/segment.js",
+        "surrogates/adobe-launch.js",
+        "surrogates/matomo.js",
+        "surrogates/apstag.js",
+        "surrogates/optimizely.js",
+        "surrogates/urchin.js",
+        "surrogates/onetrust.js"
       ],
       "matches": [
         "<all_urls>"

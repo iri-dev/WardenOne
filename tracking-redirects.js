@@ -22,6 +22,8 @@ const WOTrackingRedirects = (() => {
     { id: 'partnerize', hosts: ['prf.hn'], path: '/click/(?:[^/?#]+/)*destination:([^?#]+)', keys: [], pathTarget: true },
     { id: 'ebay', hosts: ['rover.ebay.com'], path: '/rover/[^?]+', keys: ['mpre'] },
     { id: 'clickserve', hosts: ['clickserve.dartsearch.net'], path: '/link/click', keys: ['ds_dest_url'] },
+    { id: 'steam', hosts: ['steamcommunity.com'], exactHost: true, path: '/linkfilter/?', keys: ['url', 'u'] },
+    { id: 'tumblr', hosts: ['t.umblr.com'], exactHost: true, path: '/redirect', keys: ['z'] },
   ].map(profile => Object.freeze({ ...profile, hosts: Object.freeze(profile.hosts), keys: Object.freeze(profile.keys) })));
   const MAX_URL = 8192, MAX_HOPS = 5;
   const protectedKeys = /^(?:signature|sig|hmac|access_token|id_token|code|state|ticket|nonce|otp|x-amz-signature|x-goog-signature)$/i;
@@ -35,7 +37,9 @@ const WOTrackingRedirects = (() => {
     } catch (_) { return null; }
   }
   function profileFor(url) {
-    return profiles.find(profile => profile.hosts.some(host => under(url.hostname.toLowerCase(), host)) && new RegExp('^' + profile.path + '$', 'i').test(url.pathname));
+    const hostname = url.hostname.toLowerCase();
+    return profiles.find(profile => profile.hosts.some(host => profile.exactHost ? hostname === host : under(hostname, host))
+      && new RegExp('^' + profile.path + '$', 'i').test(url.pathname));
   }
   function decode(raw, profile) {
     let value = raw;

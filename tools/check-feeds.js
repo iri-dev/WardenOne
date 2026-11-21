@@ -30,6 +30,7 @@ const DOWNLOAD_THREAT_MAX_BYTES = constant('DOWNLOAD_THREAT_SOURCE_MAX_BYTES', 9
 const OPENPHISH_MAX_BYTES = constant('OPENPHISH_FEED_MAX_BYTES', 6 * 1024 * 1024);
 const TIMEOUT_MS = constant('LIST_FETCH_TIMEOUT_MS', 25000);
 const OPENPHISH_TIMEOUT_MS = constant('EXTERNAL_REPUTATION_TIMEOUT_MS', 6500);
+const PHISHING_URL_MAX_BYTES = constant('PHISHING_URL_FEED_MAX_BYTES', 8 * 1024 * 1024);
 const reviewedMatch = SOURCE.match(/const LIST_REVIEWED_SOURCE_MAX_BYTES = Object\.freeze\(([\s\S]*?)\);/);
 const reviewedLimits = reviewedMatch ? vm.runInNewContext('(' + reviewedMatch[1] + ')') : {};
 
@@ -39,6 +40,7 @@ const policyFor = (feed) => {
   const purposes = feed.purposes || [];
   if (Object.prototype.hasOwnProperty.call(reviewedLimits, feed.url)) return { url: feed.url, maxBytes: reviewedLimits[feed.url], timeoutMs: TIMEOUT_MS };
   if (feed.toggles.includes('openPhish')) return { url: feed.url, maxBytes: OPENPHISH_MAX_BYTES, timeoutMs: OPENPHISH_TIMEOUT_MS };
+  if (purposes.includes('Phishing page addresses')) return { url: feed.url, maxBytes: PHISHING_URL_MAX_BYTES, timeoutMs: TIMEOUT_MS };
   if (purposes.includes('Download Guard payload URLs and file hashes')) return { url: feed.url, maxBytes: DOWNLOAD_THREAT_MAX_BYTES, timeoutMs: TIMEOUT_MS };
   if (purposes.includes('Supplemental domain lists')) return { url: feed.url, maxBytes: SUPPLEMENTAL_MAX_BYTES, timeoutMs: TIMEOUT_MS };
   if (purposes.includes('Cosmetic (element-hiding) filtering')) return { url: feed.url, maxBytes: COSMETIC_MAX_BYTES, timeoutMs: TIMEOUT_MS };

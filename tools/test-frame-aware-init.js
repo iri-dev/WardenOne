@@ -195,6 +195,7 @@ check('the refresh path and the config path share one applier',
       bridgeActiveAllowlist: () => [],
       bridgeSiteOverridesFor: value => value.siteOverrides?.[hostname] || {},
       bridgeFrameNoiseAllowed: () => false,
+      bridgeFrameNoiseLevel: () => '',
       bridgeFrameWebGLDisabled: () => false,
       bridgeFrameClientHintsAllowed: () => false,
       bridgeFrameLearningAllowed: () => false,
@@ -294,6 +295,65 @@ check('the refresh path and the config path share one applier',
   check('with no player in the document the sweep looks at no child', run(true, false) === '');
   check('with strict popups off it looks at none either', run(false, true) === '');
   check('with both, every eligible child is still considered', run(true, true) === 'P,DIV', run(true, true));
+}
+
+/* ---- 5b. one player query per batch of added nodes ------------------------------- *
+ * The player query walks the whole document; a long article added to <body> node by node asked it
+ * for every node, then again for each one 300 ms and 1.5 s later (37 ms of a Wikipedia load). */
+{
+  const ONCE = between(AR, '  const clickLayerClock = ', '\n  // Look at one element the page added', 'the per-batch player query');
+  const ADDED = between(AR, '      const onAdded = (records) => {', '\n      const observer = woObserver(onAdded);', 'the click-layer observer callback');
+  let queries = 0;
+  let player = true;
+  let clock = 1000;
+  const judged = [];
+  const timers = [];
+  const ctx = {
+    performance: { now: () => clock },
+    document: { body: { tagName: 'BODY' } }, CLICK_LAYER_SKIP: /^(?:SCRIPT|STYLE)$/, playerAdEvidence: false,
+    playerDocument: () => { queries++; return player; },
+    considerClickLayer: (node, onPlayerPage) => { judged.push(node.id + ':' + onPlayerPage()); return false; },
+    crossSiteLinkIn: (node) => node.id !== 'plain', plausibleShell: () => false,
+    woTimeout: (fn, ms) => { timers.push({ fn, ms }); }, watchBody: () => {},
+  };
+  vm.createContext(ctx);
+  vm.runInContext(ONCE + '\n' + ADDED + '\nthis.onAdded = onAdded; this.ask = clickLayerPlayerPage;', ctx);
+  const nodes = Array.from({ length: 12 }, (_, i) => ({ nodeType: 1, tagName: 'DIV', id: i === 3 ? 'plain' : 'n' + i }));
+  ctx.onAdded([{ addedNodes: nodes.slice(0, 6) }, { addedNodes: nodes.slice(6) }]);
+  check('a batch of twelve added nodes asks for the player once', queries === 1 && judged.length === 12, queries + ' ' + judged.length);
+  check('every node is still judged with the answer', judged.every((j) => j.endsWith(':true')));
+  check('the later looks are two timers for the batch, at 300 ms and 1.5 s', timers.map((t) => t.ms).join(',') === '300,1500', timers.map((t) => t.ms).join(','));
+  judged.length = 0;
+  timers[0].fn();
+  check('each later look judges every candidate again with one fresh query',
+    queries === 2 && judged.length === 11 && !judged.some((j) => j.startsWith('plain')), queries + ' ' + judged.join(' '));
+  timers[1].fn();
+  check('and the 1.5 s look asks once more for itself', queries === 3 && judged.length === 22);
+  timers.length = 0;
+  ctx.onAdded([{ addedNodes: [{ nodeType: 1, tagName: 'DIV', id: 'plain' }] }]);
+  check('a batch with nothing worth a second look sets no timers', timers.length === 0);
+  /* A "no player" answer is reused briefly; a "player" answer never is. */
+  queries = 0; player = false;
+  ctx.ask(); clock += 100; ctx.ask(); clock += 149; ctx.ask();
+  check('"no player" is reused for under 250 ms', queries === 1, String(queries));
+  clock += 1; ctx.ask();
+  check('and asked again at 250 ms, so a candidate\'s 300 ms look always gets a fresh answer', queries === 2, String(queries));
+  player = true; clock += 10;
+  check('a player that appears inside the window waits for the next look', ctx.ask() === false && queries === 2);
+  clock += 300;
+  check('which sees it', ctx.ask() === true && queries === 3);
+  ctx.ask();
+  check('a "player" answer is asked fresh every time', queries === 4, String(queries));
+  queries = 0; player = false; clock += 1000;
+  for (let i = 0; i < 26; i++) ctx.ask();
+  check('with the clock stopped, the answer is still asked again after 12 reuses', queries === 2, String(queries));
+  queries = 0; clock += 1000; ctx.ask(); clock -= 50; ctx.ask();
+  check('a clock that runs backwards is not trusted', queries === 2, String(queries));
+  check('the clock is captured once, when the script loads', /const clickLayerClock = [^;]*performance\.now\.bind\(performance\)/.test(ONCE)
+    && !/performance\.now\(\)/.test(ONCE));
+  const SWEEP_BODY = between(AR, '  function sweepClickLayers() {', '\n  // The layers are appended straight to <body>', 'the click-layer sweep');
+  check('the sweep hands its own answer down instead of each child asking again', /considerClickLayer\(kid, onPlayerPage\)/.test(SWEEP_BODY)
+    && /const onPlayerPage = \(\) => true;/.test(SWEEP_BODY));
 }
 
 /* ---- 3. the worker answers both in one message ----------------------------------- */

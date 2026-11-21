@@ -40,6 +40,8 @@ const LABELS = {
   blocked_certificate: 'Bad certificate blocked',
   blocked_http_only: 'HTTP-only site blocked',
   blocked_safe_browsing_page: 'Dangerous page blocked',
+  blocked_ip_program: 'Program on a bare IP address stopped',
+  blocked_repo_program: 'Program stored in a GitHub repository stopped',
   blocked_safe_browsing_link: 'Dangerous link blocked',
   blocked_safe_browsing_form: 'Dangerous form blocked',
   blocked_safe_browsing_paste: 'Dangerous paste target blocked',
@@ -64,6 +66,7 @@ const LABELS = {
   extension_change: 'Installed extension changed',
   blocked_clipboard_hijack: 'Blocked clipboard hijack',
   warned_clipboard_swap: 'Clipboard swap detected (crypto address)',
+  blocked_clipboard_swap: 'Stopped a wallet address swap',
   warned_keystroke_pressure: 'Heavy keystroke monitoring',
   warned_honeytoken_read: 'Script read a decoy credential (honeytoken)',
   warned_techsupport_scam: 'Tech-support scam / browser-lock page',
@@ -214,6 +217,7 @@ function fmtMinutes(min) {
 function detailText(e) {
   const d = e.detail || {};
   if (e.type === 'consent_outcome') return [d.cmp, d.status === 'rejected' ? 'Saved opt-out verified in CMP state'
+    : d.status === 'left' ? 'Left for you to choose: refusing here means paying'
     : d.status === 'failed' ? 'Action failed' : d.status === 'dispatched' ? 'Settings action dispatched · opt-out unverified'
     : 'Action dispatched · saved opt-out unverified', d.why].filter(Boolean).join(' · ');
   if (e.type === 'warned_tracking_identifier') return [d.host, d.why].filter(Boolean).join(' · ');
@@ -268,6 +272,10 @@ function detailText(e) {
     if (d.global != null) bits.push(d.global + ' global');
     if (d.total != null) bits.push(d.total + ' total input listeners');
     return bits.join(' - ');
+  }
+  if (e.type === 'blocked_clipboard_swap') {
+    const how = { 'copy handler': 'the page rewrote the copy', 'selection swap': 'the page changed the selection', 'page copy': 'the page copied again by itself', 'clipboard write': 'the page wrote to the clipboard' }[d.how];
+    return [d.kind ? d.kind.toUpperCase() + ' address' : '', how, 'you kept the address you selected'].filter(Boolean).join(' - ');
   }
   if (e.type === 'warned_clipboard_swap') {
     const k = d.kind ? d.kind.toUpperCase() + ' ' : '';
@@ -679,6 +687,7 @@ document.getElementById('clear').addEventListener('click', () => {
   if (confirm('Clear all WardenOne activity history? This cannot be undone.')) {
     chrome.runtime.sendMessage({ kind: 'history-clear' }, (result) => {
       const error = chrome.runtime.lastError;
+      if (!error && result && result.pending) { alert(String(result.error || 'Your normal window has not cleared it yet.')); return; }
       if (error || !result || !result.ok) { alert('Could not clear history. Please retry.'); return; }
       load();
     });

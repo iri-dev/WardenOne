@@ -21,7 +21,7 @@
 <p>The EasyList authors (https://easylist.to/).</p>
 <p>Terms: <a href="https://easylist.to/pages/licence.html">GPL-3.0-or-later OR CC-BY-SA-3.0-or-later</a>. Credit the authors, link the license and source, identify modifications, and do not imply endorsement. WardenOne selects GPLv3 for packaged cosmetic compilation and CC BY-SA 3.0 for the separate EasyList/EasyPrivacy DNR data files; adaptations of those data files retain CC BY-SA 3.0.</p>
 </section>
-<section><h2>malware-filter Phishing hosts</h2><p><a href="https://gitlab.com/malware-filter/phishing-filter">Ming Di Leom / malware-filter</a> — CC-BY-SA-4.0</p>
+<section><h2>malware-filter Phishing hosts and addresses</h2><p><a href="https://gitlab.com/malware-filter/phishing-filter">Ming Di Leom / malware-filter</a> — CC-BY-SA-4.0</p>
 <p>Ming Di Leom / malware-filter; OpenPhish, IPThreat and PhishTank.</p>
 <p>Terms: <a href="https://gitlab.com/malware-filter/phishing-filter/-/raw/main/README.md">CC-BY-SA-4.0</a>. Credit the authors, link the license and source, identify modifications, and do not imply endorsement. Share adaptations under compatible share-alike terms. This license applies to filters, while src/ code is MIT/CC0.</p>
 <p>Upstream contributions: <a href="https://openphish.com/terms.html">OpenPhish</a> (Community Feed terms; written WardenOne permission); <a href="https://ipthreat.net/">IPThreat</a> (CC-BY-SA-4.0); <a href="https://phishtank.org/terms.php">PhishTank</a> (Published API data terms).</p>
@@ -44,6 +44,10 @@
 <p>Phishing Army — https://phishing.army/. Feed domains are extracted, normalized and formatted by Phishing Army; WardenOne imports them for local blocking.</p>
 <p>Terms: <a href="https://phishing.army/">Publisher permission</a>. Written permission covers Phishing Army’s aggregation/formatting contribution, including GitHub and Chrome Web Store distribution; visible linked credit requested. Upstream rights remain separate.</p>
 <p>Upstream contributions: <a href="https://phishtank.org/terms.php">PhishTank / Cisco Talos</a> (Published API data terms); <a href="https://cert.pl/lista-ostrzezen/">CERT Polska</a> (Published browser/filter use); <a href="https://phishunt.io/tos/">Phishunt</a> (CC0-1.0); <a href="https://urlabuse.com/terms.html">URLAbuse / NetSSR</a> (CC-BY-4.0); <a href="https://stalkphish.com/">StalkPhish / Thomas Damonneville</a> (WardenOne-specific permission; no resale); <a href="https://openphish.com/terms.html">OpenPhish</a> (Community Feed terms; written WardenOne permission); <a href="https://urlscan.io/terms/">urlscan.io</a> (Scope clarification pending); <a href="https://www.phishstats.info/terms">PhishStats</a> (Raw-feed restriction; derived-domain scope pending); <a href="https://github.com/drego85/PhishingArmyCore/blob/master/SOURCES.md">AntiPhish.org</a> (Publisher reports authorization for Phishing Army).</p>
+</section>
+<section><h2>TweetFeed</h2><p><a href="https://tweetfeed.live">Daniel Lopez (0xDanielLopez)</a> — CC0-1.0</p>
+<p>TweetFeed, collected by Daniel Lopez from security researchers&#39; public posts. Credited although CC0 asks for none.</p>
+<p>Terms: <a href="https://github.com/0xDanielLopez/TweetFeed/blob/master/LICENSE">CC0-1.0</a>. CC0 1.0 public-domain dedication with fallback licence and warranty disclaimer; no attribution or other condition attaches to the feed data. The optional external corroboration block in /v1/ioc responses comes from abuse.ch and is not CC0. WardenOne reads only month.csv, which the README says never contains that block.</p>
 </section>
 <section><h2>AdAway hosts</h2><p><a href="https://github.com/AdAway/adaway.github.io">AdAway contributors</a> — CC-BY-3.0</p>
 <p>AdAway default blocklist; contributions by Kicelo, Dominik Schuermann and contributors recorded in upstream history.</p>
@@ -152,7 +156,7 @@
 </section>
 <section><h2>AdGuard CNAME trackers</h2><p><a href="https://github.com/AdguardTeam/cname-trackers">Adguard Software Ltd</a> — MIT</p>
 <p>Copyright 2021 Adguard Software Ltd.</p>
-<p>Terms: <a href="https://github.com/AdguardTeam/cname-trackers/blob/3a7f5b0cdf8f28b2f5b88db0e55d940869fe1473/LICENSE">MIT</a>. Preserve the upstream copyright and complete MIT permission notice.</p>
+<p>Terms: <a href="https://github.com/AdguardTeam/cname-trackers/blob/dd5bd59eda209a97efeee1ee7898e119c582a13b/LICENSE">MIT</a>. Preserve the upstream copyright and complete MIT permission notice.</p>
 </section>
 <section><h2>Privacy Badger pre-trained tracker list</h2><p><a href="https://github.com/EFForg/privacybadger">Electronic Frontier Foundation</a> — GPL-3.0-or-later</p>
 <p>Copyright © 2015 Electronic Frontier Foundation and other contributors.</p>
@@ -165,6 +169,7 @@
 <section><h2>Bundled data and modifications</h2>
 <p><strong>rules-adshield.json</strong>: The EasyList authors; selected network rules plus WardenOne compatibility edits. CC-BY-SA-3.0. Converted to Chrome DNR, selected and supplemented; adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.</p>
 <p><strong>rules-easyprivacy.json</strong>: The EasyList authors; EasyPrivacy plus WardenOne tracker rules. CC-BY-SA-3.0. Hosts normalized and batched, every host rule shipped; curated tracker additions. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.</p>
+<p><strong>rules-easyprivacy-general.json</strong>: The EasyList authors; EasyPrivacy general collector rules. CC-BY-SA-3.0. EasyPrivacy general rules naming a collector, minus payment, checkout, captcha and bot check sensor paths, converted to DNR rules; matching allowlist exceptions folded in as excluded domains. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-11-19.</p>
 <p><strong>cosmetic-rules.json</strong>: EasyList, EasyPrivacy, uAssets, AdGuard and Fanboy Social. GPL-3.0; Fanboy CC-BY-3.0 attribution retained. Selected scriptlet and procedural rules compiled on 2026-08-13. Corresponding cosmetic source records/comments were extracted from ten hash-matched full inputs; unused network records omitted. No rule changes made by this review.</p>
 <p><strong>psl-private.js</strong>: Public Suffix List private and ICANN sections. MPL-2.0. Private and ICANN entries selected and converted into JavaScript; source version recorded in the file. MPL covers list material.</p>
 <p><strong>domain-utils.js</strong>: WardenOne code with compact Public Suffix List ICANN data. GPL-3.0-or-later; MPL-2.0 covers the marked PSL data. ICANN entries grouped by TLD on 2026-10-20; single-label rules use the PSL default wildcard. Source version and MPL notice retained in the generated region.</p>

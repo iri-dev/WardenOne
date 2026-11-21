@@ -403,6 +403,41 @@ const lockChecks = (async () => {
   }
 })();
 
+/* A switch flipped before the settings load replays what a normal flip does once it is saved (audit 2026-11-13):
+   the tab reload for toggles that need one, YouTube's own path for the scriptlet engine, nothing for the rest. */
+{
+  const a = POPUP_JS.indexOf('function earlySwitchFollowUp(key, checked) {');
+  const b = POPUP_JS.indexOf('\n}\n', a) + 2;
+  check('earlySwitchFollowUp is present', a > 0 && b > a);
+  const calls = [];
+  const ctx = vm.createContext({
+    ACTIVE_TAB_RELOAD_TOGGLES: new Set(['adShield', 'scriptletEngine', 'antiFingerprintNoise']),
+    reloadActiveHttpTab: function reload() { calls.push('reload'); },
+    enableYoutubeFromPopup: () => calls.push('youtube'),
+    activeTabHost: (fn) => fn(ctx.__host),
+  });
+  vm.runInContext(POPUP_JS.slice(a, b) + '\nthis.followUp = earlySwitchFollowUp;', ctx);
+  check('an early flip of a reloading toggle reloads the tab after saving', ctx.followUp('adShield', false) === ctx.reloadActiveHttpTab);
+  check('an ordinary switch needs no follow-up', ctx.followUp('blockMetaRefresh', true) === null);
+  ctx.__host = 'www.youtube.com';
+  ctx.followUp('scriptletEngine', true)();
+  ctx.__host = 'news.example.org';
+  ctx.followUp('scriptletEngine', true)();
+  check('the scriptlet engine turned on early takes YouTube\'s own path there and a reload elsewhere',
+    JSON.stringify(calls) === JSON.stringify(['youtube', 'reload']));
+  check('turning the scriptlet engine off early reloads like any reloading toggle', ctx.followUp('scriptletEngine', false) === ctx.reloadActiveHttpTab);
+  const handler = POPUP_JS.slice(POPUP_JS.indexOf("document.querySelectorAll('input[data-key]').forEach((el) => {"), POPUP_JS.indexOf("document.querySelectorAll('select[data-config-bool]')"));
+  check('the early switch path queues the follow-up with the value', /if \(!popupConfigLoaded\) \{ pendingPopupChanges\.set\(key, el\.checked\); pendingPopupFollowUps\.set\(key, el\.checked\); return; \}/.test(handler));
+  const inputs = POPUP_JS.slice(POPUP_JS.indexOf("document.querySelectorAll('select[data-config-bool]')"), POPUP_JS.indexOf("$('update-now')"));
+  check('an early API key or select value is kept instead of dropped',
+    /if \(!popupConfigLoaded\) \{ pendingPopupChanges\.set\(el\.getAttribute\('data-config-text'\), el\.value\.trim\(\)\); return; \}/.test(inputs)
+    && /if \(!popupConfigLoaded\) \{ pendingPopupChanges\.set\(el\.getAttribute\('data-key'\), el\.value === 'true'\); return; \}/.test(inputs));
+  const loadBody = POPUP_JS.slice(POPUP_JS.indexOf('function load() {'), POPUP_JS.indexOf('function save(afterSave) {'));
+  check('load saves the queued edits once and then runs their follow-ups', /saveConfig\('Saved', \(after \|\| followUps\.length \|\| replaySwitches\) \? \(\) => \{/.test(loadBody)
+    && /followUps\.forEach\(\(run\) => \{ try \{ run\(\); \} catch \(_\) \{\} \}\);/.test(loadBody));
+  check('an early API key gets the empty-key check a normal save runs', /normalizeProviderSettings\(\{\}\);/.test(loadBody));
+}
+
 lockChecks.then(() => {
   if (failures) {
     console.error('[fail] popup config merge tests: ' + failures + ' failure(s)');

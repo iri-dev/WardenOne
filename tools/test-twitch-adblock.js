@@ -1660,6 +1660,79 @@ test('Twitch AdManager discovery searches later webpackChunk runtimes', () => {
     'later-runtime AdManager discovery left its retry timer armed');
 });
 
+/* Webpack caches a module before running its factory, so requiring the AdManager module before a dependency's chunk
+   loaded left that dependency empty forever and the home page crashed on `undefined.headliner` (blank page). */
+function exposeLazyWebpackAdManager(window, manager) {
+  const cache = {};
+  function requireFn(id) {
+    if (cache[id]) return cache[id].exports;
+    const module = cache[id] = { exports: {} };
+    requireFn.m[id].call(module.exports, module, module.exports, requireFn);
+    return module.exports;
+  }
+  requireFn.m = {
+    'lazy-ad-manager': function lazyAdManagerFactory(e, t, i) {
+      const adConstants = i(588572);
+      e.exports = { AdManager: manager, headliner: adConstants.headliner, keys: ['startProcessingRequests', 'declineReason'] };
+    },
+  };
+  exposeWebpackRuntime(window, 'webpackChunkTwitchLazyFixture', requireFn);
+  return { requireFn, cache };
+}
+
+test('Twitch AdManager discovery never runs the module before its dependencies load', () => {
+  const calls = [];
+  let runtime;
+  function LazyAdManager() {}
+  LazyAdManager.startProcessingRequests = function startProcessingRequests() {};
+  LazyAdManager.declineReason = null;
+  LazyAdManager.decline = function decline(reason, options) {
+    calls.push({ reason, options });
+    LazyAdManager.declineReason = reason;
+  };
+  const harness = createPageHarness(null, {
+    fakeClock: true,
+    now: 1000,
+    configureWindow(window) { runtime = exposeLazyWebpackAdManager(window, LazyAdManager); },
+  });
+  for (let attempt = 0; attempt < 6; attempt++) harness.advance(500);
+  assert(!runtime.cache['588572'] && !runtime.cache['lazy-ad-manager'],
+    'AdManager discovery ran the module before its dependency chunk loaded and left an empty cached copy');
+  assert(calls.length === 0, 'AdManager was declined from a module that could not have loaded yet');
+
+  runtime.requireFn.m['588572'] = function adConstantsFactory(e) { e.exports = { headliner: 'headliner-slot' }; };
+  const ownLoad = runtime.requireFn('lazy-ad-manager');
+  assert(ownLoad.headliner === 'headliner-slot' && runtime.requireFn(588572).headliner === 'headliner-slot',
+    'Twitch could not load its own ad constants after WardenOne looked for the AdManager');
+  harness.advance(500);
+  equal(calls, [{ reason: 'player_size', options: { sendEvent: false } }],
+    'AdManager was not declined after Twitch loaded the module itself');
+});
+
+test('Twitch AdManager discovery requires the module early once every dependency has loaded', () => {
+  const calls = [];
+  let runtime;
+  function ReadyAdManager() {}
+  ReadyAdManager.startProcessingRequests = function startProcessingRequests() {};
+  ReadyAdManager.declineReason = null;
+  ReadyAdManager.decline = function decline(reason, options) {
+    calls.push({ reason, options });
+    ReadyAdManager.declineReason = reason;
+  };
+  createPageHarness(null, {
+    fakeClock: true,
+    now: 1000,
+    configureWindow(window) {
+      runtime = exposeLazyWebpackAdManager(window, ReadyAdManager);
+      runtime.requireFn.m['588572'] = function adConstantsFactory(e) { e.exports = { headliner: 'headliner-slot' }; };
+    },
+  });
+  equal(calls, [{ reason: 'player_size', options: { sendEvent: false } }],
+    'AdManager with every dependency loaded was not declined on the first attempt');
+  assert(runtime.cache['588572'].exports.headliner === 'headliner-slot',
+    'early AdManager discovery left its dependency half built');
+});
+
 test('Twitch AdManager discovery retries are bounded and can be rearmed by config', () => {
   const harness = createPageHarness(null, { fakeClock: true, now: 1000 });
   for (let attempt = 1; attempt < 240; attempt++) harness.advance(500);

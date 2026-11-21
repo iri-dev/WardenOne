@@ -45,6 +45,9 @@ async function run() {
     await cdp.send('Emulation.setDeviceMetricsOverride', {
       width: 320, height: 800, deviceScaleFactor: 1, mobile: false,
     }, sessionId);
+    /* The window sits off screen and another app can hold the OS focus. Without page focus :focus never
+       matches, so every focus ring reads as missing and the result depends on what else is open. */
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }, sessionId);
 
     async function evalValue(expression) {
       const response = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId);
@@ -152,8 +155,9 @@ async function run() {
     assert(sliders.some((n) => /brightness/i.test(n.name && n.name.value || '')), 'EyeShield brightness needs an accessible slider name');
     await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value: 'active' }] }, sessionId);
     const eyeFocus = await evalValue(`(() => {const e=document.getElementById('eyeshield-brightness');e.focus();
-      const s=getComputedStyle(e);return {outline:s.outlineStyle,disabled:e.disabled}})()`);
+      const s=getComputedStyle(e);return {outline:s.outlineStyle,disabled:e.disabled,focused:e.matches(':focus-visible')}})()`);
     assert.equal(eyeFocus.disabled, false);
+    assert(eyeFocus.focused, 'EyeShield slider did not take visible focus, so its ring cannot be judged');
     assert.notEqual(eyeFocus.outline, 'none', 'EyeShield slider needs a forced-colors focus ring');
     await cdp.send('Emulation.setEmulatedMedia', { features: [] }, sessionId);
     console.log('[ok] EyeShield: named sliders with percentage values, 320px reflow, forced-colors focus');

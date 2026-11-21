@@ -148,6 +148,7 @@ const COPY = {
   cleanCopyLinks: ['Clean links you copy', '', 'Copies links without their tracking codes, so pastes come out clean.'],
   unshimLinks: ['Remove click-tracking pings', '', 'Stops links reporting your click to another address.'],
   deAmp: ['Skip AMP pages', '', 'Opens the real article instead of the AMP copy.'],
+  capLeakyReferrer: ['Referrer cap', 'rec', 'A page asking to send its full address to other sites sends only its name.'],
   capReferrer: ['Strict referrer protection', 'risk', 'Other sites stop seeing which page sent you there.'],
   blockThirdPartyCookies: ['Block third-party cookies', 'rec', 'Removes cookie headers for known trackers, confirmed tracking aliases and reviewed Google, Stripe, Spotify and Facebook resources. Supported protected frames also lose cookie API access before their scripts run. Direct visits, first-party service use, media workarounds and immediate site exceptions remain supported.'],
   blockSupercookies: ['Clear tracker supercookies', '', 'Wipes the storage trackers use to come back after a cookie clear.'],
@@ -159,7 +160,8 @@ const COPY = {
   blockFingerprintScripts: ['Block fingerprinting scripts', 'rec', 'Known fingerprinting vendors don’t load.'],
   fingerprintProbeDetection: ['Notice fingerprint probes', '', 'Spots canvas, audio and font probing without changing anything.'],
   clientHintProtection: ['Reduce Client Hints', '', 'Third parties stop getting your exact OS, version and device.'],
-  antiFingerprintNoise: ['Add fingerprint noise', 'adv', 'Small changes to graphics, audio and text measurements.'],
+  fingerprintShield: ['Fingerprint shield', 'rec', 'Each site and visit gets a slightly different canvas and audio reading, and common hardware values.'],
+  antiFingerprintNoise: ['Add fingerprint noise', 'adv', 'Stronger changes to graphics, text, screen and browser details.'],
   blockFraudVendorScripts: ['Block bot-check scripts', 'risk', 'Banks and shops may ask you to verify more often.'],
   sendPrivacySignals: ['Send privacy signals', '', 'Tells sites you opt out (Do Not Track, Global Privacy Control).'],
   mailTrackingShield: ['Stop email tracking pixels', 'rec', 'Senders can’t tell when you opened their email.'],
@@ -267,9 +269,9 @@ const PAGES = [
     G('i-eye-off', 'Adult-site safety', 'Warnings and safe search.', ['gateAdultSites', 'adultHeuristics', 'safeSearch']) ] },
   { id: 'privacy', title: 'Privacy', icon: 'i-lock', nav: 1, desc: 'Stops trackers, strips tracking out of links, and keeps sites from fingerprinting your browser.', groups: [
     G('i-eye-off', 'Tracking', 'Block trackers and limit how sites follow you around the web.', ['blockTrackers', 'blockFirstPartyTrackers', 'blockCnameTrackers', 'trackerLearner', 'trackerLearnerAuto', 'socialWidgetGuard', 'trackerCacheProtection']),
-    G('i-link', 'Links', 'Keep shared links and navigation private.', ['stripTrackingParams', 'cleanCopyLinks', 'unshimLinks', 'deAmp', 'capReferrer']),
+    G('i-link', 'Links', 'Keep shared links and navigation private.', ['stripTrackingParams', 'cleanCopyLinks', 'unshimLinks', 'deAmp', 'capLeakyReferrer', 'capReferrer']),
     G('i-cookie', 'Cookies & storage', 'Control what sites store on your device.', ['blockThirdPartyCookies', 'blockSupercookies', 'autoRejectConsent', 'removeConsentWalls', 'clearCookiesOnLeave', 'clearServiceWorkersOnLeave', 'blockAllCookies']),
-    G('i-fingerprint', 'Fingerprinting', 'Make it harder for sites to recognise your browser or device.', ['blockFingerprintScripts', 'fingerprintProbeDetection', 'clientHintProtection', 'antiFingerprintNoise', 'blockFraudVendorScripts', 'sendPrivacySignals']),
+    G('i-fingerprint', 'Fingerprinting', 'Make it harder for sites to recognise your browser or device.', ['blockFingerprintScripts', 'fingerprintShield', 'fingerprintProbeDetection', 'clientHintProtection', 'antiFingerprintNoise', 'blockFraudVendorScripts', 'sendPrivacySignals']),
     G('i-mail', 'Email & sign-in', 'Private inboxes, and logins that still finish.', ['mailTrackingShield', 'loginCompatibility']) ] },
   { id: 'ads', title: 'Ads & clutter', icon: 'i-ban', nav: 1, desc: 'AdShield: ads on pages and in players, and the junk in search results.', groups: [
     G('i-ban', 'Ads', 'Network blocking plus page-level fixes for sites that dodge it.', ['adShield', 'antiAdblockShield', 'scriptletEngine']),
@@ -1341,6 +1343,7 @@ const CHECKS = [
   ['sessionShield', 'Sign-ins are guarded', 'SessionShield is off'],
   ['stripTrackingParams', 'Tracking is stripped from links', 'Links keep their tracking codes'],
   ['blockThirdPartyCookies', 'Tracker and reviewed service cookies are isolated', 'Tracker cookie isolation is off'],
+  ['fingerprintShield', 'Your fingerprint is shielded', 'Fingerprint shield is off'],
   ['antiFingerprintNoise', 'Fingerprint noise is on', 'Fingerprint noise is off'],
   ['blockHighConfidencePhishing', 'Clear phishing pages are blocked', 'Phishing is warned about, not blocked'],
   ['blockWebRTCLeak', 'Your IP stays out of WebRTC', 'WebRTC can show your IP'],
@@ -2408,6 +2411,12 @@ async function clearActivity(observations = false) {
     : 'Clear Activity and notification history?\n\nThis cannot be undone. Your settings and site lists stay.')) return;
   try {
     const result = await ask({ kind: 'history-clear', observations });
+    /* A private window: the normal window has the request but has not answered yet, so nothing is cleared so far. */
+    if (result && result.pending) {
+      results.activity = { text: String(result.error || 'Your normal window has not cleared it yet.'), tone: 'warn' };
+      refreshCustom(['activity']);
+      return;
+    }
     if (!result || !result.ok) throw new Error(result && result.error || 'Clear failed.');
     activityCount = 0;
     results.activity = { text: 'Activity history cleared.', tone: 'ok' };

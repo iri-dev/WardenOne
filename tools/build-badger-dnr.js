@@ -25,6 +25,10 @@ const PRIORITY = 1000;
 const BATCH = 1000;
 const LIMITS = Object.freeze({ rules: 200, hosts: 6000, bytes: 640 * 1024 });
 const licenseHash = text => require('crypto').createHash('sha1').update('blob ' + Buffer.byteLength(text) + '\0').update(text).digest('hex');
+/* WardenOne's own site fixes, applied like Privacy Badger's. Badger already exempts p.toadmash.net on target.com; its
+   seed sees toadmash.net fingerprinting only on News UK sites, where it runs the "Verifying Device" check. Blocking it
+   left the-sun.com stuck on that check (rematch, 2026-11-14). */
+const WARDENONE_SITEFIXES = Object.freeze({ 'toadmash.net': Object.freeze(['the-sun.com', 'thesun.co.uk', 'thetimes.com']) });
 
 function checkSnapshot(snapshot) {
   if (!snapshot || snapshot.schema !== 1 || !/^[0-9a-f]{40}$/.test(snapshot.revision || '') || !Array.isArray(snapshot.files)
@@ -65,6 +69,11 @@ function upstream(snapshot, normalizeHost) {
       if (!fixes.has(host)) fixes.set(host, new Set());
       for (const site of hosts(sites)) fixes.get(host).add(site);
     }
+  }
+  for (const [pattern, sites] of Object.entries(WARDENONE_SITEFIXES)) {
+    const host = normalizeHost(pattern);
+    if (!fixes.has(host)) fixes.set(host, new Set());
+    for (const site of hosts(sites)) fixes.get(host).add(site);
   }
   return { blocked, spared, fixes, entities: vm.runInNewContext(entities[1]) };
 }
@@ -199,5 +208,5 @@ async function main(args) {
   }
   console.log('[ok] Privacy Badger trained ruleset matches its pinned, licensed source');
 }
-module.exports = { buildAll, readSnapshot, upstream, ancestors, FILES, RESOURCE_TYPES, PRIORITY, LIMITS, BADGER_SOURCE_URL };
+module.exports = { buildAll, readSnapshot, upstream, ancestors, FILES, RESOURCE_TYPES, PRIORITY, LIMITS, BADGER_SOURCE_URL, WARDENONE_SITEFIXES };
 if (require.main === module) main(process.argv.slice(2)).catch(error => { console.error(error); process.exitCode = 1; });

@@ -110,6 +110,13 @@ async function run() {
   assert.equal(state.writes, writes, 'unchanged compatibility needs no rewrite');
   await api.login(true);
   assert(state.session.length > 0 && state.session.every(rule => rule.priority === 1900 && rule.action.type === 'allow'));
+  /* Chrome rejects an empty urlFilter, and a bot check host allowed for some sites must not be allowed for all. */
+  assert(state.session.every(rule => !('urlFilter' in rule.condition) || rule.condition.urlFilter.length > 0), 'no empty urlFilter');
+  const botCheck = state.session.filter(rule => (rule.condition.requestDomains || []).includes('toadmash.net'));
+  assert(botCheck.length === 1 && JSON.stringify(botCheck[0].condition.initiatorDomains) === JSON.stringify(['the-sun.com', 'thesun.co.uk', 'thetimes.com'])
+    && !('urlFilter' in botCheck[0].condition), 'the News UK bot check host is allowed only on News UK sites');
+  const facebook = state.session.find(rule => (rule.condition.requestDomains || []).includes('facebook.com'));
+  assert(facebook && facebook.condition.urlFilter === '/dialog/oauth' && !facebook.condition.initiatorDomains, 'the Facebook OAuth allowance keeps its path');
   const staticRules = JSON.parse(fs.readFileSync('rules-grabber-compat.json', 'utf8')).filter(rule => rule.id >= 164 && rule.id <= 167);
   assert.equal(staticRules.length, 4);
   for (const allowance of state.rules.concat(state.session, staticRules)) {

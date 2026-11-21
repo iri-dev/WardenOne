@@ -486,7 +486,7 @@ async function main() {
   check('Activity Center names it',
     /blocked_frame_top_redirect: '/.test(HISTORY));
   check('the worker clears the attribution when a page commits',
-    /onCommitted\?\.addListener\(\(details\) => \{[\s\S]{0,900}?forgetNavSignals\(details\.tabId\)/.test(BG),
+    /onCommitted\?\.addListener\(\(details\) => \{[\s\S]{0,1200}?forgetNavSignals\(details\.tabId\)/.test(BG),
     'the previous page\'s click must not explain the next page\'s navigation');
   /* Order matters inside that listener and is not obvious from reading it: the
      guard needs the page being LEFT, so it has to run before LAST_TOP_URL moves on. */
@@ -525,6 +525,10 @@ async function main() {
     ['https://www.bbc.com/news', 'https://www.bbc.co.uk/news', true],
     ['https://www.google.com/', 'https://www.google.co.uk/', true],
     ['https://www.amazon.de/', 'https://www.amazon.co.uk/', true],
+    ['https://www.espn.com/', 'https://www.espn.co.uk/football/', true],
+    ['https://www.yelp.com/', 'https://www.yelp.co.uk/search?find_loc=London', true],
+    ['https://www.espn.com/', 'https://espn-login.co/', false],
+    ['https://www.yelp.com/', 'https://www.yelp.co.uk/?redirect_url=https%253A%252F%252Fother.example', false],
     ['https://www.bbc.com/', 'https://www.google.com/', false],
     ['https://www.bbc.com/', 'https://www.bbc.xyz/', false],
     ['https://www.bbc.com/', 'https://bbc.co.uk.evil.example/', false],
@@ -535,6 +539,63 @@ async function main() {
     ['https://bbc.co.uk/', 'https://bbc.com:8443/', false],
     ['https://bbc.co.uk/', 'https://user@bbc.com/', false],
   ]) check('regional redirect scope: ' + source + ' to ' + target, regional(source, target) === expected);
+  /* De-AMP is on by default since Round 5 (2026-11-14); its own jump from an AMP cache to the publisher that the AMP
+     address names raised a Redirect Check on every AMP link. Any other destination must still be checked. */
+  const DOMAIN = fs.readFileSync(path.join(ROOT, 'domain-utils.js'), 'utf8') + '\n' + fs.readFileSync(path.join(ROOT, 'psl-private.js'), 'utf8');
+  const ampUnwrap = vm.runInNewContext(DOMAIN + ';' + IDN + ';' + auctionSrc + ';function siteIdentityBg(h) { return siteIdentity(h); };knownAmpUnwrap', { URL });
+  for (const [source, target, expected] of [
+    ['https://www-bbc-co-uk.cdn.ampproject.org/c/s/www.bbc.co.uk/news', 'https://www.bbc.co.uk/news', true],
+    ['https://www-theguardian-com.cdn.ampproject.org/c/s/amp.theguardian.com/uk-news/x', 'https://www.theguardian.com/uk-news/x', true],
+    ['https://www.google.com/amp/s/www.bbc.co.uk/news/amp', 'https://www.bbc.co.uk/news', true],
+    ['https://www.google.co.uk/amp/s/www.bbc.co.uk/news/amp', 'https://www.bbc.co.uk/news', true],
+    ['https://example-com.bing-amp.com/c/s/example.com/story', 'https://example.com/story', true],
+    ['https://www-bbc-co-uk.cdn.ampproject.org/c/s/www.bbc.co.uk/news', 'https://evil-login.feed-fixture.net/', false],
+    ['https://www.google.com/amp/s/www.bbc.co.uk/news/amp', 'https://www.bbc.co.uk.evil-login.feed-fixture.net/', false],
+    ['https://www.google.com/search?q=amp', 'https://www.bbc.co.uk/news', false],
+    ['https://cdn.ampproject.org.feed-fixture.net/c/s/www.bbc.co.uk/news', 'https://www.bbc.co.uk/news', false],
+    ['https://www-bbc-co-uk.cdn.ampproject.org/c/s/www.bbc.co.uk/news', 'http://www.bbc.co.uk/news', false],
+  ]) check('AMP unwrap scope: ' + source + ' to ' + target, ampUnwrap(source, target) === expected);
+  check('the forced-redirect check lets only the AMP unwrap through, next to the other named exemptions',
+    /knownRegionalRedirect\(fromUrl, details\.url\)\s*\|\| knownAmpUnwrap\(fromUrl, details\.url\)\) return;/.test(BG));
+  /* The 2026-11-19 crawl raised a Redirect Check when dailymail.co.uk sent the tab to dailymail.com, a brand missing
+     from the table. The same name filed under one company in Privacy Badger's owner list now passes. */
+  const OWNERS = fs.readFileSync(path.join(ROOT, 'first-party-sites.json'), 'utf8');
+  const sameOwner = vm.runInNewContext(DOMAIN + ';' + IDN + ';' + auctionSrc
+    + ';function registrableDomainBg(h) { return registrableDomain(h); };sameOwnerRegionalRedirect',
+    { URL, chrome: { runtime: { getURL: (p) => p } }, fetch: async () => ({ json: async () => JSON.parse(OWNERS) }) });
+  for (const [source, target, expected] of [
+    ['https://www.dailymail.co.uk/home/index.html', 'https://www.dailymail.com/home/index.html', true],
+    ['https://www.dailymail.com/', 'https://www.dailymail.co.uk/', true],
+    ['https://www.espn.com/', 'https://www.espn.co.uk/', true],
+    ['https://www.dailymail.co.uk/', 'https://www.thisismoney.co.uk/', false],
+    ['https://www.dailymail.co.uk/', 'https://www.dailymail.xyz/', false],
+    ['https://www.dailymail.co.uk/', 'https://www.dailymail.com/?url=https%3A%2F%2Fother.example', false],
+    ['https://www.dailymail.co.uk/', 'http://www.dailymail.com/', false],
+    ['https://www.dailymail.co.uk/', 'https://www.dailymail.com:8443/', false],
+    ['https://dailymail.co.uk.evil.example/', 'https://www.dailymail.com/', false],
+    ['https://www.dailymail.co.uk/', 'https://dailymail.com.evil.example/', false],
+    ['https://www.dailymail.co.uk/', 'https://www.dailymail.co.uk/news', false],
+    ['https://news-alpha.example/', 'https://news-alpha.org/', false],
+  ]) check('same owner regional scope: ' + source + ' to ' + target, (await sameOwner(source, target)) === expected);
+  check('the forced-redirect check asks the owner list after the named exemptions',
+    /knownAmpUnwrap\(fromUrl, details\.url\)\) return;\n  if \(await sameOwnerRegionalRedirect\(fromUrl, details\.url\)\) return;/.test(BG));
+  /* Clicking a Brave Search result raised a Redirect Check: search.brave.com/go/v1 committed, the click was forgotten,
+     and its hop to the result read as the tab moving on its own. Only the engine's own redirector carries the click. */
+  const clickRedirector = vm.runInNewContext(DOMAIN + ';' + auctionSrc + ';function siteIdentityBg(h) { return siteIdentity(h); };searchClickRedirector', { URL });
+  for (const [left, next, expected] of [
+    ['https://search.brave.com/search?q=chatgpt', 'https://search.brave.com/go/v1?x=1', true],
+    ['https://www.google.com/search?q=x', 'https://www.google.com/url?q=https://chatgpt.com/', true],
+    ['https://www.google.co.uk/search?q=x', 'https://www.google.co.uk/url?q=https://chatgpt.com/', true],
+    ['https://www.bing.com/search?q=x', 'https://www.bing.com/ck/a?u=abc', true],
+    ['https://duckduckgo.com/?q=x', 'https://duckduckgo.com/l/?uddg=https%3A%2F%2Fchatgpt.com%2F', true],
+    ['https://search.brave.com/search?q=x', 'https://search.brave.com/search?q=y', false],
+    ['https://evil.feed-fixture.net/', 'https://search.brave.com/go/v1', false],
+    ['https://search.brave.com/search?q=x', 'https://search.brave.com.feed-fixture.net/go/v1', false],
+    ['https://search.brave.com/search?q=x', 'http://search.brave.com/go/v1', false],
+    ['https://www.google.com/search?q=x', 'https://www.google.com/urlx', false],
+  ]) check('search click redirector scope: ' + left + ' to ' + next, clickRedirector(left, next) === expected);
+  check('a search redirector page keeps the results page click instead of forgetting it',
+    /searchClickRedirector\(LAST_TOP_URL\[details\.tabId\], details\.url\);[\s\S]{0,200}forgetNavSignals\(details\.tabId\);\s*if \(carryClick\) LAST_GESTURE_AT\[details\.tabId\] = clickAt;/.test(BG));
   const LANDERS = [
     ['https://boost-you-browser.com/preland/storage/sf/operaone/5/index.html?p1=x', true, 'the real one'],
     ['https://boost-you-browser.com/', true, 'a hostname that is a pitch for a browser'],

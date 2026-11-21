@@ -22,12 +22,12 @@ for (const [id, value, expected] of cases) assert.equal(state.rejected(id, value
 assert.equal(state.cookie('other=private; OptanonConsent=' + encodeURIComponent(cases[0][1]), 'OptanonConsent'), cases[0][1]);
 for (const raw of ['OptanonConsent=%XX', 'OptanonConsent=a; OptanonConsent=b', 'x'.repeat(32769)]) assert.equal(state.cookie(raw, 'OptanonConsent'), '');
 assert(!state.verify(state.profiles[0], cases[0][1], cases[0][1]), 'pre-existing state alone is not a newly saved opt-out');
-function rig() {
+function rig(DateImpl = Date) {
   const messages = [], timers = [], listeners = [];
   const document = { documentElement: null, cookie: '', addEventListener() {}, querySelectorAll: () => [], body: {} };
   const window = {}; window.top = window;
   const context = { window, document, WOConsentState: state, location: { hostname: 'choice.example', pathname: '/', href: 'https://choice.example/', origin: 'https://choice.example' },
-    URL, URLSearchParams, console, innerWidth: 1000, innerHeight: 800, Set, WeakSet, Date,
+    URL, URLSearchParams, console, innerWidth: 1000, innerHeight: 800, Set, WeakSet, Date: DateImpl,
     chrome: { runtime: { lastError: null, onMessage: { addListener: f => listeners.push(f), removeListener() {} }, sendMessage: m => messages.push(m) } },
     setTimeout: (fn, delay) => { timers.push({ fn, delay }); return timers.length; }, clearTimeout() {}, setInterval: () => 1, clearInterval() {},
     MutationObserver: class { observe() {} disconnect() {} }, requestAnimationFrame() {},
@@ -86,5 +86,41 @@ for (const reply of [null, { ok: false }, { ok: true, overrides: {} }, { ok: tru
   assert.equal(r.messages.length, 0, 'an older action cannot finish verification for the returning banner');
   r.timers.filter(timer => timer.delay === 2500)[1].fn();
   assert.equal(r.messages[0].detail.status, 'unverified');
+}
+/* A page that keeps asking: the third answer stops further clicks, but that answer is still checked. */
+{
+  let clock = 5e6;
+  const r = rig({ now: () => clock });
+  const profile = state.profiles[0];
+  const statuses = () => r.messages.map((m) => m.detail.status);
+  for (let i = 0; i < 2; i++) {
+    assert(r.api.performChoice(button(), null, profile), 'answer ' + (i + 1) + ' is clicked');
+    clock += 1500;
+  }
+  assert(r.api.isActive(), 'two answers leave the decliner running');
+  assert(r.api.performChoice(button(() => { r.document.cookie = profile.cookie + '=' + encodeURIComponent(cases[0][1]); }), null, profile),
+    'the third answer is clicked');
+  assert(!r.api.isActive(), 'the third answer stops further automatic clicks');
+  assert.equal(statuses().filter((s) => s === 'rejected').length, 1, 'and its saved opt-out is still verified and reported');
+}
+{
+  let clock = 6e6;
+  const r = rig({ now: () => clock });
+  const profile = state.profiles[0];
+  for (let i = 0; i < 3; i++) { assert(r.api.performChoice(button(), null, profile)); clock += 1500; }
+  assert(!r.api.isActive());
+  const before = r.messages.length;
+  r.api.refreshConfigState({ enabled: false, autoRejectConsent: false });
+  for (const t of r.timers.filter((t) => t.delay === 2500)) t.fn();
+  assert.equal(r.messages.length, before, 'switching the feature off still cancels every pending check, the third included');
+}
+{
+  let clock = 7e6;
+  const r = rig({ now: () => clock });
+  const profile = state.profiles[0];
+  for (let i = 0; i < 3; i++) { assert(r.api.performChoice(button(), null, profile)); clock += 1500; }
+  const last = r.timers.filter((t) => t.delay === 2500).pop();
+  last.fn();
+  assert.equal(r.messages.filter((m) => m.detail.status === 'unverified').length, 1, 'a third answer with no saved state ends as unverified, not silence');
 }
 console.log('[ok] failed/dispatched/unverified/saved consent outcomes, bounded CMP cookie parsing and revocation');

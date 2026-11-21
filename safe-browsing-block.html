@@ -68,7 +68,7 @@
         <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.8 12.2l2.2 2.2 4.2-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 6v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       </div>
       <div>
-        <h1>Dangerous Site Blocked</h1>
+        <h1 id="title">Dangerous Site Blocked</h1>
         <div class="site" id="site"></div>
       </div>
     </div>
@@ -77,9 +77,13 @@
       <div class="label">Reason</div>
       <div class="value" id="reason">An external reputation provider flagged this URL.</div>
     </div>
+    <div class="item" id="listed-by-row" hidden>
+      <div class="label">Listed by</div>
+      <div class="value" id="listed-by"></div>
+    </div>
     <div class="item">
       <div class="label">Risk</div>
-      <div class="value">This site may be used for malware, phishing, unwanted software, or harmful application delivery.</div>
+      <div class="value" id="risk">This site may be used for malware, phishing, unwanted software, or harmful application delivery.</div>
     </div>
     <div class="actions">
       <button class="primary" id="back">Go back</button>
@@ -90,7 +94,7 @@
     <div class="escape" id="escape" hidden>
       <div class="item">
         <h2 id="escape-title" tabindex="-1">Before you continue</h2>
-        <div class="value">
+        <div class="value" id="escape-text">
           Reputation feeds do get things wrong, and if this is your bank, your university
           login, or a site you know, that is worth reporting so it can be fixed for
           everyone. But if you arrived here from a link, a search result, an email, or an
@@ -111,7 +115,7 @@
 
     <div class="note" id="foot">
       This is a confirmed external reputation hit, so WardenOne blocked it before the page
-      loaded. You are not trapped here &mdash; if you believe it is wrong, use
+      loaded. You are not trapped here. If you believe it is wrong, use
       &ldquo;This looks wrong&rdquo;.
     </div>
   </main>

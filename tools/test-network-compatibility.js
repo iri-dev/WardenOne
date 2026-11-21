@@ -83,14 +83,15 @@ function loadRedirectPolicy() {
   const sandbox = {
     isLoginCompatibilityUrl: (url) => String(url).includes('auth.example'),
     URL,
-    SECURITY_DOMAINS: new Set(['malware.example', 'evil.tracker.example']),
-    registrableDomainBg: host => host.split('.').slice(-2).join('.'),
+    SECURITY_DOMAINS: new Set(['malware.example', 'evil.tracker.example', 'unsafe.yelp.co.uk']),
+    registrableDomainBg: host => host.split('.').slice(host.endsWith('.co.uk') ? -3 : -2).join('.'),
   };
   vm.createContext(sandbox);
   installSessionIo(sandbox);
   installEngineAmbient(sandbox);
   vm.runInContext(
-    sourceBetween('function redirectChainContainsKnownAuth', '\nasync function evaluateRedirectChain')
+    fs.readFileSync(path.join(ROOT, 'idn-utils.js'), 'utf8') + '\n'
+      + sourceBetween('function redirectChainContainsKnownAuth', '\nasync function evaluateRedirectChain')
       + '\nthis.__api = { redirectChainContainsKnownAuth, redirectChainShouldInterrupt };',
     sandbox,
   );
@@ -233,6 +234,41 @@ test('simple-list parser accepts only unambiguous whole hosts', () => {
     'commented.feed-fixture.net',
     'xn--bcher-kva.feed-fixture.net',
   ]);
+});
+
+/* StevenBlack's hosts list (section of 24 Nov 2023) names CNN's app bundle host. As a third-party tracker rule it hid
+   CNN's video player entirely; a security feed naming it still counts, and CNN's telemetry hosts stay blocked. */
+test('CNN\'s app host is skipped by tracker and ad lists, never by security lists', () => {
+  const real = loadNetworkParsers(true);
+  const feed = ['0.0.0.0 registry.api.cnn.io', '0.0.0.0 zion.api.cnn.io', '0.0.0.0 zion-telemetry.api.cnn.io',
+    '0.0.0.0 registry.api.cnn.io.mirror-cnn.net'].join('\n');
+  const hosts = Array.from(real.parseList(feed));
+  const allowed = (kind) => hosts.filter((host) => real.remoteListBlockAllowed(host, '', kind));
+  assert.deepStrictEqual(allowed('tracker'), ['zion.api.cnn.io', 'zion-telemetry.api.cnn.io', 'registry.api.cnn.io.mirror-cnn.net'],
+    'a tracker list blocks CNN telemetry and look-alikes, but not the app host');
+  assert.deepStrictEqual(allowed('adshield'), allowed('tracker'), 'ad lists behave like tracker lists');
+  assert.deepStrictEqual(allowed('security'), hosts, 'a security list still blocks every one of them');
+});
+/* Round 5b, 2026-11-19: Blocklist Project's tracking list names hsforms.com and intercom.io whole, which removed
+   HubSpot contact forms and Intercom chat everywhere. Only that list's bare entries are dropped. */
+test('Blocklist Project tracking drops only its bare HubSpot forms and Intercom entries', () => {
+  const real = loadNetworkParsers(true);
+  const listUrl = 'https://raw.githubusercontent.com/blocklistproject/Lists/master/tracking.txt';
+  for (const host of ['hsforms.com', 'intercom.io']) {
+    assert.strictEqual(real.remoteListBlockAllowed(host, '', 'tracker', listUrl), false, host + ' bare from that list');
+    for (const other of [undefined, 'https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt',
+      listUrl + '?x=1', listUrl.replace('https:', 'http:')]) {
+      assert.strictEqual(real.remoteListBlockAllowed(host, '', 'tracker', other), true, host + ' from ' + other);
+    }
+    assert.strictEqual(real.remoteListBlockAllowed(host, '', 'security', listUrl), false, 'the exclusion is by source, not kind');
+  }
+  for (const host of ['perf.hsforms.com', 'nexus-websocket-a.intercom.io', 'hsforms.com.evil-forms.net', 'intercom.io-login.net',
+    'www.hsforms.com', 'track.hubspot.com']) {
+    assert.strictEqual(real.remoteListBlockAllowed(host, '', 'tracker', listUrl), true, host + ' stays blockable');
+  }
+  assert.strictEqual(real.remoteListBlockAllowed('hsforms.com', '||hsforms.com/*/counters.gif', 'tracker', listUrl), true,
+    'a path rule naming the same host is still kept');
+  assert.strictEqual(real.remoteListBlockAllowed('intercom.io', '||intercom.io/messenger/web/page_view_events', 'tracker', listUrl), true);
 });
 
 test('media-domain suffix matching preserves exact, child, case, and deceptive-host behavior', () => {
@@ -492,6 +528,9 @@ test('same-site tracker redirects preserve the page while security and cross-sit
     [['tracker.example'], 'https://www.tracker.example/', { abuseTld: true }, true],
     [['tracker.example'], 'https://www.tracker.example/', { fakeInstall: true }, true],
     [['start.example', 'tracker.example'], 'https://www.tracker.example/', {}, true],
+    [['yelp.com', 'yelp.co.uk'], 'https://www.yelp.co.uk/', {}, false],
+    [['yelp.com', 'yelp.co.uk'], 'https://unsafe.yelp.co.uk/', {}, true],
+    [['yelp.com', 'yelp.co.uk'], 'https://www.yelp.co.uk/?next=%2F%2Fexternal.example', {}, true],
     [['tracker.example'], 'not a URL', {}, true],
   ]) assert.equal(redirectChainShouldInterrupt({ blocklisted: true, domains, hops: [{ to: target }], ...extra }, target), expected, JSON.stringify({ domains, target, extra }));
 });
@@ -499,6 +538,8 @@ test('same-site tracker redirects preserve the page while security and cross-sit
 test('third-party cookie stripping cannot touch navigation or application traffic', () => {
   const types = Array.from(arrayConstant('THIRD_PARTY_COOKIE_RESOURCE_TYPES'));
   assert.deepStrictEqual(types, ['image', 'ping']);
+  const passiveRule = sourceBetween('async function applyThirdPartyCookieRule', 'const TRACKER_COOKIE_RULE_ID');
+  assert(passiveRule.includes("requestHeaders: [{ header: 'cookie', operation: 'remove' }]"));
   for (const sensitive of ['main_frame', 'sub_frame', 'xmlhttprequest', 'script']) {
     assert(!types.includes(sensitive), sensitive + ' must retain Set-Cookie headers');
   }
@@ -835,7 +876,8 @@ test('only a blocked anti-adblock loader has its error stopped', () => {
   const trusted = (target) => ({ isTrusted: true, target });
   // The three publishers that rendered blank, by the loader each one used.
   for (const src of ['https://html-load.com/themeBundle/abc.js', 'https://html-load.com/app.js',
-    'https://stg.html-load.com/themeBundle/x.js', 'https://content-loader.com/loader.js']) {
+    'https://stg.html-load.com/themeBundle/x.js', 'https://html-load.cc/core.js',
+    'https://content-loader.com/loader.js']) {
     assert(isLoaderError(trusted(new Script(src)), Script), src);
   }
   assert(!isLoaderError(trusted(new Script('https://cdn.example.com/app.js')), Script), 'an ordinary script error passes');
@@ -845,6 +887,28 @@ test('only a blocked anti-adblock loader has its error stopped', () => {
   assert(!isLoaderError({ isTrusted: false, target: new Script('https://html-load.com/app.js') }, Script),
     'a page-dispatched error cannot use this to silence anything');
   assert(!isLoaderError(trusted(new Script('not a url')), Script));
+});
+
+test('a blocked loader cannot run its inline page replacement handler', () => {
+  const { stopLoaderError } = require('../anti-adblock-shield.js');
+  class Script {
+    constructor(src) { this.src = src; this.onerror = () => {}; this.attributes = new Set(['onerror']); }
+    removeAttribute(name) { this.attributes.delete(name); }
+  }
+  const target = new Script('https://html-load.com/core.js');
+  let stopped = false;
+  const event = { isTrusted: true, target, stopImmediatePropagation() { stopped = true; } };
+  assert(stopLoaderError(event, Script));
+  assert(stopped);
+  assert.strictEqual(target.onerror, null);
+  assert(!target.attributes.has('onerror'));
+
+  const unrelated = new Script('https://cdn.example.com/app.js');
+  stopped = false;
+  assert(!stopLoaderError({ ...event, target: unrelated }, Script));
+  assert(!stopped);
+  assert.strictEqual(typeof unrelated.onerror, 'function');
+  assert(unrelated.attributes.has('onerror'));
 });
 
 test('Anti-Adblock Shield registration follows the master and its own switch', async () => {

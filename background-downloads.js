@@ -22,10 +22,8 @@ const CONTAINER_EXT = /\.(iso|img|vhd|vhdx|udf)$/i;
 const MACRO_DOC_EXT = /\.(docm|xlsm|pptm|dotm|xlam|xltm|xlsb)$/i;
 // Separate ordinary installer names from crack/keygen signals so setup.exe is not scored like a crack.
 const BENIGN_INSTALLER_HINT = /(setup|install(er)?|update(r)?|full[-_. ]?installer)/i;
-// Anchored to a non-letter boundary. Unanchored, these matched any word CONTAINING them, so
-// firecracker.exe and nutcracker-setup.exe graded E "Dangerous" -- and so did SerialMonitor.exe and
-// every serial-port utility, because bare `serial` is an ordinary English word. Narrowed to the
-// piracy form (serial-key / serialnum / serial code) so it still catches what it is meant to.
+// Anchored to a non-letter boundary: unanchored, firecracker.exe and SerialMonitor.exe graded E "Dangerous". `serial`
+// is narrowed to the piracy forms (serial-key, serialnum, serial code).
 const LURE_HINT = /(^|[^a-z])(crack|keygen|activator|nulled|warez|serial[-_ ]?(key|num|no|code)|cracked|repack|pre-?activated|free-?download|activador|kmspico|autokms)/i;
 // Kept for the places that only care "does this name look like SOME kind of installer", such as
 // the raw-IP check, where either flavour is equally interesting.
@@ -348,6 +346,74 @@ function applyForcedDownloadEvidence(rep, why) {
     rep.grade = 'C'; rep.status = 'Unexpected download'; rep.color = DOWNLOAD_GRADE_META.C.color;
     rep.trustAllowed = false;
   }
+  return rep;
+}
+
+/* Sites just warned about on the page itself (fake update, ClickFix, fake alert, phishing): their downloads are paused
+   and reviewed, and a fake update's program or archive is removed. Memory only, so no browsing record outlives the worker. */
+const FLAGGED_PAGE_TTL_MS = 30 * 60 * 1000;
+const FLAGGED_PAGE_MAX = 50;
+const FLAGGED_DOWNLOAD_PAGES = new Map();
+const FLAGGED_PAGE_REASONS = {
+  fake_update: 'The page this came from pretended to be a browser or app update',
+  clickfix: 'The page this came from asked you to paste a command into Windows',
+  tech_support_scam: 'The page this came from showed a fake security alert',
+  phishing: 'The page this came from looked like a phishing page',
+};
+function flaggedPageKind(type) {
+  const t = String(type || '');
+  if (t === 'warned_fake_update') return 'fake_update';
+  if (/^warned_clickfix_/.test(t) || t === 'warned_command_paste') return 'clickfix';
+  if (t === 'warned_techsupport_scam') return 'tech_support_scam';
+  if (t === 'warned_phishing') return 'phishing';
+  return '';
+}
+function noteFlaggedDownloadPage(pageUrl, type) {
+  const kind = flaggedPageKind(type);
+  if (!kind) return false;
+  let host = '';
+  try { host = regDomainBg(new URL(String(pageUrl || '')).hostname); } catch (_) { return false; }
+  if (!host) return false;
+  FLAGGED_DOWNLOAD_PAGES.delete(host);
+  FLAGGED_DOWNLOAD_PAGES.set(host, { kind, at: Date.now() });
+  while (FLAGGED_DOWNLOAD_PAGES.size > FLAGGED_PAGE_MAX) FLAGGED_DOWNLOAD_PAGES.delete(FLAGGED_DOWNLOAD_PAGES.keys().next().value);
+  return true;
+}
+/* The download's own page (referrer) or its address on a flagged site. A fake update in the list wins. */
+function flaggedDownloadPage(item) {
+  if (!item || !FLAGGED_DOWNLOAD_PAGES.size) return '';
+  const now = Date.now();
+  let found = '';
+  for (const raw of [item.referrer, item.url, item.finalUrl]) {
+    let host = '';
+    try { host = regDomainBg(new URL(/^blob:https?:/i.test(String(raw || '')) ? String(raw).slice(5) : String(raw || '')).hostname); } catch (_) { continue; }
+    const entry = host && FLAGGED_DOWNLOAD_PAGES.get(host);
+    if (!entry) continue;
+    if (now - entry.at > FLAGGED_PAGE_TTL_MS) { FLAGGED_DOWNLOAD_PAGES.delete(host); continue; }
+    if (entry.kind === 'fake_update') return 'fake_update';
+    found = found || entry.kind;
+  }
+  return found;
+}
+function applyFlaggedPageEvidence(rep, item) {
+  const kind = flaggedDownloadPage(item);
+  if (!kind || !rep) return rep;
+  rep.reviewEvidence = Object.assign({}, rep.reviewEvidence, { flaggedPage: kind });
+  const reason = FLAGGED_PAGE_REASONS[kind];
+  if (!rep.reasons.includes(reason)) rep.reasons.unshift(reason);
+  /* A fake update hands out the program it wants you to run. The saved name can lack an extension (a renamed
+     or still-unnamed file), so the name in the download's own address counts as well. */
+  let addressName = '';
+  try { addressName = decodeURIComponent(new URL(String(item.finalUrl || item.url || '')).pathname.split('/').pop() || ''); } catch (_) {}
+  const program = rep.reviewEvidence.activeContent
+    || (!!addressName && (DANGEROUS_EXT.test(addressName) || ARCHIVE_EXT.test(addressName) || CONTAINER_EXT.test(addressName) || MACRO_DOC_EXT.test(addressName)));
+  if (kind === 'fake_update' && program) {
+    rep.flaggedBlock = true;
+    rep.score = Math.max(Number(rep.score) || 0, 6);
+    applyDownloadMeta(rep);
+    rep.trustAllowed = false;
+  }
+  rep.action = rep.flaggedBlock ? 'block' : 'review';
   return rep;
 }
 
@@ -740,8 +806,9 @@ function downloadGradeFromScore(score, critical) {
 
 function shouldReviewDownload(rep) {
   if (!rep) return false;
-  if (rep.blocklisted || rep.critical || rep.payloadUrlListed) return true;
+  if (rep.blocklisted || rep.critical || rep.payloadUrlListed || rep.flaggedBlock) return true;
   const evidence = rep.reviewEvidence || {};
+  if (evidence.flaggedPage) return true;
   if (evidence.unexpectedDownload) return true;
   if (evidence.browserWarning || evidence.malwareDetection) return true;
   if (!evidence.activeContent) return false;
@@ -1874,11 +1941,8 @@ async function cleanupDownloadReviews(closeTabs) {
   } catch (_) {}
 }
 
-// On a NEW browser session, clear out any pending reviews left over from before so
-// restored downloads don't re-pop. We mark each leftover download "handled" (so a
-// restart-triggered re-scan won't surface it again) and wipe the pending store +
-// any panel still showing. The download itself stays paused in Chrome for the user
-// to resume/cancel -- we never silently continue a risky download.
+// On a new browser session, leftover reviews are marked handled and cleared so restored downloads do not re-pop. The
+// download stays paused for the reader: a risky one is never continued silently.
 async function quiesceDownloadReviewsForNewSession() {
   try {
     const x = await downloadStateGet(DOWNLOAD_PENDING_KEY);
@@ -2052,7 +2116,7 @@ function buildDownloadReview(item, rep, pauseResult, finishedBeforeStop) {
     status: rep.status,
     color: rep.color,
     score: rep.score,
-    blockRequired: !!rep.blocklisted,
+    blockRequired: !!rep.blocklisted || !!rep.flaggedBlock,
     reviewEvidence: rep.reviewEvidence,
     intentReason: rep.intentReason || '',
     intentSourceHost: rep.intentSourceHost || '',
@@ -2202,10 +2266,8 @@ async function handleDownloadDecision(id, decision, sender) {
 // one place instead of hunting through the scoring prose in scoreDownload(). Proven
 // behaviour-equivalent to the previous inline literals by a golden old-vs-new test.
 const DL_WEIGHT = {
-  // chromePending is 0 on purpose. "Chrome has not finished its scan yet" is not a fact about the
-  // file, and at 1 point it combined with any other single 1-point signal to cross the review line
-  // -- opening a panel built on information that was still arriving. The reason line is kept, so it
-  // still shows up whenever the file is being reviewed for some real cause.
+  // chromePending is 0 on purpose: an unfinished Chrome scan says nothing about the file, and at 1 it tipped other single
+  // signals over the review line. The reason line still shows whenever a real cause brings the file to review.
   chromeKnownBad: 100, chromeReviewFile: 3, chromeReviewOther: 2, chromeReviewWeak: 1, chromePending: 0,
   blocklist: 100, executable: 3, macroDoc: 3, container: 3,
   executableInstaller: 3, archiveInstaller: 5, archive: 1,
@@ -2254,10 +2316,8 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   const W = DL_WEIGHT;
   const reasons = [];
   let host = '';
-  // A blob: URL carries its origin inside itself -- blob:https://vault.bitwarden.com/<uuid>. Parsed
-  // naively the hostname comes out empty, so every in-page export (a password vault backup, a
-  // spreadsheet a web app generated) was charged unknownDomain, shown as "(unknown)" in the review
-  // panel, and could never match the publisher list or the user's own trusted sites.
+  // A blob: URL carries its origin inside it (blob:https://vault.bitwarden.com/<uuid>); parsed naively the host is empty,
+  // so in-page exports were charged unknownDomain and could never match a publisher or the reader's trusted sites.
   try {
     const raw = finalUrl || referrer || '';
     host = new URL(/^blob:https?:/i.test(raw) ? raw.slice(5) : raw).hostname;
@@ -2412,10 +2472,8 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   if (reviewEvidence.obfuscatedUrl) {
     score += W.obfuscatedPath; reasons.push('Download URL contains obfuscated path characters');
   }
-  // Same non-letter boundary as LURE_HINT, and for the same reason: unanchored, `crack` matched the
-  // URL of firecracker.exe and nutcracker-setup.exe. This is the second copy of that pattern -- the
-  // filename test is not the only place it lives, so fixing one and not the other left the grade
-  // unchanged and the reason line reading "scam or piracy lure wording" over an ordinary download.
+  // The same non-letter boundary as LURE_HINT: unanchored, `crack` matched firecracker.exe. This is the pattern's second
+  // copy; fixing only the filename test once left the "lure wording" reason on ordinary downloads.
   const urlLure = (isDangerous || isArchive || isContainer || isMacro) && /(^|[^a-z])(crack|keygen|activator|nulled|warez|free[-_%20 ]?nitro|steam[-_%20 ]?gift|wallet[-_%20 ]?(verify|update)|airdrop|claim[-_%20 ]?reward)/i.test(urlPathQuery + ' ' + host);
   reviewEvidence.lure = lureName || urlLure;
   if (urlLure) {
@@ -2493,6 +2551,13 @@ function scoreDownload(finalUrl, referrer, filename, mime, trustedSites, chromeD
   // IP-address host serving an executable -- common in malware drops; worse over HTTP
   const rawIp = /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
   reviewEvidence.publicIp = rawIp && !privateHost;
+  /* Loader stages and IoT droppers come from public bare IPs as names with no extension (/i, /spim), and
+     their servers rarely send a program MIME type. Held for review; your own network is not. */
+  if (reviewEvidence.publicIp && name && !hasExt) {
+    reviewEvidence.activeContent = true;
+    reviewEvidence.hiddenProgram = true;
+    score += W.rawIpExecutable; reasons.push('File with no extension served straight from a raw IP address');
+  }
   if (isDangerous && rawIp) {
     score += W.rawIpExecutable; reasons.push('Executable served directly from a raw IP address');
     if (privateHost) lanNoise += W.rawIpExecutable;
@@ -2995,6 +3060,7 @@ async function runDownloadGuardScan(id, hint, reason) {
     let rep = scoreDownload(downloadUrl, item.referrer, filename, item.mime, trustedSites, item.danger, redirectContext);
     rep.intentSourceHost = intentSourceHost;
     applyForcedDownloadEvidence(rep, intentWhy);
+    applyFlaggedPageEvidence(rep, item);
     /* Checked before the pause decision: a listed address must not finish while lookups run. */
     if (cfg.downloadReputation !== false) rep = await enrichDownloadWithPayloadUrlFeed(rep, [item.url, item.finalUrl]);
     let pauseResult = await pauseDownloadForReview(item, rep, null);
@@ -3009,6 +3075,7 @@ async function runDownloadGuardScan(id, hint, reason) {
       rep = await enrichDownloadWithVirusTotalHash(rep, downloadUrl, filename, cfg);
     }
     applyForcedDownloadEvidence(rep, intentWhy);
+    applyFlaggedPageEvidence(rep, item);
 
     if (!shouldReviewDownload(rep)) {
       // Resume if WE paused it -- either the scan's own pause, or the onCreated early-pause.
@@ -3100,7 +3167,7 @@ function handleDownloadCreated(item) {
     const guardOff = __cfgCacheValid && __cfgCache && (__cfgCache.enabled === false || __cfgCache.downloadReputation === false);
     if (!guardOff && item && item.id != null && item.state !== 'complete' && item.state !== 'interrupted') {
       AWAITING_FIRST_SCAN.set(String(item.id), item);
-      if (downloadLooksRisky(item)) earlyPauseDownload(item.id);
+      if (flaggedDownloadPage(item) || downloadLooksRisky(item)) earlyPauseDownload(item.id);
       else sourceCheck = earlyPauseListedSource(item);
     }
   } catch (_) {}
@@ -3205,6 +3272,10 @@ try {
       handleDownloadDecision,
       cleanupDownloadReviews,
       EARLY_PAUSED,
+      noteFlaggedDownloadPage,
+      flaggedDownloadPage,
+      applyFlaggedPageEvidence,
+      FLAGGED_DOWNLOAD_PAGES,
     });
   }
 } catch (_) {}

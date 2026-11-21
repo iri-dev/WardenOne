@@ -143,6 +143,35 @@ for (const name of ['rmnt', 'rpnt', 'aost', 'nano-sib', 'nano-stb',
 }
 
 // ---------------------------------------------------------------------------
+// set-constant value words. An unknown word used to be set as text: the generic
+// navigator.getBattery rule made it the string "noopPromiseResolve" on every site,
+// and nfl.com crashed calling it (2026-11-19 crawl).
+// ---------------------------------------------------------------------------
+{
+  const env = makeLibrary();
+  const set = (name, word) => { env.lib['set-constant']([name, word]); return env.win[name]; };
+  const resolved = set('woResolve', 'noopPromiseResolve');
+  check('noopPromiseResolve is a function returning a promise',
+    typeof resolved === 'function' && typeof resolved().then === 'function');
+  const rejected = set('woReject', 'noopPromiseReject');
+  const rejection = typeof rejected === 'function' ? rejected() : null;
+  if (rejection && rejection.catch) rejection.catch(() => {});
+  check('noopPromiseReject is a function returning a promise', !!(rejection && typeof rejection.then === 'function'));
+  const callback = set('woCallback', 'noopCallbackFunc');
+  check('noopCallbackFunc returns a function', typeof callback === 'function' && typeof callback() === 'function');
+  const thrower = set('woThrow', 'throwFunc');
+  let threw = false;
+  try { thrower(); } catch (_) { threw = true; }
+  check('throwFunc throws', typeof thrower === 'function' && threw);
+  check('emptyArray is an empty array', Array.isArray(set('woArray', 'emptyArray')) && env.win.woArray.length === 0);
+  check('yes stays the text yes', set('woYes', 'yes') === 'yes');
+  check('a number word is a number', set('woNumber', '-1') === -1);
+  env.win.woUnknown = 'native';
+  check('an unknown word leaves the property alone', set('woUnknown', 'mysteryWord') === 'native');
+  check('an unknown word never becomes text', set('woFresh', 'noopPromiseResolveX') === undefined);
+}
+
+// ---------------------------------------------------------------------------
 // remove-cookie clears what it matches and nothing else.
 // ---------------------------------------------------------------------------
 {

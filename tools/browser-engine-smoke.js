@@ -19,7 +19,10 @@ const profile = require('./perf-profile.js');
 const root = path.resolve(__dirname, '..');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const PAGE_HOST = 'shop.wardenone-smoke.example';
-const CONTROL_HOST = 'cdn.wardenone-smoke.example';
+/* The media host is another site: a site's own subdomains are its own and may receive its tokens (CNN's player
+   posts to api.bolt.cnn.com from edition.cnn.com). SIBLING_HOST checks that side. */
+const CONTROL_HOST = 'cdn.wardenone-smoke-media.example';
+const SIBLING_HOST = 'static.wardenone-smoke.example';
 const DEVICE_FIXTURE = '0123456789abcdef0123456789abcdef';
 
 /* Domains the shipped tracker list blocks outright for a script's fetch, wherever it is loaded:
@@ -72,7 +75,7 @@ async function run() {
   await new Promise((resolve) => server.listen(serverPort, '127.0.0.1', resolve));
   const port = await profile.freePort();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wo-engine-smoke-'));
-  const mapped = [PAGE_HOST, CONTROL_HOST, 'frame.x.or.jp'].concat(trackers).map((h) => 'MAP ' + h + ' 127.0.0.1').join(', ');
+  const mapped = [PAGE_HOST, CONTROL_HOST, SIBLING_HOST, 'frame.x.or.jp'].concat(trackers).map((h) => 'MAP ' + h + ' 127.0.0.1').join(', ');
   let cdp;
   try {
     const browser = await profile.launch(process.env.WARDENONE_BROWSER_PATH || profile.edgePath(), 'on', root, port, dir,
@@ -158,6 +161,7 @@ async function run() {
       const url='http://${CONTROL_HOST}:${serverPort}/segment.m4s?buvid='+token;
       const fetchResult=async (url,init)=>fetch(url,init).then(r=>'loaded '+r.status,e=>e.name);
       const before=await fetchResult(url);
+      const sibling=await fetchResult('http://${SIBLING_HOST}:${serverPort}/segment.m4s?buvid='+token);
       const issued=await fetch('/issued-media').then(r=>r.json());
       const after=await fetchResult(issued.file);
       const foreign=await fetchResult(issued.file.replace('/segment.m4s','/collect'));
@@ -171,10 +175,10 @@ async function run() {
         x.onerror=()=>resolve(0);x.send();
       });
       localStorage.removeItem('wo-device-fixture');
-      return {before,after,foreign,header,body,beacon,xhr};
+      return {before,sibling,after,foreign,header,body,beacon,xhr};
     })()`);
     assert.deepEqual(issuedProbe, {
-      before: 'SecurityError', after: 'loaded 200', foreign: 'SecurityError',
+      before: 'SecurityError', sibling: 'loaded 200', after: 'loaded 200', foreign: 'SecurityError',
       header: 'SecurityError', body: 'SecurityError', beacon: false, xhr: 200,
     }, 'native fetch/XHR recognise issued device identifiers while credentials and changed paths stay blocked');
     assert.equal(hits.filter((h) => h.startsWith(CONTROL_HOST + '/segment.m4s')).length, 2,
@@ -208,7 +212,11 @@ async function run() {
           label + ' matched another Spotify rule: ' + JSON.stringify(outcome));
       }
     } finally {
-      await evaluate(worker, `chrome.declarativeNetRequest.updateSessionRules({ addRules: ${JSON.stringify(headerRules)} }).then(() => true)`);
+      /* The worker may rewrite its header rules meanwhile (its settings load does), so restore only the missing ones. */
+      await evaluate(worker, `chrome.declarativeNetRequest.getSessionRules().then((now) => {
+        const have = new Set(now.map((r) => r.id));
+        return chrome.declarativeNetRequest.updateSessionRules({ addRules: ${JSON.stringify(headerRules)}.filter((r) => !have.has(r.id)) });
+      }).then(() => true)`);
     }
 
     /* 2b. The config the engine acts on is the one the bridge delivers, not its built-in defaults:

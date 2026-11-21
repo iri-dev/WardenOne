@@ -11,6 +11,12 @@ const WONetworkPolicy = (() => {
     { store: 'dynamic', base: 950000, size: 250, max: 97001, name: 'firewall' },
     { store: 'session', base: 960000, size: 50, max: 97003, name: 'firewallOnce' },
     { store: 'session', base: 800000, size: 1000, max: 100000, name: 'sitePause' },
+    /* "Continue anyway" on WardenOne's own list block: a click after the warning's delay, one tab and one site,
+       just above the security lists (3000) and below the firewall and the person's own blocks. */
+    { store: 'session', base: 913200, size: 16, max: 3500, name: 'listBlockOnce' },
+    /* "Load" on a social embed WardenOne held back: a real click, one provider's embed hosts, one tab and one site,
+       just above the guard's own blocks (2000) and below the security lists. */
+    { store: 'session', base: 913400, size: 24, max: 2010, name: 'socialEmbedLoad' },
   ].map(Object.freeze));
 
   function validate(change, store) {

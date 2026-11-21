@@ -61,7 +61,33 @@ process.exitCode = 1;
       assert.equal(state.security.has(host), expected.includes(host), 'stored security prefix remains authoritative');
     }
   }
-  assert(/BLOCKED_DOMAINS = blockedDomainIndex\(merged, domainBuckets.security\)/.test(source), 'refreshed full lists use shared membership');
+  /* After an update the worker keeps what a restarted worker reads back, not all three million feed hosts: the full
+     merged set kept it about 150 MB heavier (Round 5, P2-6). */
+  assert(/adoptBlockedDomainPrefix\(storagePrefix\.domains, storagePrefix\.securityCount\);/.test(source), 'an update adopts the stored prefix');
+  assert(!/BLOCKED_DOMAINS = blockedDomainIndex\(merged/.test(source) && !/SECURITY_DOMAINS = domainBuckets/.test(source),
+    'an update never holds the merged feed in memory');
+  const pick = (from, to) => source.slice(source.indexOf(from), source.indexOf(to, source.indexOf(from)) + to.length);
+  const bounded = vm.createContext({ Set, Object, Math, Number, Array });
+  vm.runInContext(helper + '\nlet BLOCKED_DOMAINS = new Set(), SECURITY_DOMAINS = new Set();\n'
+    + pick('const BLOCKED_DOMAIN_STORAGE_MAX =', ';') + '\n'
+    + pick('function storedBlockedDomainPrefix(', '\n}') + '\n' + pick('function adoptBlockedDomainPrefix(', '\n}')
+    + '\nthis.run=(all,sec)=>{const p=storedBlockedDomainPrefix(sec,all);adoptBlockedDomainPrefix(p.domains,p.securityCount);'
+    + 'return {blocked:BLOCKED_DOMAINS,security:SECURITY_DOMAINS,cap:BLOCKED_DOMAIN_STORAGE_MAX};};'
+    + 'this.adopt=(d,c)=>{adoptBlockedDomainPrefix(d,c);return SECURITY_DOMAINS.size;};', bounded);
+  /* A damaged count never turns ordinary hosts into malware: negative from the end, or past the list. */
+  const five = ['a.example', 'b.example', 'c.example', 'd.example', 'e.example'];
+  assert.equal(bounded.adopt(five, -1), 0, 'a negative security count marks nothing');
+  assert.equal(bounded.adopt(five, 'x'), 0, 'an unreadable count marks nothing');
+  assert.equal(bounded.adopt(five, 99), 5, 'a count past the list stops at the list');
+  const many = Array.from({ length: 100000 }, (_, i) => 'feed-' + i + '.example');
+  const manySecurity = new Set(many.filter((_, i) => i % 5 !== 0));
+  const after = bounded.run(many, manySecurity);
+  assert(after.blocked.size <= after.cap && after.security.size <= after.cap, 'memory holds at most the stored cap after an update');
+  assert(after.security.size === Math.min(manySecurity.size, after.cap), 'security hosts come first, up to the cap');
+  assert([...after.security].every((h) => manySecurity.has(h)), 'nothing but security hosts is ever called malicious');
+  const small = bounded.run(['a.example', 'b.example', 'c.example'], new Set(['b.example']));
+  assert(small.blocked.size === 3 && small.security.size === 1 && small.security.has('b.example') && small.blocked.has('a.example'),
+    'a feed under the cap is kept whole');
   for (const file of fs.readdirSync(root).filter((name) => name.endsWith('.js'))) {
     for (const match of fs.readFileSync(path.join(root, file), 'utf8').matchAll(/\bBLOCKED_DOMAINS\.(\w+)/g)) {
       assert(['has', 'size'].includes(match[1]), file + ' requires a mutable or enumerable domain Set');

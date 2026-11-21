@@ -19,7 +19,8 @@ const SOURCE = fs.readFileSync(path.join(ROOT, 'src', 'content.js'), 'utf8');
 const HISTORY = fs.readFileSync(path.join(ROOT, 'history.js'), 'utf8');
 
 const START = 'if(WO.mediaShield)try{const SR_HOSTS=';
-const END = '/* Back-button trapping.';
+/* The next block's code: comments are stripped from content.min.js (2026-11-20). */
+const END = 'if(WO.backTrapGuard&&WO_TOP)try{';
 const from = CONTENT.indexOf(START);
 const to = CONTENT.indexOf(END, from + START.length);
 assert(from >= 0 && to > from, 'the speech guard moved in content.min.js');

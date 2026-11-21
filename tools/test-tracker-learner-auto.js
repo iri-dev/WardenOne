@@ -299,6 +299,66 @@ async function strippedCookieLearning() {
   listen.api.observe(false);
   assert(!listen.state.listeners.onHeadersReceived && !listen.state.listeners.onBeforeRequest, 'both observers follow the switch off');
 }
+async function frameNavigationCookieLearning() {
+  const r = rig(); r.state.cookies = {};
+  for (const [index, site] of ['one.example', 'two.example', 'three.example'].entries()) {
+    await r.setCookieResponse(site, 'px.tracker.example', ID_HEADER,
+      { type: 'sub_frame', frameId: index + 1, parentFrameId: 0, parentDocumentId: 'doc-' + site, documentId: undefined });
+    assert.equal(r.api.learner().domains['tracker.example']?.trustedSites?.['tracking-cookie']?.sites, index + 1);
+  }
+  assert.equal(r.api.learner().domains['tracker.example'].state, 'learned');
+  assert(blockRule(r), 'three verified parent documents qualify a cookie setting iframe');
+  assert(!JSON.stringify(r.state.local).includes('AHWqTUk3Jx9pQmZ0rT5vLs8nYw2bC4'));
+
+  for (const invalid of [
+    { parentDocumentId: undefined }, { parentDocumentId: 'another-document' },
+    { parentFrameId: -1 }, { initiator: 'https://other.example' },
+  ]) {
+    const bad = rig(); bad.state.cookies = {};
+    await bad.setCookieResponse('one.example', 'px.tracker.example', ID_HEADER,
+      { type: 'sub_frame', frameId: 1, parentFrameId: 0, parentDocumentId: 'doc-one.example', documentId: undefined, ...invalid });
+    assert.equal(bad.api.learner().domains['tracker.example'], undefined, JSON.stringify(invalid));
+  }
+  const widget = rig(); widget.state.cookies = {};
+  await widget.setCookieResponse('one.example', 'px.tracker.example', 'session=kept; SameSite=None; Secure; Path=/',
+    { type: 'sub_frame', frameId: 1, parentFrameId: 0, parentDocumentId: 'doc-one.example', documentId: undefined });
+  assert.equal(widget.api.learner().domains['tracker.example'], undefined, 'session cookies do not qualify an iframe');
+  const listen = rig(); listen.api.observe(true);
+  assert(listen.state.listeners.onHeadersReceived.filter.types.includes('sub_frame'));
+  assert(listen.state.listeners.onBeforeRequest.filter.types.includes('sub_frame'));
+}
+async function firstVisitFrameIdentifier() {
+  const response = { tabId: 1, frameId: 1, parentFrameId: 0, parentDocumentId: 'doc-one.example',
+    type: 'sub_frame', url: 'https://px.tracker.example/iframe', initiator: 'https://one.example',
+    responseHeaders: [{ name: 'Set-Cookie', value: ID_HEADER }] };
+  const make = (config = {}) => {
+    const r = rig(true, config);
+    r.state.frames['1:0'] = { url: 'https://one.example/', documentId: 'doc-one.example', parentFrameId: -1, documentLifecycle: 'active' };
+    r.state.cookies['px.tracker.example'] = [id({ name: 'tid' })];
+    return r;
+  };
+  const first = make();
+  await first.api.removeUnknownFrameIdentifier(response);
+  assert.equal(first.state.cookieRemovals.length, 1, 'an identifying iframe cookie is removed on its first visit');
+  assert.equal(first.state.cookies['px.tracker.example'].length, 0);
+  for (const [label, config, change] of [
+    ['switch off', { blockThirdPartyCookies: false }, {}],
+    ['allowlisted site', { allowlist: ['one.example'] }, {}],
+    ['wrong parent', {}, { parentDocumentId: 'another-document' }],
+    ['first party', {}, { url: 'https://one.example/iframe' }],
+    ['session name', {}, { responseHeaders: [{ name: 'Set-Cookie', value: ID_HEADER.replace('tid=', 'session=') }] }],
+    ['partitioned', {}, { responseHeaders: [{ name: 'Set-Cookie', value: ID_HEADER + '; Partitioned' }] }],
+  ]) {
+    const r = make(config);
+    await r.api.removeUnknownFrameIdentifier({ ...response, ...change });
+    assert.equal(r.state.cookieRemovals.length, 0, label);
+  }
+  const listener = make(); listener.api.observe(false, true);
+  assert(listener.state.listeners.onBeforeRequest?.fn !== listener.api.listeners.jar && listener.state.listeners.onHeadersReceived,
+    'iframe cookie protection remains active with automatic learning off');
+  listener.api.observe(false, false);
+  assert(!listener.state.listeners.onHeadersReceived);
+}
 async function followHeaders(r, header = ID_HEADER) {
   await r.setCookieResponse('one.example', 'px.tracker.example', header);
   await r.setCookieResponse('two.example', 'px.tracker.example', header);
@@ -334,6 +394,8 @@ function wiring() {
   setCookieHeaders();
   await promotion();
   await strippedCookieLearning();
+  await frameNavigationCookieLearning();
+  await firstVisitFrameIdentifier();
   await persistenceAndUnblock();
   await historyAndCapacity();
   await dailyCapAndMigration();

@@ -63,6 +63,7 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
     isConnected: true,
     parentElement: null,
     getAttribute(name) { return name === 'role' && !options.generic ? 'dialog' : null; },
+    hasAttributes() { return !options.generic; },
     hasAttribute() { return false; },
     getBoundingClientRect() {
       if (options.hidden) return rect(0, 0);
@@ -80,6 +81,7 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
     textContent: dialogText,
     isConnected: true,
     parentElement: null,
+    hasAttributes() { return false; },
     querySelectorAll() { return []; },
     getBoundingClientRect() { return rect(1000, 800); },
     getAttribute() { return null; },
@@ -91,6 +93,7 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
     textContent: dialogText,
     isConnected: true,
     parentElement: null,
+    hasAttributes() { return false; },
     querySelectorAll() { return []; },
     getBoundingClientRect() { return rect(1000, 800); },
     getAttribute() { return null; },
@@ -108,6 +111,8 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
       if (value.startsWith('button')) return controls;
       return [];
     },
+    /* consent-reject walks every element for its containers; the dialog matches by its role. */
+    getElementsByTagName(tag) { return tag === '*' ? [html, body, dialog] : []; },
     createTreeWalker() {
       if (options.stats) options.stats.rootWalks = (options.stats.rootWalks || 0) + 1;
       return { nextNode() { return null; } };
@@ -152,8 +157,9 @@ function runConsentDialog(dialogText, labels, scheduled, options = {}) {
       runtime: {
         lastError: null,
         sendMessage(message, done) {
+          if (options.messages) options.messages.push(message);
           if (message && message.kind === 'content-config-get' && typeof done === 'function') {
-            done({ ok: true, overrides: { enabled: true, autoRejectConsent: true } });
+            done({ ok: true, overrides: Object.assign({ enabled: true, autoRejectConsent: true }, options.overrides || {}) });
           }
         },
       },
@@ -270,6 +276,56 @@ const sensitiveDialogClicks = runConsentDialog(
 check('sensitive account context remains protected even when reject and accept labels coexist',
   sensitiveDialogClicks.length === 0,
   JSON.stringify(sensitiveDialogClicks));
+
+/* Consent-or-pay walls, with the labels the Round 5 crawl met (2026-11-14): refusing there means paying, so nothing in
+   the dialog may be pressed. Before this, the Guardian's "Reject all and subscribe" and Radio Times' "Reject & Pay"
+   were clicked and the tab landed on a payment page. */
+const PAY_WALLS = [
+  ['theguardian.com', 'Personalised advertising - it is your choice. Accept personalised advertising and all cookies, or reject all and subscribe to Guardian Ad-Lite for £5 per month.', ['Accept all', 'Reject all and subscribe']],
+  ['radiotimes.com', 'We use cookies and process personal data for advertising with our partners. Reject and pay with contentpass, or accept all.', ['Reject & Pay', 'Already a contentpass user? Log in here', 'Accept All & Continue']],
+  ['thesun.co.uk', 'We and our partners use cookies and personal data for personalised advertising. You can pay to reject.', ['Pay to Reject FAQs', 'Pay to Reject', 'Accept']],
+  ['independent.co.uk', 'We use cookies and personal data for personalised advertising and measurement.', ['PAY TO REMOVE ADS', 'ALREADY A PAYING SUBSCRIBER? LOG IN', 'ACCEPT']],
+  ['priced variant', 'We use cookies and personal data for advertising with our partners. Reject all for €2.99, or accept all.', ['Reject all for €2.99', 'Manage options', 'Accept all']],
+];
+for (const [site, text, labels] of PAY_WALLS) {
+  const messages = [];
+  const clicks = runConsentDialog(text, labels, null, { messages });
+  check('consent-or-pay wall left to the person: ' + site, clicks.length === 0, JSON.stringify(clicks));
+  const left = messages.filter((m) => m && m.type === 'consent_outcome' && m.detail && m.detail.status === 'left');
+  check('consent-or-pay wall logged once as left for the person: ' + site, left.length === 1 && /refuse by paying/.test(left[0].detail.why),
+    JSON.stringify(messages.filter((m) => m && m.type === 'consent_outcome')));
+}
+/* The switch set for one site stops auto reject there (2026-11-21: it used to be ignored, so switching it off for a
+   site to change a OneTrust choice still refused the banner). Other sites' switches and other keys change nothing. */
+for (const [name, siteOverrides, want] of [
+  ['auto reject off for this site', { 'consent-fixture.invalid': { autoRejectConsent: false } }, 0],
+  ['WardenOne off for this site', { 'consent-fixture.invalid': { enabled: false } }, 0],
+  ['written with www', { 'www.consent-fixture.invalid': { autoRejectConsent: false } }, 0],
+  ['auto reject off for another site', { 'other.invalid': { autoRejectConsent: false } }, 1],
+  ['another switch off for this site', { 'consent-fixture.invalid': { removeOverlays: false } }, 1],
+  ['a lookalike parent', { 'fixture.invalid': { autoRejectConsent: false } }, 1],
+]) {
+  const clicks = runConsentDialog('We use cookies for analytics and advertising with our partners.', ['Reject all', 'Accept all'], null,
+    { overrides: { siteOverrides } });
+  check('site switch: ' + name, clicks.length === want, JSON.stringify(clicks));
+}
+/* Near misses: ordinary dialogs whose other controls merely contain the letters, or no payment at all, still reject. */
+for (const [name, labels] of [
+  ['display settings beside reject', ['Reject all', 'Accept all', 'Display settings']],
+  ['privacy policy link beside reject', ['Reject all', 'Accept all', 'Privacy policy']],
+  ['free text in a partner list label', ['Reject all', 'Accept all', 'Show 812 partners']],
+  ['decline wording', ['Decline', 'Accept']],
+]) {
+  const messages = [];
+  const clicks = runConsentDialog('We use cookies for analytics and advertising with our partners.', labels, null, { messages });
+  check('ordinary consent dialog still rejected: ' + name, clicks.length === 1 && /^(Reject all|Decline)$/.test(clicks[0]), JSON.stringify(clicks));
+  check('ordinary consent dialog is not logged as a pay wall: ' + name,
+    !messages.some((m) => m && m.type === 'consent_outcome' && m.detail && m.detail.status === 'left'));
+}
+check('the final click helper refuses pay or subscribe controls on every path',
+  /function clickControl\(el\) \{[\s\S]{0,260}offersPayment\(el\)/.test(consent));
+check('known consent platform profiles skip consent-or-pay containers before choosing a control',
+  /protectedContainerContext\(container, null\)\) continue;\s*if \(consentOrPay\(container, profile\)\) continue;/.test(consent));
 
 const genericStats = { controlStyles: 0 };
 const genericClicks = runConsentDialog('We use cookies for advertising. Choose Reject all or Accept all.',
