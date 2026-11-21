@@ -104,14 +104,14 @@ async function run() {
     ok(/^(\d+ settings? changed from Recommended\.|Every setting matches Recommended\.)$/.test(facts[1]), 'the overview counts changes from Recommended');
     ok(/^(\d+ protections? may affect compatibility\.|Nothing that may affect compatibility is on\.)$/.test(facts[2]), 'the overview counts protections that may affect compatibility');
 
-    /* A switch changed elsewhere shows here without a reload. */
-    await store({ wardenone_config: Object.assign({}, config, { deAmp: true }) });
-    await until('state.deAmp === true', 'outside change to arrive');
+    /* A switch changed elsewhere shows here without a reload. De-AMP is on by default, so the change is turning it off. */
+    await store({ wardenone_config: Object.assign({}, config, { deAmp: false }) });
+    await until('state.deAmp === false', 'outside change to arrive');
 
     /* A switch changed here is saved, recorded by the worker, and counted. */
     await go('privacy');
     await value("document.querySelector('.row[data-key=capReferrer] .tg').click(); true");
-    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.capReferrer === true && d.wardenone_config.deAmp === true)))", 'capReferrer saved without losing deAmp');
+    await until("new Promise(r => chrome.storage.local.get('wardenone_config', d => r(d.wardenone_config.capReferrer === true && d.wardenone_config.deAmp === false)))", 'capReferrer saved without losing deAmp');
     await until("Array.isArray(recent) && recent.some(e => e.key === 'capReferrer' && e.to === true)", 'the worker to record the change');
     ok((await stored('wardenone_settings_recent')).every((e) => !/Key$/.test(e.key)), 'the change list never holds a key');
     await until("(document.querySelector('#nav [data-go=privacy] .n') || {}).hidden === false", 'Privacy’s changed count');
@@ -625,7 +625,7 @@ async function run() {
     await value("document.querySelector('.preset-line [data-preset=rec]').click(); true");
     await until("[...document.querySelectorAll('#ov-facts .ft')].map(e => e.textContent)[1] === 'Every setting matches Recommended.'", 'Recommended applied');
     const rec = await stored('wardenone_config');
-    ok(rec.capReferrer === false && rec.deAmp === false, 'Recommended turned the extra protections off in storage');
+    ok(rec.capReferrer === false && rec.deAmp === true, 'Recommended put the changed switches back in storage');
 
     /* The master switch. */
     await value("document.querySelector('#master').click(); true");
@@ -656,7 +656,7 @@ async function run() {
     same(await value('window.__errors'), [], 'no page errors');
 
     /* Reset everything but switches and keys: the worker erases, restarts, and keeps only those. */
-    await store({ wardenone_config: Object.assign({}, await stored('wardenone_config'), { deAmp: true, allowlist: ['paused.example'] }) });
+    await store({ wardenone_config: Object.assign({}, await stored('wardenone_config'), { deAmp: false, allowlist: ['paused.example'] }) });
     await go('cleanup');
     await value("document.querySelector('input[name=erase-mode][value=\"settings-and-keys\"]').click(); true");
     await value("document.querySelector('[data-act=erase-review]').click(); true");
@@ -677,7 +677,7 @@ async function run() {
     page = await open('settings.html#page=overview');
     await until('typeof loaded !== "undefined" && loaded === true', 'Settings after the reset');
     const kept = await stored('wardenone_config');
-    ok(kept.deAmp === true && kept.urlHausKey === 'secret-urlhaus-key', 'switches and keys survived');
+    ok(kept.deAmp === false && kept.urlHausKey === 'secret-urlhaus-key', 'switches and keys survived');
     ok(!kept.allowlist || !kept.allowlist.length, 'site exceptions were erased');
     same(await stored('wardenone_settings_favorites'), undefined, 'favorites were erased');
 

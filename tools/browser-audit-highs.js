@@ -167,7 +167,15 @@ async function run() {
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const media = await open('http://localhost:' + server.address().port + '/');
     await cdp.send('Page.enable', {}, media);
-    await until(media, '!!(window.__wardenOneRealm && window.__wardenOneRealm.noise)');
+    /* The standard shield arms at page start and already sets noise. The max level, which hides device names, arms
+       from the next page load once its early registration catches up with the new setting, as for a person. */
+    const maxArmed = "!!(window.__wardenOneRealm && window.__wardenOneRealm.noise) && !!Object.getOwnPropertyDescriptor(navigator.mediaDevices, 'enumerateDevices')";
+    for (let reloads = 0; !(await evaluate(media, maxArmed)); reloads++) {
+      if (reloads >= 15) throw new Error('Timed out: max level after reloads');
+      await sleep(2000);
+      await cdp.send('Page.reload', {}, media);
+      await sleep(1500);
+    }
     const { frameTree } = await cdp.send('Page.getFrameTree', {}, media);
     const { executionContextId } = await cdp.send('Page.createIsolatedWorld', { frameId: frameTree.frame.id, worldName: 'native-media-baseline' }, media);
     await evaluate(media, `navigator.mediaDevices.getUserMedia({video:true,audio:true})

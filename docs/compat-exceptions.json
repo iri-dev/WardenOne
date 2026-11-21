@@ -1,0 +1,1326 @@
+{
+ "schema": 1,
+ "about": "Every named site exception in WardenOne: what it relaxes, why, the evidence and the tests that prove it. tools/test-compat-exceptions.js holds each value to the code, so an exception cannot change, appear or go without this file changing with it.",
+ "groups": [
+  {
+   "id": "never-block-core",
+   "where": "background.js NEVER_BLOCK_DOMAINS (its own literal)",
+   "relaxes": "Downloaded ad and tracker lists cannot block these hosts or their subdomains, and an allow rule keeps their scripts, styles, fonts, data and frames loading. Security lists still block them.",
+   "reason": "Code hosting, Google sign in and mail, and WardenOne's own homepage, which whole sites depend on. gamedrive.org is the owner's reviewed exception.",
+   "evidence": "docs/security-feed-exceptions.md (GameDrive)",
+   "tests": [
+    "tools/test-feed-shared-platforms.js",
+    "tools/test-network-compatibility.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "accounts.google.com",
+    "apis.google.com",
+    "gamedrive.org",
+    "github.com",
+    "githubassets.com",
+    "gstatic.com",
+    "iri-dev.github.io",
+    "mail.google.com",
+    "objects.githubusercontent.com",
+    "raw.githubusercontent.com"
+   ]
+  },
+  {
+   "id": "never-block-apps",
+   "where": "background.js, the list added to NEVER_BLOCK_DOMAINS after the sign in hosts",
+   "relaxes": "Same as never-block-core.",
+   "reason": "Everyday signed in apps, media and payment services whose own hosts tracker lists sometimes name: blocking them breaks the app itself. discord.gg carries every Discord message; scdn.co and spotifycdn.com carry Spotify's artwork and player.",
+   "tests": [
+    "tools/test-network-compatibility.js",
+    "tools/test-feed-shared-platforms.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "canva.com",
+    "cloudflare.com",
+    "cloudflare.net",
+    "discord.com",
+    "discord.gg",
+    "discordapp.com",
+    "dropbox.com",
+    "figma.com",
+    "google.com",
+    "googleapis.com",
+    "jtvnw.net",
+    "live.com",
+    "microsoft.com",
+    "netflix.com",
+    "notion.so",
+    "office.com",
+    "office365.com",
+    "paypal.com",
+    "scdn.co",
+    "slack.com",
+    "spotify.com",
+    "spotifycdn.com",
+    "stripe.com",
+    "ttvnw.net",
+    "twitch.tv",
+    "twitchcdn.net",
+    "youtube-nocookie.com",
+    "youtube.com",
+    "zoom.us"
+   ]
+  },
+  {
+   "id": "login-compat-hosts",
+   "where": "background.js LOGIN_COMPAT_NEVER_BLOCK_DOMAINS",
+   "relaxes": "Never blocked by ad and tracker lists (copied into the never block set), never learned by the tracker learner, and left out of WardenOne's own header and script rules as page or request.",
+   "reason": "Identity providers, single sign on and payment checkouts: blocking any part of a sign in or payment flow strands the reader halfway through it.",
+   "tests": [
+    "tools/test-site-compatibility.js",
+    "tools/test-blocking-site-scope.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "accounts.google.co.uk",
+    "accounts.google.com",
+    "accounts.spotify.com",
+    "adyen.com",
+    "adyenpayments.com",
+    "amazoncognito.com",
+    "apis.google.com",
+    "appleid.apple.com",
+    "appleid.cdn-apple.com",
+    "auth.openai.com",
+    "auth0.com",
+    "braintreegateway.com",
+    "braintreepayments.com",
+    "cdn.auth0.com",
+    "challenges.cloudflare.com",
+    "clientservices.googleapis.com",
+    "connect.facebook.net",
+    "duosecurity.com",
+    "firebaseappcheck.googleapis.com",
+    "firebaseinstallations.googleapis.com",
+    "graph.facebook.com",
+    "gstatic.com",
+    "hcaptcha.com",
+    "identitytoolkit.googleapis.com",
+    "login.live.com",
+    "login.microsoftonline.com",
+    "login.spotify.com",
+    "login5.spotify.com",
+    "msauth.net",
+    "msftauth.net",
+    "oauth2.googleapis.com",
+    "okta.com",
+    "oktacdn.com",
+    "onelogin.com",
+    "openathens.net",
+    "paypal.com",
+    "paypalobjects.com",
+    "recaptcha.net",
+    "securetoken.googleapis.com",
+    "shibboleth.net",
+    "spotify.com",
+    "stripe.com",
+    "stripe.network",
+    "turnstile.cloudflare.com"
+   ]
+  },
+  {
+   "id": "consent-managers",
+   "where": "background.js CONSENT_MANAGER_HOSTS",
+   "relaxes": "Consent manager banner and choice saving hosts load even though annoyance and tracker lists name them.",
+   "reason": "With the banner blocked no refusal is ever saved and a site treats the reader as undecided. Auto reject answers the banner instead. Where auto reject is on, OneTrust's stub is answered locally (surrogates/onetrust.js), so OneTrust's own files load only where it is off or paused, or where a site hosts OneTrust itself. Their analytics hosts are not listed and stay blocked.",
+   "evidence": "Round 5 consent runs, 2026-11-20: refusals saved on 17 of 22 sites (DuckDuckGo 3, plain Edge 0). OneTrust local answer, 2026-11-21: requests to OneTrust on 20 OneTrust sites fell from 211 to 12, refusal saved on 17.",
+   "tests": [
+    "tools/test-feed-shared-platforms.js",
+    "tools/test-onetrust-answer.js"
+   ],
+   "reviewed": "2026-11-21",
+   "value": [
+    "aggregator.service.usercentrics.eu",
+    "api.privacy-center.org",
+    "api.usercentrics.eu",
+    "app.termly.io",
+    "app.usercentrics.eu",
+    "cdn-cookieyes.com",
+    "cdn.consentmanager.net",
+    "cdn.ketchjs.com",
+    "cmp.quantcast.com",
+    "cmp.usercentrics.eu",
+    "consensu.org",
+    "consent-api.service.consent.usercentrics.eu",
+    "consent-pref.trustarc.com",
+    "consent.cookiebot.com",
+    "consent.trustarc.com",
+    "consentcdn.cookiebot.com",
+    "cookielaw.org",
+    "delivery.consentmanager.net",
+    "geolocation.onetrust.com",
+    "global.ketchcdn.com",
+    "graphql.usercentrics.eu",
+    "log.cookieyes.com",
+    "privacy-mgmt.com",
+    "sdk.privacy-center.org"
+   ]
+  },
+  {
+   "id": "onetrust-answer-pauses",
+   "where": "background.js ONETRUST_ANSWER_PAUSED_DOMAINS, with the consent-reject exclusions, hosted apps, allowlist and the switches set for one site",
+   "relaxes": "OneTrust's stub is not answered locally on these sites; OneTrust loads and auto reject answers its banner, or leaves it alone where auto reject is off.",
+   "reason": "Education sites pause auto reject in the engine; sign in, CAPTCHA, checkout and hosted app pages never get it. The local answer follows the same lines so it never decides more than auto reject would.",
+   "tests": [
+    "tools/test-onetrust-answer.js"
+   ],
+   "reviewed": "2026-11-21",
+   "value": [
+    "ac.in",
+    "ac.nz",
+    "ac.uk",
+    "ac.za",
+    "edu",
+    "edu.au",
+    "edu.hk",
+    "edu.sg",
+    "ucas.com"
+   ]
+  },
+  {
+   "id": "adobe-fonts",
+   "where": "background.js NEVER_BLOCK_DOMAINS.add('use.typekit.net')",
+   "relaxes": "Same as never-block-core, for Adobe Fonts' kit loader only.",
+   "reason": "A tracker list named the kit loader, so sites like Radio Times lost their typefaces. The usage beacon on p.typekit.net stays blocked by EasyPrivacy.",
+   "tests": [
+    "tools/test-feed-shared-platforms.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "use.typekit.net"
+   ]
+  },
+  {
+   "id": "login-compat-filters",
+   "where": "background.js LOGIN_COMPAT_FILTERS",
+   "relaxes": "Allow rules above ad and tracker blocks (priority 1900) for sign in, bot check and CAPTCHA endpoints.",
+   "reason": "Sign in, reCAPTCHA, Turnstile and similar checks must load or the reader cannot log in or get past a check. News UK's toadmash.net bot check is allowed only on the sites it was seen on.",
+   "tests": [
+    "tools/test-site-compatibility.js",
+    "tools/test-infrastructure-threat-precedence.js",
+    "tools/test-badger-trained.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "||accounts.google.com",
+    "||accounts.google.co.uk",
+    "||auth.openai.com",
+    "||accounts.google.com/gsi/",
+    "||oauth2.googleapis.com",
+    "||apis.google.com",
+    "||identitytoolkit.googleapis.com",
+    "||securetoken.googleapis.com",
+    "||firebaseinstallations.googleapis.com",
+    "||firebaseappcheck.googleapis.com",
+    "||clientservices.googleapis.com",
+    "||ssl.gstatic.com/accounts/",
+    "||www.gstatic.com/accounts/",
+    "||www.gstatic.com/recaptcha/",
+    "||www.google.com/recaptcha/",
+    "||recaptcha.net",
+    "||login.microsoftonline.com",
+    "||login.live.com",
+    "||aadcdn.msftauth.net",
+    "||aadcdn.msauth.net",
+    "||msauth.net",
+    "||msftauth.net",
+    "||appleid.apple.com",
+    "||github.com/login/oauth",
+    "||discord.com/oauth2",
+    "||discord.com/api/oauth2",
+    "||discordapp.com/oauth2",
+    "||discordapp.com/api/oauth2",
+    "||accounts.spotify.com",
+    "||login.spotify.com",
+    "||login5.spotify.com",
+    "||open.spotify.com/get_access_token",
+    {
+     "requestDomains": [
+      "facebook.com"
+     ],
+     "urlFilter": "/dialog/oauth"
+    },
+    "||connect.facebook.net",
+    "||graph.facebook.com/oauth",
+    "||slack.com/oauth/authorize",
+    "||slack.com/oauth/v2/authorize",
+    "||slack-gov.com/oauth/authorize",
+    "||slack-gov.com/oauth/v2/authorize",
+    "||www.dropbox.com/oauth2/authorize",
+    "||gitlab.com/oauth/authorize",
+    "||auth.atlassian.com/authorize",
+    "||www.linkedin.com/oauth/v2/authorization",
+    "||id.twitch.tv/oauth2/authorize",
+    "||appleid.cdn-apple.com",
+    "||cdn.auth0.com",
+    "||global.oktacdn.com",
+    "||oktacdn.com",
+    "||okta.com",
+    "||auth0.com",
+    "||onelogin.com",
+    "||duosecurity.com",
+    "||openathens.net",
+    "||shibboleth.net",
+    "||paypal.com/signin",
+    "||www.paypal.com/signin",
+    "||paypal.com/checkout",
+    "||www.paypal.com/checkout",
+    "||paypalobjects.com",
+    "||js.stripe.com",
+    "||checkout.stripe.com",
+    "||stripe.network",
+    "||braintreegateway.com",
+    "||braintreepayments.com",
+    "||adyen.com",
+    "||adyenpayments.com",
+    "||hcaptcha.com",
+    "||js.hcaptcha.com",
+    "||challenges.cloudflare.com",
+    "||turnstile.cloudflare.com",
+    "||amazoncognito.com",
+    {
+     "requestDomains": [
+      "toadmash.net"
+     ],
+     "initiatorDomains": [
+      "the-sun.com",
+      "thesun.co.uk",
+      "thetimes.com"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "tracker-protected",
+   "where": "background.js TRACKER_PROTECTED_DOMAINS",
+   "relaxes": "The tracker learner never learns a block for these platforms.",
+   "reason": "Major platforms and content networks that most sites load from; one learned block would break large parts of the web.",
+   "tests": [
+    "tools/test-tracker-learner-trust.js",
+    "tools/test-network-compatibility.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "akamaihd.net",
+    "amazon.com",
+    "amazonaws.com",
+    "apple.com",
+    "cloudflare.com",
+    "cloudflare.net",
+    "fastly.net",
+    "github.com",
+    "githubusercontent.com",
+    "gitlab.com",
+    "google.com",
+    "googleapis.com",
+    "googleusercontent.com",
+    "googlevideo.com",
+    "gstatic.com",
+    "icloud.com",
+    "live.com",
+    "microsoft.com",
+    "microsoftonline.com",
+    "mozilla.org",
+    "office.com",
+    "office365.com",
+    "paypal.com",
+    "stripe.com",
+    "wikipedia.org",
+    "youtube.com",
+    "ytimg.com"
+   ]
+  },
+  {
+   "id": "media-compat",
+   "where": "background.js MEDIA_COMPAT_DOMAINS",
+   "relaxes": "Video and player hosts are never blocked by ad and tracker lists.",
+   "reason": "YouTube and Twitch streams and CNN's player bundles. StevenBlack listed registry.api.cnn.io and CNN's video pages showed no player at all.",
+   "tests": [
+    "tools/test-network-compatibility.js",
+    "tools/test-dnr-atomic-replace.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "ggpht.com",
+    "googlevideo.com",
+    "jtvnw.net",
+    "registry.api.cnn.io",
+    "ttvnw.net",
+    "twitchcdn.net",
+    "usher.ttvnw.net",
+    "youtubei.googleapis.com",
+    "ytimg.com"
+   ]
+  },
+  {
+   "id": "x-app-compat",
+   "where": "background.js X_APP_COMPAT_DOMAINS",
+   "relaxes": "The tracker learner and site blocking never take these as a learned target.",
+   "reason": "X's app spans x.com, twitter.com and twimg.com; its fixed interface and signed in requests need all three (tools/test-x-compatibility.js).",
+   "tests": [
+    "tools/test-x-compatibility.js",
+    "tools/test-blocking-site-scope.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "twimg.com",
+    "twitter.com",
+    "x.com"
+   ]
+  },
+  {
+   "id": "chatgpt-compat",
+   "where": "background.js CHATGPT_COMPAT_DOMAINS",
+   "relaxes": "Left out of the fingerprint script rules, both as the page and as the request.",
+   "reason": "Signed in ChatGPT stopped sending messages with those rules on. Its reply runner lives in an opaque origin sandbox, so OpenAI's asset hosts are excluded by request too.",
+   "tests": [
+    "tools/test-smart-script-own-zones.js",
+    "tools/test-fraud-vendor-scripts.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "chatgpt.com",
+    "oaistatic.com",
+    "oaiusercontent.com",
+    "openai.com"
+   ]
+  },
+  {
+   "id": "path-tenant-hosts",
+   "where": "background.js PATH_TENANT_HOSTS and PATH_TENANT_HOST_RE",
+   "relaxes": "A feed entry naming one of these hosts bare is ignored; entries with a path still block that one page.",
+   "reason": "Short links, shared documents, file buckets, pastes and AMP caches host many unrelated people under one name. Phishing.Database listed cdn.ampproject.org bare and put every AMP link behind Dangerous Site.",
+   "evidence": "Round 5, 2026-11-14 (AMP).",
+   "tests": [
+    "tools/test-phishing-url-feed.js",
+    "tools/test-feed-shared-platforms.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "hosts": [
+     "1drv.ms",
+     "a.co",
+     "ampproject.org",
+     "amzn.to",
+     "bing-amp.com",
+     "bit.ly",
+     "bitbucket.org",
+     "bitly.com",
+     "buff.ly",
+     "cdn.ampproject.org",
+     "cdn.discordapp.com",
+     "cloudflare-ipfs.com",
+     "codepen.io",
+     "cutt.ly",
+     "dl.dropboxusercontent.com",
+     "docs.google.com",
+     "docs.zoho.com",
+     "drive.google.com",
+     "drive.usercontent.google.com",
+     "dropbox.com",
+     "dweb.link",
+     "firebasestorage.googleapis.com",
+     "form.jotform.com",
+     "forms.gle",
+     "forms.microsoft.com",
+     "forms.office.com",
+     "g.co",
+     "gateway.pinata.cloud",
+     "gist.github.com",
+     "gitlab.com",
+     "goo.gl",
+     "graph.org",
+     "ipfs.io",
+     "is.gd",
+     "jotform.com",
+     "jsfiddle.net",
+     "linktr.ee",
+     "lnkd.in",
+     "media.discordapp.net",
+     "mediafire.com",
+     "medium.com",
+     "mega.nz",
+     "onedrive.live.com",
+     "ow.ly",
+     "pastebin.com",
+     "qrco.de",
+     "rb.gy",
+     "rebrand.ly",
+     "s.id",
+     "s3.amazonaws.com",
+     "script.google.com",
+     "shorturl.at",
+     "sites.google.com",
+     "storage.googleapis.com",
+     "surveymonkey.com",
+     "sway.cloud.microsoft",
+     "sway.office.com",
+     "t.co",
+     "t.ly",
+     "t.me",
+     "telegra.ph",
+     "tiny.cc",
+     "tinyurl.com",
+     "v.gd",
+     "we.tl",
+     "wetransfer.com",
+     "youtu.be"
+    ],
+    "pattern": {
+     "source": "^(?:s3[.-](?:dualstack\\.)?[a-z0-9-]+\\.amazonaws\\.com|f\\d{3}\\.backblazeb2\\.com)$",
+     "flags": ""
+    }
+   }
+  },
+  {
+   "id": "fingerprint-hosted-apps",
+   "where": "background.js FINGERPRINT_HOSTED_APP_MATCHES",
+   "relaxes": "The fingerprint shield is off on hosted editors and sign in providers.",
+   "reason": "Hosted editors and identity providers keep their browser signals native, matching the engine's own pause there (hosted-app-pauses); canvas noise in an editor or changed signals during sign in put documents and logins at risk.",
+   "tests": [
+    "tools/test-fingerprint-shield.js",
+    "tools/test-fingerprint-early.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "*://*.amazoncognito.com/*",
+    "*://*.auth0.com/*",
+    "*://*.b2clogin.com/*",
+    "*://*.ciamlogin.com/*",
+    "*://*.duosecurity.com/*",
+    "*://*.okta.com/*",
+    "*://*.onelogin.com/*",
+    "*://*.pingone.com/*",
+    "*://*.shopify.com/*",
+    "*://docs.google.com/*",
+    "*://drive.google.com/*"
+   ]
+  },
+  {
+   "id": "consent-reject-exclude",
+   "where": "background.js CONSENT_REJECT_EXCLUDE_MATCHES and CONSENT_REJECT_EXCLUDE_RE",
+   "relaxes": "Auto reject is never injected on sign in, CAPTCHA and checkout hosts.",
+   "reason": "It clicks buttons for the reader; on authentication and payment pages a wrong click costs far more than a banner.",
+   "tests": [
+    "tools/test-consent-reject.js",
+    "tools/test-consent-wall.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "matches": [
+     "https://*.accounts.google.co.uk/*",
+     "https://*.accounts.google.com/*",
+     "https://*.adyen.com/*",
+     "https://*.amazoncognito.com/*",
+     "https://*.auth0.com/*",
+     "https://*.braintreegateway.com/*",
+     "https://*.braintreepayments.com/*",
+     "https://*.cash.app/*",
+     "https://*.checkout.com/*",
+     "https://*.duosecurity.com/*",
+     "https://*.github.com/*",
+     "https://*.hcaptcha.com/*",
+     "https://*.klarna.com/*",
+     "https://*.okta.com/*",
+     "https://*.oktacdn.com/*",
+     "https://*.onelogin.com/*",
+     "https://*.paypal.com/*",
+     "https://*.recaptcha.net/*",
+     "https://*.squareup.com/*",
+     "https://accounts.google.co.uk/*",
+     "https://accounts.google.com/*",
+     "https://adyen.com/*",
+     "https://amazoncognito.com/*",
+     "https://apis.google.com/*",
+     "https://appleid.apple.com/*",
+     "https://auth.openai.com/*",
+     "https://auth0.com/*",
+     "https://braintreegateway.com/*",
+     "https://braintreepayments.com/*",
+     "https://cash.app/*",
+     "https://challenges.cloudflare.com/*",
+     "https://checkout.com/*",
+     "https://checkout.stripe.com/*",
+     "https://discord.com/api/oauth2/*",
+     "https://discord.com/oauth2/*",
+     "https://duosecurity.com/*",
+     "https://github.com/*",
+     "https://hcaptcha.com/*",
+     "https://js.stripe.com/*",
+     "https://klarna.com/*",
+     "https://login.live.com/*",
+     "https://login.microsoftonline.com/*",
+     "https://oauth2.googleapis.com/*",
+     "https://okta.com/*",
+     "https://onelogin.com/*",
+     "https://paypal.com/*",
+     "https://recaptcha.net/*",
+     "https://squareup.com/*",
+     "https://turnstile.cloudflare.com/*"
+    ],
+    "pattern": {
+     "source": "(^|\\.)(accounts\\.google\\.com|oauth2\\.googleapis\\.com|apis\\.google\\.com|login\\.microsoftonline\\.com|login\\.live\\.com|appleid\\.apple\\.com|okta\\.com|oktacdn\\.com|auth0\\.com|onelogin\\.com|duosecurity\\.com|hcaptcha\\.com|recaptcha\\.net|challenges\\.cloudflare\\.com|turnstile\\.cloudflare\\.com|amazoncognito\\.com|github\\.com|paypal\\.com|stripe\\.com|checkout\\.com|adyen\\.com|braintreepayments\\.com|braintreegateway\\.com|klarna\\.com|squareup\\.com|cash\\.app)$",
+     "flags": "i"
+    }
+   }
+  },
+  {
+   "id": "resolver-ips",
+   "where": "background.js FEED_NEVER_BLOCK_IPS",
+   "relaxes": "A feed entry naming one of these addresses is ignored.",
+   "reason": "Public DNS resolvers people type by hand; a report naming one is a mistake, and blocking it helps nobody.",
+   "tests": [
+    "tools/test-tweetfeed-ip-feed.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "1.0.0.1",
+    "1.1.1.1",
+    "149.112.112.112",
+    "208.67.220.220",
+    "208.67.222.222",
+    "8.8.4.4",
+    "8.8.8.8",
+    "9.9.9.9",
+    "94.140.14.14",
+    "94.140.15.15"
+   ]
+  },
+  {
+   "id": "feed-false-positives",
+   "where": "background.js FEED_FALSE_POSITIVE_DOMAINS",
+   "relaxes": "A single conflicting feed verdict is suppressed for the exact name and its www form only.",
+   "reason": "Reviewed one feed disagreements. This is not a safety verdict; other protections and the reader's own rules still apply.",
+   "evidence": "docs/security-feed-exceptions.md",
+   "tests": [
+    "tools/test-network-compatibility.js",
+    "tools/test-phishing-false-positives.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "steamrip.com",
+    "support.metamask.io"
+   ]
+  },
+  {
+   "id": "feed-entry-exclusions",
+   "where": "background.js remoteListBlockAllowed",
+   "relaxes": "One named feed's entry for these hosts is ignored. Other feeds can still block them and no allow rule is added.",
+   "reason": "Shared services that one list named whole: fileditch and Tawk chat (ThreatView), GameDrive (DurableNapkin, owner's choice), HubSpot forms and Intercom chat (Blocklist Project tracking). Their tracking hosts stay blocked by other lists.",
+   "evidence": "docs/security-feed-exceptions.md",
+   "tests": [
+    "tools/test-threatview-feed.js",
+    "tools/test-network-compatibility.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    {
+     "source": "https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt",
+     "hosts": [
+      "fileditch.com",
+      "www.fileditch.com"
+     ]
+    },
+    {
+     "source": "https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt",
+     "hosts": [
+      "tawk.to",
+      "www.tawk.to"
+     ]
+    },
+    {
+     "source": "https://raw.githubusercontent.com/durablenapkin/scamblocklist/master/hosts.txt",
+     "hosts": [
+      "gamedrive.org",
+      "www.gamedrive.org"
+     ]
+    },
+    {
+     "source": "https://raw.githubusercontent.com/blocklistproject/Lists/master/tracking.txt",
+     "hosts": [
+      "hsforms.com",
+      "intercom.io"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "google-search-sponsored",
+   "where": "background.js GOOGLE_SEARCH_INITIATOR_DOMAINS, GOOGLE_SEARCH_SPONSORED_DOMAINS and GOOGLE_SEARCH_SPONSORED_PATH_FILTERS",
+   "relaxes": "Sponsored result clicks from Google and Brave Search pages reach the advertiser's ad click address instead of being blocked.",
+   "reason": "With ad blocking on, the ad click address a sponsored result goes through is blocked, so a click the reader chose to make would fail. Only clicks from those search pages are allowed.",
+   "tests": [
+    "tools/test-dynamic-registrations.js",
+    "tools/test-dynamic-rule-reads.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "initiators": [
+     "google.at",
+     "google.be",
+     "google.ca",
+     "google.ch",
+     "google.co.in",
+     "google.co.jp",
+     "google.co.nz",
+     "google.co.uk",
+     "google.co.za",
+     "google.com",
+     "google.com.au",
+     "google.com.br",
+     "google.com.mx",
+     "google.de",
+     "google.dk",
+     "google.es",
+     "google.fi",
+     "google.fr",
+     "google.ie",
+     "google.it",
+     "google.nl",
+     "google.no",
+     "google.pl",
+     "google.pt",
+     "google.se",
+     "search.brave.com"
+    ],
+    "sponsored": [
+     "adservice.google.com",
+     "doubleclick.net",
+     "googleads.g.doubleclick.net",
+     "googleadservices.com"
+    ],
+    "paths": [
+     "/aclk",
+     "/pagead/aclk"
+    ]
+   }
+  },
+  {
+   "id": "pinned-redirects",
+   "where": "background.js PINNED_REDIRECT_RULES",
+   "relaxes": "An empty answer instead of a block, on CNN only.",
+   "reason": "CNN's player asked Brightline for its config and, blocked, retried about 14,000 times in 30 seconds. An empty answer still delivers no ad and ends the loop.",
+   "tests": [
+    "tools/test-redirect-resources.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    {
+     "__woModifier": "redirect",
+     "action": {
+      "type": "redirect",
+      "redirect": {
+       "extensionPath": "/redirect-resources/noop.json"
+      }
+     },
+     "condition": {
+      "urlFilter": "||cdn-media.brightline.tv/config/",
+      "initiatorDomains": [
+       "cnn.com"
+      ],
+      "resourceTypes": [
+       "xmlhttprequest"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "invite-redirect",
+   "where": "background.js knownInviteRedirect",
+   "relaxes": "The forced redirect check lets join.gamedrive.org/discord through to a Discord invite.",
+   "reason": "GameDrive's own Discord invite link redirects without a click of its own, and only to a Discord invite page (added with the popunder guard, 2026-10-16).",
+   "tests": [
+    "tools/test-frame-redirect-guard.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "discord.com",
+    "discord.gg",
+    "join.gamedrive.org"
+   ]
+  },
+  {
+   "id": "download-return-host",
+   "where": "background.js downloadSiteBlockedUrl",
+   "relaxes": "When a download site sends the reader to this blocked host, WardenOne takes them back to the page they came from.",
+   "reason": "A download host bounces through it; returning beats leaving the reader on a blocked page.",
+   "tests": [
+    "tools/test-download-site-return.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": [
+    "whuw8g.site"
+   ]
+  },
+  {
+   "id": "trusted-media-hosts",
+   "where": "src/content.js trustedMediaHost",
+   "relaxes": "Page guards that reach the player or the media element stand down.",
+   "reason": "YouTube, Twitch, Spotify and X are the media players themselves; autoplay, overlay and scam heuristics read their ordinary controls as threats.",
+   "tests": [
+    "tools/test-autoplay-guard.js",
+    "tools/test-device-access-guard.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "source": "(^|\\.)((youtube|youtu)\\.be|youtube\\.com|youtube-nocookie\\.com|googlevideo\\.com|ytimg\\.com|twitch\\.tv|ttvnw\\.net|jtvnw\\.net|twitchcdn\\.net|spotify\\.com|spotifycdn\\.com|scdn\\.co|x\\.com|twitter\\.com|twimg\\.com)$",
+    "flags": "i"
+   }
+  },
+  {
+   "id": "discord-app",
+   "where": "src/content.js discordAppHost",
+   "relaxes": "Overlay heuristics only; link and request checks stay on.",
+   "reason": "Discord's role and profile dialogs look like click bait to the overlay heuristics.",
+   "tests": [
+    "tools/test-confirm-bait-linked-overlay.js",
+    "tools/test-badge-yield.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "source": "^(?:discord\\.com|discordapp\\.com|canary\\.discord\\.com|ptb\\.discord\\.com)$",
+    "flags": "i"
+   }
+  },
+  {
+   "id": "conversation-hosts",
+   "where": "src/content.js conversationHost",
+   "relaxes": "Page text scam heuristics are skipped; clipboard checks stay on.",
+   "reason": "AI assistant conversations quote scam instructions back to the reader, which read as a scam page.",
+   "tests": [
+    "tools/test-clickfix-guard.js",
+    "tools/test-scam-lock.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "source": "(^|\\.)(chatgpt\\.com|openai\\.com|claude\\.ai|anthropic\\.com|gemini\\.google\\.com|bard\\.google\\.com|aistudio\\.google\\.com|perplexity\\.ai|copilot\\.microsoft\\.com|poe\\.com|grok\\.com|deepseek\\.com|mistral\\.ai|huggingface\\.co)$",
+    "flags": "i"
+   }
+  },
+  {
+   "id": "webrtc-compat",
+   "where": "src/content.js webrtcCompatHost",
+   "relaxes": "Suspicious WebRTC blocking stands down, as on the media hosts.",
+   "reason": "Signed in ChatGPT opens a peer connection for voice as a message is sent; refusing it left the reply waiting forever.",
+   "tests": [
+    "tools/test-ip-privacy.js",
+    "tools/test-runtime-config-lifecycle.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "source": "(^|\\.)chatgpt\\.com$",
+    "flags": "i"
+   }
+  },
+  {
+   "id": "search-results-hosts",
+   "where": "src/content.js searchResultsHost",
+   "relaxes": "Page text scam heuristics are skipped on search result pages; clipboard checks stay on.",
+   "reason": "Search snippets quote scam instructions. User content hosts such as sites.google.com are deliberately not included.",
+   "tests": [
+    "tools/test-clickfix-guard.js",
+    "tools/test-scam-lock.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "source": "^(?:www\\.)?(?:google\\.(?:com|[a-z]{2}|co\\.[a-z]{2}|com\\.[a-z]{2})|bing\\.com|(?:html\\.|lite\\.)?duckduckgo\\.com|search\\.brave\\.com|(?:[a-z]{2}\\.)?search\\.yahoo\\.(?:com|co\\.jp)|ecosia\\.org|startpage\\.com|mojeek\\.com|qwant\\.com|kagi\\.com|yandex\\.(?:com|[a-z]{2}|com\\.[a-z]{2})|baidu\\.com|search\\.marginalia\\.nu)$",
+    "flags": "i"
+   }
+  },
+  {
+   "id": "youtube-pauses",
+   "where": "src/content.js YT_COMPAT_PAUSED and its host test",
+   "relaxes": "The named protections pause on YouTube; every other protection keeps running.",
+   "reason": "Each named one reaches the player, intercepts YouTube's constant history changes, or hooks APIs the player depends on.",
+   "tests": [
+    "tools/test-compat-host-scope.js",
+    "tools/test-engine-config-ownership.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "pattern": {
+     "source": "(^|\\.)youtube(-nocookie)?\\.com$|(^|\\.)youtu\\.be$",
+     "flags": "i"
+    },
+    "paused": [
+     "removeOverlays",
+     "autoRejectConsent",
+     "blockAutoplay",
+     "blockAutoplayMedia",
+     "mediaShield",
+     "fullscreenGuard",
+     "lazyLoadMedia",
+     "throttleBackgroundTabs",
+     "blockGesturelessNav",
+     "blockForcedPopups",
+     "strictPopupShield",
+     "blockMetaRefresh",
+     "detectRedirectChains",
+     "backTrapGuard",
+     "oneOpenPerGesture",
+     "gateAdultSites",
+     "adultHeuristics",
+     "blockSupercookies",
+     "deviceAccessGuard",
+     "capabilityGuard",
+     "notificationAbuseGuard",
+     "antiClickjacking"
+    ]
+   }
+  },
+  {
+   "id": "hosted-app-pauses",
+   "where": "src/content.js HOSTED_APP_COMPAT_HOST and HOSTED_APP_COMPAT_PAUSED",
+   "relaxes": "The named protections pause on hosted editors and identity portals.",
+   "reason": "They keep their controls and browser signals native; page level security checks stay on.",
+   "tests": [
+    "tools/test-compat-host-scope.js",
+    "tools/test-fingerprint-shield.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "pattern": {
+     "source": "^(?:(?:docs|drive)\\.google\\.com|(?:[a-z0-9-]+\\.)*(?:okta|auth0|onelogin|duosecurity|pingone|b2clogin|ciamlogin|amazoncognito|shopify)\\.com)$",
+     "flags": "i"
+    },
+    "paused": [
+     "removeOverlays",
+     "autoRejectConsent",
+     "antiFingerprintNoise",
+     "antiFingerprint",
+     "fingerprintShield",
+     "clientHintProtection"
+    ]
+   }
+  },
+  {
+   "id": "education-pauses",
+   "where": "src/content.js EDU_COMPAT_HOST and EDU_COMPAT_PAUSED",
+   "relaxes": "The named protections pause on education sites.",
+   "reason": "Login, exam and proctoring flows; sign in prompts and course notices look like overlays, and proctoring needs camera and screen.",
+   "tests": [
+    "tools/test-education-compat.js",
+    "tools/test-compat-host-scope.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "pattern": {
+     "source": "(^|\\.)(edu|edu\\.au|edu\\.sg|edu\\.hk|ac\\.uk|ac\\.nz|ac\\.za|ac\\.in|ucas\\.com)$",
+     "flags": "i"
+    },
+    "paused": [
+     "removeOverlays",
+     "autoRejectConsent",
+     "blockMetaRefresh",
+     "detectRedirectChains",
+     "backTrapGuard",
+     "fakeWindowGuard",
+     "sessionShield",
+     "blockTokenExfil",
+     "continuousTokenScan",
+     "blockCameraMic",
+     "blockScreenCapture",
+     "blockGeolocation",
+     "deviceAccessGuard",
+     "capabilityGuard",
+     "notificationAbuseGuard",
+     "blockAutoplayMedia",
+     "mediaShield",
+     "fullscreenGuard",
+     "gateAdultSites",
+     "adultHeuristics",
+     "antiClickjacking"
+    ]
+   }
+  },
+  {
+   "id": "token-exfil-trust",
+   "where": "src/content.js TOKEN_EXFIL_TRUST_POLICY",
+   "relaxes": "A token shaped value sent to these destinations, or within these site families, raises no warning.",
+   "reason": "Sign in, payment and media services hand out tokens by design; a family covers one owner's sites and services (Bleacher Report's sports data and video platform, for example).",
+   "tests": [
+    "tools/test-token-exfil-trust.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "globalDestinations": [
+     "google.com",
+     "gstatic.com",
+     "googleapis.com",
+     "youtube.com",
+     "youtube-nocookie.com",
+     "youtu.be",
+     "googlevideo.com",
+     "ytimg.com",
+     "ggpht.com",
+     "twitch.tv",
+     "ttvnw.net",
+     "jtvnw.net",
+     "twitchcdn.net",
+     "facebook.com",
+     "fbcdn.net",
+     "apple.com",
+     "icloud.com",
+     "microsoft.com",
+     "microsoftonline.com",
+     "live.com",
+     "office.com",
+     "okta.com",
+     "auth0.com",
+     "onelogin.com",
+     "duosecurity.com",
+     "paypal.com",
+     "paypalobjects.com",
+     "stripe.com",
+     "stripe.network",
+     "braintreegateway.com",
+     "braintreepayments.com",
+     "adyen.com",
+     "adyenpayments.com",
+     "checkout.com",
+     "cloudflare.com",
+     "cloudflare.net",
+     "hcaptcha.com",
+     "recaptcha.net",
+     "arkoselabs.com",
+     "funcaptcha.com",
+     "awswaf.com",
+     "gravatar.com",
+     "spotify.com",
+     "scdn.co",
+     "spotifycdn.com",
+     "expressplay.com",
+     "onetrust.com",
+     "cookielaw.org"
+    ],
+    "managedBackends": [
+     "supabase.co",
+     "supabase.in",
+     "firebaseio.com",
+     "firebaseapp.com",
+     "cloudfunctions.net",
+     "appwrite.io"
+    ],
+    "families": [
+     {
+      "pages": [
+       "spotify.com",
+       "scdn.co",
+       "spotifycdn.com"
+      ],
+      "destinations": [
+       "spotify.com",
+       "scdn.co",
+       "spotifycdn.com",
+       "spotify.map.fastly.net"
+      ]
+     },
+     {
+      "pages": [
+       "youtube.com",
+       "youtubei.googleapis.com"
+      ],
+      "destinations": [
+       "youtube.com",
+       "youtube-nocookie.com",
+       "youtu.be",
+       "googlevideo.com",
+       "ytimg.com",
+       "youtubei.googleapis.com",
+       "ggpht.com",
+       "google.com",
+       "googleapis.com",
+       "gstatic.com",
+       "googleusercontent.com"
+      ]
+     },
+     {
+      "pages": [
+       "netflix.com",
+       "nflxso.net"
+      ],
+      "destinations": [
+       "netflix.com",
+       "nflxso.net",
+       "nflxvideo.net",
+       "nflximg.net"
+      ]
+     },
+     {
+      "pages": [
+       "twitch.tv"
+      ],
+      "destinations": [
+       "twitch.tv",
+       "ttvnw.net",
+       "jtvnw.net",
+       "twitchcdn.net"
+      ]
+     },
+     {
+      "pages": [
+       "x.com",
+       "twitter.com"
+      ],
+      "destinations": [
+       "x.com",
+       "twitter.com",
+       "twimg.com",
+       "t.co"
+      ]
+     },
+     {
+      "pages": [
+       "tiktok.com"
+      ],
+      "destinations": [
+       "tiktokv.com",
+       "tiktokv.eu",
+       "tiktokw.eu"
+      ]
+     },
+     {
+      "pages": [
+       "bleacherreport.com"
+      ],
+      "destinations": [
+       "sportsplatform.io",
+       "ngtv.io"
+      ]
+     },
+     {
+      "pages": [
+       "discord.com",
+       "discordapp.com"
+      ],
+      "destinations": [
+       "discord.com",
+       "discordapp.com",
+       "discordapp.net",
+       "discord.gg"
+      ]
+     },
+     {
+      "pages": [
+       "github.com",
+       "github.dev"
+      ],
+      "destinations": [
+       "github.com",
+       "githubusercontent.com",
+       "githubassets.com",
+       "github.io",
+       "githubapp.com",
+       "githubcopilot.com",
+       "github.dev"
+      ]
+     },
+     {
+      "pages": [
+       "gptzero.me"
+      ],
+      "destinations": [
+       "gptzero.me",
+       "supabase.co"
+      ]
+     },
+     {
+      "pages": [
+       "slack.com"
+      ],
+      "destinations": [
+       "slack.com",
+       "slack-edge.com",
+       "slack-files.com",
+       "slack-imgs.com",
+       "slackb.com"
+      ]
+     },
+     {
+      "pages": [
+       "figma.com"
+      ],
+      "destinations": [
+       "figma.com",
+       "figmausercontent.com"
+      ]
+     },
+     {
+      "pages": [
+       "notion.so"
+      ],
+      "destinations": [
+       "notion.so",
+       "notion.site",
+       "notion-static.com"
+      ]
+     },
+     {
+      "pages": [
+       "naturalreaders.com"
+      ],
+      "destinations": [
+       "2poo4vxwjc.execute-api.us-east-1.amazonaws.com",
+       "r0lk19wn54.execute-api.us-east-1.amazonaws.com"
+      ]
+     },
+     {
+      "pages": [
+       "ttsreader.com"
+      ],
+      "destinations": [
+       "us-central1-ttsreader.cloudfunctions.net"
+      ]
+     },
+     {
+      "pages": [
+       "dropbox.com"
+      ],
+      "destinations": [
+       "dropbox.com",
+       "dropboxapi.com",
+       "dropboxusercontent.com",
+       "dropboxstatic.com"
+      ]
+     },
+     {
+      "pages": [
+       "drive.google.com",
+       "accounts.google.com"
+      ],
+      "destinations": [
+       "google.com",
+       "googleapis.com",
+       "gstatic.com",
+       "googleusercontent.com"
+      ]
+     },
+     {
+      "pages": [
+       "login.microsoftonline.com",
+       "outlook.office.com",
+       "office.com",
+       "office365.com",
+       "microsoft365.com",
+       "microsoft.com",
+       "sharepoint.com",
+       "onmicrosoft.com",
+       "live.com"
+      ],
+      "destinations": [
+       "microsoft.com",
+       "microsoft365.com",
+       "microsoftonline.com",
+       "live.com",
+       "outlook.com",
+       "office.com",
+       "office365.com",
+       "office.net",
+       "sharepoint.com",
+       "sharepointonline.com",
+       "onmicrosoft.com",
+       "onedrive.com",
+       "1drv.ms",
+       "svc.ms",
+       "msftauth.net",
+       "msauth.net",
+       "azure.com",
+       "azureedge.net",
+       "aka.ms"
+      ]
+     },
+     {
+      "pages": [
+       "icloud.com"
+      ],
+      "destinations": [
+       "apple.com",
+       "icloud.com",
+       "me.com",
+       "apple-cloudkit.com",
+       "cdn-apple.com"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "consent-reject-compat",
+   "where": "consent-reject.js COMPAT_ALLOWLIST and its host tests",
+   "relaxes": "Auto reject does not run at all on these hosts.",
+   "reason": "Google's own apps, UCAS and universities (exam and login flows), GitHub, and federated sign in portals, where consent dialogs sit beside account controls. shopify.com has been listed since the first version with no reason recorded: a candidate for review.",
+   "tests": [
+    "tools/test-consent-reject.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "allowlist": [
+     "shopify.com"
+    ],
+    "patterns": [
+     {
+      "source": "^(drive|docs|mail|calendar|classroom|meet|chat|myaccount)\\.google\\.com$",
+      "flags": "i"
+     },
+     {
+      "source": "(^|\\.)ucas\\.com$",
+      "flags": "i"
+     },
+     {
+      "source": "\\.ac\\.uk$|\\.edu$|\\.edu\\.au$|\\.ac\\.nz$|\\.ac\\.za$|\\.ac\\.in$|\\.edu\\.sg$|\\.edu\\.hk$",
+      "flags": "i"
+     },
+     {
+      "source": "(^|\\.)github\\.com$",
+      "flags": "i"
+     },
+     {
+      "source": "(^|\\.)(openathens\\.net|shibboleth\\.net)$",
+      "flags": "i"
+     }
+    ]
+   }
+  },
+  {
+   "id": "brand-country-sites",
+   "where": "idn-utils.js WARDENONE_BRAND_COUNTRY_SITES",
+   "relaxes": "A brand's own country sites are not treated as impersonation, and a redirect between two of them passes the Redirect Check.",
+   "reason": "google.ca and bbc.co.uk are the brand itself; without the table they read as lookalikes and regional routing was warned.",
+   "tests": [
+    "tools/test-frame-redirect-guard.js",
+    "tools/test-phishing-false-positives.js"
+   ],
+   "reviewed": "2026-11-20",
+   "value": {
+    "google": "com ad ae com.af com.ag al am co.ao com.ar as at com.au az ba com.bd be bf bg com.bh bi bj com.bn com.bo com.br bs bt co.bw by com.bz ca cd cf cg ch ci co.ck cl cm cn com.co co.cr com.cu cv com.cy cz de dj dk dm com.do dz com.ec ee com.eg es com.et fi com.fj fm fr ga ge gg com.gh com.gi gl gm gr com.gt gy com.hk hn hr ht hu co.id ie co.il im co.in iq is it je com.jm jo co.jp co.ke com.kh ki kg co.kr com.kw kz la com.lb li lk co.ls lt lu lv com.ly co.ma md me mg mk ml com.mm mn com.mt mu mv mw com.mx com.my co.mz com.na com.ng com.ni ne nl no com.np nr nu co.nz com.om com.pa com.pe com.pg com.ph com.pk pl pn com.pr ps pt com.py com.qa ro ru rw com.sa com.sb sc se com.sg sh si sk com.sl sn so sm sr st com.sv td tg co.th com.tj tl tm tn to com.tr tt com.tw co.tz com.ua co.ug co.uk com.uy co.uz com.vc co.ve co.vi com.vn vu ws rs co.za co.zm co.zw cat",
+    "amazon": "com ca com.mx com.br co.uk de fr it es nl se pl com.be com.tr ae sa eg in co.jp com.au sg cn co.za ie",
+    "ebay": "com ca co.uk de fr it es at ch be nl ie pl com.au com.hk com.sg com.my ph in us",
+    "yahoo": "com co.jp",
+    "pinterest": "com at ca ch cl co.kr co.uk com.au com.mx de dk es fr ie it jp nz ph pt ru se",
+    "airbnb": "com ca co.uk com.au de fr es it ie co.in mx com.br jp co.kr nl be ch at dk se no fi pt pl cz gr hu co.nz com.sg com.hk cl com.ar com.co co.id com.my com.ph com.tw co.za ru is",
+    "costco": "com ca co.uk com.mx co.jp co.kr com.tw com.au co.nz es fr is se",
+    "bestbuy": "com ca",
+    "walmart": "com ca com.mx",
+    "instacart": "com ca",
+    "capitalone": "com ca co.uk",
+    "nintendo": "com co.jp co.uk de fr es it nl be at ch pt ru com.au co.nz co.za com.hk co.kr tw",
+    "dhl": "com de",
+    "hsbc": "com co.uk com.hk com.au ca fr de com.mx co.in com.sg ae com.cn com.my com.tw co.id com.ph com.vn lk com.bd com.eg com.mt ch lu com.bh com.qa com.kw co.om com.mo co.mu com.tr bm",
+    "citibank": "com com.sg com.hk ae com.my co.uk com.au co.in co.id com.ph com.tw co.th com.vn pl co.kr",
+    "mastercard": "com us ca co.uk com.au co.in de fr es it ie co.nz com.sg com.hk co.za ae com.br com.mx",
+    "barclays": "com co.uk de",
+    "bbc": "com co.uk",
+    "espn": "com co.uk",
+    "yelp": "com co.uk"
+   }
+  }
+ ]
+}
