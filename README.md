@@ -89,7 +89,7 @@ as an unpacked extension and switches it off the moment Developer mode goes off.
 protecting you, even after a restart, until you turn Developer mode back on.
 
 **On an Android phone?** Some phone browsers, such as Aerium, can install a packed extension file.
-[WardenOne-latest.crx](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.crx)
+[WardenOne-phone.crx](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-phone.crx)
 is the same build as the ZIP, packed for them. Load unpacked can't run WardenOne in Aerium, because
 Aerium can't save WardenOne's block lists into a folder on your phone. I only test WardenOne on
 computers, so please treat the phone build as an experiment.

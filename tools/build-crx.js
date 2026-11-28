@@ -9,8 +9,8 @@
    The CRX wraps the ZIP's exact bytes, so both downloads carry the same build.
 
      node tools/build-crx.js keygen --out <folder outside this repository>
-     node tools/build-crx.js pack WardenOne-latest.zip --out WardenOne-latest.crx   (key from WARDENONE_CRX_KEY or --key)
-     node tools/build-crx.js verify WardenOne-latest.crx [--zip WardenOne-latest.zip] */
+     node tools/build-crx.js pack WardenOne-latest.zip --out WardenOne-phone.crx   (key from WARDENONE_CRX_KEY or --key)
+     node tools/build-crx.js verify WardenOne-phone.crx [--zip WardenOne-latest.zip] */
 'use strict';
 
 const crypto = require('crypto');
@@ -220,7 +220,7 @@ function keygen(out, opts = {}) {
   fs.writeFileSync(privatePath, privateKey.export({ type: 'pkcs8', format: 'pem' }), { mode: 0o600 });
   const der = publicKey.export({ type: 'spki', format: 'der' });
   const identity = {
-    about: 'The extension ID of WardenOne-latest.crx. Changing the key changes the ID, and installed copies would not update.',
+    about: 'The extension ID of WardenOne-phone.crx. Changing the key changes the ID, and installed copies would not update.',
     extensionId: extensionId(der),
     publicKey: der.toString('base64'),
   };

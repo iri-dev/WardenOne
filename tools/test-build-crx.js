@@ -92,7 +92,7 @@ try {
   const pinned = tool.readIdentity();
   if (pinned) ok(/^[a-p]{32}$/.test(pinned.extensionId), 'tools/crx-identity.json pins a well formed extension ID');
   const readme = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
-  ok(!/WardenOne-latest\.crx\b/.test(readme) || !!pinned, 'the README links the CRX only after tools/crx-identity.json is committed');
+  ok(!/WardenOne-phone\.crx\b/.test(readme) || !!pinned, 'the README links the CRX only after tools/crx-identity.json is committed');
   /* .gitignore is local only, so ask git what it actually tracks. */
   const tracked = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\n');
   ok(tracked.length > 100 && !tracked.some((f) => /\.(pem|key|crx)$/i.test(f)), 'no key file or built CRX is tracked');
@@ -110,28 +110,28 @@ try {
   ok(order.every((at, i) => at > 0 && (i === 0 || at > order[i - 1])), 'the CRX is packed and attested after the ZIP checks and before anything is uploaded');
   const packStep = step('Pack the CRX for phone browsers');
   ok(/if \[ ! -f tools\/crx-identity\.json \]; then[\s\S]*?exit 0\n\s*fi\n/.test(packStep)
-    && /node tools\/build-crx\.js pack WardenOne-latest\.zip --out WardenOne-latest\.crx\n/.test(packStep)
-    && /node tools\/build-crx\.js verify WardenOne-latest\.crx --zip WardenOne-latest\.zip\n/.test(packStep)
-    && /sha256sum WardenOne-latest\.crx > WardenOne-latest\.crx\.sha256\n\s*sha256sum --check WardenOne-latest\.crx\.sha256/.test(packStep),
+    && /node tools\/build-crx\.js pack WardenOne-latest\.zip --out WardenOne-phone\.crx\n/.test(packStep)
+    && /node tools\/build-crx\.js verify WardenOne-phone\.crx --zip WardenOne-latest\.zip\n/.test(packStep)
+    && /sha256sum WardenOne-phone\.crx > WardenOne-phone\.crx\.sha256\n\s*sha256sum --check WardenOne-phone\.crx\.sha256/.test(packStep),
   'the CRX is packed from the checked ZIP, verified against it and given a checksum');
   const secretUses = workflows.match(/secrets\.WARDENONE_CRX_KEY/g) || [];
   ok(secretUses.length === 1 && /env:\n\s*WARDENONE_CRX_KEY: \$\{\{ secrets\.WARDENONE_CRX_KEY \}\}\n\s*run: \|/.test(packStep),
     'the key reaches the packing step alone, through its environment');
   ok(!/\$\{\{\s*secrets\./.test(packStep.split(/\n\s*run: \|/)[1] || ''), 'no secret is pasted into the shell script itself');
-  ok(/if: hashFiles\('WardenOne-latest\.crx'\) != ''/.test(step('Attest the CRX build provenance'))
+  ok(/if: hashFiles\('WardenOne-phone\.crx'\) != ''/.test(step('Attest the CRX build provenance'))
     && /uses: actions\/attest@[0-9a-f]{40}/.test(step('Attest the CRX build provenance'))
-    && /subject-path: WardenOne-latest\.crx\n/.test(step('Attest the CRX build provenance')), 'the CRX gets its own pinned build attestation');
+    && /subject-path: WardenOne-phone\.crx\n/.test(step('Attest the CRX build provenance')), 'the CRX gets its own pinned build attestation');
   const prepare = step('Prepare the commit release as a draft');
-  ok(/if \[ -f WardenOne-latest\.crx \]; then CRX_ASSETS='WardenOne-latest\.crx WardenOne-latest\.crx\.sha256'; fi/.test(prepare)
+  ok(/if \[ -f WardenOne-phone\.crx \]; then CRX_ASSETS='WardenOne-phone\.crx WardenOne-phone\.crx\.sha256'; fi/.test(prepare)
     && /gh release create "\$BUILD_TAG" WardenOne-latest\.zip WardenOne-latest\.zip\.sha256 \$CRX_ASSETS \\/.test(prepare)
     && /gh release upload "\$BUILD_TAG" WardenOne-latest\.zip WardenOne-latest\.zip\.sha256 --clobber \$CRX_ASSETS\n/.test(prepare)
-    && /cmp -s WardenOne-latest\.crx existing-assets\/WardenOne-latest\.crx/.test(prepare), 'a built CRX and its checksum go on the draft with the ZIP');
+    && /cmp -s WardenOne-phone\.crx existing-assets\/WardenOne-phone\.crx/.test(prepare), 'a built CRX and its checksum go on the draft with the ZIP');
   const verifyStep = step('Verify both assets before publication');
-  ok(/if \[ -f WardenOne-latest\.crx \]; then\n\s*gh release download "\$BUILD_TAG" --pattern 'WardenOne-latest\.crx\*' --dir downloaded-release \|\| return 1\n\s*cmp WardenOne-latest\.crx downloaded-release\/WardenOne-latest\.crx \|\| return 1\n\s*cmp WardenOne-latest\.crx\.sha256 downloaded-release\/WardenOne-latest\.crx\.sha256 \|\| return 1\n\s*\(cd downloaded-release && sha256sum --check WardenOne-latest\.crx\.sha256\) \|\| return 1\n\s*fi/.test(verifyStep),
+  ok(/if \[ -f WardenOne-phone\.crx \]; then\n\s*gh release download "\$BUILD_TAG" --pattern 'WardenOne-phone\.crx\*' --dir downloaded-release \|\| return 1\n\s*cmp WardenOne-phone\.crx downloaded-release\/WardenOne-phone\.crx \|\| return 1\n\s*cmp WardenOne-phone\.crx\.sha256 downloaded-release\/WardenOne-phone\.crx\.sha256 \|\| return 1\n\s*\(cd downloaded-release && sha256sum --check WardenOne-phone\.crx\.sha256\) \|\| return 1\n\s*fi/.test(verifyStep),
     'the uploaded CRX is downloaded and compared before the release goes Latest');
   const notes = step('Write the notes');
-  ok(/if \[ -f WardenOne-latest\.crx \]; then\n\s*echo '\*\*On an Android phone\?\*\* \*\*WardenOne-latest\.crx\*\*/.test(notes)
-    && /if \[ -f WardenOne-latest\.crx \]; then\n\s*echo "CRX SHA-256:/.test(notes), 'the notes mention the CRX only when one was built');
+  ok(/if \[ -f WardenOne-phone\.crx \]; then\n\s*echo '\*\*On an Android phone\?\*\* \*\*WardenOne-phone\.crx\*\*/.test(notes)
+    && /if \[ -f WardenOne-phone\.crx \]; then\n\s*echo "CRX SHA-256:/.test(notes), 'the notes mention the CRX only when one was built');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

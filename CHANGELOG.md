@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Every new build now comes as WardenOne-latest.crx too, next to the ZIP, for Android browsers that install .crx files, like Aerium. It's the same build, packed so those browsers can install it. Load unpacked can't run WardenOne in Aerium, because Aerium can't save WardenOne's block lists into a folder on your phone. I only test WardenOne on computers, so please treat the phone build as an experiment.
+- Every new build now comes as WardenOne-phone.crx too, next to the ZIP, for Android browsers that install .crx files, like Aerium. It's the same build, packed so those browsers can install it. Load unpacked can't run WardenOne in Aerium, because Aerium can't save WardenOne's block lists into a folder on your phone. I only test WardenOne on computers, so please treat the phone build as an experiment.
 
 - On pages with video, I made AdShield check groups of ad hiding rules together and wait until the browser has read the page before measuring the player. This cuts down on layout work while the page loads.
 

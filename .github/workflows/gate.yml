@@ -415,10 +415,10 @@ jobs:
             echo 'No tools/crx-identity.json yet, so no CRX is built'
             exit 0
           fi
-          node tools/build-crx.js pack WardenOne-latest.zip --out WardenOne-latest.crx
-          node tools/build-crx.js verify WardenOne-latest.crx --zip WardenOne-latest.zip
-          sha256sum WardenOne-latest.crx > WardenOne-latest.crx.sha256
-          sha256sum --check WardenOne-latest.crx.sha256
+          node tools/build-crx.js pack WardenOne-latest.zip --out WardenOne-phone.crx
+          node tools/build-crx.js verify WardenOne-phone.crx --zip WardenOne-latest.zip
+          sha256sum WardenOne-phone.crx > WardenOne-phone.crx.sha256
+          sha256sum --check WardenOne-phone.crx.sha256
 
       - name: Attest the ZIP build provenance
         id: provenance
@@ -428,10 +428,10 @@ jobs:
 
       - name: Attest the CRX build provenance
         id: provenance-crx
-        if: hashFiles('WardenOne-latest.crx') != ''
+        if: hashFiles('WardenOne-phone.crx') != ''
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-path: WardenOne-latest.crx
+          subject-path: WardenOne-phone.crx
 
       - name: Write the notes
         env:
@@ -456,8 +456,8 @@ jobs:
             echo
             echo 'Please leave **Developer mode** on afterwards. Chrome switches unpacked extensions off without it, and WardenOne would stop protecting you until you turned it back on.'
             echo
-            if [ -f WardenOne-latest.crx ]; then
-              echo '**On an Android phone?** **WardenOne-latest.crx** is the same build, packed for phone browsers that install .crx files, such as Aerium. I only test WardenOne on computers, so please treat the phone build as an experiment.'
+            if [ -f WardenOne-phone.crx ]; then
+              echo '**On an Android phone?** **WardenOne-phone.crx** is the same build, packed for phone browsers that install .crx files, such as Aerium. I only test WardenOne on computers, so please treat the phone build as an experiment.'
               echo
             fi
             echo '---'
@@ -475,8 +475,8 @@ jobs:
             echo
             echo "Source commit: \`$GITHUB_SHA\`"
             echo "ZIP SHA-256: \`$(cut -d' ' -f1 WardenOne-latest.zip.sha256)\`"
-            if [ -f WardenOne-latest.crx ]; then
-              echo "CRX SHA-256: \`$(cut -d' ' -f1 WardenOne-latest.crx.sha256)\` · [CRX build attestation]($CRX_ATTESTATION_URL)"
+            if [ -f WardenOne-phone.crx ]; then
+              echo "CRX SHA-256: \`$(cut -d' ' -f1 WardenOne-phone.crx.sha256)\` · [CRX build attestation]($CRX_ATTESTATION_URL)"
             fi
             echo "[GitHub build attestation]($ATTESTATION_URL) · [How to verify](https://github.com/iri-dev/WardenOne#verify-the-github-download)"
             echo
@@ -490,7 +490,7 @@ jobs:
           BUILD_TAG="build-$GITHUB_SHA"
           # Left unquoted below on purpose, so it expands to both CRX files or to nothing.
           CRX_ASSETS=''
-          if [ -f WardenOne-latest.crx ]; then CRX_ASSETS='WardenOne-latest.crx WardenOne-latest.crx.sha256'; fi
+          if [ -f WardenOne-phone.crx ]; then CRX_ASSETS='WardenOne-phone.crx WardenOne-phone.crx.sha256'; fi
           # The release API can answer 5xx for a moment, and a create that errored may still have landed.
           # Each attempt re-reads the release, and identical assets already on the draft are left alone.
           prepare() {
@@ -501,9 +501,9 @@ jobs:
               if gh release download "$BUILD_TAG" --pattern 'WardenOne-latest.zip*' --dir existing-assets \
                 && cmp -s WardenOne-latest.zip existing-assets/WardenOne-latest.zip \
                 && cmp -s WardenOne-latest.zip.sha256 existing-assets/WardenOne-latest.zip.sha256 \
-                && { [ -z "$CRX_ASSETS" ] || { gh release download "$BUILD_TAG" --pattern 'WardenOne-latest.crx*' --dir existing-assets \
-                  && cmp -s WardenOne-latest.crx existing-assets/WardenOne-latest.crx \
-                  && cmp -s WardenOne-latest.crx.sha256 existing-assets/WardenOne-latest.crx.sha256; }; }; then
+                && { [ -z "$CRX_ASSETS" ] || { gh release download "$BUILD_TAG" --pattern 'WardenOne-phone.crx*' --dir existing-assets \
+                  && cmp -s WardenOne-phone.crx existing-assets/WardenOne-phone.crx \
+                  && cmp -s WardenOne-phone.crx.sha256 existing-assets/WardenOne-phone.crx.sha256; }; }; then
                 return 0
               fi
               gh release upload "$BUILD_TAG" WardenOne-latest.zip WardenOne-latest.zip.sha256 --clobber $CRX_ASSETS
@@ -526,11 +526,11 @@ jobs:
             gh release download "$BUILD_TAG" --pattern 'WardenOne-latest.zip*' --dir downloaded-release || return 1
             cmp WardenOne-latest.zip downloaded-release/WardenOne-latest.zip || return 1
             cmp WardenOne-latest.zip.sha256 downloaded-release/WardenOne-latest.zip.sha256 || return 1
-            if [ -f WardenOne-latest.crx ]; then
-              gh release download "$BUILD_TAG" --pattern 'WardenOne-latest.crx*' --dir downloaded-release || return 1
-              cmp WardenOne-latest.crx downloaded-release/WardenOne-latest.crx || return 1
-              cmp WardenOne-latest.crx.sha256 downloaded-release/WardenOne-latest.crx.sha256 || return 1
-              (cd downloaded-release && sha256sum --check WardenOne-latest.crx.sha256) || return 1
+            if [ -f WardenOne-phone.crx ]; then
+              gh release download "$BUILD_TAG" --pattern 'WardenOne-phone.crx*' --dir downloaded-release || return 1
+              cmp WardenOne-phone.crx downloaded-release/WardenOne-phone.crx || return 1
+              cmp WardenOne-phone.crx.sha256 downloaded-release/WardenOne-phone.crx.sha256 || return 1
+              (cd downloaded-release && sha256sum --check WardenOne-phone.crx.sha256) || return 1
             fi
             (cd downloaded-release && sha256sum --check WardenOne-latest.zip.sha256)
           }
