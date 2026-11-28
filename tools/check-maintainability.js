@@ -843,6 +843,7 @@ checkCommand('phishing address tests', ['tools/test-phishing-url-feed.js']);
 checkCommand('feed provenance tests', ['tools/test-feed-provenance.js']);
 checkCommand('CNN stream tests', ['tools/test-cnn-stream.js']);
 checkCommand('release signing tests', ['tools/test-release-signing.js']);
+checkCommand('CRX packing tests', ['tools/test-build-crx.js']);
 checkCommand('download review cleanup tests', ['tools/test-download-review-cleanup.js']);
 checkCommand('download trust decision tests', ['tools/test-download-trust-decision.js']);
 checkCommand('download hash redirect tests', ['tools/test-download-hash-redirects.js']);

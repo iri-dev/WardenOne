@@ -88,6 +88,12 @@ Please leave **Developer mode** on afterwards. WardenOne isn't on the Web Store,
 as an unpacked extension and switches it off the moment Developer mode goes off. It then stops
 protecting you, even after a restart, until you turn Developer mode back on.
 
+**On an Android phone?** Some phone browsers, such as Aerium, can install a packed extension file.
+[WardenOne-latest.crx](https://github.com/iri-dev/WardenOne/releases/latest/download/WardenOne-latest.crx)
+is the same build as the ZIP, packed for them. Load unpacked can't run WardenOne in Aerium, because
+Aerium can't save WardenOne's block lists into a folder on your phone. I only test WardenOne on
+computers, so please treat the phone build as an experiment.
+
 The About page in Settings shows both the version and the GitHub build ID. Include both when
 reporting a problem; the version stays the same between rolling builds.
 
@@ -164,7 +170,8 @@ stays open. WardenOne does not install updates for you.
 
 </details>
 
-**Compatibility:** Chrome, Brave, Edge, Opera and other Chromium-based browsers.
+**Compatibility:** Chrome, Brave, Edge, Opera and other Chromium browsers on your computer. On Android,
+the [phone build](#quick-install) works in Aerium, as an experiment.
 <sub>Minimum supported Chromium version: 121.</sub>
 
 # Why WardenOne exists
