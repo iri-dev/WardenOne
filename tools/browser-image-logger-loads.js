@@ -41,7 +41,7 @@ function fixture(port, phase) {
     <img id="srcset" src="${clean('fallback')}" srcset="${logger('srcset')} 1x">
     <div id="css"></div>
     <img id="redirect" src="${clean('redirect')}">
-    <img id="ordinary" src="${clean('pixel.gif')}&uid=ordinary">
+    <img id="ordinary" src="${clean('ordinary.gif')}&uid=ordinary">
     <img id="ordinary-srcset" src="${clean('ordinary-fallback')}" srcset="${clean('ordinary-srcset')} 1x">
     <img id="responsive-selected" srcset="http://${SELECTED_HOST}:${port}/selected?phase=${phase} 1x, ${clean('selected-2x')} 2x">
     <img id="responsive-unselected" srcset="${clean('unselected-1x')} 1x, http://${UNSELECTED_HOST}:${port}/unselected?phase=${phase} 2x">
@@ -217,7 +217,7 @@ async function run() {
       await sleep(1200);
       assert(arrived(PAGE_HOST, 'page'), phase + ' page reached the local server');
       assert(arrived(CLEAN_HOST, 'redirect'), phase + ' redirect source reached the local server');
-      for (const path of ['pixel.gif', 'ordinary-css', 'ordinary-srcset', 'ordinary-redirect', 'ordinary-redirect-target']) {
+      for (const path of ['ordinary.gif', 'ordinary-css', 'ordinary-srcset', 'ordinary-redirect', 'ordinary-redirect-target']) {
         assert(arrived(CLEAN_HOST, path), phase + ' ordinary ' + path + ' loaded');
       }
       assert(arrived(SUSPECT_HOST, 'iplogger/abc1234567'), phase + ' unlisted suspicious image reached the server');
