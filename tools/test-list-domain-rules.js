@@ -30,7 +30,7 @@ function load(overrides = {}) {
   const sandbox = { TextEncoder, crypto: globalThis.crypto, Uint8Array, Array, Set, Map, JSON, Promise, Number, String, Object,
     setTimeout: (callback) => { yields++; setImmediate(callback); }, installed: [] };
   sandbox.chrome = { declarativeNetRequest: { getDynamicRules: async ({ ruleIds }) => sandbox.installed.filter((rule) => ruleIds.includes(rule.id)) } };
-  const consts = ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'LIST_DOMAINS_PER_RULE', 'LIST_DOMAIN_RULES_MAX', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX', 'REDIRECT_RULE_BASE', 'REDIRECT_RULES_BUDGET', 'CSP_RULE_BASE', 'CSP_RULES_BUDGET']
+  const consts = ['DYNAMIC_RULE_BASE', 'MAX_DYNAMIC', 'LIST_DOMAINS_PER_RULE', 'LIST_DOMAIN_RULES_MAX', 'OPTION_RULE_BASE', 'OPTION_RULES_MAX', 'REDIRECT_RULE_BASE', 'REDIRECT_RULES_BUDGET', 'CSP_RULE_BASE', 'CSP_RULES_BUDGET', 'MEDIA_COMPAT_DOMAINS']
     .map((name) => overrides[name] !== undefined ? 'const ' + name + ' = ' + overrides[name] + ';' : constant(name));
   vm.createContext(sandbox);
   vm.runInContext(resourceTypes.prelude(BG) + '\n' + consts.join('\n') + '\n'
@@ -226,6 +226,23 @@ enforcedBy.cache = new WeakMap();
     const meta = BG.slice(BG.indexOf('function buildListMeta('), BG.indexOf('function refreshListMetaCounts('));
     ok(!/ADSHIELD_STATIC_RULE_COUNT|STATIC_RULE_COUNT \+/.test(meta), 'the figure no longer adds rule counts to domain counts');
     ok(/if \(STATIC_RULESET_ACTIVE\[id\]\) packagedActive \+= n;/.test(meta), 'a ruleset switched off adds nothing to it');
+  }
+
+  {
+    /* A tracker feed lists brightcove.net and brightcove.com whole; Brightcove's player and playback API still load. */
+    const { api } = load();
+    const packed = await api.listDomainRules({ security: new Set(['evil.example']), adshield: new Set(),
+      tracker: new Set(['brightcove.net', 'brightcove.com', 'other.example']) },
+    new Set(['evil.example', 'brightcove.net', 'brightcove.com', 'other.example']));
+    const holder = packed.rules.find((rule) => rule.condition.requestDomains.includes('brightcove.net'));
+    const left = (holder && holder.condition.excludedRequestDomains) || [];
+    ok(['players.brightcove.net', 'edge.api.brightcove.com', 'edge-auth.api.brightcove.com'].every((host) => left.includes(host)),
+      'a feed naming a parent whole leaves its media hosts out: ' + JSON.stringify(left));
+    ok(!left.includes('metrics.brightcove.com') && holder.condition.requestDomains.includes('brightcove.com'), 'Brightcove analytics stay blocked');
+    ok(!packed.rules.find((rule) => rule.condition.requestDomains.includes('evil.example')).condition.excludedRequestDomains,
+      'an unrelated rule gains no exclusions');
+    const threat = await api.listDomainRules({ security: new Set(['brightcove.net']), adshield: new Set(), tracker: new Set() }, new Set(['brightcove.net']));
+    ok(!threat.rules[0].condition.excludedRequestDomains, 'a security feed keeps its whole verdict');
   }
 
   console.log('[ok] downloaded lists: ' + checks + ' checks; 1.2 million domains packed into ' + full.rules.length

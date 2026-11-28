@@ -10,7 +10,19 @@
   const __woConfigStore={};
   /* Player-safe mode uses these before a page can replace selector methods. */
   const __woNativeMatches=Element.prototype.matches,
-  __woNativeQuerySelector=Element.prototype.querySelector;
+  __woNativeQuerySelector=Element.prototype.querySelector,
+  __woNativeRaf="function"==typeof window.requestAnimationFrame?window.requestAnimationFrame.bind(window):null,
+  /* Layout reads cost least just before a frame lays out anyway; from a timer on a loading page they force a layout
+     the next frame redoes. Hidden documents draw no frames, so they run at once. */
+  __woOnFrame=fn=>{
+    try{
+      if(__woNativeRaf&&!document.hidden)return void __woNativeRaf(fn)
+    }
+    catch(_){
+
+    }
+    fn()
+  };
   /* SEC-05: publish the frozen realm verdict through a non-configurable accessor before page scripts run.
      Same-origin children inherit its seed synchronously, before the page can borrow clean prototypes.
      The page may read the record but cannot replace it; bitmap exports remain native. */
@@ -2892,6 +2904,12 @@
       }
       setTimeout(fn,0)
     },
+    /* One off sweeps of what a page already holds, and UI it does not need while parsing, wait until it has parsed and
+       then take an idle task each. Their observers and hooks still start at once, so nothing added meanwhile is missed. */
+    __woAfterParse=fn=>{
+      const go=()=>__woIdle(fn,600);
+      "loading"===document.readyState?woOn(document,"DOMContentLoaded",go,{once:!0}):go()
+    },
     bodyTextCapped=cap=>{
       try{
         if(!document.body)return"";
@@ -4491,7 +4509,7 @@
       }
 
     };
-    document.documentElement&&sweepDomLinks(document);
+    __woAfterParse(()=>sweepDomLinks(document));
     try{
       woObserve((muts,added,roots)=>{
         /* sweepDomLinks already gated on exactly this; scrubDomLink is a no-op
@@ -5213,7 +5231,7 @@
       };
       woOn(document,"load",onImageSettled,!0),
       woOn(document,"error",onImageSettled,!0),
-      scanImages(document),
+      __woAfterParse(()=>scanImages(document)),
       woObserve((muts,added,roots)=>{
         for(const mu of muts)if(mu.type==="attributes"&&(mu.attributeName==="src"||mu.attributeName==="srcset"))
           scanImage(mu.target);
@@ -5269,6 +5287,15 @@
       "lnkd.in",
       "trib.al",
       "shor.by"],
+      /* A platform's own shortener on that platform (t.co on X) wraps every outside link the site shows,
+         with the real address printed beside it, so there it hides nothing. */
+      OWN_SHORTENER_SITES=new Map([["t.co",
+      ["x.com",
+      "twitter.com"]],
+      ["lnkd.in",
+      ["linkedin.com"]],
+      ["qr.ae",
+      ["quora.com"]]]),
       LOGGER_API_PATHS=/\/(log|logs|track|tracker|tracking|visit|capture|collect|hit|beacon|pixel|api\/log|api\/track|api\/collect)(\/|$|\?)/i,
       /* Suppress warnings for destinations already covered by enabled tracker rules.
          Page hooks see attempts before DNR blocks them. Keep this list aligned with rules-trackers.json. */
@@ -5324,7 +5351,7 @@
         dest=regDom(url.hostname),
         sbTargets=[];
         let redirectLink=!1;
-        if(WO.warnShorteners&&SHORTENERS.some(s=>dest===s||dest.endsWith("."+s))&&(canWarn()&&(lastLinkWarn=now,
+        if(WO.warnShorteners&&!(OWN_SHORTENER_SITES.get(dest)||[]).includes(here)&&SHORTENERS.some(s=>dest===s||dest.endsWith("."+s))&&(canWarn()&&(lastLinkWarn=now,
         log("warned_shortener",
         {
           matched:dest
@@ -9772,6 +9799,35 @@
           return!1
         }
       },
+      /* A vendor's own install line (ollama.com showing "irm https://ollama.com/install.ps1 | iex"): the command
+         is printed on the page as copied, and every address it fetches is this site's own, over https. A lure
+         hides what it copies or fetches from somewhere else. */
+      clickfixOwnSiteInstall=text=>{
+        try{
+          const copied=normalizeClickfixText(text).replace(/\s+/g,
+          " ").trim();
+          if(copied.length<12||copied.length>600)return!1;
+          const urls=copied.match(/https?:\/\/[^\s"'|;)]+/gi)||[];
+          if(!urls.length)return!1;
+          /* This host or one of its own subdomains. Not the shared site helper: a page can replace that global. */
+          const here=regDomain(location.hostname);
+          if(!here||!urls.every(raw=>{
+            try{
+              const u=new URL(raw),
+              host=regDomain(u.hostname);
+              return"https:"===u.protocol&&!u.username&&!u.password&&(host===here||host.endsWith("."+here))
+            }
+            catch(_){
+              return!1
+            }
+          }))return!1;
+          return normalizeClickfixText(clickfixVisiblePageText()).replace(/\s+/g,
+          " ").includes(copied)
+        }
+        catch(_){
+          return!1
+        }
+      },
       clickfixVisiblePageText=()=>{
         try{
           /* Exclude assistant and search-result text from instruction heuristics; it may quote attacks. Check each frame's
@@ -10037,6 +10093,7 @@
         userActivated=clickfixUserActivated(),
         shouldBlock=!!blocked&&(!userActivated||correlated&&highRiskCorrelation);
         if(!correlated&&userActivated&&found.trustedDocumentation)return!1;
+        if(!found.instruction&&userActivated&&clickfixOwnSiteInstall(text))return!1;
         suspiciousClipboardSeen=!0,
         suspiciousClipboardBlocked=shouldBlock,
         suspiciousClipboardWhere=where,
@@ -11466,11 +11523,11 @@
       "ytd-promoted-video-renderer",
       "ytd-compact-promoted-video-renderer"];
       let styleEl=null,
-      siteSelectors=[];
+      siteSelectors=[],
+      playerSafeQueued=!1;
       const CHUNK=120,
-      /* On a player page only the site's own rules apply, and only those that reach neither the largest player nor
-         anything inside a player shell. The largest player is measured only once a rule matches something outside a
-         shell: measuring every candidate forced a layout on each DOM change of a video page (300 ms of an eBay load). */
+      /* On player pages, site rules must leave the largest player and player shells visible.
+         Measure the players only after a rule matches outside a player shell. */
       playerSafeSelectors=list=>{
         if(!Array.isArray(list)||!list.length)return[];
         let largest=null,
@@ -11492,8 +11549,7 @@
           }
           return largest
         };
-        return list.slice(0,
-        600).filter(sel=>{
+        const safeSelector=sel=>{
           try{
             for(const el of document.querySelectorAll(sel)){
               if(el.closest(PLAYER_SHELL_SELECTOR))return!1;
@@ -11506,11 +11562,44 @@
             return!1
           }
 
-        })
+        };
+        const selectors=list.slice(0,600),
+        safe=[],
+        /* Only combine complete class and ID selectors. Complex syntax is checked separately. */
+        simple=/^[.#][a-z_][a-z0-9_-]*$/i;
+        for(let i=0;i<selectors.length;i+=32){
+          const batch=selectors.slice(i,i+32),
+          simpleSelectors=batch.filter(sel=>typeof sel==="string"&&simple.test(sel)),
+          verified=simpleSelectors.length>1&&safeSelector(simpleSelectors.join(","))?new Set(simpleSelectors):null;
+          for(const sel of batch)if(verified?.has(sel)||safeSelector(sel))safe.push(sel)
+        }
+        return safe
       },
       applyPlayerSafe=()=>{
         const safe=playerSafeSelectors(siteSelectors);
         safe.length?injectCss(safe):styleEl&&(styleEl.textContent="")
+      },
+      /* Coalesce DOM changes so player geometry is checked at most once per frame. */
+      schedulePlayerSafe=()=>{
+        if(playerSafeQueued)return;
+        playerSafeQueued=!0;
+        const run=()=>{
+          playerSafeQueued=!1;
+          try{
+            if(WO.enabled!==!1&&WO.adShield!==!1)applyPlayerSafe()
+          }
+          catch(_){
+
+          }
+
+        };
+        /* Clear generic hides before the player paints. Measuring it can wait until the parser is done. */
+        if(document.readyState==="loading"){
+          if(styleEl)styleEl.textContent="";
+          __woAfterParse(()=>__woOnFrame(run));
+          return
+        }
+        __woOnFrame(run)
       },
       injectCss=selectors=>{
         if(!selectors||!selectors.length)return;
@@ -13124,7 +13213,7 @@
               });
               siteSelectors=Array.isArray(res.siteSelectors)?res.siteSelectors:[];
               if(scriptletPlayerPage()){
-                adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):applyPlayerSafe(),
+                adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):document.readyState==="loading"?schedulePlayerSafe():applyPlayerSafe(),
                 procRules=[],
                 collapseLeftovers(document),
                 log("adshield_player_safe_mode",
@@ -13174,7 +13263,7 @@
                   roots)){
                     /* Coalesce leftover scans to 250ms on churn-heavy video pages. The stylesheet already hides
                        these selectors, so the inline fallback does not need to run for every mutation batch. */
-                    adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):applyPlayerSafe(),
+                    adShieldVideoPlatform?injectCss(SAFE_VIDEO_AD_SELECTORS):schedulePlayerSafe(),
                     procRules=[],
                     collapsePending||(collapsePending=!0,
                     setTimeout(()=>{
@@ -15225,7 +15314,8 @@
 
     }
     if(WO.killPrefetch)try{
-      const SPEC_REL=/^(prefetch|prerender|preload|dns-prefetch|preconnect|modulepreload)$/i,
+      /* Preload and modulepreload can supply code and data for the current page. */
+      const SPEC_REL=/^(prefetch|prerender|dns-prefetch|preconnect)$/i,
       /* React 19 removes the links it rendered with an unguarded parentNode.removeChild, so taking one
          out first crashed the page (ChatGPT stopped replying). Kept for the speculationrules path. */
       reactOwned=el=>{
@@ -15242,10 +15332,7 @@
           if(el&&"LINK"===el.tagName){
             const rel=(el.getAttribute("rel")||"").trim();
             if(!SPEC_REL.test(rel))return;
-            /* Switch the link off in place; never take it out of the document. A page reads its own
-               link elements: Spotify's player reads href off <link rel="preload"
-               data-translations-url-for-locale>, so removing it threw on boot and the page showed
-               "Something went wrong". An unknown rel stops the speculative load just as well. */
+            /* Keep the node attached for frameworks that still own it. */
             return void el.setAttribute("rel","wo-off-"+rel.toLowerCase())
           }
           el&&"SCRIPT"===el.tagName&&/speculationrules/i.test(el.type||"")&&!reactOwned(el)&&el.parentNode&&el.parentNode.removeChild(el)
@@ -15449,6 +15536,9 @@
       });
       const deAmpUrl=href=>{
         try{
+          /* Both forms need the letters "amp" in the link or the page address; the URL parser can only produce them
+             from a % escape or a non ASCII host. Skipping new URL for the rest matters on pages with thousands of links. */
+          if(!/amp/i.test(location.href)&&!/amp|%|[^\x00-\x7f]/i.test(String(href==null?"":href).replace(/[\t\n\r]/g,"")))return null;
           const u=new URL(href,
           location.href),
           m=u.pathname.match(/\/amp\/s\/(.+)$/);
@@ -15484,7 +15574,7 @@
         }
 
       };
-      document.body&&fixLinks(document);
+      __woAfterParse(()=>fixLinks(document));
       try{
         woObserve((muts,added,roots)=>{
           for(let i=0;
@@ -22086,10 +22176,15 @@
           const r=el.getBoundingClientRect();
           if(r.top>innerHeight||r.bottom<0)return!1;
           if(r.width<48||r.height<48)return!1;
-          /* All positive paths require a positioned box. Reject static elements before geometry and text reads. */
+          /* Every positive path past the player popup check needs a positioned, modal looking box. Decide that from
+             geometry before innerText, which lays out the whole subtree and dominated sweeps on busy pages. */
           const z=parseInt(cs.zIndex,
-          10)||0,
-          text=(el.innerText||el.textContent||"").slice(0,
+          10)||0;
+          if(closeMarkedPlayerPopup(el,
+          r,
+          pos))return!0;
+          if(!(z>=20||r.width*r.height>=innerWidth*innerHeight*.45||Math.abs((r.left+r.right)/2-innerWidth/2)<.18*innerWidth&&Math.abs((r.top+r.bottom)/2-innerHeight/2)<.35*innerHeight||"dialog"===el.getAttribute("role")||"true"===el.getAttribute("aria-modal")))return!1;
+          const text=(el.innerText||el.textContent||"").slice(0,
           800),
           attrs=[el.getAttribute("aria-label"),
           el.getAttribute("title"),
@@ -22097,9 +22192,6 @@
           el.getAttribute("data-test"),
           el.getAttribute("data-role")].filter(Boolean).join(" "),
           blob=text+" "+attrs+" "+(el.className||"")+" "+(el.id||"");
-          if(closeMarkedPlayerPopup(el,
-          r,
-          pos))return!0;
           if(mediaUiProtected(el,
           blob))return!1;
           if(PROTECT.test(text))return!1;
@@ -22662,8 +22754,7 @@
       ()=>{
         overlayCleanerOn()?start():restoreCleanerChanges()
       }),
-      "loading"===document.readyState?woOn(document,"DOMContentLoaded",
-      start):start()
+      __woAfterParse(start)
     }
     try{
       woOn(window,"keydown",
@@ -24185,12 +24276,13 @@
               {
                 passive:!0
               }),
-              /* Bounded follow-ups cover late-mounted and replaced SPA player bars without polling. */
-              setTimeout(recheckBadge,
+              /* Bounded follow-ups cover late-mounted and replaced SPA player bars without polling. Their hit tests
+                 force a layout, so each waits for the next frame. */
+              setTimeout(()=>__woOnFrame(recheckBadge),
               1500),
-              setTimeout(recheckBadge,
+              setTimeout(()=>__woOnFrame(recheckBadge),
               4000),
-              setTimeout(recheckBadge,
+              setTimeout(()=>__woOnFrame(recheckBadge),
               9000),
               recheckBadge();
               const NO_BADGE_TYPES=new Set(["blocked_tracker_request",
@@ -24250,8 +24342,7 @@
           syncBadgeVisibility()
         }
       }),
-      document.body?syncBadgeVisibility():woOn(document,"DOMContentLoaded",
-      syncBadgeVisibility)
+      __woAfterParse(syncBadgeVisibility)
     };
       try{
         let __woAdCollapseStarted=!1;
@@ -24330,9 +24421,7 @@
           },
           400)
         };
-        if(document.readyState!=="loading")__woSweepAds();
-        woOn(document,"DOMContentLoaded",
-        __woSweepAds);
+        __woAfterParse(__woSweepAds);
         try{
           woObserve((muts,added,roots,structural)=>{
             structural&&__woSchedAds()

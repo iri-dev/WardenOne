@@ -220,6 +220,58 @@ function page({ host = 'www.example.co.uk', cookies = {}, activation = false, on
   check('and verifies it with OneTrust\'s own state before calling it a refusal',
     /WOConsentState\.rejected\('onetrust', consentCookie\(profile\)\)/.test(REJECT) && /reportOutcome\(saved \? 'rejected' : 'dispatched'/.test(REJECT));
 
+  const installed = new Map(), expiry = new Map();
+  let serial = 0, live = true, onCommit, onRemove;
+  const pref = {
+    URL,
+    ONETRUST_PREFERENCES_RULES_BUDGET: 2,
+    ONETRUST_STUB_RE: box.STUB,
+    messageSenderIsTopOrigin: sender => sender?.frameId === 0,
+    messageSenderStillCurrent: async () => live,
+    serializeSubsystem: async (_, run) => run(),
+    writeSessionRules: async ({ removeRuleIds, addRules }) => {
+      for (const id of removeRuleIds) installed.delete(id);
+      for (const rule of addRules) installed.set(rule.id, rule);
+    },
+    setTimeout: (fn, ms) => { const id = ++serial; expiry.set(id, { fn, ms }); return id; },
+    clearTimeout: id => expiry.delete(id),
+    registerListener: (_, register) => register(),
+    chrome: {
+      declarativeNetRequest: { getSessionRules: async ({ ruleIds }) => ruleIds.map(id => installed.get(id)).filter(Boolean) },
+      webNavigation: { onCommitted: { addListener: fn => { onCommit = fn; } } },
+      tabs: { onRemoved: { addListener: fn => { onRemove = fn; } } },
+    },
+  };
+  vm.createContext(pref);
+  const prefStart = BG.indexOf('const ONETRUST_PREFERENCES_RULE_BASE');
+  vm.runInContext(BG.slice(prefStart, BG.indexOf('const SOCIAL_EMBED_RULE_BASE', prefStart))
+    + '\nthis.open = openOneTrustPreferences;', pref);
+  const sender = { frameId: 0, url: 'https://www.publisher.example/', tab: { id: 8 } };
+  await new Promise(resolve => setImmediate(resolve));
+  check('a child frame cannot open a OneTrust rule', !(await pref.open({ ...sender, frameId: 2 })).ok && installed.size === 0);
+  live = false;
+  check('a stale document cannot open a OneTrust rule', !(await pref.open(sender)).ok && installed.size === 0);
+  live = true;
+  check('the current top frame can load the original SDK', (await pref.open(sender)).ok && installed.size === 1);
+  const grant = [...installed.values()][0];
+  check('the allowance covers only OneTrust script GETs in the requesting tab', grant.action.type === 'allow'
+    && grant.condition.tabIds.join(',') === '8' && grant.condition.initiatorDomains.join(',') === 'www.publisher.example'
+    && grant.condition.regexFilter === box.STUB && grant.condition.resourceTypes.join(',') === 'script'
+    && grant.condition.requestMethods.join(',') === 'get' && grant.priority > 1950 && grant.priority < 2000);
+  check('repeat clicks renew a single bounded allowance', (await pref.open(sender)).ok && installed.size === 1
+    && expiry.size === 1 && [...expiry.values()][0].ms === 12000);
+  onCommit({ tabId: 8, frameId: 0 });
+  await new Promise(resolve => setImmediate(resolve));
+  check('top-level navigation removes the rule and deadline', installed.size === 0 && expiry.size === 0);
+  await pref.open(sender);
+  onRemove(8);
+  await new Promise(resolve => setImmediate(resolve));
+  check('closing the tab removes the rule', installed.size === 0);
+  await pref.open(sender);
+  [...expiry.values()][0].fn();
+  await new Promise(resolve => setImmediate(resolve));
+  check('the deadline removes an unused allowance', installed.size === 0);
+
   console.log(`onetrust-answer: ${passed} passed, ${failed} failed`);
   if (failed) process.exit(1);
 })();

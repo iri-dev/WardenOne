@@ -1,9 +1,7 @@
 /* WardenOne — Copyright (C) 2026 iri
    Licensed under the GNU General Public License v3 or later. See LICENSE. */
 'use strict';
-/* Block prefetch & preload, run from the shipped content.min.js slice. Signed-in ChatGPT stopped
-   replying because the guard removed <link> elements React 19 had rendered; React later removes its
-   own node with an unguarded parentNode.removeChild and the whole conversation view threw. */
+/* Exercise the shipped speculative loading guard and framework-owned links. */
 
 const assert = require('assert');
 const fs = require('fs');
@@ -65,15 +63,12 @@ const plainPrefetch = new Node('LINK', { rel: 'prefetch', href: '/next-page' });
 const plainPreconnect = new Node('LINK', { rel: 'preconnect', href: 'https://cdn.example' });
 const reactPreload = new Node('LINK', { rel: 'preload', as: 'script', href: '/chunk.js' }, '__reactFiber$abc123');
 const reactModule = new Node('LINK', { rel: 'modulepreload', href: '/mod.js' }, '__reactMarker$abc123');
+const appDataPreload = new Node('LINK', { rel: 'preload', as: 'fetch', href: '/strings.json' });
 const stylesheet = new Node('LINK', { rel: 'stylesheet', href: '/app.css' });
 const plainRules = new Node('SCRIPT', { type: 'speculationrules' });
-const page = run([plainPrefetch, plainPreconnect, reactPreload, reactModule, stylesheet, plainRules]);
+const page = run([plainPrefetch, plainPreconnect, reactPreload, reactModule, appDataPreload, stylesheet, plainRules]);
 
 assert(page.logs.includes('resource_prefetch_off'), 'the guard must still switch on');
-/* No speculative LINK is taken out of the document, React's or the page's own. A page reads its own
-   link elements: Spotify's player reads href off <link rel="preload" data-translations-url-for-locale>
-   during boot, and with the node gone it threw and the player showed "Something went wrong". An
-   unknown rel disarms the hint just as well and leaves the page's DOM as the page built it. */
 for (const [node, rel] of [[plainPrefetch, 'prefetch'], [plainPreconnect, 'preconnect']]) {
   assert.strictEqual(node.parentNode, page.head, 'a page hint stays in the document: ' + rel);
   assert.strictEqual(node.getAttribute('rel'), 'wo-off-' + rel, 'a page hint is switched off in place: ' + rel);
@@ -85,18 +80,22 @@ assert.strictEqual(stylesheet.getAttribute('rel'), 'stylesheet');
 
 for (const [node, rel] of [[reactPreload, 'preload'], [reactModule, 'modulepreload']]) {
   assert.strictEqual(node.parentNode, page.head, 'a link React rendered must stay in the document: ' + rel);
-  assert.strictEqual(node.getAttribute('rel'), 'wo-off-' + rel, 'a link React rendered must be switched off in place: ' + rel);
+  assert.strictEqual(node.getAttribute('rel'), rel, 'the editor can still load its code: ' + rel);
   assert.doesNotThrow(() => reactUnmount(node), 'React unmounting its own link must not throw: ' + rel);
 }
+assert.strictEqual(appDataPreload.getAttribute('rel'), 'preload', 'the editor can preload data for the current page');
 
 /* The same through the live observer, which is the path ChatGPT hit as a reply rendered. */
 const lateReact = new Node('LINK', { rel: 'preconnect', href: 'https://files.example' }, '__reactFiber$late');
 const latePlain = new Node('LINK', { rel: 'dns-prefetch', href: 'https://dns.example' });
+const editorModule = new Node('LINK', { rel: 'modulepreload', as: 'script', href: '/editor.js' });
 page.add(lateReact);
 page.add(latePlain);
+page.add(editorModule);
 assert.strictEqual(latePlain.parentNode, page.head, 'a late page hint stays in the document');
 assert.strictEqual(latePlain.getAttribute('rel'), 'wo-off-dns-prefetch', 'and is switched off in place');
 assert.strictEqual(lateReact.getAttribute('rel'), 'wo-off-preconnect');
+assert.strictEqual(editorModule.getAttribute('rel'), 'modulepreload', 'modules requested after a file selection keep loading');
 assert.doesNotThrow(() => reactUnmount(lateReact), 'React unmounting a late link must not throw');
 
 /* A speculation-rules script React rendered is left for React to remove. */

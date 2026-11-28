@@ -196,6 +196,58 @@ const PROBES = ['example.com', 'WWW.Example.COM', 'www.ck', 'www.co.uk', 'https:
     /sanitizeBridgeHostList\(\s*\n?\s*Object\.keys\(learned[\s\S]{0,400}?\.filter\(/.test(BRIDGE));
 }
 
+// ---------------------------------------------------------------------------
+// 7. The worker sends a page only the extra adult hosts that can match it (Round 6 performance, 2026-11-28).
+//    Whatever the worker drops, the bridge would have dropped too: its signed list is the same either way.
+// ---------------------------------------------------------------------------
+{
+  const BG = fs.readFileSync(path.join(ROOT, 'background.js'), 'utf8');
+  const at = BG.indexOf('function pageHostForLists(');
+  const last = BG.indexOf('function learnedForHost(', at);
+  check('the worker still filters the extra adult list and learned hosts per host', at >= 0 && last > at);
+  const end = BG.indexOf('\n}\n', last);
+  vm.runInContext(BG.slice(at, end + 2), ctx);
+  check('the content config snapshot uses those filters for the asking frame',
+    /supplemental\.adultDomainsExtra = adultExtrasForHost\(shared\.supplemental\.adultDomainsExtra, frameHost\);/.test(BG)
+      && /learned: want\('learned'\) \? learnedForHost\(shared\.learned, frameHost\) : \{\},/.test(BG));
+  /* The bridge's learned step: keys stripped of www and lowercased, only plain hosts, cleaned, then this page only. */
+  vm.runInContext('function __bridgeLearned(map, hostname){setLearnedGrabberDomains(map);const pageHost=String(hostname||"").replace(/^www\\./,"").toLowerCase();'
+    + 'const s=new Set();for(let x=pageHost;x;){s.add(x);const d=x.indexOf(".");x=d<0?"":x.slice(d+1);}return learnedGrabberDomains.filter((h)=>s.has(h));}', ctx);
+  /* The bridge's own last step: clean the list, then keep entries naming this page or a parent of it. */
+  vm.runInContext('function __bridgeFinal(list, hostname){const pageHost=String(hostname||"").replace(/^www\\./,"").toLowerCase();'
+    + 'const s=new Set();for(let x=pageHost;x;){s.add(x);const d=x.indexOf(".");x=d<0?"":x.slice(d+1);}'
+    + 'return mergeNormalizedHostLists(3000, sanitizeBridgeHostList(list,3000)).filter((h)=>s.has(h));}', ctx);
+  let seed = 28;
+  const rand = (n) => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) % n; };
+  const pick = (a) => a[rand(a.length)];
+  const BASES = ['example.com', 'adult.example', 'sub.adult.example', 'tube.co.uk', 'co.uk', 'ck', 'www.ck', 'xn--bcher-kva.example', 'bücher.example', 'a.b.c.example'];
+  const entry = () => {
+    const b = pick(BASES);
+    return pick(['', 'www.', 'WWW.', '.', 'm.', '  ', 'https://', 'http://www.']) + (rand(3) ? b : b.toUpperCase()) + pick(['', '.', '/', '/path', ' ', ':443']);
+  };
+  const HOSTS = ['example.com', 'www.example.com', 'm.sub.adult.example', 'adult.example', 'www.tube.co.uk', 'co.uk', 'www.ck', 'xn--bcher-kva.example', 'other.test', 'deep.a.b.c.example'];
+  let compared = 0, dropped = 0, matched = 0;
+  for (let i = 0; i < 4000; i++) {
+    const list = Array.from({ length: 1 + rand(40) }, entry);
+    const host = pick(HOSTS);
+    ctx.__list = list; ctx.__host = host;
+    const full = run('__bridgeFinal(__list, __host)');
+    const sent = run('adultExtrasForHost(__list, __host)');
+    ctx.__sent = sent;
+    const filtered = run('__bridgeFinal(__sent, __host)');
+    if (JSON.stringify(full) !== JSON.stringify(filtered)) { check('the bridge signs the same adult list after the worker filter', false, host + ' ' + JSON.stringify(list) + ' -> ' + JSON.stringify(full) + ' vs ' + JSON.stringify(filtered)); break; }
+    ctx.__map = Object.fromEntries(list.map((k) => [k, { at: 1 }]));
+    const learnedFull = run('__bridgeLearned(__map, __host)');
+    ctx.__mapSent = run('learnedForHost(__map, __host)');
+    const learnedSent = run('__bridgeLearned(__mapSent, __host)');
+    if (JSON.stringify(learnedFull) !== JSON.stringify(learnedSent)) { check('the bridge keeps the same learned loggers after the worker filter', false, host + ' ' + JSON.stringify(list) + ' -> ' + JSON.stringify(learnedFull) + ' vs ' + JSON.stringify(learnedSent)); break; }
+    compared++; dropped += list.length - sent.length; matched += full.length;
+  }
+  check('the bridge signs the same adult list after the worker filter, over ' + compared + ' fuzzed lists', compared === 4000);
+  check('and the filter really drops entries (' + dropped + ' dropped, ' + matched + ' still matching)', dropped > 10000 && matched > 500);
+  check('a frame with no known host still gets the whole list', run('adultExtrasForHost(["a.example","b.example"], "").length') === 2);
+}
+
 if (failures) {
   console.error('[fail] bridge host list tests: ' + failures + ' failure(s)');
   process.exit(1);

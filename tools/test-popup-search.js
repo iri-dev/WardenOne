@@ -185,6 +185,16 @@ const permScannerRow = securityGroup.append(nameRow('Site permission scanner', '
 downloadGroup.previousElementSibling = downloadHeading;
 securityGroup.previousElementSibling = securityHeading;
 
+/* The blocklist card: its Update now button is not a row, and belongs under the status row above it. */
+const blocklistHeading = groupsEl.append(new FakeElement({ tagName: 'H2', text: 'Blocklist (auto-updating)' }));
+const blocklistGroup = groupsEl.append(new FakeElement({ classes: ['card-group'] }));
+blocklistGroup.previousElementSibling = blocklistHeading;
+const maliciousRow = blocklistGroup.append(nameRow('Block known malicious sites', 'Hard-blocks known malware, phishing and scam domains.'));
+const minerRow = blocklistGroup.append(nameRow('Block cryptominers', 'Stop drive-by mining scripts.'));
+const autoUpdateRow = blocklistGroup.append(nameRow('Auto-update blocklist', 'Pulls fresh phishing and scam lists once a day.'));
+const listStatusRow = blocklistGroup.append(nameRow('Blocking 3,154,983 domains', 'Blocklist fetched 5 d ago - 32/32 feeds'));
+const updateAction = blocklistGroup.append(new FakeElement({ classes: ['list-update-action'], text: 'Update now' }));
+
 /* The footer under the settings list: reachable by id, as in the real popup. */
 const footerButtons = [
   ['allowlist', 'Allowlist this site'], ['verify-repair', 'Verify & repair'],
@@ -216,9 +226,10 @@ const document = {
     return null;
   },
   querySelectorAll(selector) {
-    if (selector === '.row') return [rewindRow, interfaceTheme, tabRow, micRow, cookieThirdRow, cookieAllRow, webAssemblyRow, trustedScriptRow, trustedDownloadRow, extensionRow, permScannerRow];
-    if (selector === '.card-group') return [rewindGroup, interfaceGroup, tabGroup, micGroup, cookieGroup, scriptGroup, downloadGroup, securityGroup];
-    if (selector === '.group>h2, .eyeshield-panel+h2, #js-shield+h2') return [eyeHeading, interfaceHeading, scriptHeading, downloadHeading, securityHeading, cookieHeading];
+    if (selector === '.row') return [rewindRow, interfaceTheme, tabRow, micRow, cookieThirdRow, cookieAllRow, webAssemblyRow, trustedScriptRow, trustedDownloadRow, extensionRow, permScannerRow,
+      maliciousRow, minerRow, autoUpdateRow, listStatusRow];
+    if (selector === '.card-group') return [rewindGroup, interfaceGroup, tabGroup, micGroup, cookieGroup, scriptGroup, downloadGroup, securityGroup, blocklistGroup];
+    if (selector === '.group>h2, .eyeshield-panel+h2, #js-shield+h2') return [eyeHeading, interfaceHeading, scriptHeading, downloadHeading, securityHeading, cookieHeading, blocklistHeading];
     if (selector.indexOf('.eyeshield-mode') >= 0) return eyeSearchChildren.slice();
     return [];
   },
@@ -370,6 +381,23 @@ assert(order(downloadHeading) < order(securityHeading), 'ranking follows the que
 searchInput.value = '';
 searchInput.emit('input');
 assert(!groupsEl.classList.contains('wo-ranked') && groupsEl.children.every((el) => !el.style.order), 'clearing restores page order');
+
+/* 2026-11-26: searching "blockl" ranked the two Block rows between the status row and Update now, so the
+   button sat at the bottom of the card, away from the list it updates. */
+for (const query of ['blockl', 'blocklist', 'block']) {
+  searchInput.value = query;
+  searchInput.emit('input');
+  assert(!listStatusRow.classList.contains('wo-hidden'), query + ' finds the list status');
+  assert(!updateAction.classList.contains('wo-hidden'), query + ' keeps Update now with it');
+  assert.strictEqual(order(updateAction), order(listStatusRow) + 1, query + ': Update now follows the status row it belongs to');
+}
+searchInput.value = 'cryptominers';
+searchInput.emit('input');
+assert(listStatusRow.classList.contains('wo-hidden') && updateAction.classList.contains('wo-hidden'),
+  'Update now hides with its row instead of standing alone under another result');
+searchInput.value = '';
+searchInput.emit('input');
+assert(!updateAction.classList.contains('wo-hidden') && !updateAction.style.order, 'clearing restores Update now where it was');
 
 initialMemory ={ wardenone_popup_search_memory: { q: 'WebAssembly' } };
 let restored = false;

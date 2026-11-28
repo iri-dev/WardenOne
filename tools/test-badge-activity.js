@@ -21,7 +21,7 @@ function build({ staleAt = 0 } = {}) {
   const sender = { id: 'test', url: tab.url, frameId: 0, documentId: 'current-document', tab: { id: 7 } };
   const context = { URL, __privacyEraseInProgress: false, DEFAULT_CONFIG: {},
     messageSenderIsTab: value => value?.id === 'test' && Number.isInteger(value.tab?.id),
-    messageSenderStillCurrent: async (value, exact) => { assert.equal(exact, true); return !!value.documentId && ++state.checks !== staleAt; },
+    messageSenderStillCurrent: async (value, exact) => { assert.equal(exact, undefined, 'origin and document, not exact URL'); return !!value.documentId && ++state.checks !== staleAt; },
     tabsGet: async id => { state.reads.push(id); return tab; },
     buildSiteDashboard: async value => { assert.equal(value.id, 7); return report(); },
     badgeBeaconChoicesForReport: async () => [],

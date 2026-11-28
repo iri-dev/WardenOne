@@ -290,6 +290,7 @@ function forcedDownloadFromAddress(item, href) {
 }
 function unexpectedDownloadReason(item, context) {
   if (!context) return '';
+  if (context.pdfViewer === true && forcedDownloadFromAddress(item, context.url)) return '';
   const gesture = context.gesture;
   const now = Date.parse(item.startTime || '') || Date.now();
   const filename = downloadNameFromItemish(item.filename || item.finalUrl || item.url);

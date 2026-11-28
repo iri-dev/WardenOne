@@ -161,7 +161,7 @@ check('and there is one derived config, not one per site',
       WO: { adShield: true }, trustedMediaHost: true, __woConfigStore: { __configReady: true },
       __woAdCollapseStarted: false,
       document: { readyState: 'complete', createElement: () => ({}), head: { appendChild() { styles++; } }, querySelectorAll: () => [] },
-      isGoogleSearchResults: () => false, woOn() {}, woObserve() {}, __woIdle: fn => fn(), setTimeout,
+      isGoogleSearchResults: () => false, woOn() {}, woObserve() {}, __woIdle: fn => fn(), __woAfterParse: fn => fn(), setTimeout,
     };
     ctx.WO.__youtubeCompatibilityMode = true; ctx.WO.scriptletEngine = !paused;
     vm.createContext(ctx); vm.runInContext(helper[0] + SRC.slice(from, end) + '__woMaybeAdCollapse();', ctx);

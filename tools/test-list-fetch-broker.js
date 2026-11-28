@@ -266,7 +266,7 @@ async function refresh(r) {
     const loop = core.indexOf('fetchListSource(url, reason, integrity)');
     const cosmetic = core.indexOf('updateAdShieldCosmetics();');
     check('the cosmetic pipeline starts after the network batch, not beside it', loop >= 0 && cosmetic > loop, 'cosmetic at ' + cosmetic + ', loop at ' + loop);
-    check('and still before the integrity quarantine can return early', cosmetic < core.indexOf('if (rejectedSources) {'));
+    check('and still before the refresh can return early', cosmetic < core.indexOf('if (!anySucceeded || !merged.size) {'));
   }
 
   finished = true;

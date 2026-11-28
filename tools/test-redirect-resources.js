@@ -82,6 +82,27 @@ vm.runInContext(BG.slice(from, to)
 const api = sandbox.__api;
 
 const trackers = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules-trackers.json'), 'utf8'));
+{
+  /* uBlock's googlesyndication_adsbygoogle.js redirects land on this stand in (tools/build-filter-lists-dnr.js). */
+  const ubo = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules-ubo-filters.json'), 'utf8'));
+  const adsbygoogle = ubo.filter(rule => rule.action.redirect?.extensionPath === '/surrogates/adsbygoogle.js');
+  check('the ads queue replacement only answers scripts', adsbygoogle.length > 0 &&
+    adsbygoogle.every(rule => rule.condition.resourceTypes.every(type => type === 'script' || type === 'xmlhttprequest')));
+  check('ads queue replacement is packaged and web accessible', ALLOWLIST.has('surrogates/adsbygoogle.js') &&
+    MANIFEST.web_accessible_resources.some(entry => entry.resources.includes('surrogates/adsbygoogle.js')));
+  const jobs = [], attrs = {}, options = { enable_page_level_ads: true };
+  const queue = [options];
+  const slot = { setAttribute(name, value) { attrs[name] = value; } };
+  const page = vm.createContext({ window: { adsbygoogle: queue }, queueMicrotask: callback => jobs.push(callback),
+    document: { querySelector: () => attrs['data-adsbygoogle-status'] ? null : slot } });
+  const surrogate = fs.readFileSync(path.join(ROOT, 'surrogates/adsbygoogle.js'), 'utf8');
+  vm.runInContext(surrogate, page);
+  check('ads queue replacement keeps the original queue and push contract', page.window.adsbygoogle === queue &&
+    queue[0] === options && queue.loaded === true && queue.push({}) === 2);
+  for (const job of jobs) job();
+  check('the replacement marks the slot unfilled without requesting an ad', attrs['data-ad-status'] === 'unfilled' &&
+    attrs['data-adsbygoogle-status'] === 'done');
+}
 for (const [file, host, endpoint] of [
   ['surrogates/analytics.js', 'www.google-analytics.com', '/analytics.js'],
   ['surrogates/facebook.js', 'connect.facebook.net', '/en_US/sdk.js'],

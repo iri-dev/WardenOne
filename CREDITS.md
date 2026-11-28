@@ -318,12 +318,16 @@ Bundled and derived material:
 | `rules-adshield.json` | The EasyList authors; selected network rules plus WardenOne compatibility edits | CC-BY-SA-3.0 |
 | `rules-easyprivacy.json` | The EasyList authors; EasyPrivacy plus WardenOne tracker rules | CC-BY-SA-3.0 |
 | `rules-easyprivacy-general.json` | The EasyList authors; EasyPrivacy general collector rules | CC-BY-SA-3.0 |
+| `rules-ubo-filters.json` | uBlock Origin contributors; uAssets filters.txt, quick-fixes.txt and unbreak.txt network filters | GPL-3.0-or-later |
+| `rules-privacy-filters.json` | The EasyList authors (EasyPrivacy, dual licensed GPLv3 and CC BY-SA 3.0) and uBlock Origin contributors (uAssets privacy.txt) | GPL-3.0-or-later |
+| `curated-host-scopes.json` | Host names from the EasyList, EasyPrivacy and uBlock Origin filters already packaged in WardenOne's rule files | GPL-3.0-or-later |
+| `rules-badware-filters.json` | uBlock Origin contributors; uAssets badware.txt network filters other than plain hosts | GPL-3.0-or-later |
 | `cosmetic-rules.json` | EasyList, EasyPrivacy, uAssets, AdGuard and Fanboy Social | GPL-3.0; Fanboy CC-BY-3.0 attribution retained |
 | `psl-private.js` | Public Suffix List private and ICANN sections | MPL-2.0 |
 | `domain-utils.js` | WardenOne code with compact Public Suffix List ICANN data | GPL-3.0-or-later; MPL-2.0 covers the marked PSL data |
 | `domain-utils-isolated.js` | Byte-identical copy of domain-utils.js for the isolated execution world | GPL-3.0-or-later; MPL-2.0 covers the marked PSL data |
 | `spotify-silent-1s.mp4` | uBlock Origin noop-1s.mp4 | GPL-3.0 |
-| `rules.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
+| `rules.json` | WardenOne-maintained rules, with reviewed EasyPrivacy and uAssets patterns captured on 2026-11-21. The shipped JSON is editable source. | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
 | `rules-download-landings.json` | Owner-reported deceptive download landing family, curated into local rules | GPL-3.0-or-later (WardenOne curation) |
 | `rules-trackers.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |
 | `grabber-extra.json` | WardenOne-maintained seed/curation; source is the shipped JSON | GPL-3.0-or-later (WardenOne curation; upstream notices retained) |

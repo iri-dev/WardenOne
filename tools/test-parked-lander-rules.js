@@ -121,7 +121,8 @@ test('a parked page and its lander load', () => {
   assert.notEqual(outcome(req('https://wardenone.com/lander', 'main_frame', '')), 'block', 'the parked page itself is blocked');
   assert.equal(outcome(LANDER_JS), 'allow', 'the lander script is blocked: ' + describe(LANDER_JS));
   assert.equal(outcome(LANDER_CSS), 'allow', 'the lander stylesheet is blocked: ' + describe(LANDER_CSS));
-  assert.equal(outcome(LANDER_CONFIG), 'none', 'the lander cannot read its own configuration: ' + describe(LANDER_CONFIG));
+  /* uBlock Unbreak names this request as an exception, so it can be 'allow' as well as untouched. */
+  assert.notEqual(outcome(LANDER_CONFIG), 'block', 'the lander cannot read its own configuration: ' + describe(LANDER_CONFIG));
 });
 
 test('without the pinned allow, EasyList still blanks the page', () => {
@@ -149,7 +150,7 @@ test('the exception and the feed block stay narrow', () => {
 test('first-party GA4 conditions retain path, method and party boundaries', () => {
   /* Rule 50's own boundaries. EasyPrivacy's general /g/collect? rule is broader by its authors' choice and is
      checked on its own below, so it is left out here. */
-  const ownRule = (packId) => packId === 'easyprivacy_general';
+  const ownRule = (packId) => packId === 'easyprivacy_general' || packId === 'privacy_filters';
   const hit = req('https://wardenone.com/g/collect?v=2&tid=G-TEST123', 'xmlhttprequest');
   assert.deepEqual(winner(hit, ownRule), { priority: 1000, action: 'block', pack: 'trackers', id: 50 });
   assert.equal(outcome({ ...hit, method: 'post' }, ownRule), 'block');
@@ -159,6 +160,7 @@ test('first-party GA4 conditions retain path, method and party boundaries', () =
   assert.equal(outcome({ ...hit, url: hit.url.replace('tid=', 'not_tid=') }, ownRule), 'none');
   assert.equal(outcome({ ...hit, type: 'main_frame' }, ownRule), 'none');
   assert.equal(outcome(hit, (packId) => packId !== 'easyprivacy_general'), 'block', 'EasyPrivacy general blocks the same hit');
+  assert.equal(outcome(hit, (packId) => packId !== 'privacy_filters'), 'block', 'the privacy filters block the same hit');
   assert.equal(outcome({ ...hit, type: 'main_frame' }), 'none', 'no pack blocks opening the address');
 });
 

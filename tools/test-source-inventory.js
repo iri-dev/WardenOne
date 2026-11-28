@@ -85,7 +85,7 @@ for (const file of metadata.licenseFiles) assert(read('THIRD_PARTY_NOTICES.html'
 assert(/credits: 'THIRD_PARTY_NOTICES.html'/.test(read('settings.js')));
 assert(!require('./build-store-package.js').NON_RUNTIME.some((re) => re.test('CREDITS.md')));
 assert(!require('./build-store-package.js').NON_RUNTIME.some((re) => re.test('THIRD_PARTY_NOTICES.html')));
-/* A feed over its size cap quarantines the WHOLE refresh, so nothing updates at all -- which is what a feed
+/* A feed over its size cap is refused on every update and drops out entirely -- which is what a feed
    URL changing out from under its reviewed cap looks like. Every raised cap must still name a live source. */
 {
   const background = read('background.js');

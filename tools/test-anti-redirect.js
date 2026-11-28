@@ -269,6 +269,7 @@ function build(opts) {
 
   /* The key arrives on the document (SEC-01), so its listeners must be real. */
   const dispatchDoc = woAuth.documentEvents(sandbox.document);
+  if (opts.globals) Object.assign(sandbox, opts.globals);
   installPlatformGlobals(sandbox);
   vm.createContext(sandbox);
   vm.runInContext(DOMAIN_UTILS, sandbox);
@@ -1649,37 +1650,93 @@ const MONETAG = 'https://dadgah.org/4/52106d0b?refer=https%3A%2F%2Fplaymogo.com%
   check('T15 gestureless redirect blocked', t.state.assigned.length === 0 && !!e && e.detail.why === 'no recent user gesture', e);
 }
 
-{
-  const hostname = 'uk.pinterest.com';
+/* Google's button frame takes the press, so the page sees no click. GIS opens its sign in window first and its
+   account picker if that fails (accounts.google.com/gsi/client: the button popup flow, then picker_url). */
+function focusGlobals(focus) {
+  class FakeElement {}
+  Object.defineProperty(FakeElement.prototype, 'shadowRoot', { get() { return this.shadow || null; } });
+  class FakeShadowRoot {}
+  Object.defineProperty(FakeShadowRoot.prototype, 'activeElement', { get() { return this.active || null; } });
+  class FakeIFrame extends FakeElement { constructor(src) { super(); this.frameSrc = src; } }
+  Object.defineProperty(FakeIFrame.prototype, 'src', {
+    get() { if (!(this instanceof FakeIFrame)) throw new TypeError('Illegal invocation'); return this.frameSrc; },
+  });
+  class FakeDocument {}
+  let active = null;
+  if (focus && focus.frame) active = new FakeIFrame(focus.frame);
+  if (focus && focus.plain) active = new FakeElement();
+  if (focus && focus.shadowFrame) {
+    active = new FakeElement();
+    active.shadow = Object.assign(new FakeShadowRoot(), { active: new FakeIFrame(focus.shadowFrame) });
+  }
+  Object.defineProperty(FakeDocument.prototype, 'activeElement', { get() { return active; } });
+  const globals = { Document: FakeDocument, HTMLIFrameElement: FakeIFrame };
+  if (focus && focus.shadowFrame) Object.assign(globals, { Element: FakeElement, ShadowRoot: FakeShadowRoot });
+  return globals;
+}
+for (const hostname of ['uk.pinterest.com', 'www.patreon.com']) {
   const href = 'https://' + hostname + '/login/';
+  const origin = new URL(href).origin;
+  const clientId = '84775188414-a1b2.apps.googleusercontent.com';
+  const button = 'https://accounts.google.com/gsi/button?'
+    + new URLSearchParams({ theme: 'outline', size: 'large', text: 'continue_with', client_id: clientId,
+      iframe_id: 'gsi_123_456', cas: 'YyLa4HjFCaN1AvJHSJjq36NARg6' });
+  const pressed = { focus: { frame: button } };
   const oauth = 'https://accounts.google.com/o/oauth2/v2/auth?'
-    + new URLSearchParams({ origin: new URL(href).origin, client_id: '123-a.apps.googleusercontent.com',
-      gsiwebsdk: 'gis_attributes', redirect_uri: 'gis_transform', response_mode: 'form_post' });
+    + new URLSearchParams({ as: 'YyLa4HjFCaN1AvJHSJjq36NARg6', client_id: clientId, scope: 'openid email profile',
+      response_type: 'id_token', gsiwebsdk: 'gis_attributes', redirect_uri: 'gis_transform', response_mode: 'form_post',
+      origin, display: 'popup' });
+  const picker = 'https://accounts.google.com/gsi/select?'
+    + new URLSearchParams({ client_id: clientId, ux_mode: 'popup', ui_mode: 'card', as: 'YyLa4HjFCaN1AvJHSJjq36NARg6',
+      channel_id: '4ffb520', origin });
   const open = (t, target) => {
     t.sandbox.oauthProbeTarget = target;
     vm.runInContext('window.open(oauthProbeTarget)', t.sandbox);
   };
+  const otherOrigin = (url) => url.replace(encodeURIComponent(origin), encodeURIComponent('https://example.org'));
+  const otherClient = '99999999999-z9.apps.googleusercontent.com';
   for (const [label, target, options, opened] of [
-    ['the Google frame click activates sign-in', oauth, {}, true],
-    ['no activation still blocks sign-in', oauth, { browserActivation: false }, false],
-    ['an unrelated site cannot borrow the exception', oauth, { hostname: 'pinterest.com.example.org' }, false],
-    ['a child frame cannot borrow the exception', oauth, { framed: true }, false],
+    ['the Google frame click activates sign in', oauth, {}, true],
+    ['the account picker fallback opens too', picker, {}, true],
+    ['a Google button inside a web component still counts', oauth, { focus: { shadowFrame: button } }, true],
+    ['a click anywhere else on the page cannot open sign in', oauth, { focus: null }, false],
+    ['a click anywhere else on the page cannot open the picker', picker, { focus: null }, false],
+    ['a click on the page itself cannot open sign in', oauth, { focus: { plain: true } }, false],
+    ['a click in an ad frame cannot open sign in', oauth, { focus: { frame: 'https://ads.example/frame?client_id=' + clientId } }, false],
+    ['a Google button for another client cannot open this sign in', oauth,
+      { focus: { frame: button.replace(encodeURIComponent(clientId), encodeURIComponent(otherClient)) } }, false],
+    ['a lookalike Google button does not count', oauth,
+      { focus: { frame: button.replace('accounts.google.com', 'accounts.google.com.example.org') } }, false],
+    ['a Google button for another client cannot open this picker', picker,
+      { focus: { frame: button.replace(encodeURIComponent(clientId), encodeURIComponent(otherClient)) } }, false],
+    ['no activation still blocks sign in', oauth, { browserActivation: false }, false],
+    ['no activation still blocks the picker', picker, { browserActivation: false }, false],
+    ['another site cannot open sign in for this one', oauth, { hostname: 'ads.example', href: 'https://ads.example/' }, false],
+    ['another site cannot open the picker for this one', picker, { hostname: 'ads.example', href: 'https://ads.example/' }, false],
+    ['a child frame cannot use the exception', oauth, { framed: true }, false],
+    ['a child frame cannot open the picker', picker, { framed: true }, false],
     ['a lookalike provider is refused', oauth.replace('accounts.google.com', 'accounts.google.com.example.org'), {}, false],
-    ['a different Google path is refused', oauth.replace('/o/oauth2/v2/auth', '/gsi/select'), {}, false],
-    ['an external origin is refused', oauth.replace('uk.pinterest.com', 'example.org'), {}, false],
+    ['a lookalike picker is refused', picker.replace('accounts.google.com', 'accounts.google.com.example.org'), {}, false],
+    ['a different Google path is refused', oauth.replace('/o/oauth2/v2/auth', '/ServiceLogin'), {}, false],
+    ['an external origin is refused', otherOrigin(oauth), {}, false],
+    ['an external origin on the picker is refused', otherOrigin(picker), {}, false],
     ['an external callback is refused', oauth.replace('gis_transform', 'https://example.org/'), {}, false],
     ['conflicting callback parameters are refused', oauth + '&redirect_uri=https://example.org/', {}, false],
+    ['a picker that sends you back to a page is refused', picker + '&login_uri=https://example.org/', {}, false],
+    ['a picker outside popup mode is refused', picker.replace('ux_mode=popup', 'ux_mode=redirect'), {}, false],
+    ['a picker without a Google client is refused', picker.replace(encodeURIComponent(clientId), 'x.example.org'), {}, false],
     ['coercible targets cannot use the exception', { toString: () => oauth }, {}, false],
     ['an ad popup is still refused', 'https://advertising.example/', {}, false],
   ]) {
-    const t = build({ hostname, href, browserActivation: true, ...options });
+    const merged = { hostname, href, browserActivation: true, ...pressed, ...options };
+    const t = build({ ...merged, globals: focusGlobals(merged.focus) });
     open(t, target);
-    check('Pinterest Google sign-in: ' + label, (t.state.opened.length === 1) === opened, t.state.opened);
+    check(hostname + ' Google sign in: ' + label, (t.state.opened.length === 1) === opened, t.state.opened);
   }
-  const t = build({ hostname, href, browserActivation: false });
+  const t = build({ hostname, href, browserActivation: false, globals: focusGlobals(pressed.focus) });
   t.sandbox.navigator.userActivation = { isActive: true };
   open(t, oauth);
-  check('Pinterest Google sign-in: replacing userActivation cannot authorize a popup', t.state.opened.length === 0);
+  check(hostname + ' Google sign in: replacing userActivation cannot authorize a popup', t.state.opened.length === 0);
 }
 
 // T16: synthetic click on a cross-site download link is allowed
@@ -2467,6 +2524,82 @@ for (const setting of ['enabled', 'detectRedirectChains']) {
   const native = t.userClick(link);
   check('T49f synthetic same-site download anchors cannot escape the chain stop', synthetic.defaultPrevented);
   check('T49g genuine native destination links remain usable', !native.defaultPrevented);
+}
+
+// T50: WardenOne's own link check holds a shortened link's click, then presses the same link again
+// from script (x.com bio links through t.co). That replay is the reader's press, nothing more.
+{
+  const bioLink = (href) => {
+    const a = makeEl({ tag: 'a', href, attrs: { href, target: '_blank', rel: 'noopener noreferrer nofollow' }, target: '_blank',
+      text: 'github.com', rect: { left: 10, top: 10, right: 110, bottom: 30, width: 100, height: 20 } });
+    a.isConnected = true;
+    return a;
+  };
+  const press = (opts) => {
+    const t = build(Object.assign({ hostname: 'x.com', href: 'https://x.com/github', browserActivation: true }, opts || {}));
+    const a = bioLink('https://t.co/bbJgfyzKzp');
+    t.fire('pointerdown', { target: a, button: 0, clientX: 50, clientY: 20 });
+    const first = t.fire('click', { target: a, button: 0, clientX: 50, clientY: 20 });
+    return { t, a, first };
+  };
+  {
+    const { t, a, first } = press();
+    const replay = t.fire('click', { target: a, isTrusted: false });
+    check('T50a the reader\'s own press is let through', first.defaultPrevented === false, first);
+    check('T50a the link check\'s replay of that same link opens it', replay.defaultPrevented === false,
+      t.state.emits.map((e) => e && e.detail && e.detail.why));
+  }
+  {
+    const { t } = press();
+    const other = bioLink('https://t.co/bbJgfyzKzp');
+    const forged = t.fire('click', { target: other, isTrusted: false });
+    check('T50b a scripted click on any other element is still a page-generated popup', forged.defaultPrevented === true);
+  }
+  {
+    const { t, a } = press();
+    a.href = 'https://ads.example/landing';
+    a.attrs.href = a.href;
+    const swapped = t.fire('click', { target: a, isTrusted: false });
+    check('T50c the same element with a new address is not a replay', swapped.defaultPrevented === true);
+  }
+  {
+    /* The same wrapper host with another path: only the address check tells this apart from the press. */
+    const { t, a } = press();
+    a.href = 'https://t.co/someOtherLink';
+    a.attrs.href = a.href;
+    const sameHost = t.fire('click', { target: a, isTrusted: false });
+    check('T50f a new address on the same host is not a replay either', sameHost.defaultPrevented === true);
+  }
+  {
+    const { t, a } = press({ browserActivation: false });
+    const stale = t.fire('click', { target: a, isTrusted: false });
+    check('T50d without the browser\'s live click permission the replay is refused', stale.defaultPrevented === true);
+  }
+  {
+    const { t, a } = press({ fakeClock: true });
+    t.advanceTime(6000);
+    const late = t.fire('click', { target: a, isTrusted: false });
+    check('T50e a replay long after the press is refused', late.defaultPrevented === true);
+  }
+}
+
+// T51: local apps and the home network are not ad servers; a bare public address still is.
+{
+  const open = (href) => {
+    const t = build({ hostname: 'chatgpt.com', href: 'https://chatgpt.com/c/1' });
+    const a = makeEl({ tag: 'a', href, attrs: { href, target: '_blank', rel: 'noopener noreferrer' }, target: '_blank',
+      text: href, rect: { left: 10, top: 10, right: 210, bottom: 30, width: 200, height: 20 } });
+    a.isConnected = true;
+    return t.userClick(a, 50, 20).defaultPrevented;
+  };
+  check('T51a a link to this computer opens (127.0.0.1)', open('http://127.0.0.1:3000/?utm_source=chatgpt.com') === false);
+  check('T51b a link to the home router opens', open('http://192.168.1.1/') === false);
+  check('T51c a link to a private network server opens', open('http://10.0.0.5:8080/') === false);
+  check('T51d a 172.16-31 private address opens', open('http://172.20.1.4/') === false);
+  check('T51e a bare public address is still refused', open('http://45.33.32.156/download') === true);
+  check('T51f 172.32 is public, not private', open('http://172.32.0.1/') === true);
+  check('T51g an ordinary link with utm_campaign tags opens', open('https://blog.example.org/post?utm_source=newsletter&utm_campaign=nov') === false);
+  check('T51h an ad hop naming its campaign is still refused', open('https://track.example-media.org/go?zone_id=70849&campaign_id=213781') === true);
 }
 
 console.log('');

@@ -24,7 +24,9 @@ function compareArchives(source, runtime) {
   const forbidden = forbiddenPaths([...source.keys()]);
   errors.push(...forbidden.map(file => 'private source path: ' + file));
   for (const [name, bytes] of source) {
-    if (/(?:^|\/)(?:tmp|node_modules|\.publish|\.git|\.codex)(?:\/|$)|(?:^|\/)\.env(?:\.|$)|\.(?:pem|pfx|key)$/i.test(name)) errors.push('local/credential file: ' + name);
+    const nestedHiddenPath = /\/\.(?!well-known\/)[^/]+/.test(name);
+    const localOrCredentialPath = /(?:^|\/)(?:tmp|node_modules)(?:\/|$)|(?:^|\/)\.env(?:\.|$)|\.(?:pem|pfx|key)$/i.test(name);
+    if (nestedHiddenPath || localOrCredentialPath) errors.push('local/credential file: ' + name);
     if (!/\.(?:js|json|md|html|yml|toml|txt)$/.test(name)) continue;
     const text = bytes.toString('utf8');
     if (/\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{60,}|AKIA[A-Z0-9]{16}|AIza[A-Za-z0-9_-]{35})\b/.test(text)) errors.push('credential-shaped value: ' + name);

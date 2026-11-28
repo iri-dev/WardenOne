@@ -25,12 +25,7 @@ const war = (manifest.web_accessible_resources || []).find((item) =>
   item.resources.length === 1 && item.resources[0] === asset);
 assert(war && war.matches.length === 1 && war.matches[0] === 'https://open.spotify.com/*',
   'silent media must be accessible only from Spotify');
-/* The media allow preserves playback through generic tracker lists:
-   media the web player loads is never cut off by a tracker or ad list. A podcast enclosure
-   often travels through an analytics prefix host (chtbl.com, podscribe.com, mgln.ai) that
-   the EasyPrivacy pack blocks for every type, and a blocked media request leaves the player
-   stuck rather than silent. It sits above the 1000-point tracker packs and below the
-   dedicated ad-media redirects (1100) and the 2000-point malware blocks. */
+/* The media allow outranks generic tracker rules while leaving ad redirects and malware blocks effective. */
 const redirects = rules.filter((rule) => rule.action.type === 'redirect');
 const allows = rules.filter((rule) => rule.action.type === 'allow');
 assert.strictEqual(rules.length, expected.length + 1);
@@ -55,12 +50,11 @@ assert.deepStrictEqual(Object.keys(mediaAllow.condition).sort(), ['initiatorDoma
   'the media allow is scoped by initiator and type only, never by host');
 assert.strictEqual(mediaAllow.priority, 1050);
 assert(mediaAllow.priority > 1000 && mediaAllow.priority < 1100 && mediaAllow.priority < 2000);
-/* The packs it has to outrank really do block a podcast prefix host for media. */
 const easyprivacy = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules-easyprivacy.json'), 'utf8'));
 const prefixBlock = easyprivacy.find((rule) => rule.action.type === 'block' &&
   (rule.condition.requestDomains || []).includes('chtbl.com'));
-assert(prefixBlock && prefixBlock.condition.resourceTypes.includes('media'),
-  'expected the EasyPrivacy pack to block chtbl.com media (else this allow no longer needs to)');
+assert.deepStrictEqual(prefixBlock?.condition.resourceTypes, ['script', 'xmlhttprequest'],
+  'the EasyPrivacy rule for the podcast prefix must preserve its script and XHR scope');
 assert(prefixBlock.priority < mediaAllow.priority);
 for (const file of ['rules-trackers.json', 'rules-easyprivacy.json', 'rules-adshield.json']) {
   const pack = JSON.parse(fs.readFileSync(path.join(ROOT, file), 'utf8'));

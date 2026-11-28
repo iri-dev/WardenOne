@@ -1203,10 +1203,18 @@
     // Dressed like the page engine's own warning panels (the clipboard-swap and fake-window
     // cards): the same alert border and tag, Quicksand and Nunito, and WardenOne's pink-purple
     // button, so a blocking warning from either half looks like one product.
+    /* The page engine's own panel for the same warning sits at the top centre too. Stack under it rather
+       than over it, so neither covers the other; a page that fakes or moves that panel gains nothing. */
+    let top = 24;
+    try {
+      const engineCard = document.getElementById(id);
+      const rect = engineCard && engineCard.getBoundingClientRect();
+      if (rect && rect.height > 0 && rect.top < 120 && rect.bottom > 0) top = Math.min(Math.round(rect.bottom) + 12, Math.round(window.innerHeight * 0.5));
+    } catch (_) {}
     const card = document.createElement('div');
     card.setAttribute('style', 'all:initial!important;box-sizing:border-box!important;position:fixed!important;'
-      + 'top:24px!important;left:50%!important;transform:translateX(-50%)!important;'
-      + 'width:min(480px,calc(100vw - 32px))!important;max-height:70vh!important;overflow:auto!important;'
+      + 'top:' + top + 'px!important;left:50%!important;transform:translateX(-50%)!important;'
+      + 'width:min(480px,calc(100vw - 32px))!important;max-height:min(70vh,calc(100vh - ' + (top + 16) + 'px))!important;overflow:auto!important;'
       + 'padding:16px 18px!important;border:2px solid #c0392b!important;border-radius:16px!important;'
       + 'background:rgba(255,247,247,.99)!important;color:#2d1b40!important;'
       + 'box-shadow:0 18px 52px rgba(120,20,20,.4)!important;'
@@ -2231,7 +2239,7 @@
   /* Download intent stays in ISOLATED world. Page messages cannot manufacture trusted clicks. */
   const downloadDocumentStartedAt = Date.now();
   let downloadGesture = null;
-  let downloadOffer = null;
+  let dismissDownloadOffer = null;
   const downloadApprovedLinks = new WeakSet();
   const DOWNLOAD_INTENT_MS = 30000;
   const DOWNLOAD_FILE_PATTERN = /\.(?:exe|msi|msix|scr|bat|cmd|ps1|vbs|js|jar|apk|dmg|pkg|zip|7z|rar|pdf|docx?|xlsx?|csv|png|jpe?g|mp[34]|webm)(?:$|[?#])/i;
@@ -2250,7 +2258,8 @@
     const path = event.composedPath ? event.composedPath() : [event.target];
     for (const node of path) {
       if (node && node.closest) {
-        const control = node.closest('a[href],area[href],button,input[type="submit"],input[type="button"],[role="button"]');
+        /* Chat apps draw file links as role="link" spans with no address, and menus as menu items. */
+        const control = node.closest('a[href],area[href],button,input[type="submit"],input[type="button"],[role="button"],[role="link"],[role="menuitem"]');
         if (control) return control;
       }
     }
@@ -2303,7 +2312,7 @@
     const requested = /\b(download|save|export|install|generate|build)\b/i.test(label)
       || /\bget\s+(?:the\s+)?(?:app|installer|file|setup)\b/i.test(label) || DOWNLOAD_FILE_PATTERN.test(label)
       || (DOWNLOAD_FILE_PATTERN.test(href) && /\b(windows|macos|linux|android|ios)\b/i.test(label));
-    return { label, href, claimed, requested };
+    return { label, href, claimed, download: control.hasAttribute('download'), requested };
   }
   function downloadProductMismatch(details, filename) {
     if (!DOWNLOAD_ACTIVE_PATTERN.test(filename) || !/\/downloads?\//i.test(location.pathname)
@@ -2320,11 +2329,22 @@
     return meaningful.length >= 2 && !meaningful.some(word => file.includes(word));
   }
   function offerUnexpectedDownload(details, why) {
-    if (downloadOffer) downloadOffer.destroy();
+    if (dismissDownloadOffer) dismissDownloadOffer();
+    let destination;
+    try { destination = new URL(details.href, location.href); } catch (_) { return; }
     const offer = woOwnedOverlay('wo-unexpected-download');
     const root = offer.root();
     if (!root) return;
-    downloadOffer = offer;
+    // Pages can revoke a generated file URL as soon as their original click returns.
+    const abort = destination.protocol === 'blob:' ? new AbortController() : null;
+    const retained = abort && fetch(destination.href, { signal: abort.signal }).catch(() => null);
+    const dismiss = () => {
+      if (dismissDownloadOffer !== dismiss) return;
+      if (abort) abort.abort();
+      offer.destroy();
+      dismissDownloadOffer = null;
+    };
+    dismissDownloadOffer = dismiss;
     const box = document.createElement('div');
     box.setAttribute('style', WO_MODAL.panel('390px', '14px')
       + 'position:fixed!important;bottom:16px!important;right:16px!important;z-index:2147483647!important;pointer-events:auto!important;');
@@ -2333,28 +2353,44 @@
     title.textContent = 'WardenOne — Unexpected download stopped';
     const text = document.createElement('p');
     text.setAttribute('style', WO_MODAL.body);
-    let destination;
-    try { destination = new URL(details.href, location.href); } catch (_) { return; }
     text.textContent = why + ' Destination: ' + destination.hostname + destination.pathname.slice(-160);
     const allow = document.createElement('button');
     allow.textContent = 'Download once';
     allow.setAttribute('style', WO_MODAL.button(true, '12px'));
-    woOn(allow, 'click', event => {
-      if (!event.isTrusted) return;
-      offer.destroy(); downloadOffer = null;
+    woOn(allow, 'click', async event => {
+      if (!event.isTrusted || allow.disabled || dismissDownloadOffer !== dismiss) return;
+      allow.disabled = true;
+      let savedUrl = '';
+      if (retained) {
+        const response = await retained;
+        if (dismissDownloadOffer !== dismiss) return;
+        const file = response && response.ok ? await response.blob().catch(() => null) : null;
+        if (dismissDownloadOffer !== dismiss) return;
+        if (!file) {
+          text.textContent = 'This file is no longer available. Try downloading it again from the page.';
+          return;
+        }
+        savedUrl = URL.createObjectURL(file);
+      }
+      dismiss();
       const link = document.createElement('a');
-      link.href = destination.href;
-      if (details.claimed) link.download = details.claimed;
+      link.href = savedUrl || destination.href;
+      if (details.download) link.download = details.claimed;
       link.rel = 'noopener';
       downloadApprovedLinks.add(link);
-      downloadGesture = { at: Date.now(), requested: true, href: destination.href, label: 'Download once', claimed: details.claimed };
-      (document.body || document.documentElement).appendChild(link);
-      link.click(); link.remove();
+      downloadGesture = { at: Date.now(), requested: true, href: link.href, label: 'Download once', claimed: details.claimed };
+      try {
+        (document.body || document.documentElement).appendChild(link);
+        link.click();
+      } finally {
+        link.remove();
+        if (savedUrl) URL.revokeObjectURL(savedUrl);
+      }
     });
     const cancel = document.createElement('button');
     cancel.textContent = 'Cancel';
     cancel.setAttribute('style', WO_MODAL.button(false, '12px'));
-    woOn(cancel, 'click', event => { if (event.isTrusted) { offer.destroy(); downloadOffer = null; } });
+    woOn(cancel, 'click', event => { if (event.isTrusted) dismiss(); });
     box.append(title, text, allow, cancel); root.appendChild(box);
     offer.dialog({ label: 'WardenOne unexpected download', description: why });
     offer.mount();
@@ -2363,7 +2399,7 @@
     const control = downloadControl(event);
     if (control && downloadApprovedLinks.has(control)) return;
     const details = control ? downloadControlDetails(control) : { label: '', href: '', claimed: '', requested: false };
-    const fileLink = DOWNLOAD_FILE_PATTERN.test(details.href) || !!(control && control.hasAttribute('download'));
+    const fileLink = DOWNLOAD_FILE_PATTERN.test(details.href) || details.download;
     const visible = control && (details.requested || fileLink) && downloadControlVisible(control);
     const trusted = event.isTrusted === true;
     const previous = downloadGesture;
@@ -2409,8 +2445,11 @@
     if (downloadGesture && downloadGesture.requested && id && !downloadGesture.claimedBy
       && (!downloadRequestNamesFile(downloadGesture) || urls.some((u) => sameDownloadAddress(u, downloadGesture.href)))) downloadGesture.claimedBy = id;
     const spent = !!(downloadGesture && downloadGesture.claimedBy && id && downloadGesture.claimedBy !== id);
+    /* The browser's PDF viewer draws its own Save button where no page script can press it or be seen
+       pressing it, so a PDF document asking to save itself is the reader's Save. */
     respond({ ok: true, configured: bridgeConfigReady, enabled: forcedDownloadGuardOn(), url: location.href, startedAt: downloadDocumentStartedAt, hadGesture: !!downloadGesture,
-      spent, gesture, productMismatch: !!(gesture && downloadProductMismatch(gesture, String(msg.filename || '').slice(0, 200))) });
+      spent, gesture, productMismatch: !!(gesture && downloadProductMismatch(gesture, String(msg.filename || '').slice(0, 200))),
+      pdfViewer: document.contentType === 'application/pdf' });
   });
 
   const FRAME_CONFIG_FIELDS = [

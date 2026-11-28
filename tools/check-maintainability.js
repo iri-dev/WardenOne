@@ -297,11 +297,18 @@ function checkContentBuild() {
   'tools/test-badge-activity.js',
   'tools/test-badge-rule-actions.js',
   'tools/test-badge-menu-authority.js',
+  'tools/test-badge-in-app-navigation.js',
   'tools/test-phishing-false-positives.js',
   'tools/test-phishing-differential.js',
   'tools/test-phishing-path-intent.js',
   'tools/test-element-picker.js',
+  'tools/test-zapper-undo-all.js',
+  'tools/test-zapper-real-input.js',
   'tools/test-engine-mutation-cost.js',
+  'tools/test-overlay-classifier-cost.js',
+  'tools/test-deamp-prefilter.js',
+  'tools/test-engine-start-deferral.js',
+  'tools/test-tracker-observer-filter.js',
   'tools/test-youtube-compat.js',
   'tools/test-learned-grabber-scope.js',
   'tools/test-manual-check-toast.js',
@@ -418,6 +425,7 @@ function checkContentBuild() {
   'tools/test-remote-input-boundaries.js',
   'tools/test-feed-domain-validation.js',
   'tools/test-threatview-feed.js',
+  'tools/test-list-refusal-isolation.js',
   'tools/test-secret-hygiene.js',
   'tools/test-history-privacy.js',
   'tools/test-privacy-data-erase.js',
@@ -445,6 +453,7 @@ function checkContentBuild() {
   'tools/test-scriptlet-library.js',
   'tools/test-redirect-resources.js',
   'surrogates/analytics.js',
+  'surrogates/adsbygoogle.js',
   'surrogates/facebook.js',
   'surrogates/publisher-tag.js',
   'surrogates/tag-manager.js',
@@ -469,6 +478,8 @@ function checkContentBuild() {
   'tools/test-x-compatibility.js',
   'tools/test-behavioral-false-positives.js',
   'tools/test-parked-lander-rules.js',
+  'tools/test-filter-lists-dnr.js',
+  'tools/test-filter-regressions.js',
   // Suites that existed but were never referenced here. They cover engine test-shim isolation,
   // guard lifecycle and re-injection, JSON-prune stacking, page ownership of closed-shadow UI,
   // worker/state recovery, quota pruning, engine start-up and cosmetic-feed provenance -- all
@@ -675,6 +686,10 @@ function checkContentBuild() {
   'rules-badger.json',
   'first-party-sites.json',
   'rules-adshield.json',
+  'rules-ubo-filters.json',
+  'rules-privacy-filters.json',
+  'rules-badware-filters.json',
+  'curated-host-scopes.json',
   'rules-spotify-media.json',
   'malware-hashes.json',
   'grabber-extra.json',
@@ -920,6 +935,9 @@ checkCommand('CNAME catalog tests', ['tools/test-cname-catalog.js']);
 checkCommand('Privacy Badger trained list source parity', ['tools/build-badger-dnr.js', '--check']);
 checkCommand('EasyPrivacy general collector rules match their pinned source', ['tools/build-easyprivacy-general-dnr.js', '--check']);
 checkCommand('EasyPrivacy general collector rule tests', ['tools/test-easyprivacy-general.js']);
+checkCommand('uBlock and EasyPrivacy filter rules match their pinned source', ['tools/build-filter-lists-dnr.js', '--check']);
+checkCommand('uBlock and EasyPrivacy filter rule tests', ['tools/test-filter-lists-dnr.js']);
+checkCommand('filter weaknesses from the uBlock Origin Lite 1v1 stay fixed', ['tools/test-filter-regressions.js']);
 checkCommand('trained tracker coverage tests', ['tools/test-badger-trained.js']);
 checkCommand('downloaded list rules', ['tools/test-list-domain-rules.js']);
 checkCommand('site-compatibility host scope tests', ['tools/test-compat-host-scope.js']);
@@ -1042,6 +1060,7 @@ checkCommand('saved badge beacon rules tests', ['tools/test-badge-beacon-rules.j
 checkCommand('badge activity tests', ['tools/test-badge-activity.js']);
 checkCommand('badge rule action tests', ['tools/test-badge-rule-actions.js']);
 checkCommand('badge menu authority tests', ['tools/test-badge-menu-authority.js']);
+checkCommand('badge actions after in-app navigation tests', ['tools/test-badge-in-app-navigation.js']);
 checkCommand('warning accessibility tests', ['tools/test-warning-accessibility.js']);
 checkCommand('phishing false-positive tests', ['tools/test-phishing-false-positives.js']);
 checkCommand('phishing differential tests', ['tools/test-phishing-differential.js']);
@@ -1057,6 +1076,7 @@ checkCommand('location guard tests', ['tools/test-location-guard.js']);
 checkCommand('supplemental list tests', ['tools/test-supplemental-lists.js']);
 checkCommand('shared domain index tests', ['tools/test-domain-index.js']);
 checkCommand('list integrity enforcement tests', ['tools/test-list-integrity-enforcement.js']);
+checkCommand('one refused feed does not hold the others back', ['tools/test-list-refusal-isolation.js']);
 checkCommand('list publisher date tests', ['tools/test-list-publisher-dates.js']);
 checkCommand('adult gate tests', ['tools/test-adult-gate.js']);
 checkCommand('EyeShield readability tests', ['tools/test-eyeshield-readability.js']);
@@ -1068,7 +1088,13 @@ checkCommand('phishing confidence tests', ['tools/test-phishing-confidence.js'])
 checkCommand('default agreement tests', ['tools/test-default-agreement.js']);
 checkCommand('pwned password check tests', ['tools/test-pwned-password-check.js']);
 checkCommand('element picker tests', ['tools/test-element-picker.js']);
+checkCommand('Zapper Undo all after in-app navigation tests', ['tools/test-zapper-undo-all.js']);
+checkCommand('Zapper acts only on real input tests', ['tools/test-zapper-real-input.js']);
 checkCommand('engine mutation cost tests', ['tools/test-engine-mutation-cost.js']);
+checkCommand('overlay cleaner reads text only for boxes it can hide', ['tools/test-overlay-classifier-cost.js']);
+checkCommand('de AMP link check skips only links that cannot be AMP', ['tools/test-deamp-prefilter.js']);
+checkCommand('engine start sweeps wait for the page to parse', ['tools/test-engine-start-deferral.js']);
+checkCommand('tracker learner hears the same requests without a long URL filter', ['tools/test-tracker-observer-filter.js']);
 checkCommand('YouTube compatibility-pause tests', ['tools/test-youtube-compat.js']);
 checkCommand('learned grabber scope tests', ['tools/test-learned-grabber-scope.js']);
 checkCommand('manual check toast tests', ['tools/test-manual-check-toast.js']);

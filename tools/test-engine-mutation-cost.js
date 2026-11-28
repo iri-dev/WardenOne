@@ -136,16 +136,38 @@ check('and at the same 250ms the other branch uses',
   check('the AdShield observer is where the test expects it', observerStart >= 0 && observerEnd > observerStart);
   if (observerStart < 0 || observerEnd <= observerStart) return;
   const observer = SRC.slice(observerStart + 'woObserve('.length, observerEnd) + '\n}';
+  {
+    const start = SRC.indexOf('playerSafeSelectors=list=>');
+    const end = SRC.indexOf('applyPlayerSafe=()=>', start);
+    const queries = [];
+    const state = { document: { querySelectorAll(selector) {
+      queries.push(selector);
+      if (selector.split(',').includes('.player')) return [{ closest: () => true }];
+      if (selector === ':bad(') throw new Error('Invalid selector');
+      return [];
+    } } };
+    vm.createContext(state);
+    vm.runInContext('const PLAYER_SHELL_SELECTOR=".player";const ' + SRC.slice(start, end).replace(/,\s*$/, '')
+      + ';this.filter=playerSafeSelectors;', state);
+    check('simple selectors that cannot hide a player share one DOM search',
+      state.filter(['.promo', '#sponsor', '.advert']).join(',') === '.promo,#sponsor,.advert'
+      && queries.join('|') === '.promo,#sponsor,.advert');
+    queries.length = 0;
+    check('a player match is checked individually without dropping neighbouring selectors',
+      state.filter(['.promo', '.player', ':bad(', 'main .advert']).join(',') === '.promo,main .advert'
+      && queries.includes('.promo,.player') && queries.includes('.player') && queries.includes(':bad('));
+  }
   const runtime = (pathname = '/home') => {
     const state = {
       now: 1000, hasPlayer: false, documentQueries: 0, rootQueries: 0, nodeMatches: 0,
-      scheduled: 0, timeouts: [],
+      scheduled: 0, timeouts: [], frames: [], afterParse: [],
+      WO: { enabled: true, adShield: true },
       location: { pathname, href: 'https://example.test' + pathname },
       observedCosmeticUrl: 'https://example.test' + pathname,
       procRules: [{}], collapsePending: false, adShieldVideoPlatform: false,
       styleEl: { isConnected: true, textContent: '.generic-ad{display:none}' },
       Date: { now: () => state.now },
-      document: { querySelector: () => {
+      document: { readyState: 'complete', querySelector: () => {
         state.documentQueries++;
         return state.hasPlayer ? {} : null;
       } },
@@ -153,19 +175,49 @@ check('and at the same 250ms the other branch uses',
       __woNativeQuerySelector: function () { state.rootQueries++; return this.nestedPlayer || null; },
       scheduleProcedural: () => state.scheduled++,
       setTimeout: (callback, delay) => state.timeouts.push({ callback, delay }),
+      __woOnFrame: (callback) => state.frames.push(callback),
+      __woAfterParse: (callback) => state.afterParse.push(callback),
     };
     vm.createContext(state);
     /* The shipped player-safe helpers, with no site rules: entering safe mode then clears the sheet. */
     const safeStart = SRC.indexOf('playerSafeSelectors=list=>');
     const safeEnd = SRC.indexOf('injectCss=selectors=>', safeStart);
     vm.runInContext('const PLAYER_ROUTE_RE=/watch/;const PLAYER_PAGE_SELECTOR="video";'
-      + 'const PLAYER_SHELL_SELECTOR="[data-player]";let siteSelectors=[];const injectCss=()=>{};const '
+      + 'const PLAYER_SHELL_SELECTOR="[data-player]";let siteSelectors=[],playerSafeQueued=!1;const injectCss=()=>{};const '
       + SRC.slice(safeStart, safeEnd).replace(/,\s*$/, '') + ';const '
       + SRC.slice(detectorStart, detectorEnd) + ';const ' + SRC.slice(batchStart, batchEnd)
       + ';const scriptletPlayerPage=force=>playerPageDetected(force);this.__detect=playerPageDetected;'
       + 'this.__observe=' + observer + ';', state, { filename: 'content.js:player-observer' });
     return state;
   };
+  /* Player-safe passes wait for the next frame; run the queued frames before reading the sheet. */
+  const frame = (state) => { for (const cb of state.frames.splice(0)) cb(); return state; };
+  {
+    const state = runtime('/watch');
+    state.document.readyState = 'loading';
+    state.__observe([], [], [], true);
+    state.__observe([], [], [], true);
+    check('a player found during parsing clears generic hides immediately and queues one geometry pass',
+      state.styleEl.textContent === '' && state.frames.length === 0 && state.afterParse.length === 1);
+    state.document.readyState = 'interactive';
+    state.afterParse.shift()();
+    check('after parsing the deferred player pass still runs on the next frame', state.frames.length === 1);
+    frame(state);
+    state.__observe([], [], [], true);
+    check('later player mutations use the normal frame scheduler', state.frames.length === 1 && state.afterParse.length === 0);
+  }
+  {
+    const state = runtime('/watch');
+    state.document.readyState = 'loading';
+    state.__observe([], [], [], true);
+    state.WO.adShield = false;
+    state.styleEl.textContent = '.replacement{}';
+    state.document.readyState = 'complete';
+    state.afterParse.shift()();
+    frame(state);
+    check('a queued player pass leaves the stylesheet alone if AdShield was switched off',
+      state.styleEl.textContent === '.replacement{}');
+  }
   const plain = { isConnected: true };
   for (const known of ['route', 'cached player']) {
     const state = runtime(known === 'route' ? '/watch' : '/home');
@@ -174,7 +226,7 @@ check('and at the same 250ms the other branch uses',
       state.__detect();
     }
     const documentQueries = state.documentQueries;
-    state.__observe([], [plain], [plain], true);
+    frame(state.__observe([], [plain], [plain], true) || state);
     check('a known ' + known + ' skips every added-subtree player query',
       state.rootQueries === 0 && state.nodeMatches === 0
         && state.documentQueries === documentQueries && state.styleEl.textContent === ''
@@ -185,6 +237,7 @@ check('and at the same 250ms the other branch uses',
   staleFalse.hasPlayer = true;
   const inserted = { isConnected: true, nestedPlayer: {} };
   staleFalse.__observe([], [inserted], [inserted], true);
+  frame(staleFalse);
   check('a player added inside the negative cache window still enters safe mode',
     staleFalse.documentQueries === 1 && staleFalse.rootQueries === 1
       && staleFalse.styleEl.textContent === '' && staleFalse.procRules.length === 0);
@@ -192,6 +245,7 @@ check('and at the same 250ms the other branch uses',
   const detached = runtime();
   detached.__detect();
   detached.__observe([], [plain, { isConnected: false, player: true }], [plain], true);
+  frame(detached);
   check('an added player detached before delivery still bypasses the negative cache',
     detached.documentQueries === 1 && detached.rootQueries === 1
       && detached.styleEl.textContent === '' && detached.procRules.length === 0);
@@ -202,6 +256,7 @@ check('and at the same 250ms the other branch uses',
     state.__detect();
     state.hasPlayer = remains;
     state.__observe([], [], [], true);
+    frame(state);
     check('a removal-only batch refreshes cached player presence: ' + remains,
       state.documentQueries === 2 && state.rootQueries === 0
         && state.scheduled === (remains ? 0 : 1)
@@ -219,10 +274,22 @@ check('and at the same 250ms the other branch uses',
   routeChange.location.pathname = '/watch';
   routeChange.location.href = 'https://example.test/watch';
   routeChange.__observe([], [], [], false);
+  frame(routeChange);
   check('an SPA player route change clears generic cosmetics during text-only churn',
     routeChange.styleEl.textContent === '' && routeChange.procRules.length === 0
       && routeChange.observedCosmeticUrl === routeChange.location.href
       && routeChange.rootQueries === 0);
+
+  /* CNN, 2026-11-27: measuring the players per mutation batch forced a layout each time the page added a node. */
+  const churn = runtime('/watch');
+  churn.styleEl.textContent = '.generic-ad{display:none}';
+  for (let i = 0; i < 5; i++) churn.__observe([], [plain], [plain], true);
+  check('five mutation batches on a player page queue one player-safe pass for the next frame',
+    churn.frames.length === 1 && churn.styleEl.textContent !== '');
+  frame(churn);
+  check('and that pass applies the player-safe rules before the frame paints', churn.styleEl.textContent === '');
+  churn.__observe([], [plain], [plain], true);
+  check('a later batch queues the next pass', churn.frames.length === 1);
 })();
 
 /* The ordinary-page branch, unchanged. */

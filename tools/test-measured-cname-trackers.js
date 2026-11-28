@@ -54,8 +54,13 @@ ok(!sync.condition.domainType, 'blocked whichever frame opens it, including Amaz
 const adshield = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'rules-adshield.json'), 'utf8'));
 const pageWide = adshield.filter(r => r.action.type === 'allowAllRequests');
 ok(!pageWide.some(r => /amazon\./.test(JSON.stringify(r.condition))), 'no AdShield rule allows a whole Amazon page');
-ok(JSON.stringify(pageWide.map(r => r.condition.urlFilter).sort()) === JSON.stringify(['||bannersnack.com/banners/',
+/* EasyList revision 2106b87f dropped its bannersnack.com $document exception. */
+ok(JSON.stringify(pageWide.map(r => r.condition.urlFilter).sort()) === JSON.stringify([
   '||jokerly.com/Okidak/adSelectorDirect.htm?id=', '||jokerly.com/Okidak/vastChecker.htm', '||optout.networkadvertising.org^',
-  '||tab.gladly.io/newtab/|'].sort()), 'the page-wide allows are the five $document exceptions EasyList has: ' + pageWide.map(r => r.condition.urlFilter).join(' '));
+  '||tab.gladly.io/newtab/|'].sort()), 'the page-wide allows are the four $document exceptions EasyList has: ' + pageWide.map(r => r.condition.urlFilter).join(' '));
+for (const file of ['rules-ubo-filters.json', 'rules-privacy-filters.json', 'rules-badware-filters.json']) {
+  const rules = JSON.parse(fs.readFileSync(path.join(__dirname, '..', file), 'utf8'));
+  ok(!rules.some(r => r.action.type === 'allowAllRequests'), file + ' allows a whole page');
+}
 
 console.log('[ok] measured CNAME trackers: ' + checks + ' checks (Amazon logging, ITV display ads, no Amazon page-wide allow)');

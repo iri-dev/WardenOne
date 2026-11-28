@@ -4,8 +4,7 @@
    Upstream filter-list attribution: CREDITS.md
    Redistributing a modified copy? GPLv3 section 5(a) requires you to mark it as changed,
    with the date, and to keep these notices intact. */
-// Batch pure third-party tracker hosts into requestDomains arrays to preserve static-rule headroom.
-// Skip paths, regexes, scoped rules and exceptions rather than approximate them.
+// Batch third-party tracker hosts by resource type.
 // Usage: node tools/build-easyprivacy-dnr.js <easyprivacy.txt> <rules-trackers.json> <out rules-easyprivacy.json> [maxHosts]
 'use strict';
 
@@ -65,17 +64,83 @@ function isValidDomain(h) {
   return labels.every((l) => l && l.length <= 63 && !/^-|-$/.test(l));
 }
 
-// Pure host block: ||host^ optionally with $third-party / $3p / plain type tokens. Reject
-// anything carrying domain= (site-scoped; charset below already excludes '='), exceptions,
-// paths, wildcards, or regex.
-function hostFromLine(line) {
-  const s = line.trim();
-  if (!s || s[0] === '!' || s[0] === '[' || s.startsWith('@@')) return null;
-  if (/#[#@?$%]#?/.test(s)) return null;                         // cosmetic/scriptlet
-  const m = /^\|\|([a-z0-9][a-z0-9.-]*[a-z0-9])\^(?:\$[a-z0-9,~_-]+)?$/i.exec(s);
-  if (!m) return null;
-  const host = m[1].toLowerCase();
-  return isValidDomain(host) ? host : null;
+const RESOURCE_TYPE_ALIASES = new Map([
+  ['subdocument', 'sub_frame'], ['frame', 'sub_frame'], ['xhr', 'xmlhttprequest'],
+  ['beacon', 'ping'], ['csp-report', 'csp_report'],
+]);
+const THIRD_PARTY_OPTIONS = new Set(['third-party', '3p', '~first-party', '~1p']);
+
+function parseHostRule(line) {
+  const match = /^\|\|([a-z0-9][a-z0-9.-]*[a-z0-9])\^(?:\$([a-z0-9,~_-]+))?$/i.exec(line.trim());
+  if (!match) return null;
+  const host = match[1].toLowerCase();
+  if (!isValidDomain(host)) return null;
+  if (!match[2]) return { host, types: RESOURCE_TYPES };
+
+  const included = new Set();
+  const excluded = new Set();
+  for (const option of match[2].toLowerCase().split(',')) {
+    if (THIRD_PARTY_OPTIONS.has(option)) continue;
+    const negated = option.startsWith('~');
+    const name = negated ? option.slice(1) : option;
+    const type = RESOURCE_TYPE_ALIASES.get(name) || name;
+    if (!RESOURCE_TYPES.includes(type)) return null;
+    (negated ? excluded : included).add(type);
+  }
+  const types = RESOURCE_TYPES.filter(type => (!included.size || included.has(type)) && !excluded.has(type));
+  return types.length ? { host, types } : null;
+}
+
+function compileHostRules(text, existing) {
+  const byHost = new Map();
+  let scanned = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const entry = parseHostRule(line);
+    if (!entry) continue;
+    scanned++;
+    const previous = byHost.get(entry.host);
+    const types = previous
+      ? RESOURCE_TYPES.filter(type => previous.includes(type) || entry.types.includes(type))
+      : entry.types;
+    byHost.set(entry.host, types);
+  }
+
+  const priorityHosts = new Set(PRIORITY_HOSTS);
+  for (const host of priorityHosts) byHost.set(host, RESOURCE_TYPES);
+  const ordered = [...byHost.keys()].sort();
+  const hosts = ordered.filter(host => priorityHosts.has(host)).concat(ordered.filter(host => !priorityHosts.has(host)));
+
+  const groups = new Map();
+  let kept = 0;
+  for (const host of hosts) {
+    if (existing.has(host)) continue;
+    const inherited = new Set();
+    const parts = host.split('.');
+    for (let i = 1; i < parts.length - 1; i++) {
+      const parent = parts.slice(i).join('.');
+      if (existing.has(parent)) continue;
+      for (const type of byHost.get(parent) || []) inherited.add(type);
+    }
+    const types = byHost.get(host).filter(type => !inherited.has(type));
+    if (!types.length) continue;
+    const key = types.join(',');
+    if (!groups.has(key)) groups.set(key, { types, hosts: [] });
+    groups.get(key).hosts.push(host);
+    kept++;
+  }
+
+  const rules = [];
+  for (const group of groups.values()) {
+    for (let i = 0; i < group.hosts.length; i += BATCH) {
+      rules.push({
+        id: rules.length + 1,
+        priority: PRIORITY,
+        action: { type: 'block' },
+        condition: { requestDomains: group.hosts.slice(i, i + BATCH), domainType: 'thirdParty', resourceTypes: group.types },
+      });
+    }
+  }
+  return { rules, scanned, unique: byHost.size, kept };
 }
 
 function main() {
@@ -84,65 +149,24 @@ function main() {
     console.error('usage: node build-easyprivacy-dnr.js <easyprivacy.txt> <rules-trackers.json> <out> [maxHosts]');
     process.exit(2);
   }
-  // A ceiling, not a cut: the old default sliced the sorted list and shipped only hosts up to "f".
   const maxHosts = Math.max(100, Number(maxArg) || 100000);
-
-  // Hosts already covered by the curated trackers ruleset -> don't duplicate.
-  let existing = new Set();
+  const existing = new Set();
   try {
-    const tr = JSON.parse(fs.readFileSync(trackersPath, 'utf8'));
-    for (const r of tr) for (const d of ((r.condition && r.condition.requestDomains) || [])) existing.add(String(d).toLowerCase());
+    const trackers = JSON.parse(fs.readFileSync(trackersPath, 'utf8'));
+    for (const rule of trackers) {
+      for (const domain of rule.condition?.requestDomains || []) existing.add(String(domain).toLowerCase());
+    }
   } catch (_) {}
 
-  const text = fs.readFileSync(epPath, 'utf8');
-  const set = new Set();
-  let scanned = 0;
-  for (const line of text.split(/\r?\n/)) {
-    const h = hostFromLine(line);
-    if (h) { scanned++; set.add(h); }
-  }
-  for (const h of PRIORITY_HOSTS) if (isValidDomain(h)) set.add(h);
-
-  // Ancestor de-dup: requestDomains matches a domain AND its subdomains, so if example.com
-  // is present, a.example.com is redundant. Drop the child to maximise coverage per entry.
-  const all = Array.from(set).sort();
-  const kept = [];
-  for (const h of all) {
-    if (existing.has(h)) continue;
-    let covered = false;
-    const parts = h.split('.');
-    for (let i = 1; i < parts.length - 1; i++) {
-      const parent = parts.slice(i).join('.');
-      if (set.has(parent) && !existing.has(parent)) { covered = true; break; }
-    }
-    if (!covered) kept.push(h);
-  }
-
-  if (kept.length > maxHosts) {
-    console.error('easyprivacy: ' + kept.length + ' hosts exceed the ' + maxHosts + '-host ceiling; raise it deliberately');
+  const { rules, scanned, unique, kept } = compileHostRules(fs.readFileSync(epPath, 'utf8'), existing);
+  if (kept > maxHosts) {
+    console.error('easyprivacy: ' + kept + ' hosts exceed the ' + maxHosts + '-host ceiling; raise it deliberately');
     process.exit(1);
   }
-  const prioritySet = new Set(PRIORITY_HOSTS.filter((h) => kept.includes(h)));
-  const finalHosts = kept.filter((h) => prioritySet.has(h)).concat(kept.filter((h) => !prioritySet.has(h)));
-
-  // domainType:'thirdParty' -- this auto-generated set blocks trackers only in a THIRD-PARTY
-  // context, so it can never block a site loading a resource from its OWN domain. That makes
-  // a large, un-hand-vetted host list safe to ship (the curated rules-trackers.json blocks
-  // its 44 dedicated hosts in any context; this broader set stays conservative).
-  const rules = [];
-  for (let i = 0; i < finalHosts.length; i += BATCH) {
-    rules.push({
-      id: rules.length + 1,
-      priority: PRIORITY,
-      action: { type: 'block' },
-      condition: { requestDomains: finalHosts.slice(i, i + BATCH), domainType: 'thirdParty', resourceTypes: RESOURCE_TYPES },
-    });
-  }
-
   fs.writeFileSync(outPath, JSON.stringify(rules));
-  console.log('easyprivacy host blocks: lines-matched=' + scanned + ' unique=' + set.size
-    + ' after-ancestor/existing-dedup=' + kept.length + ' shipped=' + finalHosts.length
-    + ' in ' + rules.length + ' rules (BATCH=' + BATCH + ')');
+  console.log('easyprivacy host blocks: lines-matched=' + scanned + ' unique=' + unique
+    + ' shipped=' + kept + ' in ' + rules.length + ' rules (BATCH=' + BATCH + ')');
 }
 
-main();
+if (require.main === module) main();
+module.exports = { compileHostRules };

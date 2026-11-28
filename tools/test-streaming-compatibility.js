@@ -532,8 +532,11 @@ test('the page engine applies site rules on player pages only away from the play
   assert(/querySelectorAll\(PLAYER_PAGE_SELECTOR\)/.test(fn), 'the main player is not located');
   assert(/el\.closest\(PLAYER_SHELL_SELECTOR\)/.test(fn) && /el\.contains\(main\)\|\|main\.contains\(el\)/.test(fn),
     'a rule touching the player or its shell is not dropped');
-  const branches = CONTENT.match(/adShieldVideoPlatform\?injectCss\(SAFE_VIDEO_AD_SELECTORS\):applyPlayerSafe\(\)/g) || [];
-  assert.strictEqual(branches.length, 2, 'both player-page paths use the player-safe site rules');
+  const onResponse = CONTENT.match(/adShieldVideoPlatform\?injectCss\(SAFE_VIDEO_AD_SELECTORS\):document\.readyState==="loading"\?schedulePlayerSafe\(\):applyPlayerSafe\(\)/g) || [];
+  const perFrame = CONTENT.match(/adShieldVideoPlatform\?injectCss\(SAFE_VIDEO_AD_SELECTORS\):schedulePlayerSafe\(\)/g) || [];
+  assert.strictEqual(onResponse.length, 1, 'the initial response defers player checks while parsing and applies them immediately afterward');
+  assert.strictEqual(perFrame.length, 1, 'mutation batches on a player page settle once per frame');
+  assert(/schedulePlayerSafe=\(\)=>\{[\s\S]{0,600}__woOnFrame\(run\)/.test(CONTENT), 'the per frame pass is not frame aligned');
   assert(!/adShieldVideoPlatform\?injectCss\(SAFE_VIDEO_AD_SELECTORS\):styleEl&&\(styleEl\.textContent=""\)/.test(CONTENT),
     'a player-page path still clears every rule');
 });
@@ -549,8 +552,9 @@ test('the player-safe rule list measures players only when a rule reaches outsid
       PLAYER_PAGE_SELECTOR: 'player-page', PLAYER_SHELL_SELECTOR: 'shell',
       document: { querySelectorAll: (sel) => {
         if (sel === 'player-page') return nodes.filter((n) => n.player).map((n) => Object.assign(n, { getBoundingClientRect: () => { measured++; return n.box; } }));
-        if (sel === 'bad[') throw Error('invalid');
-        return matches[sel] || [];
+        const selectors = sel.split(',');
+        if (selectors.includes('bad[')) throw Error('invalid');
+        return nodes.filter(node => selectors.some(selector => matches[selector]?.includes(node)));
       } },
     };
     vm.createContext(ctx);

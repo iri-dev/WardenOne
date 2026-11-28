@@ -2236,6 +2236,35 @@ function searchClickRedirector(leftUrl, committedUrl) {
     || (/^(?:html\.)?duckduckgo\.com$/.test(host) && /^\/l\/?$/i.test(p));
 }
 
+/* A platform's own link wrapper, reached from that platform: X sends every outside link through t.co, which
+   forwards by script. Only from the owner's pages, so no other site can use a wrapper to carry a click elsewhere. */
+const LINK_WRAPPER_REDIRECTORS = [
+  { host: 't.co', path: /^\/[A-Za-z0-9]+$/, owners: ['x.com', 'twitter.com'] },
+  { host: 'l.facebook.com', path: /^\/l\.php$/, owners: ['facebook.com'] },
+  { host: 'lm.facebook.com', path: /^\/l\.php$/, owners: ['facebook.com'] },
+  { host: 'l.instagram.com', path: /^\/$/, owners: ['instagram.com'] },
+  { host: 'l.threads.net', path: /^\/$/, owners: ['threads.net', 'threads.com'] },
+  { host: 'out.reddit.com', path: /^\/[^/]+/, owners: ['reddit.com'] },
+  { host: 'lnkd.in', path: /^\/[A-Za-z0-9_-]+$/, owners: ['linkedin.com'] },
+];
+function linkWrapperRedirector(leftUrl, committedUrl) {
+  let left, next;
+  try { left = new URL(String(leftUrl || '')); next = new URL(String(committedUrl || '')); } catch (_) { return false; }
+  if (left.protocol !== 'https:' || next.protocol !== 'https:' || next.port || next.username || next.password) return false;
+  if (typeof siteIdentityBg !== 'function') return false;
+  const from = siteIdentityBg(left.hostname);
+  const host = next.hostname.toLowerCase();
+  return LINK_WRAPPER_REDIRECTORS.some((w) => w.host === host && w.path.test(next.pathname || '/') && w.owners.includes(from));
+}
+/* A tab opened by a click starts with that click: the page that opened it, and when it was pressed. */
+const OPENED_FROM = Object.create(null);
+function noteOpenedFrom(details) {
+  if (!details || !Number.isInteger(details.tabId) || details.tabId < 0 || details.sourceTabId == null || details.sourceTabId < 0) return;
+  const clickAt = LAST_GESTURE_AT[details.sourceTabId] || 0;
+  if (!clickAt || Date.now() - clickAt >= FORCED_NAV_GESTURE_MS) return;
+  OPENED_FROM[details.tabId] = { url: String(LAST_TOP_URL[details.sourceTabId] || ''), clickAt };
+}
+
 // Attribute a cross-site top-level hop to a real tab gesture instead of a
 // rotating tracker URL. Federated login remains exempt, and a mistaken match
 // raises a continue-able interstitial rather than cancelling navigation.
@@ -2266,10 +2295,13 @@ async function maybeBlockForcedTopRedirect(details) {
   if (!fromHost || !toHost || fromHost === toHost) return;
   if (knownInviteRedirect(fromUrl, details.url) || knownRegionalRedirect(fromUrl, details.url)
       || knownAmpUnwrap(fromUrl, details.url)) return;
-  if (await sameOwnerRegionalRedirect(fromUrl, details.url)) return;
+  /* Before the first await: the commit listener forgets this tab's click right after calling us, so a read
+     after the await always found nothing, and no click (even one carried over a redirector) could count. */
   const now = Date.now();
-  if (now - (LAST_GESTURE_AT[tabId] || 0) < FORCED_NAV_GESTURE_MS) return;
-  if (topNavOwnedFor(tabId, toHost, now, FORCED_NAV_GESTURE_MS)) return;
+  const clicked = now - (LAST_GESTURE_AT[tabId] || 0) < FORCED_NAV_GESTURE_MS;
+  const navOwned = topNavOwnedFor(tabId, toHost, now, FORCED_NAV_GESTURE_MS);
+  if (clicked || navOwned) return;
+  if (await sameOwnerRegionalRedirect(fromUrl, details.url)) return;
   try {
     if (isLoginCompatibilityUrl(details.url) || isLoginCompatibilityUrl(fromUrl)) return;
   } catch (_) {}
@@ -2313,6 +2345,7 @@ async function maybeBlockForcedTopRedirect(details) {
 }
 
 function forgetNavSignals(tabId) {
+  delete OPENED_FROM[tabId];
   delete PLAYER_GESTURE_AT[tabId];
   delete POPUP_OVERLAY_AT[tabId];
   delete TOP_NAV_OWNED_AT[tabId];
@@ -2601,6 +2634,7 @@ registerListener('redirect-chain warnings', () => {
 });
 registerListener('popup tracking', () => {
   chrome.webNavigation?.onCreatedNavigationTarget?.addListener((details) => {
+    noteOpenedFrom(details);
     noteDownloadPopupSource(details);
     if (details && details.sourceTabId != null && details.sourceTabId >= 0) POPUP_OPENED_AT[details.sourceTabId] = Date.now();
     notePressedLinkTarget(details);
@@ -2701,9 +2735,12 @@ registerListener('forced-redirect guard', () => {
     else maybeBlockForcedTopRedirect(details);
     noteTabArrival(details);
     const left = domainOfTab(details.tabId);
-    const clickAt = LAST_GESTURE_AT[details.tabId] || 0;
+    /* A new tab's first page has no page of its own to leave: the click that opened it is in the opener. */
+    const opener = !LAST_TOP_URL[details.tabId] ? OPENED_FROM[details.tabId] : null;
+    const leavingUrl = LAST_TOP_URL[details.tabId] || (opener ? opener.url : '');
+    const clickAt = LAST_GESTURE_AT[details.tabId] || (opener ? opener.clickAt : 0);
     const carryClick = Date.now() - clickAt < FORCED_NAV_GESTURE_MS
-      && searchClickRedirector(LAST_TOP_URL[details.tabId], details.url);
+      && (searchClickRedirector(leavingUrl, details.url) || linkWrapperRedirector(leavingUrl, details.url));
     LAST_TOP_URL[details.tabId] = String(details.url || '');
     forgetNavSignals(details.tabId);
     if (carryClick) LAST_GESTURE_AT[details.tabId] = clickAt;
@@ -3131,6 +3168,32 @@ function contentConfigFrameHost(sender) {
   return '';
 }
 
+/* The page engine checks the extra adult list and learned IP loggers only against its own page's host, and the
+   bridge drops every other entry before signing. Only entries that can match that host cross to the page, which
+   spares every page load thousands of hosts to copy and clean. Anything that is not a plain host stays for the
+   bridge to judge, and a frame whose host is unknown gets everything. */
+function pageHostForLists(host) {
+  return String(host || '').trim().toLowerCase().replace(/\.+$/, '').replace(/^www\./, '');
+}
+function hostEntryMayNamePage(entry, page) {
+  const raw = String(entry || '').trim().toLowerCase();
+  if (!/^[a-z0-9.-]+$/.test(raw)) return true;
+  const name = raw.replace(/^\.+|\.+$/g, '').replace(/^www\./, '');
+  return name === page || page.endsWith('.' + name);
+}
+function adultExtrasForHost(list, host) {
+  const page = pageHostForLists(host);
+  if (!page || !Array.isArray(list)) return list;
+  return Object.freeze(list.filter((entry) => hostEntryMayNamePage(entry, page)));
+}
+function learnedForHost(learned, host) {
+  const page = pageHostForLists(host);
+  if (!page || !learned || typeof learned !== 'object') return learned;
+  const out = {};
+  for (const key of Object.keys(learned)) if (hostEntryMayNamePage(key, page)) out[key] = learned[key];
+  return Object.freeze(out);
+}
+
 async function buildContentConfigSnapshot(frameHost, needs, topHost) {
   const shared = await sharedContentConfigSnapshot();
   const want = (part) => !needs || needs.has(part);
@@ -3141,7 +3204,7 @@ async function buildContentConfigSnapshot(frameHost, needs, topHost) {
   }
   const supplemental = emptySupplementalLists();
   if (want('supplemental')) {
-    supplemental.adultDomainsExtra = shared.supplemental.adultDomainsExtra;
+    supplemental.adultDomainsExtra = adultExtrasForHost(shared.supplemental.adultDomainsExtra, frameHost);
     supplemental.grabberDomainsExtra = shared.supplemental.grabberDomainsExtra;
     supplemental.trustedPaymentHostsExtra = shared.supplemental.trustedPaymentHostsExtra;
   }
@@ -3156,7 +3219,7 @@ async function buildContentConfigSnapshot(frameHost, needs, topHost) {
     overrides: want('overrides') ? Object.assign({}, shared.overrides, {
       eyeShieldSites: WOEyeShieldProfiles.forHost(shared.overrides.eyeShieldSites, topHost || frameHost),
     }) : {},
-    learned: want('learned') ? shared.learned : {},
+    learned: want('learned') ? learnedForHost(shared.learned, frameHost) : {},
     supplemental,
     searchJunkDomains: want('searchJunk') ? shared.searchJunkDomains : [],
   };
@@ -4088,7 +4151,9 @@ const STATIC_RULE_COUNT = 135;
 // TOTAL_DYNAMIC_BUDGET below. Count must match the builder's output.
 const ADSHIELD_STATIC_RULESET_ID = 'adshield_easylist';
 const SPOTIFY_MEDIA_RULESET_ID = 'spotify_media';
-const ADSHIELD_STATIC_RULE_COUNT = 28006;
+const ADSHIELD_STATIC_RULE_COUNT = 3850;
+/* uBlock filters, Quick fixes and Unbreak (rules-ubo-filters.json, tools/build-filter-lists-dnr.js), on the AdShield switch. */
+const UBO_FILTERS_STATIC_RULESET_ID = 'ubo_filters';
 const TRACKERS_STATIC_RULESET_ID = 'trackers';
 // EasyPrivacy-derived third-party tracker host blocks (every host rule, ~47k batched into ~95 rules).
 // Gated by the SAME blockTrackers toggle as the curated 'trackers' ruleset.
@@ -4096,6 +4161,10 @@ const EASYPRIVACY_STATIC_RULESET_ID = 'easyprivacy';
 /* EasyPrivacy's general rules for collector paths, a site's own included (rules-easyprivacy-general.json,
    tools/build-easyprivacy-general-dnr.js). Same switch as the host rules. */
 const EASYPRIVACY_GENERAL_STATIC_RULESET_ID = 'easyprivacy_general';
+/* EasyPrivacy's path, query and site rules and uBlock Privacy (rules-privacy-filters.json, tools/build-filter-lists-dnr.js). */
+const PRIVACY_FILTERS_STATIC_RULESET_ID = 'privacy_filters';
+/* uBlock Badware's script and path rules at the security band (rules-badware-filters.json), on the malware sites switch. */
+const BADWARE_FILTERS_STATIC_RULESET_ID = 'badware_filters';
 // AdGuard's CNAME tracker catalog (rules-cname.json, tools/build-cname-data.js), gated by blockCnameTrackers.
 const CNAME_STATIC_RULESET_ID = 'cname_trackers';
 // Privacy Badger's pre-trained list (rules-badger.json, tools/build-badger-dnr.js), gated by blockTrackers.
@@ -4213,6 +4282,7 @@ const LIST_ONCE_RULES_BUDGET = 16;
 // The social embed guard's network blocks, and the tab-scoped allow each press of its "Load" button adds.
 const SOCIAL_EMBED_RULES_BUDGET = 8;
 const SOCIAL_EMBED_ONCE_RULES_BUDGET = 24;
+const ONETRUST_PREFERENCES_RULES_BUDGET = 16;
 // One block rule per hostname caught resolving to a private address this session.
 const REBIND_QUARANTINE_RULES_BUDGET = 128;
 // Two block rules per private-address pattern, at the network layer, so the
@@ -4237,7 +4307,7 @@ const TOTAL_DYNAMIC_BUDGET = LIST_RULES_BUDGET + OPTION_RULES_MAX + REDIRECT_RUL
   + USER_RULES_BUDGET + FIREWALL_RULES_BUDGET + USER_BLOCKLIST_RULES_BUDGET + HTTPS_DYNAMIC_RULES_BUDGET + TRACKING_REDIRECT_RULES_BUDGET
   + IP_PROGRAM_RULES_BUDGET + LINK_CLEAN_RULES_BUDGET;
 const TOTAL_SESSION_BUDGET = ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
-  + SAFE_SEARCH_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET
+  + SAFE_SEARCH_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET + ONETRUST_PREFERENCES_RULES_BUDGET
   + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET + FIREWALL_SESSION_RULES_BUDGET + TRACKER_COOKIE_ALIAS_RULES_BUDGET + TRACKING_REDIRECT_FALLBACK_BUDGET
   + SOCIAL_EMBED_RULES_BUDGET + SOCIAL_EMBED_ONCE_RULES_BUDGET + IP_PROGRAM_ONCE_RULES_BUDGET + LIST_ONCE_RULES_BUDGET;
 // All other dynamic builders emit only safe actions. The grabber band has one redirect, the
@@ -6055,10 +6125,13 @@ const LOG_STATIC_RULESETS = {
   grabber_malware_navigation: 'Known logger sites',
   grabber_compat: 'Site compatibility',
   adshield_easylist: 'AdShield / EasyList',
+  ubo_filters: 'uBlock filters',
   spotify_media: 'Spotify web player media',
   trackers: 'Tracker list',
   easyprivacy: 'EasyPrivacy',
   easyprivacy_general: 'EasyPrivacy collector paths',
+  privacy_filters: 'EasyPrivacy and uBlock Privacy filters',
+  badware_filters: 'uBlock Badware filters',
   cname_trackers: 'CNAME-cloaked tracker catalog',
   badger_trained: 'Privacy Badger trained list',
 };
@@ -7644,13 +7717,29 @@ function looksLikeKnownTrackerHost(domain) {
     || /(^|\.)(scorecardresearch|quantserve|doubleclick|moatads|adsafeprotected|mixpanel|amplitude|heapanalytics|fullstory|hotjar|mouseflow|crazyegg|luckyorange|inspectlet|chartbeat|matomo|piwik|demdex|bluekai|krux|omtrdc|2o7|adnxs|rubiconproject|pubmatic|criteo)\./.test(d);
 }
 
-function trackerNetworkFilter() {
-  return { urls: [...new Set([
-    ...WO_TRACKER_NETWORK_DATA.cnameHosts.map(host => '*://' + host + '/*'),
-    ...WO_TRACKER_NETWORK_DATA.trackerHosts.concat(WO_TRACKER_NETWORK_DATA.fingerprintHosts).map(host => '*://*.' + host + '/*'),
-  ])], types: TRACKER_NETWORK_TYPES };
+/* Chrome tests a webRequest filter's URL patterns one by one on every request, and 1,776 of them cost the browser's
+   main thread about 80 ms of every news page load. The listener filters by type only and checks the host here, with
+   the same meaning the patterns had: a curated alias host exactly, a tracker or fingerprint host or any subdomain. */
+let __trackerNetworkHosts = null;
+function trackerNetworkHostWatched(url) {
+  const hosts = __trackerNetworkHosts ||= {
+    exact: new Set(WO_TRACKER_NETWORK_DATA.cnameHosts.map(h => String(h).toLowerCase())),
+    suffix: new Set(WO_TRACKER_NETWORK_DATA.trackerHosts.concat(WO_TRACKER_NETWORK_DATA.fingerprintHosts).map(h => String(h).toLowerCase())),
+  };
+  let request;
+  try { request = new URL(url); } catch (_) { return false; }
+  if (request.protocol !== 'http:' && request.protocol !== 'https:') return false;
+  const host = request.hostname;
+  if (hosts.exact.has(host)) return true;
+  for (let h = host; h;) {
+    if (hosts.suffix.has(h)) return true;
+    const dot = h.indexOf('.');
+    h = dot < 0 ? '' : h.slice(dot + 1);
+  }
+  return false;
 }
-function trackerNetworkListener(details) { void noteTrackerNetworkRequest(details); }
+function trackerNetworkFilter() { return { urls: ['http://*/*', 'https://*/*'], types: TRACKER_NETWORK_TYPES }; }
+function trackerNetworkListener(details) { if (details && trackerNetworkHostWatched(details.url)) void noteTrackerNetworkRequest(details); }
 function reconcileTrackerObserver(enabled) {
   if (typeof WOIdentifierObserver !== 'undefined') WOIdentifierObserver.reconcile(enabled);
   try {
@@ -12963,6 +13052,7 @@ async function refreshBlocklistRuleset(cfgOverride) {
     (grabberWarningsOn ? enableRulesetIds : disableRulesetIds).push('grabber_navigation');
     (grabberSitesOn ? enableRulesetIds : disableRulesetIds).push('grabber_malware_navigation');
     (grabberSitesOn ? enableRulesetIds : disableRulesetIds).push('download_landings');
+    (grabberSitesOn ? enableRulesetIds : disableRulesetIds).push(BADWARE_FILTERS_STATIC_RULESET_ID);
     (on ? enableRulesetIds : disableRulesetIds).push('grabber_compat');
     STATIC_RULESET_ACTIVE[ADSHIELD_STATIC_RULESET_ID] = adshieldOn;
     STATIC_RULESET_ACTIVE[TRACKERS_STATIC_RULESET_ID] = trackersOn;
@@ -12970,10 +13060,12 @@ async function refreshBlocklistRuleset(cfgOverride) {
     STATIC_RULESET_ACTIVE[BADGER_STATIC_RULESET_ID] = trackersOn;
     STATIC_RULESET_ACTIVE[CNAME_STATIC_RULESET_ID] = cnameOn;
     (adshieldOn ? enableRulesetIds : disableRulesetIds).push(ADSHIELD_STATIC_RULESET_ID);
+    (adshieldOn ? enableRulesetIds : disableRulesetIds).push(UBO_FILTERS_STATIC_RULESET_ID);
     (adshieldOn ? enableRulesetIds : disableRulesetIds).push(SPOTIFY_MEDIA_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(TRACKERS_STATIC_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(EASYPRIVACY_STATIC_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(EASYPRIVACY_GENERAL_STATIC_RULESET_ID);
+    (trackersOn ? enableRulesetIds : disableRulesetIds).push(PRIVACY_FILTERS_STATIC_RULESET_ID);
     (trackersOn ? enableRulesetIds : disableRulesetIds).push(BADGER_STATIC_RULESET_ID);
     (cnameOn ? enableRulesetIds : disableRulesetIds).push(CNAME_STATIC_RULESET_ID);
     await chrome.declarativeNetRequest.updateEnabledRulesets({ enableRulesetIds, disableRulesetIds });
@@ -15027,6 +15119,76 @@ async function applyIpLookupBlockRules(enabled) {
 /* The social widget guard swaps an embed for a "Load" button only after the page inserts it, and by then the browser
    has already asked X or Instagram for it. These blocks stop the embed loaders and frames first; pressing Load
    allows that one provider in that tab, on that site, until the tab leaves the site. */
+const ONETRUST_PREFERENCES_RULE_BASE = 913500;
+const ONETRUST_PREFERENCES_PRIORITY = 1951;
+const oneTrustPreferencesTimers = new Map();
+
+async function oneTrustPreferencesRules() {
+  const ruleIds = Array.from({ length: ONETRUST_PREFERENCES_RULES_BUDGET }, (_, i) => ONETRUST_PREFERENCES_RULE_BASE + i);
+  return chrome.declarativeNetRequest.getSessionRules({ ruleIds });
+}
+
+async function removeOneTrustPreferencesRules(ids) {
+  if (!ids.length) return;
+  await writeSessionRules({ removeRuleIds: ids, addRules: [] });
+  for (const id of ids) {
+    clearTimeout(oneTrustPreferencesTimers.get(id));
+    oneTrustPreferencesTimers.delete(id);
+  }
+}
+
+async function openOneTrustPreferences(sender) {
+  if (!messageSenderIsTopOrigin(sender, sender?.url)) return { ok: false };
+  return serializeSubsystem('oneTrustPreferences', async () => {
+    if (!await messageSenderStillCurrent(sender)) return { ok: false };
+    const tabId = sender.tab.id;
+    const existing = await oneTrustPreferencesRules();
+    const previous = existing.find(rule => rule.condition.tabIds?.includes(tabId));
+    const used = new Set(existing.map(rule => rule.id));
+    let id = ONETRUST_PREFERENCES_RULE_BASE;
+    if (previous) id = previous.id;
+    else {
+      while (used.has(id)) id++;
+    }
+    if (id >= ONETRUST_PREFERENCES_RULE_BASE + ONETRUST_PREFERENCES_RULES_BUDGET) return { ok: false };
+    await writeSessionRules({ removeRuleIds: [id], addRules: [{
+      id, priority: ONETRUST_PREFERENCES_PRIORITY, action: { type: 'allow' },
+      condition: { tabIds: [tabId], initiatorDomains: [new URL(sender.url).hostname], regexFilter: ONETRUST_STUB_RE,
+        resourceTypes: ['script'], requestMethods: ['get'] },
+    }] });
+    if (!await messageSenderStillCurrent(sender)) {
+      await removeOneTrustPreferencesRules([id]);
+      return { ok: false };
+    }
+    clearTimeout(oneTrustPreferencesTimers.get(id));
+    const timer = setTimeout(() => {
+      void serializeSubsystem('oneTrustPreferences', async () => {
+        if (oneTrustPreferencesTimers.get(id) === timer) await removeOneTrustPreferencesRules([id]);
+      }).catch(() => {});
+    }, 12000);
+    oneTrustPreferencesTimers.set(id, timer);
+    return { ok: true };
+  });
+}
+
+function clearOneTrustPreferences(tabId) {
+  return serializeSubsystem('oneTrustPreferences', async () => {
+    const rules = await oneTrustPreferencesRules();
+    await removeOneTrustPreferencesRules(rules.filter(rule =>
+      tabId === undefined || rule.condition.tabIds?.includes(tabId)).map(rule => rule.id));
+  });
+}
+
+registerListener('OneTrust preferences', () => {
+  void Promise.resolve().then(() => clearOneTrustPreferences()).catch(() => {});
+  chrome.webNavigation?.onCommitted?.addListener(details => {
+    if (details.frameId === 0 && oneTrustPreferencesTimers.size) void clearOneTrustPreferences(details.tabId).catch(() => {});
+  });
+  chrome.tabs?.onRemoved?.addListener(tabId => {
+    if (oneTrustPreferencesTimers.size) void clearOneTrustPreferences(tabId).catch(() => {});
+  });
+});
+
 const SOCIAL_EMBED_RULE_BASE = 913300;
 const SOCIAL_EMBED_ONCE_RULE_BASE = 913400;
 /* Above the login and never-block allows at 1900, below the security lists, the reader's own allowlist and firewall. */
@@ -16673,10 +16835,13 @@ function domainToRule(domain, id, sourceKind) {
 // stays source-neutral and the private source marker never reaches Chrome.
 // A scoped ad/tracker exception can therefore repair a functional site without
 // gaining enough authority to override a malware/security rule.
+/* One band for every list's site scoped exceptions, downloaded or packaged (tools/build-filter-lists-dnr.js): above
+   the ad and tracker blocks, below uBlock's $important rules (1895) and WardenOne's own compatibility allows (1900). */
+const LIST_EXCEPTION_PRIORITY = 1890;
 function finalizeOptionRule(rule, id, sourceKind) {
   const kind = remoteRuleSourceKind(sourceKind);
   const actionType = rule && rule.action && rule.action.type === 'allow' ? 'allow' : 'block';
-  const priority = actionType === 'allow' ? 1900 : kind === 'security' ? 3000 : 1100;
+  const priority = actionType === 'allow' ? LIST_EXCEPTION_PRIORITY : kind === 'security' ? 3000 : 1100;
   const condition = Object.assign({}, (rule && rule.condition) || {});
   if (kind !== 'security' && actionType === 'block' && rule.__woRedundantHost) {
     condition.resourceTypes = LIST_RESOURCE_TYPES;
@@ -18140,6 +18305,11 @@ const MEDIA_COMPAT_DOMAINS = new Set([
   // CNN's app and video player bundles. StevenBlack lists it (24 Nov 2023) and cnn.io is
   // third-party to cnn.com, so CNN's video pages showed no player at all.
   'registry.api.cnn.io',
+  /* Brightcove's player and playback API. A tracker feed lists brightcove.net and brightcove.com whole, which stopped
+     every Brightcove video on every site (2026-11-27). Its analytics host, metrics.brightcove.com, stays blocked. */
+  'players.brightcove.net',
+  'edge.api.brightcove.com',
+  'edge-auth.api.brightcove.com',
 ]);
 const MEDIA_COMPAT_SUFFIXES = Array.from(MEDIA_COMPAT_DOMAINS, (domain) => '.' + domain);
 
@@ -18495,6 +18665,20 @@ function networkRulePatternHost(pattern) {
   return /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(p) ? p : '';
 }
 
+/* Hosts EasyList, EasyPrivacy or uBlock block only for some request types, on named sites or at named paths, and no
+   packaged list blocks whole (curated-host-scopes.json, tools/build-filter-lists-dnr.js). A downloaded ad or tracker
+   list naming one whole is left to those packaged rules, which keep the curated scope. Unreadable means no narrowing. */
+let CURATED_SCOPED_HOSTS = null;
+async function loadCuratedScopedHosts() {
+  if (CURATED_SCOPED_HOSTS) return CURATED_SCOPED_HOSTS;
+  try {
+    const response = await fetch(chrome.runtime.getURL('curated-host-scopes.json'));
+    const hosts = response.ok ? await response.json() : null;
+    if (Array.isArray(hosts)) CURATED_SCOPED_HOSTS = new Set(hosts);
+  } catch (_) {}
+  return CURATED_SCOPED_HOSTS;
+}
+
 function remoteListBlockAllowed(host, pattern, sourceKind, sourceUrl) {
   /* Source-specific domain exclusions create no allow rules. Evidence: docs/security-feed-exceptions.md. */
   if (sourceUrl === 'https://threatview.io/Downloads/DOMAIN-High-Confidence-Feed.txt'
@@ -18510,6 +18694,9 @@ function remoteListBlockAllowed(host, pattern, sourceKind, sourceUrl) {
   if (!pattern && sourceUrl === 'https://raw.githubusercontent.com/blocklistproject/Lists/master/tracking.txt'
       && (host === 'hsforms.com' || host === 'intercom.io')) return false;
   if (remoteRuleSourceKind(sourceKind) === 'security') return true;
+  /* Only the whole host verdict: a plain listed name, or an option rule naming nothing but ||host^. */
+  if (typeof CURATED_SCOPED_HOSTS !== 'undefined' && CURATED_SCOPED_HOSTS && CURATED_SCOPED_HOSTS.has(host)
+      && (!pattern || pattern === '||' + host + '^')) return false;
   return !isNeverBlockDomain(host) && !isMediaCompatDomainLowercase(host) && !isMediaCompatFilter(pattern);
 }
 
@@ -19408,8 +19595,13 @@ function listIntegrityAlert(scope, url, reason, extra) {
   return alert;
 }
 
-function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, optionRules, seed, publisherUpdatedAt) {
+/* entryReader names how a source's entries are read ('list' unless a source has its own reader). When WardenOne
+   changes it, the stored baseline describes the old reading: on 21 November 2026 TweetFeed went to IP addresses
+   only (17% of the file), every later copy failed the overlap test, and each refusal held back all 32 feeds. */
+function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, optionRules, seed, publisherUpdatedAt, entryReader) {
   const optionCompiler = 2;
+  const reader = String(entryReader || 'list');
+  const sameReading = !previous || String(previous.entryReader || 'list') === reader;
   const domainCount = Array.isArray(domains) ? domains.length : 0;
   const optionRuleCount = Array.isArray(optionRules) ? optionRules.length : 0;
   const semanticSketch = listSemanticSketch(seed, domains, optionRules);
@@ -19424,14 +19616,16 @@ function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, o
       spikeFloor: 2000000,
     });
     if (byteReason) reasons.push(byteReason);
-    const domainReason = listCountDriftReason(previous.domainCount, domainCount, 'domain count', {
+    const domainReason = sameReading ? listCountDriftReason(previous.domainCount, domainCount, 'domain count', {
       minBaseline: LIST_SOURCE_MIN_BASELINE,
       dropRatio: LIST_SOURCE_DROP_RATIO,
       spikeRatio: LIST_SOURCE_SPIKE_RATIO,
       spikeFloor: LIST_SOURCE_SPIKE_FLOOR,
-    });
+    }) : '';
     if (domainReason) reasons.push(domainReason);
-    if (previous.optionCompiler === optionCompiler) {
+    if (!sameReading) {
+      // Entries read a new way cannot be compared with the old reading; the byte check above still holds.
+    } else if (previous.optionCompiler === optionCompiler) {
       const optionReason = listCountDriftReason(previous.optionRuleCount, optionRuleCount, 'option-rule count', {
         minBaseline: 25, dropRatio: 0.25, spikeRatio: 4, spikeFloor: 200,
       });
@@ -19454,6 +19648,7 @@ function evaluateListSourceIntegrity(url, previous, hash, byteLength, domains, o
     acceptedAt: Date.now(),
     publisherUpdatedAt: Number(publisherUpdatedAt) || 0,
     url,
+    entryReader: reader,
   };
   if (reasons.length) return { ok: false, record, reason: reasons.join('; ') };
   return { ok: true, record };
@@ -19511,7 +19706,8 @@ async function fetchListSource(url, reason, integrity) {
     const text = fetched.text || '';
     const byteLength = fetched.byteLength || utf8ByteLength(text);
     const security = remoteListSourceKind(url) === 'security';
-    const compiled = url === TWEETFEED_IOC_LIST_URL ? compileTweetFeedSource(text)
+    const tweetFeed = url === TWEETFEED_IOC_LIST_URL;
+    const compiled = tweetFeed ? compileTweetFeedSource(text)
       : await compileRemoteNetworkSource(text, OPTION_RULES_PER_SOURCE_CAP, { ipv4: security });
     const { domains, optionRules } = compiled;
     const hash = await sha256TextHex(text);
@@ -19523,7 +19719,8 @@ async function fetchListSource(url, reason, integrity) {
       domains,
       optionRules,
       integrity && integrity.seed,
-      parseListPublisherDate(text)
+      parseListPublisherDate(text),
+      tweetFeed ? 'tweetfeed-ip' : 'list'
     );
     if (!verdict.ok) {
       console.warn('[WardenOne] source integrity rejected (' + reason + '):', url, verdict.reason);
@@ -19855,20 +20052,8 @@ async function updateSupplementalLists(reason) {
     }
   }
 
-  if (rejectedSources) {
-    const meta = Object.assign({}, previousMeta || {}, {
-      version: SUPPLEMENTAL_LIST_VERSION,
-      lastAttempt: Date.now(),
-      reason,
-      counts: supplementalListCounts(previousLists),
-      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources },
-      failures: failures.slice(-8),
-      sourceIntegritySeed: semanticSeed,
-      sourceRecords: previousRecords,
-    });
-    await localSet({ [SUPPLEMENTAL_LIST_META_KEY]: meta });
-    return { ok: false, integrityRejected: true, error: 'Supplemental list integrity guard quarantined the update', meta };
-  }
+  /* A refused list is set aside like one that could not be reached: its bucket is left untouched, so the merge below
+     keeps the previous copy, and its record stays the last accepted one. The other lists still update. */
 
   if (!succeededSources) {
     const meta = Object.assign({}, previousMeta || {}, {
@@ -19945,7 +20130,7 @@ function strongestRemoteListSourceKind(current, candidate) {
 /* A held name, or a parent of it, on an ad or tracker list joins that kind; anything else stays security.
    A name another security feed carries is already security. Every held name lands in a bucket, because
    a merged name in none would default to security. */
-function settleAdOverlapCandidates(candidates, buckets) {
+function settleAdOverlapCandidates(candidates, buckets, narrowed) {
   const namedByAdList = (domain) => {
     for (let h = domain; h.includes('.'); h = h.slice(h.indexOf('.') + 1)) {
       if (buckets.tracker.has(h) || buckets.adshield.has(h)) return true;
@@ -19954,6 +20139,12 @@ function settleAdOverlapCandidates(candidates, buckets) {
   };
   for (const d of candidates) {
     if (buckets.security.has(d)) continue;
+    /* The curated ad and tracker lists scope this name narrowly, so it is an ad or tracker name, not a threat: it leaves
+       the merged set for the caller to drop, rather than falling back to security once its ad listing was narrowed. */
+    if (narrowed && typeof CURATED_SCOPED_HOSTS !== 'undefined' && CURATED_SCOPED_HOSTS && CURATED_SCOPED_HOSTS.has(d)) {
+      narrowed.add(d);
+      continue;
+    }
     if (namedByAdList(d)) buckets.tracker.add(d);
     else buckets.security.add(d);
   }
@@ -19969,6 +20160,7 @@ function remoteListSourceKind(url) {
   return kind || 'security';
 }
 
+
 /* Packs every downloaded domain into rules by source kind. A name under a listed parent with the same or a
    stronger treatment is already covered and left out. Yields so a million-domain pass never holds the worker. */
 async function listDomainRules(buckets, merged, sourceCounts) {
@@ -19982,6 +20174,16 @@ async function listDomainRules(buckets, merged, sourceCounts) {
   let sourceIndex = 0;
   let sourceEnd = counts && counts.length ? Number(counts[0].count) || 0 : Infinity;
   let seen = 0;
+  /* An ad or tracker feed naming a parent whole (brightcove.net) must not take a media compatibility host under it
+     along: the packed rule holding that parent leaves the media host out. Security feeds keep their whole verdict. */
+  const mediaUnder = new Map();
+  for (const host of (typeof MEDIA_COMPAT_DOMAINS !== 'undefined' ? MEDIA_COMPAT_DOMAINS : [])) {
+    for (let p = host.slice(host.indexOf('.') + 1); p.includes('.'); p = p.slice(p.indexOf('.') + 1)) {
+      if (!mediaUnder.has(p)) mediaUnder.set(p, []);
+      mediaUnder.get(p).push(host);
+    }
+  }
+  const mediaParents = new Map();
   for (const domain of merged) {
     if (++seen % 50000 === 0) await new Promise((resolve) => setTimeout(resolve, 0));
     while (counts && sourceIndex < counts.length && seen > sourceEnd) {
@@ -19998,12 +20200,15 @@ async function listDomainRules(buckets, merged, sourceCounts) {
     const m = marks[kind];
     if (!m.length || m[m.length - 1][1] !== src) m.push([groups[kind].length, src]);
     groups[kind].push(domain);
+    if (kind !== 'security' && mediaUnder.has(domain)) mediaParents.set(domain, { kind, pos: groups[kind].length - 1 });
   }
   const rules = [];
   const ruleMarks = [];
   const ruleKinds = [];
+  const kindStart = {};
   let placed = 0;
   for (const kind of ['security', 'adshield', 'tracker']) {
+    kindStart[kind] = rules.length;
     const list = groups[kind];
     const m = marks[kind];
     let mi = 0;
@@ -20017,6 +20222,12 @@ async function listDomainRules(buckets, merged, sourceCounts) {
       rules.push(domainToRule(chunk, DYNAMIC_RULE_BASE + rules.length, kind));
       placed += chunk.length;
     }
+  }
+  for (const [parent, { kind, pos }] of mediaParents) {
+    const index = kindStart[kind] + Math.floor(pos / LIST_DOMAINS_PER_RULE);
+    if (index >= rules.length || ruleKinds[index] !== kind) continue;
+    const condition = rules[index].condition;
+    condition.excludedRequestDomains = [...new Set((condition.excludedRequestDomains || []).concat(mediaUnder.get(parent)))].sort();
   }
   const complete = placed === groups.security.length + groups.adshield.length + groups.tracker.length;
   const sources = counts
@@ -20228,6 +20439,7 @@ async function updateRemoteListsCore(reason) {
   if (skipFreshAutoUpdate) {
     return { ok: true, skipped: true, fresh: true, meta: previousMeta };
   }
+  await loadCuratedScopedHosts();
 
   const sources = [];
   const sourceKinds = new Map();
@@ -20354,24 +20566,18 @@ async function updateRemoteListsCore(reason) {
     }
   }
 
-  settleAdOverlapCandidates(adOverlapCandidates, domainBuckets);
+  const narrowedHeld = new Set();
+  settleAdOverlapCandidates(adOverlapCandidates, domainBuckets, narrowedHeld);
+  for (const d of narrowedHeld) merged.delete(d);
 
   // AdShield cosmetic filters refresh once the network batch is in: fire-and-forget, it stores its
   // own result and never blocks the network-list update -- but it no longer runs beside the batch,
   // so its parse is not competing with this one and its downloads share the one queue (PERF-07).
   if (cfg.adShield !== false) { updateAdShieldCosmetics(); }
 
-  if (rejectedSources) {
-    await saveListIntegrity(integrity, {}, integrityAlerts, reason);
-    console.warn('[WardenOne] source integrity rejected; quarantining the entire list refresh');
-    return {
-      ok: false,
-      integrityRejected: true,
-      error: 'List integrity guard quarantined the update',
-      meta: previousMeta,
-      sources: { total: sources.length, succeeded: succeededSources, failed: failedSources, rejected: rejectedSources, failures: sourceFailures.slice(0, 12) },
-    };
-  }
+  /* A refused feed was set aside in the loop above, the same as one that could not be reached: its new copy never
+     lands and its baseline stays the last accepted one. It no longer holds the other feeds back. Refusing the whole
+     refresh froze all 32 from 20 to 26 November 2026, while threatview and TweetFeed took turns being refused. */
 
   // Fail safe: if EVERY source failed, keep existing dynamic rules untouched.
   if (!anySucceeded || !merged.size) {
@@ -20600,6 +20806,7 @@ const TAB_CONTEXT_ALLOWED_MESSAGES = new Set([
   /* A press of the social widget guard's Load button. The bridge relays it only with the engine's signature and a
      real click, and the handler takes the tab and site from the sender. */
   'social-embed-load',
+  'onetrust-preferences',
   'smart-player-context',
   'smart-player-intent',
   'smart-script-status',
@@ -20682,6 +20889,7 @@ const TAB_CONTEXT_RATE_LIMITS = {
   'oauth-grant': { max: 8, windowMs: 60000 },
   'script-drift-scan': { max: 6, windowMs: 60000 },
   'social-embed-load': { max: 20, windowMs: 60000 },
+  'onetrust-preferences': { max: 4, windowMs: 60000 },
   'smart-player-context': { max: 8, windowMs: 60000 },
   'smart-player-intent': { max: 12, windowMs: 60000 },
   // Asked once per navigation by a page that already looks broken, and answered read-only.
@@ -25260,6 +25468,8 @@ async function badgeBeaconChoicesForReport(report) {
   return badgeBeaconChoices(report, matrix);
 }
 
+/* Badge senders are checked by origin and document: after history.pushState (YouTube, Twitch) Chrome still
+   reports the address the document loaded with as sender.url. */
 async function badgeBeaconAction(msg, sender) {
   const failure = error => ({ ok: false, error });
   try {
@@ -25272,7 +25482,7 @@ async function badgeBeaconAction(msg, sender) {
         || !settings && !stateRead && (msg.kind !== 'badge-beacon-set' || !Object.hasOwn(msg, 'destination') || !Object.hasOwn(msg, 'blocked')
           || typeof msg.blocked !== 'boolean' || !badgeBeaconHost(msg.destination))) return failure('Invalid beacon rule action.');
     const page = new URL(sender.url), site = firewallNormalizeHost(page.hostname);
-    if (!/^https?:$/.test(page.protocol) || page.username || page.password || !site || !await messageSenderStillCurrent(sender, true))
+    if (!/^https?:$/.test(page.protocol) || page.username || page.password || !site || !await messageSenderStillCurrent(sender))
       return failure('This page is no longer current.');
     if (settings) {
       await chrome.tabs.create({ url: chrome.runtime.getURL('firewall.html') + '?tab=' + sender.tab.id + '&site=' + encodeURIComponent(site), active: true });
@@ -25280,7 +25490,7 @@ async function badgeBeaconAction(msg, sender) {
     }
     if (stateRead) {
       const { matrix } = await badgeBeaconStoredState();
-      if (__privacyEraseInProgress || !await messageSenderStillCurrent(sender, true)) return failure('This page is no longer current.');
+      if (__privacyEraseInProgress || !await messageSenderStillCurrent(sender)) return failure('This page is no longer current.');
       return { ok: true, beacons: badgeBeaconChoicesForHosts(site, msg.destinations.map(badgeBeaconHost), matrix) };
     }
     return await storeTransaction(FIREWALL_KEY, async () => {
@@ -25289,7 +25499,7 @@ async function badgeBeaconAction(msg, sender) {
       const host = badgeBeaconHost(msg.destination);
       const choices = badgeBeaconChoices(report, matrix);
       if (!report.ok || !report.web || !choices.some(choice => choice.host === host)
-          || __privacyEraseInProgress || !await messageSenderStillCurrent(sender, true)) return failure('That beacon was not observed on this page.');
+          || __privacyEraseInProgress || !await messageSenderStillCurrent(sender)) return failure('That beacon was not observed on this page.');
       if (msg.blocked && (cfg.enabled === false || activeAllowlist(cfg).some(pattern => hostMatchesSite(page.hostname, pattern))))
         return failure('Turn protection on for this site before blocking a beacon.');
       if (msg.blocked) for (const rule of await firewallSessionRules(true)) {
@@ -25306,7 +25516,7 @@ async function badgeBeaconAction(msg, sender) {
       const applied = await applyFirewallRulesFrom(after.rules);
       if (!applied.ok || msg.blocked && applied.applied !== after.rules.length) return failure('The browser could not apply the beacon rule. Nothing was saved.');
       try {
-        if (__privacyEraseInProgress || !await messageSenderStillCurrent(sender, true)) throw new Error('The page changed before the rule could be saved.');
+        if (__privacyEraseInProgress || !await messageSenderStillCurrent(sender)) throw new Error('The page changed before the rule could be saved.');
         await localSet({ [FIREWALL_KEY]: next });
       } catch (error) {
         const restored = await applyFirewallRulesFrom(before.rules);
@@ -25355,7 +25565,7 @@ async function badgeActivityForSender(sender) {
   const tab = await tabsGet(sender.tab.id);
   if (!tab) return { ok: false };
   const report = await buildSiteDashboard(tab);
-  if (__privacyEraseInProgress || !await messageSenderStillCurrent(sender, true)) return { ok: false };
+  if (__privacyEraseInProgress || !await messageSenderStillCurrent(sender)) return { ok: false };
   return badgeActivitySnapshot(report);
 }
 
@@ -25376,7 +25586,7 @@ async function badgeRuleAction(msg, sender) {
           || !/^[a-z][a-z0-9_]{0,95}$/.test(type)))) return failure('Invalid protection action.');
     const page = new URL(sender.url);
     if (!/^https?:$/.test(page.protocol) || page.username || page.password
-        || !await messageSenderStillCurrent(sender, true) || __privacyEraseInProgress) return failure('This page is no longer current.');
+        || !await messageSenderStillCurrent(sender) || __privacyEraseInProgress) return failure('This page is no longer current.');
     if (reload) {
       await chrome.tabs.reload(sender.tab.id);
       return { ok: true };
@@ -25398,7 +25608,7 @@ async function badgeRuleAction(msg, sender) {
     const site = normalizeAllowlistHost(page.hostname);
     if (!site) return failure('This site does not support a protection exception.');
     await updateStoredConfig(async cfg => {
-      if (!await messageSenderStillCurrent(sender, true) || __privacyEraseInProgress) throw new Error('This page is no longer current.');
+      if (!await messageSenderStillCurrent(sender) || __privacyEraseInProgress) throw new Error('This page is no longer current.');
       const effective = Object.assign({}, DEFAULT_CONFIG, cfg);
       if (effective.enabled === false || effective[key] === false) throw new Error('This protection is off in WardenOne settings. Review it there.');
       const overrides = cfg.siteOverrides;
@@ -25963,6 +26173,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
   if (msg && msg.kind === 'social-embed-load' && messageSenderIsTab(sender)) {
     respond(allowSocialEmbedOnce(sender.tab.id, sender.url, String(msg.provider || '')).then((ok) => ({ ok: ok === true })), sendResponse);
+    return true;
+  }
+  if (msg && msg.kind === 'onetrust-preferences' && messageSenderIsTab(sender) && Object.keys(msg).length === 1) {
+    respond(openOneTrustPreferences(sender), sendResponse);
     return true;
   }
   if (msg && msg.kind === 'smart-player-context' && messageSenderIsTab(sender)) {
@@ -27519,7 +27733,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const host = typeof msg.hostname === 'string' && normalizeAllowlistHost(msg.hostname);
     if (!host) { sendResponse({ ok: false, error: 'Invalid site.' }); return true; }
     respond(storeTransaction(HIDDEN_STORE_KEY, async () => {
-      if (messageSenderIsTab(sender) && (!await messageSenderStillCurrent(sender, true)
+      /* Current document by origin, not exact URL: after history.pushState (Twitch channels) Chrome still
+         reports the address the document loaded with as sender.url. */
+      if (messageSenderIsTab(sender) && (!await messageSenderStillCurrent(sender)
           || normalizeAllowlistHost(new URL(sender.url).hostname) !== host)) {
         return { ok: false, error: 'Not allowed from this context.' };
       }
@@ -27928,7 +28144,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.kind === 'verify-repair') {
     (async () => {
       const report = { checks: [], repaired: [], ok: true };
-          const CORE_FILES = ['engine-compat.js', 'content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'fingerprint-early-on.js', 'fingerprint-early-standard.js', 'fingerprint-early-off.js', 'engine-early-off.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'domain-utils-isolated.js', 'idn-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'protection-event-settings.js', 'badge-controls.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'rules-easyprivacy-general.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
+          const CORE_FILES = ['engine-compat.js', 'content.min.js', 'google-cleanup.css', 'search-ai-cleanup.css', 'search-sponsored-cleanup.css', 'theme.css', 'guide-shell.css', 'theme.js', 'permission-chain.js', 'oauth-guard.js', 'anti-redirect.js', 'fingerprint-realm.js', 'fingerprint-early-on.js', 'fingerprint-early-standard.js', 'fingerprint-early-off.js', 'engine-early-off.js', 'eyeshield.js', 'eyeshield-bootstrap.js', 'eyeshield-profiles.js', 'eyeshield-preload-dark.js', 'eyeshield-preload-ultra.js', 'eyeshield-preload-light.js', 'consent-reject.js', 'consent-wall.js', 'mail-shield.js', 'yt-adblock.js', 'resource-saver.js', 'animated-image-saver.js', 'twitch-adblock.js', 'spotify-adblock.js', 'twitch-rewind.js', 'bridge.js', 'element-picker.js', 'hidden-elements.html', 'hidden-elements.js', 'background.js', 'background-startup.js', 'background-extension-watch.js', 'background-extension-reputation.js', 'background-memory.js', 'background-downloads.js', 'domain-utils.js', 'domain-utils-isolated.js', 'idn-utils.js', 'psl-private.js', 'build-profile.js', 'notification-schema.js', 'protection-event-settings.js', 'badge-controls.js', 'notification-manager.js', 'offscreen.html', 'offscreen.js', 'popup.html', 'popup-health.js', 'popup.js', 'popup-settings-search.js', 'notifications.html', 'notifications.js', 'extensions.html', 'extensions.js', 'extension-reputation.json', 'history.html', 'history.js', 'network.html', 'network.js', 'firewall.html', 'firewall.js', 'file-shield.html', 'file-shield.js', 'privacy-test.html', 'privacy-test.js', 'privacy-probe.js', 'command-palette.js', 'permissions.html', 'api-keys.html', 'onboarding.html', 'onboarding.js', 'download-review.html', 'download-review.js', 'cert-error.html', 'cert-error.js', 'safe-browsing-block.html', 'safe-browsing-block.js', 'redirect-warning.html', 'redirect-warning.js', 'ip-logger-warning.html', 'ip-logger-warning.css', 'ip-logger-warning.js', 'rules.json', 'rules-trackers.json', 'rules-adshield.json', 'rules-easyprivacy.json', 'rules-easyprivacy-general.json', 'rules-ubo-filters.json', 'rules-privacy-filters.json', 'rules-badware-filters.json', 'curated-host-scopes.json', 'malware-hashes.json', 'grabber-extra.json', 'supplemental-manifest.json', 'search-junk.js', 'search-loggers.js', 'search-junk-domains.json', 'manifest.json'];
           CORE_FILES.push('background-link-check.js', 'link-check.html', 'link-check.js', 'rules-grabber-resources.json', 'rules-grabber-navigation.json',
             'rules-grabber-malware-navigation.json', 'rules-grabber-compat.json',
             'rules-spotify-media.json', 'spotify-silent-1s.mp4', 'filter-list-catalog.json',
@@ -27942,7 +28158,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             'redirect-resources/noop-vmap1.xml', 'popup-diagnostics.js', 'popup-scroll-memory.js',
             'popup-first-paint.js', 'settings.html', 'settings.js', 'settings-data.js', 'config-lock.js', 'upgrade-config.js', 'build-update.js', 'network-policy.js',
             'tracking-redirects.js', 'tracking-redirect.html', 'tracking-redirect-page.js',
-            'surrogates/analytics.js', 'surrogates/facebook.js', 'surrogates/publisher-tag.js', 'surrogates/tag-manager.js',
+            'surrogates/analytics.js', 'surrogates/adsbygoogle.js', 'surrogates/facebook.js', 'surrogates/publisher-tag.js', 'surrogates/tag-manager.js',
             'surrogates/segment.js', 'surrogates/adobe-launch.js', 'surrogates/matomo.js', 'surrogates/apstag.js',
             'surrogates/optimizely.js', 'surrogates/urchin.js', 'surrogates/onetrust.js');
           // The Store package leaves out the separable utilities' files (CWS-03); asking for them

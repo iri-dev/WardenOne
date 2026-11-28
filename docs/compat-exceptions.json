@@ -185,6 +185,20 @@
    ]
   },
   {
+   "id": "badger-site-fixes",
+   "where": "tools/build-badger-dnr.js WARDENONE_SITEFIXES",
+   "relaxes": "The Privacy Badger tracker rules let these requests through only on the listed sites.",
+   "reason": "Kwai needs its CDN for the feed and images on kslawin.com. The News UK sites need their bot check to let people in.",
+   "tests": [
+    "tools/test-badger-trained.js"
+   ],
+   "reviewed": "2026-11-28",
+   "value": {
+    "toadmash.net": ["the-sun.com", "thesun.co.uk", "thetimes.com"],
+    "cdn-static.kwai.net": ["kslawin.com"]
+   }
+  },
+  {
    "id": "adobe-fonts",
    "where": "background.js NEVER_BLOCK_DOMAINS.add('use.typekit.net')",
    "relaxes": "Same as never-block-core, for Adobe Fonts' kit loader only.",
@@ -340,17 +354,21 @@
   {
    "id": "media-compat",
    "where": "background.js MEDIA_COMPAT_DOMAINS",
-   "relaxes": "Video and player hosts are never blocked by ad and tracker lists.",
-   "reason": "YouTube and Twitch streams and CNN's player bundles. StevenBlack listed registry.api.cnn.io and CNN's video pages showed no player at all.",
+   "relaxes": "Video and player hosts are never blocked by ad and tracker lists, even when a list names their parent domain whole.",
+   "reason": "YouTube and Twitch streams, CNN's player bundles and Brightcove's player and playback API. StevenBlack listed registry.api.cnn.io and CNN's video pages showed no player at all. A tracker feed listed brightcove.net and brightcove.com whole, which stopped Brightcove players on every site; metrics.brightcove.com stays blocked.",
    "tests": [
     "tools/test-network-compatibility.js",
-    "tools/test-dnr-atomic-replace.js"
+    "tools/test-dnr-atomic-replace.js",
+    "tools/test-list-domain-rules.js"
    ],
-   "reviewed": "2026-11-20",
+   "reviewed": "2026-11-27",
    "value": [
+    "edge-auth.api.brightcove.com",
+    "edge.api.brightcove.com",
     "ggpht.com",
     "googlevideo.com",
     "jtvnw.net",
+    "players.brightcove.net",
     "registry.api.cnn.io",
     "ttvnw.net",
     "twitchcdn.net",

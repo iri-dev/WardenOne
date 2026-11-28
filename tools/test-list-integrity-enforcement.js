@@ -84,25 +84,61 @@ check('option-rule-only feeds are covered by the semantic sketch', () => {
   assert(/content overlap fell/i.test(next.reason), next.reason);
 });
 
-check('an integrity rejection aborts the network-list refresh before DNR replacement', () => {
+/* 2026-11-26: on 21 November TweetFeed began to be read for its IP addresses only (17% of the file). Every later
+   copy failed the overlap test against the baseline read the old way, and each refusal held back all 32 feeds. */
+check('a source read a new way is re-baselined on bytes, then judged normally', () => {
+  const url = 'https://raw.githubusercontent.com/0xDanielLopez/TweetFeed/master/month.csv';
+  const names = (prefix, from, count) => Array.from({ length: count }, (_, i) => prefix + (from + i) + '.example');
+  const oldReading = api.evaluateListSourceIntegrity(url, null, 'tf-a', 1138229, names('ioc-', 0, 2440), [], seed);
+  assert.strictEqual(oldReading.record.entryReader, 'list', 'records carry how they were read');
+  const ipsOnly = names('ip-', 0, 1200);
+  const sameReader = api.evaluateListSourceIntegrity(url, oldReading.record, 'tf-b', 1001333, ipsOnly, [], seed);
+  assert.strictEqual(sameReader.ok, false, 'without the new reader this is exactly the refusal seen in the field');
+  const switched = api.evaluateListSourceIntegrity(url, oldReading.record, 'tf-b', 1001333, ipsOnly, [], seed, 0, 'tweetfeed-ip');
+  assert.strictEqual(switched.ok, true, switched.reason);
+  assert.strictEqual(switched.record.entryReader, 'tweetfeed-ip');
+  const shrunk = api.evaluateListSourceIntegrity(url, oldReading.record, 'tf-c', 1200, ipsOnly, [], seed, 0, 'tweetfeed-ip');
+  assert.strictEqual(shrunk.ok, false, 'a collapsed file is still refused when the reader changes');
+  assert(/byte size dropped/.test(shrunk.reason), shrunk.reason);
+  const swapped = api.evaluateListSourceIntegrity(url, switched.record, 'tf-d', 1001333, names('swap-', 0, 1200), [], seed, 0, 'tweetfeed-ip');
+  assert.strictEqual(swapped.ok, false, 'once re-baselined, a substituted copy fails the overlap test again');
+  const legacy = Object.assign({}, oldReading.record);
+  delete legacy.entryReader;
+  const unchanged = api.evaluateListSourceIntegrity('https://feed.invalid/list', legacy, 'x-b', 1138229, ipsOnly, [], seed);
+  assert.strictEqual(unchanged.ok, false, 'a stored record from before this field still counts as the ordinary reader');
+});
+
+/* 2026-11-26: a refusal threw the whole refresh away, so one feed froze all 32 for six days. A refused feed is now
+   set aside alone; tools/test-list-refusal-isolation.js runs that end to end. These pin the two halves of it. */
+check('a refused feed is set aside before it can give a domain or a baseline, and the refresh goes on', () => {
   const from = BG.indexOf('async function updateRemoteListsCore');
   const to = BG.indexOf('async function updateRemoteLists(reason)', from);
   const body = BG.slice(from, to);
-  const quarantine = body.indexOf("if (rejectedSources) {");
-  const commit = body.indexOf('commitRemoteListRules');
-  assert(quarantine >= 0 && commit > quarantine, 'quarantine must precede the DNR commit');
-  assert(/saveListIntegrity\(integrity, \{\}, integrityAlerts/.test(body.slice(quarantine, commit)), 'rejected records must not replace accepted baselines');
+  assert(!/if \(rejectedSources\) \{/.test(body), 'a refusal must not end the whole refresh');
+  const refused = body.indexOf('if (!result.ok) {');
+  const skip = body.indexOf('continue;', refused);
+  assert(refused > 0 && skip > refused && skip < body.indexOf('acceptedIntegrityRecords[result.url] = result.integrityRecord'),
+    'a refused copy is skipped before its record could be accepted');
+  assert(skip < body.indexOf('merged.add(d)'), 'and before any of its domains could be');
 });
 
-check('an integrity rejection also preserves the previous supplemental lists', () => {
+check('a refused page list keeps its previous copy while the others update', () => {
   const from = BG.indexOf('async function updateSupplementalLists');
   const to = BG.indexOf('async function attachSupplementalListUpdate', from);
   const body = BG.slice(from, to);
-  const quarantine = body.indexOf("if (rejectedSources) {");
-  const listWrite = body.indexOf("[SUPPLEMENTAL_LIST_STORAGE_KEY]: lists");
-  assert(quarantine >= 0 && listWrite > quarantine, 'supplemental quarantine must precede the list write');
-  const quarantineBody = body.slice(quarantine, listWrite);
-  assert(!quarantineBody.includes('[SUPPLEMENTAL_LIST_STORAGE_KEY]'), 'quarantine may update metadata, never the active lists');
+  assert(!/if \(rejectedSources\) \{/.test(body), 'a refusal must not end the whole page list update');
+  const refused = body.indexOf('if (!result.ok) {');
+  const skip = body.indexOf('continue;', refused);
+  assert(refused > 0 && skip > refused && skip < body.indexOf('touchedBuckets[bucket] = true'),
+    'a refused list never touches its bucket, so the merge keeps the previous copy');
+  assert(/const acceptedRecords = Object\.assign\(\{\}, previousRecords\);/.test(body), 'and its last accepted record stays');
+});
+
+check('the popup names a held back feed plainly and counts it apart from unreachable ones', () => {
+  const HEALTH = fs.readFileSync(path.join(ROOT, 'popup-health.js'), 'utf8');
+  const render = HEALTH.slice(HEALTH.indexOf('function renderListMeta'), HEALTH.indexOf('function renderListMeta') + 4000);
+  assert(/held \? held \+ ' held back' : ''/.test(render) && /\(Number\(s\.failed\) \|\| 0\) - held/.test(render));
+  assert(/name\.textContent = listFeedName\(f\.url\)/.test(render) && /f\.rejected \? 'Held back:/.test(render));
 });
 
 console.log('[ok] list integrity enforcement checks passed (' + passed + ' checks)');

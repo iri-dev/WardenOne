@@ -79,6 +79,15 @@ const W = sandbox.__W;
   check('isolated warning uses a closed-shadow owned overlay and trusted dismissal',
     BRIDGE.includes("woOwnedOverlay('wo-owned-main-warning')")
       && BRIDGE.includes('if (!e.isTrusted || mainWarningOverlay !== overlay || !overlay.owns(button)) return;'));
+  /* 2026-11-26 (ollama.com): both copies sat at top:24px, so the isolated card covered the engine's own. */
+  {
+    const owned = BRIDGE.slice(BRIDGE.indexOf('function showOwnedMainWarning'), BRIDGE.indexOf('const mainToastCopy'));
+    check('the isolated copy stacks under the engine card instead of over it, kept on screen',
+      /const engineCard = document\.getElementById\(id\);/.test(owned)
+        && /top = Math\.min\(Math\.round\(rect\.bottom\) \+ 12, Math\.round\(window\.innerHeight \* 0\.5\)\)/.test(owned)
+        && /'top:' \+ top \+ 'px!important;/.test(owned)
+        && /max-height:min\(70vh,calc\(100vh - ' \+ \(top \+ 16\) \+ 'px\)\)/.test(owned));
+  }
   check('isolated warning copy is fixed in bridge and checks for occlusion',
     BRIDGE.includes('const message = mainWarningCopy[id];')
       && BRIDGE.includes("kind: 'warning-ui-compromised'"));

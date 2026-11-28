@@ -12,6 +12,7 @@ function page() {
   let query;
   const box = {
     Date, URL, WeakSet, decodeURIComponent,
+    AbortController,
     window: {}, location: new URL('https://shop.example/download/game'),
     bridgeConfigReady: true, bridgeConfig: { enabled: true, forcedDownloadProtection: true },
     bridgeHostAllowedByUser: () => false,
@@ -22,7 +23,7 @@ function page() {
     document: {
       querySelector: () => ({ textContent: box.heading || 'Download' }),
       createElement: tag => ({ tag, children: [], setAttribute() {}, append(...children) { this.children.push(...children); },
-        appendChild(child) { this.children.push(child); }, click() { box.allowedHref = this.href; }, remove() {} }),
+        appendChild(child) { this.children.push(child); }, click() { box.allowedHref = this.href; box.allowedName = this.download; }, remove() {} }),
       body: { appendChild() {} },
     },
     chrome: { runtime: { id: 'wardenone', sendMessage: message => { box.sent.push(message); } } },
@@ -86,6 +87,36 @@ async function run() {
     allow.click({ isTrusted: false }); assert.equal(p.box.allowedHref, undefined);
     allow.click({ isTrusted: true }); assert.equal(p.box.allowedHref, 'https://cdn.example/avast_secure_browser_setup.exe');
     assert.equal(p.snapshot().gesture.label, 'Download once');
+  }
+  {
+    const p = page();
+    assert(p.click(p.control('', 'https://shop.example/file', { claimed: '' }), false).stopped);
+    await p.offers[0].children[2].click({ isTrusted: true });
+    assert.equal(p.box.allowedName, '', 'approval preserves an empty download attribute');
+  }
+  {
+    const p = page();
+    const blobUrl = 'blob:https://shop.example/original';
+    let release;
+    let signal;
+    let reads = 0;
+    p.box.fetch = (url, options) => {
+      assert.equal(url, blobUrl);
+      signal = options.signal;
+      return new Promise(resolve => { release = resolve; });
+    };
+    const blobLink = p.control('', blobUrl, { claimed: 'report.txt' });
+    assert(p.click(blobLink, false).stopped);
+    const [, , allow, cancel] = p.offers[0].children;
+    await allow.click({ isTrusted: false });
+    assert.equal(allow.disabled, undefined, 'a scripted approval cannot claim the file');
+    const approval = allow.click({ isTrusted: true });
+    cancel.click({ isTrusted: true });
+    assert(signal.aborted, 'dismissing the review releases the retained blob');
+    release({ ok: true, blob: async () => { reads++; return {}; } });
+    await approval;
+    assert.equal(reads, 0, 'an approval that is cancelled never reads the file');
+    assert.equal(p.box.allowedHref, undefined);
   }
   {
     const p = page();
@@ -353,6 +384,35 @@ async function run() {
     vm.runInContext('FORCED_DOWNLOAD_REQUESTS.clear()', sandbox);
     await vm.runInContext('forcedDownloadContext', sandbox)(item);
     assert(sent && sent.downloadId === '501' && sent.urls.includes(item.url), 'the worker names the download and its addresses when it asks');
+  }
+  /* ChatGPT draws its file links as <span role="link"> with no address, then saves a blob it builds. */
+  {
+    const roleLink = (p, label) => p.control(label, undefined, { closest(sel) { return /\[role="link"\]/.test(sel) ? this : null; } });
+    const p = page();
+    p.click(roleLink(p, 'Download iri theme v3 — Black Cherry (.vsix)'));
+    assert.equal(p.snapshot().gesture.requested, true, 'a role="link" download press is a download request');
+    assert(!p.click(p.control('', 'blob:https://shop.example/theme', { claimed: 'iri-theme.vsix' }), false).stopped,
+      'and it covers the file the app then saves');
+    const plain = page();
+    plain.box.fetch = () => new Promise(() => {});
+    plain.click(roleLink(plain, 'Read more'));
+    assert(plain.click(plain.control('', 'blob:https://shop.example/theme', { claimed: 'iri-theme.vsix' }), false).stopped,
+      'a role="link" that never asked for a file still covers nothing');
+  }
+  /* The browser's PDF viewer saves the document it shows from a button no page script can see or press. */
+  {
+    const p = page();
+    assert.equal(p.snapshot().pdfViewer, false);
+    p.box.document.contentType = 'application/pdf';
+    assert.equal(p.snapshot().pdfViewer, true);
+    const { sandbox } = worker();
+    const reason = vm.runInContext('unexpectedDownloadReason', sandbox);
+    const pdf = 'https://moodle.example.ac.uk/pluginfile.php/11913985/mod_resource/content/6/Lab_8.pdf';
+    const save = { ...item, url: pdf, finalUrl: pdf, referrer: pdf, filename: 'C:\\Downloads\\Lab_8.pdf' };
+    assert.equal(reason(save, { ...context, url: pdf + '#page=2', pdfViewer: true }), '', 'Save in the PDF viewer is the reader\'s');
+    assert.notEqual(reason(save, { ...context, url: pdf }), '', 'an ordinary page saving itself with no request is still reviewed');
+    assert.notEqual(reason({ ...save, url: 'https://moodle.example.ac.uk/other.exe', finalUrl: 'https://moodle.example.ac.uk/other.exe', filename: 'other.exe' },
+      { ...context, url: pdf, pdfViewer: true }), '', 'a PDF document cannot cover a different file');
   }
   console.log('[ok] forced download intent, page interception, independent switches, review continuation and source boundaries');
 }

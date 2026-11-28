@@ -272,13 +272,12 @@ async function main() {
   assert.strictEqual(exactHostTrick.critical, true, 'exact installer-host trust must not excuse disguise tricks');
   assert.strictEqual(exactHostTrick.trustedEligible, false);
 
-  // Chrome uses "uncommon" when a URL is not downloaded often. That is weak prevalence
-  // evidence, not a malware verdict, and generated files naturally have one-off URLs. It used
-  // to carry the whole two-point review threshold by itself, so a normal document created in
-  // Claude was paused even though neither Chrome nor WardenOne had found anything dangerous.
+  // Chrome's "uncommon" state reflects low download prevalence for the URL.
+  const claudeOrigin = 'https://claude.ai/';
+  const claudeFiles = 'https://download-fixture.claudeusercontent.com/v1/files/';
   const claudeDocument = guard.scoreDownload(
-    'https://7dc2f9c1-61f8-4da2-a541-850fe27bb83d.claudeusercontent.com/v1/files/report.docx?direct=1',
-    'https://claude.ai/chat/4cbf7cf1-6de4-4de3-b469-19a6790aa112',
+    claudeFiles + 'report.docx?direct=1',
+    claudeOrigin,
     'report.docx',
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     [],
@@ -318,8 +317,8 @@ async function main() {
   assert.strictEqual(uncommonExecutable.action, 'allow', 'a rare installer needs stronger evidence before review');
 
   const disguisedClaudeFile = guard.scoreDownload(
-    'https://7dc2f9c1-61f8-4da2-a541-850fe27bb83d.claudeusercontent.com/v1/files/invoice.pdf.exe',
-    'https://claude.ai/chat/4cbf7cf1-6de4-4de3-b469-19a6790aa112',
+    claudeFiles + 'invoice.pdf.exe',
+    claudeOrigin,
     'invoice.pdf.exe',
     'application/octet-stream',
     [],

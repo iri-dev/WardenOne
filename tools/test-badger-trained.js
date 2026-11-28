@@ -113,6 +113,13 @@ ok(['www.the-sun.com', 'www.thesun.co.uk', 'www.thetimes.com'].every(site => !bl
 ok(blockedBy('p.toadmash.net', 'www.fixture-publisher-1.com') && blockedBy('toadmash.net', 'www.fixture-publisher-1.com')
   && blockedBy('toadmash.net', 'www.target.com'),
   'toadmash.net stays blocked everywhere else, and Privacy Badger’s target.com fix stays limited to p.toadmash.net');
+for (const [label, request, initiator, expected] of [
+  ['Kwai app assets on its alternate site', 'cdn-static.kwai.net', 'www.kslawin.com', false],
+  ['Kwai app assets on its main site', 'cdn-static.kwai.net', 'www.kwai.com', false],
+  ['Kwai CDN on an unrelated site', 'cdn-static.kwai.net', 'www.fixture-publisher-1.com', true],
+  ['other Kwai subdomains on its alternate site', 'logs.kwai.net', 'www.kslawin.com', true],
+  ['Kwai CDN on a lookalike', 'cdn-static.kwai.net', 'kslawin.com.example', true],
+]) ok(blockedBy(request, initiator) === expected, label);
 
 /* ---- the head-to-head sample, against every tracker ruleset on the same switch ------------------- */
 const allTrackers = new Map();

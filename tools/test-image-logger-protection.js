@@ -117,6 +117,8 @@ function imageRig(blockKnown) {
     woOn(_target, type, fn) { listeners.set(type, fn); },
     woObserve(fn, imageSources) { observe = fn; observesImageSources = !!imageSources; },
     log(type, detail) { events.push({ type, detail }); },
+    /* The first scan of images already on the page waits until it has parsed; run it as that idle task would. */
+    __woAfterParse(fn) { fn(); },
     URL, Set, Object,
   };
   vm.runInNewContext(guard, sandbox);

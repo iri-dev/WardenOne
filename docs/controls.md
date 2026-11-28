@@ -147,7 +147,7 @@ This reference maps the controls in WardenOne to their descriptions in the READM
 | Source key | Reader-facing control | README coverage |
 | --- | --- | --- | --- |
 | `blockAutoplay` | Block autoplay video & audio | [Resource Saver](../README.md#resource-saver) |
-| `killPrefetch` | Block prefetch & preload | [Resource Saver](../README.md#resource-saver) |
+| `killPrefetch` | Block speculative loading | [Resource Saver](../README.md#resource-saver) |
 | `lazyLoadMedia` | Lazy-load offscreen images | [Resource Saver](../README.md#resource-saver) |
 | `twitchSteadyPlayback` | Steadier Twitch playback | [Twitch AdShield](../README.md#twitch-adshield) |
 | `disableYouTubeAmbientMode` | Disable YouTube Ambient Mode | [Resource Saver](../README.md#resource-saver) |

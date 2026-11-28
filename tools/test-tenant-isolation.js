@@ -141,7 +141,7 @@ function workerRealm(extra) {
   for (const name of ['registrableDomainBg', 'siteIdentityBg', 'messageCleanHost', 'contentConfigFrameHost', 'noteNavSignal', 'topNavOwnedFor',
     'logHostOf', 'logParty', 'cookieAuditDomain', 'cookieContentSettingPatterns', 'showRedirectWarning', 'smartScriptPartyDomain',
     'forgetHostFromUrl', 'forgetDomainFor', 'domainHasOpenTabs', 'rememberForgetPendingHost', 'takeForgetPendingHosts', 'domainOfTab', 'domainStillOpen',
-    'buildContentConfigSnapshot']) {
+    'pageHostForLists', 'hostEntryMayNamePage', 'adultExtrasForHost', 'learnedForHost', 'buildContentConfigSnapshot']) {
     try { parts.push(grabFn(BG, name)); } catch (e) { parts.push('/* ' + name + ' missing */'); }
   }
   parts.push('const PLAYER_GESTURE_AT = {}; const TOP_NAV_OWNED_AT = {}; const TOP_NAV_OWNED_HOST = {}; const LAST_GESTURE_AT = {};');

@@ -795,11 +795,12 @@
   .shortcut-row { display:flex; justify-content:space-between; align-items:baseline; gap:12px; font-size:11.5px; line-height:1.4; }
   .shortcut-row .k { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:nowrap; }
   .shortcut-row .k.unset { opacity:.6; font-style:italic; font-family:inherit; }
-  #list-failures { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
-  .list-failure { display:flex; gap:8px; align-items:baseline; font-size:10.5px; line-height:1.35; }
+  #list-failures { margin-top:6px; display:flex; flex-direction:column; gap:6px; }
+  .list-failure { display:flex; flex-direction:column; gap:1px; font-size:10.5px; line-height:1.35; }
   .list-failure-url { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    color:var(--ink-soft); word-break:break-all; flex:1; }
-  .list-failure-why { color:var(--wo-danger); white-space:nowrap; font-weight:700; }
+    color:var(--ink-soft); overflow-wrap:anywhere; }
+  .list-failure-why { color:var(--wo-danger); font-weight:700; overflow-wrap:anywhere; }
+  .list-failure-why.is-held { color:var(--wo-warning); }
   #list-publisher-details { margin-top:8px; max-width:100%; }
   #list-publisher-details > summary { cursor:pointer; color:var(--plum); font-size:11px; font-weight:700; }
   #list-publisher-details > .desc { max-width:none; margin-top:6px; line-height:1.4; }
@@ -1728,7 +1729,7 @@
       <label class="tg"><input type="checkbox" data-key="throttleBackgroundTabs"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">
-      <div><div class="name" style="font-size:12px;">Block prefetch &amp; preload</div><div class="desc">Stop sites from pre-downloading pages and resources you may never open. Saves data on metered/mobile connections.</div></div>
+      <div><div class="name" style="font-size:12px;">Block speculative loading</div><div class="desc">Stops pages from fetching links in advance and opening early connections. The page you are on can still preload the files it needs.</div></div>
       <label class="tg"><input type="checkbox" data-key="killPrefetch"><span class="track"></span><span class="knob"></span></label>
     </div>
     <div class="row">

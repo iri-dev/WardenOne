@@ -18,8 +18,13 @@ async function run() {
   const port = await profile.freePort();
   let cdp, server;
   try {
-    server = http.createServer((_request, response) => {
+    server = http.createServer((request, response) => {
       response.setHeader('Content-Type', 'text/html');
+      /* A full page backdrop whose own capture listener, registered before the Zapper, clicks it during and after a press. */
+      if (request.url.startsWith('/overlay')) return response.end('<!doctype html><title>Zapper overlay</title><p>Content</p>'
+        + '<div id="backdrop" style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:1000"><div style="width:300px;margin:120px auto;background:#fff">Cookie choices</div></div>'
+        + '<script>const b=document.getElementById("backdrop");window.__synthetic=0;addEventListener("pointerup",()=>{window.__synthetic++;b.click();'
+        + 'setTimeout(()=>{window.__synthetic++;b.click();},300);},true);</script>');
       response.end('<!doctype html><title>Zapper regression</title><style>body{margin:20px}section{width:200px;height:80px;margin-bottom:20px;background:#ddd}</style><section id="first">First</section><section id="second">Second</section><div class="own-filter">User filter</div><div class="subscribed-filter">Subscribed filter</div><div data-zap="quoted">Quoted attribute</div>');
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -234,6 +239,29 @@ async function run() {
     await evaluate(worker, `removeHiddenElement(${JSON.stringify(host)},'#first').then(r=>r.ok)`);
     await until(page, "getComputedStyle(document.getElementById('first')).display!=='none'");
     console.log('[ok] saved Zapper rules and undo still work with AdShield disabled');
+    await evaluate(worker, "chrome.storage.local.remove('wardenone_hidden_elements').then(()=>true)");
+    await cdp.send('Page.navigate', { url: url + 'overlay' }, page);
+    await until(page, "location.pathname==='/overlay'&&document.readyState==='complete'&&!!document.getElementById('backdrop')");
+    /* An in-app navigation first, so Undo all runs while the browser still reports the load address as sender.url. */
+    await evaluate(page, "history.pushState({}, '', '/overlay/next'); true");
+    await until(worker, `chrome.tabs.get(${tabId}).then(t=>t.url.endsWith('/overlay/next'))`);
+    await evaluate(worker, `chrome.scripting.executeScript({target:{tabId:${tabId}},files:['element-picker.js']}).then(()=>true)`);
+    await until(page, "!!document.getElementById('wo-picker-root')");
+    const backdropPoint = { x: 20, y: await evaluate(page, 'innerHeight - 30') };
+    const backdropVisible = "getComputedStyle(document.getElementById('backdrop')).display!=='none'";
+    await click(backdropPoint);
+    await until(page, 'window.__synthetic>=2');
+    await sleep(300);
+    assert(await evaluate(worker, saved(0)) && await evaluate(page, backdropVisible), 'one real press on a page sized element only warns');
+    await click(backdropPoint);
+    await until(worker, saved(1));
+    await button('Undo all on this site', '');
+    await button('Undo all', '');
+    await until(worker, saved(0));
+    await until(page, 'window.__synthetic>=8');
+    await sleep(300);
+    assert(await evaluate(worker, saved(0)) && await evaluate(page, backdropVisible), 'page clicks after Undo all hide nothing again');
+    console.log('[ok] page script clicks cannot select, confirm the size warning or hide anything again after Undo all');
   } finally {
     if (cdp) { await profile.killBrowser(cdp, port).catch(() => {}); cdp.close(); }
     if (server) await new Promise((resolve) => server.close(resolve));

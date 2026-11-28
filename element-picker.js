@@ -72,7 +72,8 @@
   function armGlobalUndo() {
     if (undoState.listener) return;
     undoState.listener = (e) => {
-      if (!(e.ctrlKey || e.metaKey) || (e.key !== 'z' && e.key !== 'Z') || undoTargetIsEditable(e.target)) return;
+      /* A page's own synthetic Ctrl+Z must not retract a saved rule. */
+      if (e.isTrusted !== true || !(e.ctrlKey || e.metaKey) || (e.key !== 'z' && e.key !== 'Z') || undoTargetIsEditable(e.target)) return;
       if (!undoLatestZapper()) return;
       e.preventDefault();
       e.stopImmediatePropagation();
@@ -362,6 +363,8 @@
   let latestSeq = 0;
   let undoAllConfirming = false;
   let undoAllPending = false;
+  /* The page sized element waiting for its second press. Held for this run only, so Cancel or Undo all asks again. */
+  let confirmBig = null;
 
   /* The last rectangle written. The pointer moves many times inside one element,
      so most frames ask for a box that is already exactly where it needs to be --
@@ -441,6 +444,7 @@
     button.addEventListener('click', (event) => {
       if (event.isTrusted !== true || undoAllPending) return;
       undoAllConfirming = true;
+      confirmBig = null;
       latestSeq++;
       current = null;
       frame(null);
@@ -528,6 +532,7 @@
     frame(t);
   }
   function onMove(e) {
+    if (e.isTrusted !== true) return;
     pointerX = e.clientX;
     pointerY = e.clientY;
     if (!moveRaf) moveRaf = requestAnimationFrame(trackPointer);
@@ -670,19 +675,21 @@
     if (ours(e)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    if (undoAllConfirming || undoAllPending) return;
+    /* Only the person's own press selects or confirms. A page capture listener registered before ours can call
+       el.click() mid press; that click is swallowed and does nothing. */
+    if (e.isTrusted !== true || undoAllConfirming || undoAllPending) return;
     const t = current || document.elementFromPoint(e.clientX, e.clientY);
     if (!t || t === document.body || t === document.documentElement) return;
 
-    if (tooBig(t) && !t.__woConfirmedBig) {
-      t.__woConfirmedBig = true;
+    if (tooBig(t) && confirmBig !== t) {
+      confirmBig = t;
       const wrap = el('div');
       wrap.appendChild(el('div', 't warn', 'That covers most of the page'));
       wrap.appendChild(el('div', 'n', 'Hiding it will probably look like the site is broken. Click it again if you meant it, or pick something smaller.'));
       const row = el('div', 'row');
       const hide = el('button', 'keep', 'Hide it anyway');
       const cancel = el('button', null, 'Cancel');
-      hide.addEventListener('click', () => selectTarget(t));
+      hide.addEventListener('click', () => { confirmBig = null; selectTarget(t); });
       cancel.addEventListener('click', stop);
       row.appendChild(hide); row.appendChild(cancel);
       addUndoAllButton(row);
@@ -690,6 +697,7 @@
       say(wrap);
       return;
     }
+    confirmBig = null;
     selectTarget(t);
   }
 
@@ -706,6 +714,7 @@
   }
 
   function onKey(e) {
+    if (e.isTrusted !== true) return;
     if (e.key === 'Escape') {
       /* Exit keeps saved hiding rules. Ctrl+Z is the explicit undo. */
       stop();
@@ -733,12 +742,12 @@
       if (!current || current === document.body || current === document.documentElement) return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      onClick({ clientX: 0, clientY: 0, target: current, preventDefault() {}, stopImmediatePropagation() {} });
+      onClick({ isTrusted: e.isTrusted, clientX: 0, clientY: 0, target: current, preventDefault() {}, stopImmediatePropagation() {} });
     }
   }
 
   function onWheel(e) {
-    if (!current) return;
+    if (e.isTrusted !== true || !current) return;
     e.preventDefault();
     if (e.deltaY < 0) widen(); else narrow();
   }

@@ -1,8 +1,6 @@
 /* WardenOne — Copyright (C) 2026 iri; GPL-3.0-or-later. See LICENSE. */
 'use strict';
-/* Stands in for OneTrust's otSDKStub.js while automatic cookie refusal is on. It saves a refusal in OneTrust's own
-   cookies and answers the calls a site makes, so the banner, its settings files, logos and the geolocation lookup are
-   never fetched. A choice the person already made is kept as it is. */
+/* Answers OneTrust locally until the person opens the site's own preference center. */
 (() => {
   const existing = window.OneTrust;
   if (existing && (existing.__wardenOne || typeof existing.IsAlertBoxClosed === 'function')) return;
@@ -10,6 +8,8 @@
   const NECESSARY = 'C0001';
   const STANDARD = ['C0001', 'C0002', 'C0003', 'C0004', 'C0005'];
   const YEAR = 365 * 24 * 60 * 60;
+  const source = document.currentScript;
+  const settingsControl = '#ot-sdk-btn, .ot-sdk-show-settings, .optanon-show-settings';
 
   function readCookie(name) {
     const hit = String(document.cookie || '').split('; ').find(part => part.startsWith(name + '='));
@@ -106,11 +106,69 @@
     for (const fn of listeners) { try { fn({ detail: active.slice() }); } catch (_) {} }
   }
 
+  let openingPreferences = false;
+  function openPreferences() {
+    if (!source || openingPreferences || window.OneTrust !== api || !navigator.userActivation?.isActive) return;
+    openingPreferences = true;
+    const ready = () => {
+      clearTimeout(replyTimeout);
+      const script = document.createElement('script');
+      const failed = () => {
+        clearTimeout(loadTimeout);
+        script.remove();
+        if (!window.OneTrust) window.OneTrust = api;
+        if (!window.Optanon) window.Optanon = window.OneTrust;
+        openingPreferences = false;
+      };
+      const loadTimeout = setTimeout(failed, 10000);
+      let nextOpen = 0;
+      const openWhenReady = () => {
+        if (!openingPreferences) return;
+        const sdk = window.OneTrust;
+        const panel = document.getElementById('onetrust-pc-sdk');
+        if (panel?.getClientRects().length && !panel.closest('[aria-hidden="true"]')
+            && getComputedStyle(panel).visibility === 'visible') {
+          clearTimeout(loadTimeout);
+          openingPreferences = false;
+          return;
+        }
+        /* Some sites need to renew the refusal against their own category IDs before the panel can stay open. */
+        try {
+          if (sdk && !sdk.__wardenOne && typeof sdk.ToggleInfoDisplay === 'function'
+              && sdk.IsAlertBoxClosed?.() === true && Date.now() >= nextOpen) {
+            nextOpen = Date.now() + 500;
+            sdk.ToggleInfoDisplay();
+          }
+        } catch (_) {}
+        setTimeout(openWhenReady, 100);
+      };
+      try {
+        for (const { name, value } of source.attributes) {
+          if (name !== 'id') script.setAttribute(name, value);
+        }
+        script.nonce = source.nonce;
+        script.addEventListener('load', openWhenReady, { once: true });
+        script.addEventListener('error', failed, { once: true });
+        window.OneTrust = undefined;
+        if (window.Optanon === api) window.Optanon = undefined;
+        (document.head || document.documentElement).append(script);
+      } catch (_) { failed(); }
+    };
+    source.addEventListener('wardenone-onetrust-preferences-ready', ready, { once: true });
+    const replyTimeout = setTimeout(() => {
+      source.removeEventListener('wardenone-onetrust-preferences-ready', ready);
+      openingPreferences = false;
+    }, 5000);
+    /* The isolated listener sees the trusted click before the request crosses worlds. */
+    setTimeout(() => source.dispatchEvent(new Event('wardenone-onetrust-preferences', { bubbles: true })), 0);
+  }
+
   const api = {
     __wardenOne: true,
     IsAlertBoxClosed: () => true,
     IsAlertBoxClosedAndValid: () => true,
     AllowAll: allowAll,
+    ToggleInfoDisplay: openPreferences,
     OnConsentChanged: (fn) => { if (typeof fn === 'function') listeners.push(fn); },
     GetDomainData: () => ({
       ConsentModel: { Name: 'opt-in' },
@@ -126,7 +184,7 @@
     }, callback),
   };
   /* InsertHtml holds markup for optional groups, which a refusal leaves off, so it inserts nothing. */
-  for (const name of ['InsertHtml', 'RejectAll', 'Close', 'ToggleInfoDisplay', 'LoadBanner', 'Init', 'InitializeBanner', 'changeLanguage',
+  for (const name of ['InsertHtml', 'RejectAll', 'Close', 'LoadBanner', 'Init', 'InitializeBanner', 'changeLanguage',
     'setGeoLocation', 'useGeoLocationService', 'testLog', 'BlockGoogleAnalytics', 'ReconsentGroups', 'UpdateConsent',
     'setConsentProfile', 'setDataSubjectIdV2', 'initializeCookiePolicyHtml', 'getCSS', 'getHtml', 'TriggerGoogleAnalyticsEvent']) {
     api[name] = () => {};
@@ -135,6 +193,9 @@
   publish();
   window.OneTrust = api;
   window.Optanon = api;
+  if (source) document.addEventListener('click', event => {
+    if (event.isTrusted && event.composedPath().some(el => el.matches?.(settingsControl))) openPreferences();
+  }, true);
   if (refused && typeof window.gtag === 'function') {
     try { window.gtag('consent', 'update', { ad_storage: 'denied', analytics_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' }); } catch (_) {}
   }

@@ -219,6 +219,17 @@ function listMetaCount(meta) {
 function listMetaActiveCount(meta) {
   return Number((meta && (meta.activeCount || meta.activeRuleCount)) || 0);
 }
+/* A feed's short name for a sentence: the repository on GitHub (TweetFeed), the project on GitLab Pages, else the site. */
+function listFeedName(raw) {
+  try {
+    const u = new URL(String(raw || ''));
+    const parts = u.pathname.split('/').filter(Boolean);
+    const host = u.hostname.toLowerCase().replace(/^www\./, '');
+    const name = (host === 'raw.githubusercontent.com' || host === 'github.com') ? parts[1]
+      : /\.git(?:hub|lab)\.io$/.test(host) ? parts[0] || host.split('.')[0] : host;
+    return String(name || host).slice(0, 40);
+  } catch (_) { return ''; }
+}
 /* Enforced domains lead; the larger known total is context, not the headline. */
 function listStatusText(meta) {
   const count = listMetaCount(meta);
@@ -390,7 +401,11 @@ function renderListMeta() {
       const s = meta.sources;
       if (s && typeof s.total === 'number') {
         line += ' - ' + s.succeeded + '/' + s.total + ' feeds';
-        if (s.failed > 0) line += ' (' + s.failed + ' unreachable)';
+        /* A refused feed was reached; it is set aside, not missing. */
+        const held = Math.max(0, Number(s.rejected) || 0);
+        const unreachable = Math.max(0, (Number(s.failed) || 0) - held);
+        const why = [unreachable ? unreachable + ' unreachable' : '', held ? held + ' held back' : ''].filter(Boolean);
+        if (why.length) line += ' (' + why.join(', ') + ')';
       }
       /* Name failed feeds and their reasons so the reader can fix the source. */
       const failedList = (s && Array.isArray(s.failures)) ? s.failures : [];
@@ -401,14 +416,15 @@ function renderListMeta() {
         for (const f of failedList) {
           const row = document.createElement('div');
           row.className = 'list-failure';
-          let host = String(f.url || '');
-          try { host = new URL(host).hostname + new URL(host).pathname; } catch (_) { /* keep the raw string */ }
+          /* The feed's short name, with its address on hover: a raw path ran across several lines of the card. */
           const name = document.createElement('span');
           name.className = 'list-failure-url';
-          name.textContent = host.length > 58 ? host.slice(0, 58) + '…' : host;
+          name.textContent = listFeedName(f.url) || String(f.url || '').slice(0, 58);
+          name.title = String(f.url || '');
           const why = document.createElement('span');
           why.className = 'list-failure-why';
-          why.textContent = f.error || 'failed';
+          why.textContent = f.rejected ? 'Held back: it changed too much at once to trust. Your other lists still updated.' : (f.error || 'failed');
+          if (f.rejected) { why.title = String(f.error || ''); why.classList.add('is-held'); }
           row.append(name, why);
           failEl.appendChild(row);
         }

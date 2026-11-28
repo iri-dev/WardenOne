@@ -486,7 +486,7 @@ async function main() {
   check('Activity Center names it',
     /blocked_frame_top_redirect: '/.test(HISTORY));
   check('the worker clears the attribution when a page commits',
-    /onCommitted\?\.addListener\(\(details\) => \{[\s\S]{0,1200}?forgetNavSignals\(details\.tabId\)/.test(BG),
+    /onCommitted\?\.addListener\(\(details\) => \{[\s\S]{0,1800}?forgetNavSignals\(details\.tabId\)/.test(BG),
     'the previous page\'s click must not explain the next page\'s navigation');
   /* Order matters inside that listener and is not obvious from reading it: the
      guard needs the page being LEFT, so it has to run before LAST_TOP_URL moves on. */
@@ -578,7 +578,16 @@ async function main() {
     ['https://news-alpha.example/', 'https://news-alpha.org/', false],
   ]) check('same owner regional scope: ' + source + ' to ' + target, (await sameOwner(source, target)) === expected);
   check('the forced-redirect check asks the owner list after the named exemptions',
-    /knownAmpUnwrap\(fromUrl, details\.url\)\) return;\n  if \(await sameOwnerRegionalRedirect\(fromUrl, details\.url\)\) return;/.test(BG));
+    /knownAmpUnwrap\(fromUrl, details\.url\)\) return;\n[\s\S]{0,700}?if \(await sameOwnerRegionalRedirect\(fromUrl, details\.url\)\) return;/.test(BG));
+  /* 2026-11-26: the click was read after that await, by which time the commit listener had already forgotten it,
+     so no click ever excused a forced redirect (seen live: X bio link, t.co, then the Redirect Check). */
+  {
+    const guard = BG.slice(BG.indexOf('async function maybeBlockForcedTopRedirect'), BG.indexOf('function forgetNavSignals'));
+    const firstAwait = guard.search(/\(await |= await /);
+    check('the click and the page\'s own navigation are read before the first await',
+      firstAwait > 0 && guard.indexOf('LAST_GESTURE_AT[tabId] || 0') > 0 && guard.indexOf('LAST_GESTURE_AT[tabId] || 0') < firstAwait
+        && guard.indexOf('topNavOwnedFor(') > 0 && guard.indexOf('topNavOwnedFor(') < firstAwait);
+  }
   /* Clicking a Brave Search result raised a Redirect Check: search.brave.com/go/v1 committed, the click was forgotten,
      and its hop to the result read as the tab moving on its own. Only the engine's own redirector carries the click. */
   const clickRedirector = vm.runInNewContext(DOMAIN + ';' + auctionSrc + ';function siteIdentityBg(h) { return siteIdentity(h); };searchClickRedirector', { URL });
@@ -595,7 +604,36 @@ async function main() {
     ['https://www.google.com/search?q=x', 'https://www.google.com/urlx', false],
   ]) check('search click redirector scope: ' + left + ' to ' + next, clickRedirector(left, next) === expected);
   check('a search redirector page keeps the results page click instead of forgetting it',
-    /searchClickRedirector\(LAST_TOP_URL\[details\.tabId\], details\.url\);[\s\S]{0,200}forgetNavSignals\(details\.tabId\);\s*if \(carryClick\) LAST_GESTURE_AT\[details\.tabId\] = clickAt;/.test(BG));
+    /searchClickRedirector\(leavingUrl, details\.url\) \|\| linkWrapperRedirector\(leavingUrl, details\.url\)\);[\s\S]{0,300}forgetNavSignals\(details\.tabId\);\s*if \(carryClick\) LAST_GESTURE_AT\[details\.tabId\] = clickAt;/.test(BG));
+  /* 2026-11-26: bio links on X opened t.co in a new tab, t.co forwarded by script, and the tab was swapped
+     for "sent to another site without anyone touching it". The wrapper carries the click only from its owner. */
+  const wrapper = vm.runInNewContext(DOMAIN + ';' + auctionSrc + ';function siteIdentityBg(h) { return siteIdentity(h); };linkWrapperRedirector', { URL });
+  for (const [left, next, expected] of [
+    ['https://x.com/github', 'https://t.co/bbJgfyzKzp', true],
+    ['https://twitter.com/github', 'https://t.co/bbJgfyzKzp', true],
+    ['https://www.facebook.com/somepage', 'https://l.facebook.com/l.php?u=https%3A%2F%2Fexample.org', true],
+    ['https://news.example/article', 'https://t.co/bbJgfyzKzp', false],
+    ['https://x.com.evil.example/github', 'https://t.co/bbJgfyzKzp', false],
+    ['https://x.com/github', 'https://t.co/', false],
+    ['https://x.com/github', 'http://t.co/bbJgfyzKzp', false],
+    ['https://x.com/github', 'https://t.co.evil.example/bbJgfyzKzp', false],
+    ['https://x.com/github', 'https://l.facebook.com/l.php?u=x', false],
+  ]) check('link wrapper scope: ' + left + ' to ' + next, wrapper(left, next) === expected);
+  /* The page side of the same story: on X every outside link is t.co, printed beside its real address. */
+  {
+    const ENGINE = fs.readFileSync(path.join(ROOT, 'content.min.js'), 'utf8');
+    const mapText = /OWN_SHORTENER_SITES=(new Map\(\[[\s\S]*?\]\]\))/.exec(ENGINE);
+    const own = mapText ? vm.runInNewContext(mapText[1], { Map }) : null;
+    const ownFor = (dest, here) => !!own && (own.get(dest) || []).includes(here);
+    check('X\'s own t.co is not a "Shortened link" on X, and stays one everywhere else',
+      ownFor('t.co', 'x.com') && ownFor('t.co', 'twitter.com') && !ownFor('t.co', 'news.example')
+        && !ownFor('bit.ly', 'x.com') && !ownFor('constructor', 'x.com')
+        && /WO\.warnShorteners&&!\(OWN_SHORTENER_SITES\.get\(dest\)\|\|\[\]\)\.includes\(here\)&&SHORTENERS\.some\(/.test(ENGINE));
+  }
+  check('a tab opened by a click starts with that click and the page that opened it',
+    /onCreatedNavigationTarget\?\.addListener\(\(details\) => \{\s*noteOpenedFrom\(details\);/.test(BG)
+      && /const opener = !LAST_TOP_URL\[details\.tabId\] \? OPENED_FROM\[details\.tabId\] : null;/.test(BG)
+      && /function forgetNavSignals\(tabId\) \{\s*delete OPENED_FROM\[tabId\];/.test(BG));
   const LANDERS = [
     ['https://boost-you-browser.com/preland/storage/sf/operaone/5/index.html?p1=x', true, 'the real one'],
     ['https://boost-you-browser.com/', true, 'a hostname that is a pitch for a browser'],

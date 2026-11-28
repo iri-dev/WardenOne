@@ -28,7 +28,10 @@ const licenseHash = text => require('crypto').createHash('sha1').update('blob ' 
 /* WardenOne's own site fixes, applied like Privacy Badger's. Badger already exempts p.toadmash.net on target.com; its
    seed sees toadmash.net fingerprinting only on News UK sites, where it runs the "Verifying Device" check. Blocking it
    left the-sun.com stuck on that check (rematch, 2026-11-14). */
-const WARDENONE_SITEFIXES = Object.freeze({ 'toadmash.net': Object.freeze(['the-sun.com', 'thesun.co.uk', 'thetimes.com']) });
+const WARDENONE_SITEFIXES = Object.freeze({
+  'toadmash.net': Object.freeze(['the-sun.com', 'thesun.co.uk', 'thetimes.com']),
+  'cdn-static.kwai.net': Object.freeze(['kslawin.com']),
+});
 
 function checkSnapshot(snapshot) {
   if (!snapshot || snapshot.schema !== 1 || !/^[0-9a-f]{40}$/.test(snapshot.revision || '') || !Array.isArray(snapshot.files)

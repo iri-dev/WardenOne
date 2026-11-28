@@ -1172,7 +1172,10 @@
     if (!targetHost) return false;
     if (targetHost === 'whuw8g.site' || targetHost.endsWith('.whuw8g.site')) return true;
     const raw = String(rawTarget || '');
-    if (/^xn--/i.test(targetHost) || /^\d{1,3}(\.\d{1,3}){3}$/.test(targetHost)) return true;
+    /* A bare public address is how throwaway ad and malware servers show up. This computer and the home
+       network are not: an ad network cannot serve from them, and they are where local apps and routers live. */
+    if (/^xn--/i.test(targetHost)
+      || (/^\d{1,3}(\.\d{1,3}){3}$/.test(targetHost) && !/^(?:127\.|10\.|192\.168\.|169\.254\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(targetHost))) return true;
     // Abuse-prone TLD set -- kept a SUPERSET of the download-guard throwaway list (background.js)
     // and content.min.js's chain heuristic so the outer popup/redirect shield never lags behind
     // the inner layers. .zip/.mov are filename-confusable; the rest are bulk-registered malvertising/
@@ -1185,7 +1188,8 @@
     // edge case, so the decoded form has to be tested as well as the raw one.
     let decoded = raw;
     try { decoded = decodeURIComponent(raw); } catch (_) { decoded = raw; }
-    if (/(adurl|popunder|onclickad|invoke[_-]?layer|campaign|aff_id|affiliate|clickid|utm_source=ad|doubleclick|adservice|taboola|outbrain)/i.test(raw + ' ' + decoded)) return true;
+    // utm_campaign tags ordinary links everywhere; an ad hop names its campaign as a field of its own.
+    if (/(adurl|popunder|onclickad|invoke[_-]?layer|(?<![a-z0-9_])campaign|aff_id|affiliate|clickid|utm_source=ad|doubleclick|adservice|taboola|outbrain)/i.test(raw + ' ' + decoded)) return true;
     if (fakeInstallLander(targetHost, raw)) return true;
     return false;
   }
@@ -1780,13 +1784,26 @@
     return false;
   }
 
-  const activatedPinterestGooglePopup = (() => {
+  /* A press in Google's sign in button frame focuses that frame and activates this page, with no click here. Only that
+     press may open Google's sign in window, or its account picker, for the same client and this page's origin. */
+  const pressedGoogleSignInPopup = (() => {
     const refuse = () => false;
-    if (!TOP_FRAME || !/(^|\.)pinterest\.com$/i.test(location.hostname)) return refuse;
+    if (!TOP_FRAME) return refuse;
     try {
       const activation = navigator.userActivation;
       const isActive = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(activation), 'isActive').get.bind(activation);
-      const matchGoogleEndpoint = RegExp.prototype.exec.bind(/^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/);
+      const activeElementOf = Function.call.bind(Object.getOwnPropertyDescriptor(Document.prototype, 'activeElement').get);
+      const frameSrc = Function.call.bind(Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src').get);
+      const nativeGetter = (owner, name) => {
+        const desc = owner && Object.getOwnPropertyDescriptor(owner.prototype, name);
+        return desc && typeof desc.get === 'function' ? Function.call.bind(desc.get) : null;
+      };
+      const shadowRootOf = nativeGetter(typeof Element === 'function' && Element, 'shadowRoot');
+      const shadowActiveOf = nativeGetter(typeof ShadowRoot === 'function' && ShadowRoot, 'activeElement');
+      const matchGoogleButton = RegExp.prototype.exec.bind(/^https:\/\/accounts\.google\.com\/gsi\/button\?/);
+      const matchGoogleSignIn = RegExp.prototype.exec.bind(/^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?/);
+      const matchGooglePicker = RegExp.prototype.exec.bind(/^https:\/\/accounts\.google\.com\/gsi\/select\?/);
+      const matchClientId = RegExp.prototype.exec.bind(/^[a-z0-9-]+\.apps\.googleusercontent\.com$/);
       const NativeURL = URL;
       const searchParams = Function.call.bind(Object.getOwnPropertyDescriptor(URL.prototype, 'searchParams').get);
       const getAll = Function.call.bind(URLSearchParams.prototype.getAll);
@@ -1795,14 +1812,28 @@
         const values = getAll(params, name);
         return values.length === 1 ? values[0] : '';
       };
+      const focusedGoogleButtonClient = () => {
+        try {
+          let el = activeElementOf(document);
+          for (let depth = 0; el && shadowRootOf && shadowActiveOf && depth < 8; depth++) {
+            const root = shadowRootOf(el);
+            const inner = root ? shadowActiveOf(root) : null;
+            if (!inner) break;
+            el = inner;
+          }
+          const src = el ? frameSrc(el) : '';
+          return matchGoogleButton(src) ? singleParam(searchParams(new NativeURL(src)), 'client_id') : '';
+        } catch (_) { return ''; }
+      };
       return (rawTarget) => {
-        // A press in Google's cross-origin button activates the top frame without dispatching a click there.
-        if (!matchGoogleEndpoint(rawTarget) || !isActive()) return false;
+        const signIn = !!matchGoogleSignIn(rawTarget);
+        if ((!signIn && !matchGooglePicker(rawTarget)) || !isActive()) return false;
         const params = searchParams(new NativeURL(rawTarget));
-        return singleParam(params, 'origin') === origin
-          && singleParam(params, 'gsiwebsdk') === 'gis_attributes' && singleParam(params, 'redirect_uri') === 'gis_transform'
-          && singleParam(params, 'response_mode') === 'form_post'
-          && /^[a-z0-9-]+\.apps\.googleusercontent\.com$/.test(singleParam(params, 'client_id'));
+        const client = singleParam(params, 'client_id');
+        if (singleParam(params, 'origin') !== origin || !matchClientId(client) || focusedGoogleButtonClient() !== client) return false;
+        if (!signIn) return singleParam(params, 'ux_mode') === 'popup' && getAll(params, 'login_uri').length === 0;
+        return singleParam(params, 'gsiwebsdk') === 'gis_attributes' && singleParam(params, 'redirect_uri') === 'gis_transform'
+          && singleParam(params, 'response_mode') === 'form_post';
       };
     } catch (_) { return refuse; }
   })();
@@ -1817,8 +1848,8 @@
       return blankPopupAllowanceAvailable(true) ? false : 'non-auth staged blank popup';
     }
     const targetHost = hostOf(rawTarget);
-    if (!freshGesture()) {
-      return context && context.directWindowOpen && activatedPinterestGooglePopup(rawTarget) ? false : 'no recent user gesture';
+    if (!freshGesture() && !(context && context.pressedLinkReplay === true)) {
+      return context && context.directWindowOpen && pressedGoogleSignInPopup(rawTarget) ? false : 'no recent user gesture';
     }
     if (!targetHost || sameParty(targetHost, location.hostname)) return false;
     if (unresolvedDownloadNeedsReview(rawTarget)) return 'unverified download destination after a blocked redirect';
@@ -2517,6 +2548,24 @@
       && !redirectWrapperPointsAt(raw, pressedControlUrl);
   }
 
+  /* WardenOne's link check holds a click while it looks the address up, then presses the same link again.
+     That second click comes from a script, but it repeats the reader's press exactly: the same element, the
+     address it had when pressed, while the browser still counts the press as a fresh user action. */
+  const PRESSED_LINK_REPLAY_MS = 5000;
+  const userActivationIsActive = (() => {
+    try {
+      const activation = navigator.userActivation;
+      const get = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(activation), 'isActive').get;
+      return () => { try { return get.call(activation) === true; } catch (_) { return false; } };
+    } catch (_) { return () => false; }
+  })();
+  function replaysPressedLink(event, anchor, raw) {
+    if (!event || event.isTrusted !== false || !anchor || anchor !== pressedControl || !anchor.isConnected) return false;
+    if (!pressedControlAt || Date.now() - pressedControlAt > PRESSED_LINK_REPLAY_MS || lastGestureTainted) return false;
+    if (!pressedControlUrl || String(raw || '').split('#')[0] !== pressedControlUrl.split('#')[0]) return false;
+    return userActivationIsActive();
+  }
+
   // Click-layer guard: cancels hijack clicks whose default action navigates
   // natively (so the window.open/location hooks below never see them).
   function guardClick(event) {
@@ -2543,6 +2592,7 @@
     // Missing custom targets and `_blank` continue through popup scrutiny.
     if (namedFrameNavigation) return;
     const host = hostOf(raw);
+    const replay = replaysPressedLink(event, a, raw);
     const cancel = (why, silent, popupClick) => {
       try { event.preventDefault(); } catch (_) {}
       // A hijack click means hostile page: taint the gesture and drop any
@@ -2589,7 +2639,8 @@
       const coversPlayer = !!(strictPopupPolicyApplies() && pt && pointOnVideo(pt.x, pt.y) && !popupAnchorOwnsPlayer(a));
       const matcherHit = popupMatcherApi.match(raw, {
         nativeAnchor: true,
-        trustedActivation: event.isTrusted === true,
+        trustedActivation: event.isTrusted === true || replay,
+        pressedLinkReplay: replay,
         topFrame: TOP_FRAME,
         freshGesture: freshGesture(),
         strict: strictPopupEnabled(),
@@ -2606,7 +2657,7 @@
         return cancel('popup matcher: ' + matcherHit.reason, true, true);
       }
       if (!popupPolicyApplies()) return;
-      if (event.isTrusted === false) {
+      if (event.isTrusted === false && !replay) {
         let isDownload = false;
         try { isDownload = !!(a.hasAttribute && a.hasAttribute('download')); } catch (_) {}
         if (isDownload && !suspiciousRedirectTarget(raw)) return;
@@ -2646,7 +2697,7 @@
     // Subframes keep all of their own location, form, and media navigation native.
     if (!navigationEnabled()) return;
     if (!host || sameParty(host, location.hostname) || isTrustedHost(host) || federationUrlShape(raw)) return;
-    if (event.isTrusted === false) {
+    if (event.isTrusted === false && !replay) {
       let isDownload = false;
       try { isDownload = !!(a.hasAttribute && a.hasAttribute('download')); } catch (_) {}
       if (isDownload && !suspiciousRedirectTarget(raw)) return;

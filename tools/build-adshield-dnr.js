@@ -13,6 +13,7 @@ const fs = require('fs');
 
 // Conversion cap; the complete package must also pass test-dnr-budget.js.
 const MAX_RULES = 29500;
+const HOSTS_PER_RULE = 2000;
 
 const PINNED_ALLOW_RULES = [
   { action: { type: 'allow' }, condition: { urlFilter: '||github-cloud.s3.amazonaws.com^' }, priority: 4, kind: 'allow' },
@@ -204,8 +205,26 @@ function main() {
     && !r.condition.resourceTypes && !r.condition.excludedResourceTypes
     && !r.condition.initiatorDomains && !r.condition.excludedInitiatorDomains;
   const pathBlocks = blocks.filter((r) => !isPureHost(r));
-  const hostBlocks = blocks.filter(isPureHost);
-  const orderedBlocks = PINNED_BLOCK_RULES.concat(pathBlocks, hostBlocks);
+  /* ||host^ matches the host and its subdomains, as requestDomains does, so each set of host rules with the same
+     remaining conditions becomes a few rules naming every host. Without the ^ it is a prefix match and stays as written. */
+  const hostGroups = new Map();
+  const prefixBlocks = [];
+  for (const rule of blocks.filter(isPureHost)) {
+    const { urlFilter, ...rest } = rule.condition;
+    if (!urlFilter.endsWith('^')) { prefixBlocks.push(rule); continue; }
+    const key = JSON.stringify(rest);
+    if (!hostGroups.has(key)) hostGroups.set(key, { rest, hosts: new Set() });
+    hostGroups.get(key).hosts.add(urlFilter.slice(2, -1).replace(/\.$/, ''));
+  }
+  const hostBlocks = [];
+  for (const { rest, hosts } of hostGroups.values()) {
+    const all = [...hosts].sort();
+    for (let i = 0; i < all.length; i += HOSTS_PER_RULE) {
+      hostBlocks.push({ action: { type: 'block' }, condition: Object.assign({ requestDomains: all.slice(i, i + HOSTS_PER_RULE) }, rest), priority: 1, kind: 'block' });
+    }
+  }
+  stats.packedHosts = [...hostGroups.values()].reduce((n, g) => n + g.hosts.size, 0);
+  const orderedBlocks = PINNED_BLOCK_RULES.concat(pathBlocks, prefixBlocks, hostBlocks);
   const budgetForBlocks = MAX_RULES - allows.length;
   const trimmedBlocks = orderedBlocks.slice(0, Math.max(0, budgetForBlocks));
   const rules = allows.concat(trimmedBlocks).map((r, i) => ({
@@ -218,7 +237,7 @@ function main() {
   require('./lib/network-policy.js').validate({ addRules: rules }, 'static');
   fs.writeFileSync(outPath, JSON.stringify(rules));
   const skipped = Object.entries(stats).map(([k, v]) => k + '=' + v).join(' ');
-  console.log('rules: ' + rules.length + ' (allow/allowAll=' + allows.length + ', block=' + trimmedBlocks.length + (blocks.length > trimmedBlocks.length ? ', dropped=' + (blocks.length - trimmedBlocks.length) : '') + ')');
+  console.log('rules: ' + rules.length + ' (allow/allowAll=' + allows.length + ', block=' + trimmedBlocks.length + (orderedBlocks.length > trimmedBlocks.length ? ', dropped=' + (orderedBlocks.length - trimmedBlocks.length) : '') + ')');
   console.log('skipped: ' + skipped);
 }
 

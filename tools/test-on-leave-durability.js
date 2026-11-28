@@ -81,7 +81,7 @@ function worker(session, options) {
     FORGET_TAB_HOSTS_KEY: 'wardenone_forget_tab_hosts',
     FORGET_TAB_HOSTS_TTL_MS: DAY,
     REDIRECT_CHAINS: {}, POPUP_OPENED_AT: {}, TAB_ARRIVAL: {},
-    LAST_GESTURE_AT: {}, FORCED_NAV_GESTURE_MS: 5000, searchClickRedirector() { return false; },
+    LAST_GESTURE_AT: {}, FORCED_NAV_GESTURE_MS: 5000, searchClickRedirector() { return false; }, linkWrapperRedirector() { return false; }, OPENED_FROM: {}, noteOpenedFrom() {},
     noteTabArrival() {},
     forgetNavSignals() {}, forgetRebindTab() {}, forgetWarningRecordsForTab() {}, forgetDownloadSiteReturn() {}, clearSafeBrowsingBypass() {}, maybeBlockForcedTopRedirect() {},
     navigationIsFileDownload() { return false; }, frameDrivenRedirectContext() { return null; }, maybeFlagFrameDrivenRedirect() {},

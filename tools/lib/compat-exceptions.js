@@ -88,6 +88,7 @@ function lift() {
     'login-compat-hosts': hosts(login),
     'consent-managers': hosts(evaluate(after(bg, 'const CONSENT_MANAGER_HOSTS =', 'background.js'))),
     'onetrust-answer-pauses': hosts(evaluate(after(bg, 'const ONETRUST_ANSWER_PAUSED_DOMAINS =', 'background.js'))),
+    'badger-site-fixes': require('../build-badger-dnr.js').WARDENONE_SITEFIXES,
     'adobe-fonts': hosts([...bg.matchAll(/^NEVER_BLOCK_DOMAINS\.add\('([^']+)'\);/gm)].map((m) => m[1])),
     'login-compat-filters': evaluate(after(bg, 'const LOGIN_COMPAT_FILTERS =', 'background.js')),
     'tracker-protected': hosts(evaluate(after(bg, 'const TRACKER_PROTECTED_DOMAINS = new Set(', 'background.js'))),

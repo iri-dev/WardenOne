@@ -85,6 +85,7 @@ const LIFTED = [
   has('deepFreezeSnapshot') ? grabFn(BG, 'deepFreezeSnapshot') : 'function deepFreezeSnapshot(v) { return v; }',
   BG.includes('let __contentConfigMemo = null;') ? 'let __contentConfigMemo = null;' : '',
   'function siteIdentityBg(h) { return String(h || ""); }',
+  ...['pageHostForLists', 'hostEntryMayNamePage', 'adultExtrasForHost', 'learnedForHost'].map((n) => (has(n) ? grabFn(BG, n) : '')),
   grabFn(BG, 'buildContentConfigSnapshot'),
 ].join('\n');
 
@@ -183,12 +184,21 @@ const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
     const t0 = process.hrtime.bigint();
     const first = await r.request('a.com');
     const t1 = process.hrtime.bigint();
-    check('the snapshot is complete: switches, learned hosts, four buckets at their caps, the search-junk list, the frame\'s hidden rules',
-      first.ok === true && first.overrides.adShield === true && Object.keys(first.learned).length === 999
-        && first.supplemental.adultDomainsExtra.length === 3000 && first.supplemental.grabberDomainsExtra.length === 1500
+    check('the snapshot is complete: switches, learned hosts, the buckets at their caps (adult hosts only for this page), the search-junk list, the frame\'s hidden rules',
+      first.ok === true && first.overrides.adShield === true && Object.keys(first.learned).length === 0
+        && first.supplemental.adultDomainsExtra.length === 0 && first.supplemental.grabberDomainsExtra.length === 1500
         && first.supplemental.trustedPaymentHostsExtra.length === 300 && first.supplemental.searchJunkDomainsExtra.length === 5000
         && first.searchJunkDomains.length === 5000 && first.hidden.join(',') === '.ad-slot',
       JSON.stringify({ learned: Object.keys(first.learned).length, sup: Object.keys(first.supplemental).map((k) => first.supplemental[k].length), junk: first.searchJunkDomains.length, hidden: first.hidden }));
+    /* The engine checks extra adult hosts only against its own page, so only matching entries cross to it. */
+    const adultPage = await r.request('www.adult7.com');
+    check('a page on the extra adult list gets just its own entry', adultPage.supplemental.adultDomainsExtra.join(',') === 'adult7.com',
+      adultPage.supplemental.adultDomainsExtra.slice(0, 3).join(','));
+    const learnedPage = await r.request('learned3.com');
+    check('a page that is a learned IP logger gets just its own learned entry', Object.keys(learnedPage.learned).join(',') === 'learned3.com');
+    const unknown = await r.request('');
+    check('a frame with no known host still gets the whole adult list and every learned host',
+      unknown.supplemental.adultDomainsExtra.length === 3000 && Object.keys(unknown.learned).length === 999);
     check('and it carries no credential', JSON.stringify(first).indexOf('secret-key') === -1 && first.overrides.phishTankKey === undefined);
     const fullBytes = bytes(first);
     const t2 = process.hrtime.bigint();
@@ -224,7 +234,7 @@ const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
     r.state.local.wardenone_aux_lists.grabberDomainsExtra.unshift('new-grab.com');
     r.state.local.wardenone_search_junk_domains.scraperHosts.unshift('new-junk.com');
     r.api.invalidateContentConfigMemo();
-    const after = await r.request('a.com');
+    const after = await r.request('www.new-logger.com');
     check('a learned host, a list entry and a search-junk entry each reach the next snapshot',
       after.learned['new-logger.com'] === true && after.supplemental.grabberDomainsExtra[0] === 'new-grab.com' && after.searchJunkDomains[0] === 'new-junk.com');
     await r.request('b.com');
@@ -244,12 +254,14 @@ const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
   /* ---- the memo cannot be changed by a caller --------------------------------------------------- */
   {
     const r = realm(store());
-    const a = await r.request('a.com');
-    let threw = false;
+    const a = await r.request('adult5.com');
+    let threw = false, threwShared = false;
     try { a.supplemental.adultDomainsExtra.push('injected.com'); } catch (_) { threw = true; }
+    try { a.supplemental.grabberDomainsExtra.push('injected.com'); } catch (_) { threwShared = true; }
     try { a.overrides.enabled = false; } catch (_) {}
-    const b = await r.request('a.com');
-    check('the shared lists are frozen: a caller cannot push into them', threw && b.supplemental.adultDomainsExtra.length === 3000 && b.supplemental.adultDomainsExtra.indexOf('injected.com') === -1);
+    const b = await r.request('adult5.com');
+    check('the shared lists are frozen: a caller cannot push into them', threw && threwShared && b.supplemental.adultDomainsExtra.length === 1
+      && b.supplemental.grabberDomainsExtra.length === 1500 && b.supplemental.grabberDomainsExtra.indexOf('injected.com') === -1);
     check('nor change a switch for the next frame', b.overrides.enabled !== false);
   }
   /* ---- a caller gets what it asked for --------------------------------------------------------- */
@@ -265,7 +277,7 @@ const bytes = (v) => Buffer.byteLength(JSON.stringify(v));
     check('which is a small fraction of the whole', bytes(switches) * 10 < bytes(whole), bytes(switches) + ' of ' + bytes(whole) + ' bytes');
     const bridge = await r.request('a.com', ['overrides', 'learned', 'supplemental', 'hidden']);
     check('the bridge gets the switches, the learned map, the three engine buckets and the hidden rules',
-      Object.keys(bridge.learned).length === 999 && bridge.supplemental.adultDomainsExtra.length === 3000 && bridge.supplemental.grabberDomainsExtra.length === 1500
+      Object.keys(bridge.learned).length === 0 && bridge.supplemental.adultDomainsExtra.length === 0 && bridge.supplemental.grabberDomainsExtra.length === 1500
         && bridge.supplemental.trustedPaymentHostsExtra.length === 300 && bridge.hidden.join(',') === '.ad-slot');
     check('and not the two search-copycat lists it never reads', bridge.searchJunkDomains.length === 0 && bridge.supplemental.searchJunkDomainsExtra.length === 0,
       bridge.searchJunkDomains.length + ' / ' + bridge.supplemental.searchJunkDomainsExtra.length);

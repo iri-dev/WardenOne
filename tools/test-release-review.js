@@ -27,7 +27,16 @@ assert.equal(new Set(CORPUS.map(c=>c.name)).size,CORPUS.length);assert(CORPUS.so
 assert(Object.keys(ACCEPTANCE).includes('privilegedMessages'));
 const source=new Map(['manifest.json','LICENSE','NOTICE','CREDITS.md','THIRD_PARTY_NOTICES.html','src/content.js','tools/build-content.js','.gitattributes'].map(f=>[f,Buffer.from(f==='manifest.json'?'{}':'fixture')]));
 const runtime=new Map([...source].filter(([f])=>!f.startsWith('src/')&&!f.startsWith('tools/')&&f!=='.gitattributes'));
+source.set('site/.well-known/verification.txt', Buffer.from('fixture'));
 assert.deepEqual(compareArchives(source,runtime).errors,[]);
+for (const [file, error] of [
+  ['.workspace-state/session.json', 'private source path'],
+  ['site/.workspace-state/session.json', 'local/credential file'],
+  ['site/.well-known/.workspace-state.json', 'local/credential file']
+]) {
+  const candidate = new Map(source).set(file, Buffer.from('{}'));
+  assert(compareArchives(candidate, runtime).errors.includes(`${error}: ${file}`));
+}
 runtime.set('LICENSE',Buffer.from('altered'));assert(compareArchives(source,runtime).errors.some(e=>e.includes('mismatch: LICENSE')));
 const secret=Buffer.from('-----BEGIN '+'PRIVATE KEY-----');source.set('surprise.txt',secret);
 assert(compareArchives(source,runtime).errors.some(e=>e==='private key: surprise.txt'));source.delete('surprise.txt');

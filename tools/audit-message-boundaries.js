@@ -56,6 +56,7 @@ function generate() {
   }
   const capability = kind => {
     if (kind === 'tracking-redirect-resolve') return 'local destination decoding or temporary tab-scoped original navigation';
+    if (kind === 'onetrust-preferences') return 'temporary tab-scoped OneTrust SDK allowance';
     if (/download|file-scan/.test(kind)) return 'download review, trust or explicit file lookup';
     if (/firewall|blocklist|user-rules|custom-list|learned|tracker-learner|script-trust|script-shield/.test(kind)) return 'persistent user policy or rule ownership';
     if (/cookie|site-data|browser|logout|exposed|privacy-data|forget-site/.test(kind)) return 'browser data, permissions or local erasure';

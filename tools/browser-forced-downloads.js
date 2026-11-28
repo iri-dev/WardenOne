@@ -29,6 +29,17 @@ async function run() {
     const kind = url.searchParams.get('case');
     let body = '<h1>Download fixture</h1>';
     if (kind === 'synthetic') body += '<script>window.startFixture=()=>{const a=document.createElement("a");a.href="/file.exe";a.download="file.exe";document.body.appendChild(a);a.click()}</script>';
+    if (kind === 'transient-blob') body += `<script>
+      window.startFixture = () => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob(['Generated report'], { type: 'text/plain' }));
+        link.download = 'report.txt';
+        document.body.appendChild(link);
+        link.click();
+        URL.revokeObjectURL(link.href);
+        link.remove();
+      };
+    </script>`;
     if (kind === 'detached') body += '<script>window.startFixture=()=>{const a=document.createElement("a");a.href="/opaque";a.download="file.exe";a.click()}</script>';
     if (kind === 'automatic') body += '<script>window.startFixture=()=>location.assign("/opaque")</script>';
     if (kind === 'play') body += '<button id="main" onclick="location.assign(\'/opaque\')">Play video</button>';
@@ -111,6 +122,17 @@ async function run() {
       return latest;
     }
     const lastId = async () => Math.max(0, ...(await items()).map(item => item.id));
+    async function clickDownloadOnce() {
+      await cdp.send('DOM.enable', {}, sessionId);
+      const { nodes } = await cdp.send('DOM.getFlattenedDocument', { depth: -1, pierce: true }, sessionId);
+      const allow = nodes.find(node => node.nodeName === 'BUTTON' && nodes.some(child => child.parentId === node.nodeId && child.nodeValue === 'Download once'));
+      assert(allow, 'the closed-shadow review has an allowance button');
+      const { model } = await cdp.send('DOM.getBoxModel', { nodeId: allow.nodeId }, sessionId);
+      const point = { x: (model.content[0] + model.content[2]) / 2, y: (model.content[1] + model.content[5]) / 2 };
+      assert(point.x > 0 && point.x < 1280 && point.y > 0 && point.y < 900, 'review actions are on screen');
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point }, sessionId);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point }, sessionId);
+    }
     if (process.argv.includes('--live')) {
       await evaluate('updateStoredConfig(cfg=>Object.assign(cfg,DEFAULT_CONFIG,{forcedDownloadProtection:true}))');
       for (const [name, source, target] of [
@@ -141,9 +163,28 @@ async function run() {
       }
       return;
     }
+    {
+      await evaluate('updateStoredConfig(cfg=>{cfg.downloadReputation=true;})');
+      const before = await lastId();
+      await open('transient-blob');
+      await until(() => evaluate('!!document.getElementById("wo-unexpected-download")', sessionId), 'generated file review');
+      assert.equal(await lastId(), before, 'the generated file stays held until approval');
+      await clickDownloadOnce();
+      const allowed = await latestAfter(before);
+      await until(async () => {
+        const item = (await items()).find(entry => entry.id === allowed.id);
+        assert.notEqual(item.state, 'interrupted', item.error);
+        return item.state === 'complete';
+      }, 'approved generated file completes');
+      assert.equal(fs.readFileSync(path.join(dir, 'report.txt'), 'utf8'), 'Generated report');
+      console.log('[ok] Download once saves the original bytes after the page revokes its generated file URL');
+      await evaluate('updateStoredConfig(cfg=>{cfg.downloadReputation=false;})');
+    }
+    if (process.argv.includes('--generated-file-only')) return;
+    const beforeHiddenOffer = await lastId();
     await open('hidden-offer'); await sleep(1500);
     assert(!hits.includes('/avast_secure_browser_setup.exe'), 'hidden sponsor markup cannot initiate an installer request');
-    assert.equal(await lastId(), 0, 'entry to a download detail page creates no download');
+    assert.equal(await lastId(), beforeHiddenOffer, 'entry to a download detail page creates no download');
     console.log('[ok] hidden campaign offer stays inert on page entry');
     await open('offer-continue', true);
     await until(() => evaluate('location.pathname === "/continuation"', sessionId).catch(() => false), 'matching original continuation');
@@ -161,15 +202,7 @@ async function run() {
     assert(!hits.includes('/file.exe'));
     console.log('[ok] synthetic first download stopped before network request');
     const beforeAllowance = await lastId();
-    await cdp.send('DOM.enable', {}, sessionId);
-    const { nodes } = await cdp.send('DOM.getFlattenedDocument', { depth: -1, pierce: true }, sessionId);
-    const allow = nodes.find(node => node.nodeName === 'BUTTON' && nodes.some(child => child.parentId === node.nodeId && child.nodeValue === 'Download once'));
-    assert(allow, 'the closed-shadow review has an allowance button');
-    const { model } = await cdp.send('DOM.getBoxModel', { nodeId: allow.nodeId }, sessionId);
-    const point = { x: (model.content[0] + model.content[2]) / 2, y: (model.content[1] + model.content[5]) / 2 };
-    assert(point.x > 0 && point.x < 1280 && point.y > 0 && point.y < 900, 'review actions are on screen');
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', button: 'left', clickCount: 1, ...point }, sessionId);
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', button: 'left', clickCount: 1, ...point }, sessionId);
+    await clickDownloadOnce();
     const allowed = await latestAfter(beforeAllowance);
     await until(async () => (await items()).some(entry => entry.id === allowed.id && entry.state === 'complete'), 'Download once completes');
     assert.equal(await evaluate(`getPendingDownload(${allowed.id}).then(Boolean)`), false);

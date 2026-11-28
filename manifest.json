@@ -122,6 +122,11 @@
         "path": "rules-adshield.json"
       },
       {
+        "id": "ubo_filters",
+        "enabled": true,
+        "path": "rules-ubo-filters.json"
+      },
+      {
         "id": "spotify_media",
         "enabled": true,
         "path": "rules-spotify-media.json"
@@ -140,6 +145,16 @@
         "id": "easyprivacy_general",
         "enabled": true,
         "path": "rules-easyprivacy-general.json"
+      },
+      {
+        "id": "privacy_filters",
+        "enabled": true,
+        "path": "rules-privacy-filters.json"
+      },
+      {
+        "id": "badware_filters",
+        "enabled": true,
+        "path": "rules-badware-filters.json"
       },
       {
         "id": "cname_trackers",
@@ -191,6 +206,8 @@
         "redirect-resources/noop-vast4.xml",
         "redirect-resources/noop-vmap1.xml",
         "surrogates/analytics.js",
+        "surrogates/adsbygoogle.js",
+        "surrogates/google-ima.js",
         "surrogates/facebook.js",
         "surrogates/publisher-tag.js",
         "surrogates/tag-manager.js",

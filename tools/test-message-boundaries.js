@@ -92,7 +92,8 @@ async function run() {
       { name: 'non-string site', hostname: ['child.wardenone-audit.net'] },
       { name: 'subframe', hostname: 'child.wardenone-audit.net', frameId: 1 },
       { name: 'stale document', hostname: 'child.wardenone-audit.net', actualDocument: 'replacement' },
-      { name: 'navigated tab', hostname: 'child.wardenone-audit.net', actualUrl: 'https://child.wardenone-audit.net/new-page' },
+      { name: 'in-app navigation keeps the document', hostname: 'child.wardenone-audit.net', actualUrl: 'https://child.wardenone-audit.net/new-page', ok: true },
+      { name: 'tab now on another site', hostname: 'child.wardenone-audit.net', actualUrl: 'https://other.wardenone-audit.net/' },
       { name: 'global clear remains private', kind: 'hidden-clear' },
     ];
     for (const [index, item] of cases.entries()) {

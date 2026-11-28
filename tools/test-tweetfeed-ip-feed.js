@@ -87,8 +87,11 @@ eq(api.parse(listText), ['badsite-shop.com', 'evil-loader.net'], 'without the op
 })().catch((error) => { console.error(error); process.exit(1); });
 function finish() {
 eq(api.url, 'https://raw.githubusercontent.com/0xDanielLopez/TweetFeed/master/month.csv', 'the constant names the listed URL');
-ok(/const compiled = url === TWEETFEED_IOC_LIST_URL \? compileTweetFeedSource\(text\)/.test(source),
+ok(/const tweetFeed = url === TWEETFEED_IOC_LIST_URL;\s*const compiled = tweetFeed \? compileTweetFeedSource\(text\)/.test(source),
   'the list fetch reads TweetFeed with its own reader, never the domain parser');
+/* Its integrity baseline must know which reader made it, or a reader change refuses every copy (2026-11-21..26). */
+ok(/parseListPublisherDate\(text\),\s*tweetFeed \? 'tweetfeed-ip' : 'list'\s*\)/.test(source),
+  'the integrity check is told which reader produced the entries');
 const licensing = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs', 'source-licensing.json'), 'utf8'));
 const profile = licensing.profiles.tweetfeed;
 ok(profile && profile.license.id === 'CC0-1.0' && profile.urls.includes(api.url), 'licence recorded');

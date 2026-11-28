@@ -10,7 +10,7 @@
     "resolvedFeeds": 45,
     "unresolvedFeeds": 2,
     "buildOnlyInputs": 8,
-    "redistributedArtifacts": 28
+    "redistributedArtifacts": 32
   },
   "sources": [
     {
@@ -3206,7 +3206,7 @@
       "license": "CC-BY-SA-3.0",
       "provenance": "The EasyList authors; selected network rules plus WardenOne compatibility edits",
       "builtBy": "tools/build-adshield-dnr.js",
-      "modifications": "Converted to Chrome DNR, selected and supplemented; adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.",
+      "modifications": "Converted to Chrome DNR, selected and supplemented; plain host rules with the same options are grouped into request domain lists. Built from EasyList revision 2106b87fe6a2513abefcda05340689c6a4e84fac. Adaptations distributed under CC BY-SA 3.0. Change notices added 2026-10-19 and 2026-11-27.",
       "sourceFiles": [],
       "compliance": {
         "status": "implemented",
@@ -3218,14 +3218,14 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "daf26e8ea3381baebc81b197a90c6b14331edc013e9828013d2f18cc8f9e306f"
+      "sha256": "87c8324e6808c70051d7e7c9638310bf02dbdee2899f57b2deddf8d4dc308a32"
     },
     {
       "file": "rules-easyprivacy.json",
       "license": "CC-BY-SA-3.0",
       "provenance": "The EasyList authors; EasyPrivacy plus WardenOne tracker rules",
       "builtBy": "tools/build-easyprivacy-dnr.js",
-      "modifications": "Hosts normalized and batched, every host rule shipped; curated tracker additions. Adaptations distributed under CC BY-SA 3.0. Change notice added 2026-10-19.",
+      "modifications": "Third party host rules with supported request types are grouped by scope. The build keeps curated tracker additions and uses EasyList revision 0048a4364a1578ae82f9b1e3e651120e01091923. Adaptations distributed under CC BY-SA 3.0. Change notice updated 2026-11-26.",
       "sourceFiles": [],
       "compliance": {
         "status": "implemented",
@@ -3237,7 +3237,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "acf6172d028b0f4f9c8aa4b07b284e389344e4d82612e1dac7d3ac7a5b6b071c"
+      "sha256": "1318ea3185e3ce17ced8ba1d35290c0cd96885a5ee911c9d5b3dad1eb88a4bb3"
     },
     {
       "file": "rules-easyprivacy-general.json",
@@ -3260,6 +3260,94 @@
       },
       "kind": "redistributed",
       "sha256": "8ad412dc770db529f9b115b28116acde289f9aab057adb62ab8bb1ea4a369317"
+    },
+    {
+      "file": "rules-ubo-filters.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "uBlock Origin contributors; uAssets filters.txt, quick-fixes.txt and unbreak.txt network filters",
+      "builtBy": "tools/build-filter-lists-dnr.js",
+      "modifications": "Network filters converted to Chrome DNR with their request hosts, sites, party, request types and methods kept. Filters whose scope cannot be kept are left out. Redirects use WardenOne's own empty files and surrogates. Change notice added 2026-11-27.",
+      "sourceFiles": [
+        "docs/filter-lists-snapshot.txt",
+        "tools/build-filter-lists-dnr.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      },
+      "kind": "redistributed",
+      "sha256": "52137ee85935e23ef55c7a1a3bf504dbfdc00bb2eb19d54714e2036065881a0f"
+    },
+    {
+      "file": "rules-privacy-filters.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "The EasyList authors (EasyPrivacy, dual licensed GPLv3 and CC BY-SA 3.0) and uBlock Origin contributors (uAssets privacy.txt)",
+      "builtBy": "tools/build-filter-lists-dnr.js",
+      "modifications": "EasyPrivacy filters other than plain tracker hosts, and uBlock Privacy network filters, converted to Chrome DNR with their full scope kept. Payment, checkout, bot check and PerimeterX sensor rules are left out. Change notice added 2026-11-27.",
+      "sourceFiles": [
+        "docs/filter-lists-snapshot.txt",
+        "tools/build-filter-lists-dnr.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      },
+      "kind": "redistributed",
+      "sha256": "9364c7abd41aa7ef91149569c819810d081112ed4a45e0411935c7172f3bc4cd"
+    },
+    {
+      "file": "curated-host-scopes.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "Host names from the EasyList, EasyPrivacy and uBlock Origin filters already packaged in WardenOne's rule files",
+      "builtBy": "tools/build-filter-lists-dnr.js",
+      "modifications": "Lists the hosts those filters block only for some request types, on named sites or at named paths, and that no packaged list blocks whole. Change notice added 2026-11-27.",
+      "sourceFiles": [
+        "docs/filter-lists-snapshot.txt",
+        "tools/build-filter-lists-dnr.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      },
+      "kind": "redistributed",
+      "sha256": "e9b4e56ff0869948edb49e6067a1cc2ccfa6f3b46f4449b2e9a4cea9e46e54d1"
+    },
+    {
+      "file": "rules-badware-filters.json",
+      "license": "GPL-3.0-or-later",
+      "provenance": "uBlock Origin contributors; uAssets badware.txt network filters other than plain hosts",
+      "builtBy": "tools/build-filter-lists-dnr.js",
+      "modifications": "Script, path and pattern filters converted to Chrome DNR block rules with their full scope kept. Plain host and page rules are left to the downloaded malware lists. Change notice added 2026-11-27.",
+      "sourceFiles": [
+        "docs/filter-lists-snapshot.txt",
+        "tools/build-filter-lists-dnr.js"
+      ],
+      "compliance": {
+        "status": "implemented",
+        "noticeFiles": [
+          "CREDITS.md",
+          "THIRD_PARTY_NOTICES.html",
+          "LICENSE"
+        ],
+        "issueIds": []
+      },
+      "kind": "redistributed",
+      "sha256": "cb7dc949dfc603f75014879093007fd66c713c47bb1c7b0522e1b2a9041e533d"
     },
     {
       "file": "cosmetic-rules.json",
@@ -3374,9 +3462,9 @@
     {
       "file": "rules.json",
       "license": "GPL-3.0-or-later (WardenOne curation; upstream notices retained)",
-      "provenance": "WardenOne-maintained seed/curation; source is the shipped JSON",
+      "provenance": "WardenOne-maintained rules, with reviewed EasyPrivacy and uAssets patterns captured on 2026-11-21. The shipped JSON is editable source.",
       "builtBy": null,
-      "modifications": "Maintained as editable source data; no new upstream dataset introduced by this review.",
+      "modifications": "Reviewed analytics script paths reuse the packaged surrogates. Selected upstream regular expressions are restricted to their supplied request types and site relationship.",
       "sourceFiles": [
         "rules.json"
       ],
@@ -3689,7 +3777,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "f1f60c8d04d9b5a4e49d586697ea097f24921c2705f4a991da1315eb1b0b0535"
+      "sha256": "11a4f9304dea95debcfb4223ef8af61d5609848632f4162405035071bf23a2bc"
     },
     {
       "file": "rules-cname.json",
@@ -3711,7 +3799,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "4656d885c173e6825deffd47cdb5c5470b8c8ab229ac480420f86847272e8971"
+      "sha256": "1f9d01d1acaba072b3b6deab63ab780dd94fbfeebfc1fbc6303a1bc069a1a894"
     },
     {
       "file": "rules-badger.json",
@@ -3733,7 +3821,7 @@
         "issueIds": []
       },
       "kind": "redistributed",
-      "sha256": "b7272241a8183d7c7c5f4bf21ba8eea3c7935b44ea354f4253c86a640799cc5e"
+      "sha256": "f4070e7876d9fe896f3b9a5396d91fd011f365b47e219d6fc532a83f5e1e37d6"
     },
     {
       "file": "first-party-sites.json",

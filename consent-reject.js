@@ -103,6 +103,8 @@
   /* Bumped on every observer callback; containerMatches reuses its list only while this is unchanged. */
   let domVersion = 0;
   let firstChoiceMade = false;
+  let oneTrustSettingsClick = 0;
+  let manualOneTrustPreferences = false;
   /* Choices made on this page. Complianz answers Deny by showing a "Manage consent" tab, and
      opening that as a settings control reopened the banner, so the page strobed between the two
      about once a second, for as long as it was open. */
@@ -1069,6 +1071,28 @@
   // worker tidy up after them when they leave. Only a real click counts -- a
   // synthetic one is the page consenting on its own behalf, which is not consent.
   let acceptReported = false;
+  if (isTopFrame) {
+    woOn(document, 'click', event => {
+      if (event.isTrusted && event.composedPath().some(el => el.matches?.('#ot-sdk-btn, .ot-sdk-show-settings, .optanon-show-settings'))) {
+        oneTrustSettingsClick = Date.now();
+        manualOneTrustPreferences = true;
+      }
+    }, true);
+    woOn(document, 'wardenone-onetrust-preferences', event => {
+      const script = event.target;
+      if (!active || !oneTrustSettingsClick || Date.now() - oneTrustSettingsClick > 1000
+          || script?.localName !== 'script' || !navigator.userActivation?.isActive) return;
+      if (!/^https:\/\/(?:cdn\.cookielaw\.org|cookie-cdn\.cookiepro\.com)\/(?:scripttemplates|consent\/[0-9a-f-]+)\/otSDKStub\.js(?:[?#]|$)/i.test(script.src)) return;
+      oneTrustSettingsClick = 0;
+      try {
+        chrome.runtime.sendMessage({ kind: 'onetrust-preferences' }, reply => {
+          if (!chrome.runtime.lastError && reply?.ok === true && script.isConnected) {
+            script.dispatchEvent(new Event('wardenone-onetrust-preferences-ready'));
+          }
+        });
+      } catch (_) {}
+    }, true);
+  }
   woOn(document, 'click', (event) => {
     try {
       if (acceptReported || !event || event.isTrusted !== true) return;
@@ -1170,6 +1194,7 @@
   function scan() {
     scanQueued = false;
     if (!active || !document.documentElement) return;
+    if (manualOneTrustPreferences && isVisible(document.getElementById('onetrust-pc-sdk'))) return;
     refreshHandledSurfaces();
 
     // Stop mutation-driven scans after the no-banner deadline. Keep timed passes for late banners

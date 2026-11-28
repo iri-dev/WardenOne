@@ -688,4 +688,31 @@ assert(/proto\.play=guardedPlay/.test(media), 'the media decision must happen at
 assert(!/querySelectorAll|woObserve|\.autoplay=|\.muted=|\.removeAttribute\(/.test(media),
   'the hidden-media guard must not scan or change author media state');
 
+/* ---- frame aligned layout reads (Round 6 performance, 2026-11-27) ------------------------------------------------
+   Timed and mutation driven passes that hit test or measure wait for the next frame, so their layout is the one the
+   frame does anyway; hidden documents draw no frames and keep running at once. */
+{
+  const helper = slice('__woNativeRaf=', '};', 'the engine frame helper') + '};';
+  const run = (hidden, withRaf) => {
+    const queued = [];
+    const box = { document: { hidden }, window: { requestAnimationFrame: withRaf ? function (cb) { queued.push(cb); } : undefined } };
+    vm.createContext(box);
+    vm.runInContext('const ' + helper + ' this.onFrame = __woOnFrame;', box);
+    let ran = 0;
+    box.onFrame(() => { ran++; });
+    return { ran, queued: queued.length };
+  };
+  assert.deepStrictEqual(run(false, true), { ran: 0, queued: 1 }, 'a visible page must wait for the next frame');
+  assert.deepStrictEqual(run(true, true), { ran: 1, queued: 0 }, 'a hidden page draws no frames, so the pass runs at once');
+  assert.deepStrictEqual(run(false, false), { ran: 1, queued: 0 }, 'without requestAnimationFrame the pass runs at once');
+  assert(source.indexOf('__woNativeRaf=') < source.indexOf('const __woStartRuntime'),
+    'the frame helper must capture requestAnimationFrame before page scripts can replace it');
+  const badgeFollowUps = (source.match(/setTimeout\(\(\)=>__woOnFrame\(recheckBadge\),/g) || []).length;
+  assert.strictEqual(badgeFollowUps, 3, 'the badge follow-up hit tests must wait for a frame');
+  const shield = fs.readFileSync(path.join(ROOT, 'anti-adblock-shield.js'), 'utf8');
+  assert(/later\(\(\) => onFrame\(scan\), delay \|\| 150\)/.test(shield), 'the anti adblock hit tests must wait for a frame');
+  assert(/document\.hidden && typeof requestAnimationFrame === 'function'\) \{ requestAnimationFrame\(fn\); return; \}/.test(shield)
+    && /\n    fn\(\);\n  \};/.test(shield), 'the anti adblock frame helper must run at once on a hidden page');
+}
+
 console.log('hot path layout tests passed');

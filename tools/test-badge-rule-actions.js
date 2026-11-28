@@ -30,7 +30,7 @@ function world(options = {}) {
     messageSenderIsTab: sender => !!sender && sender.id === 'test' && Number.isInteger(sender.tab?.id)
       && sender.tab.id >= 0 && /^https?:/.test(sender.url),
     messageSenderStillCurrent: async (sender, exact) => {
-      assert.equal(exact, true);
+      assert.equal(exact, undefined, 'badge actions check origin and document so in-app navigation keeps them working');
       state.checks++;
       return options.stale !== true && state.checks !== options.staleOnCheck;
     },

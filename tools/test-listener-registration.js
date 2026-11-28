@@ -76,7 +76,7 @@ function boot(options) {
     navigationIsFileDownload() { return false; }, frameDrivenRedirectContext() { return null; }, maybeFlagFrameDrivenRedirect() {},
     leftSiteOfTab: async () => '',   // the durable read the two tab listeners make since LIFE-01
     POPUP_OPENED_AT: {}, REDIRECT_CHAINS: {}, LAST_TOP_URL: {},
-    LAST_GESTURE_AT: {}, FORCED_NAV_GESTURE_MS: 5000, searchClickRedirector() { return false; },
+    LAST_GESTURE_AT: {}, FORCED_NAV_GESTURE_MS: 5000, searchClickRedirector() { return false; }, linkWrapperRedirector() { return false; }, OPENED_FROM: {}, noteOpenedFrom() {},
   };
   const ctx = vm.createContext(sandbox);
   vm.runInContext(BG.slice(start, end) + '\nthis.api = { LISTENERS_NOT_REGISTERED, registerListener };', ctx, { filename: 'listener-block.js' });

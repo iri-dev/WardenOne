@@ -247,7 +247,8 @@ check('the popup names them rather than only counting them',
   /id="list-failures"/.test(POPUP_HTML) && /list-failure-url/.test(POPUP_HEALTH)
     && /list-failure-why/.test(POPUP_HEALTH));
 check('and shows the reason, not just the name',
-  /why\.textContent = f\.error/.test(POPUP_HEALTH),
+  /why\.textContent = f\.rejected \? '[^']+' : \(f\.error \|\| 'failed'\);/.test(POPUP_HEALTH)
+    && /if \(f\.rejected\) \{ why\.title = String\(f\.error \|\| ''\); why\.classList\.add\('is-held'\); \}/.test(POPUP_HEALTH),
   'a 404 needs a new URL and an over-cap list needs a smaller edition; as a count they look identical');
 check('nothing is shown when every feed worked',
   /failEl\.hidden = failedList\.length === 0/.test(POPUP_HEALTH));

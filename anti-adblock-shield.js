@@ -346,10 +346,19 @@
     }, 400);
   }
 
+  /* The hit tests force a layout. Run them just before a frame lays out anyway, not from a bare timer while the page
+     keeps changing; hidden documents draw no frames, so they scan at once. */
+  const onFrame = (fn) => {
+    try {
+      if (!document.hidden && typeof requestAnimationFrame === 'function') { requestAnimationFrame(fn); return; }
+    } catch (_) {}
+    fn();
+  };
+
   function queueScan(delay) {
     if (scanQueued || stoodDown || !active) return;
     scanQueued = true;
-    later(scan, delay || 150);
+    later(() => onFrame(scan), delay || 150);
   }
 
   function askContentConfig(need, cb) {

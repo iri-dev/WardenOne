@@ -11,7 +11,7 @@ const end = source.indexOf('\n      try{\n        let __woAdCollapseStarted=', s
 assert.ok(start >= 0 && end > start);
 
 function harness() {
-  const requests = [], observers = [], timers = new Map(), errors = [];
+  const requests = [], observers = [], timers = new Map(), errors = [], afterParse = [];
   let timerId = 0, measurements = 0;
   class Node {
     constructor(tag) {
@@ -85,17 +85,27 @@ function harness() {
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, { callback, delay }); return id; },
     clearTimeout: id => timers.delete(id),
     log: (type, detail) => errors.push({ type, detail }),
+    __woAfterParse: fn => afterParse.push(fn),
   };
   vm.runInNewContext(source.slice(start, end), context);
+  /* The badge waits for the page to parse and an idle task; this harness is that idle task. */
+  const mountedBeforeIdle = !!document.getElementById('rg-badge-host');
+  for (const fn of afterParse.splice(0)) fn();
   const changed = (structural = true) => observers.forEach(callback => callback([], [], [], structural));
   const badge = () => document.getElementById('rg-badge-host');
   const button = () => badge()?.shadowRoot.getElementById('rg-b');
   const emit = type => document.emit('wo-event', { detail: { type, authenticated: true } });
-  return { context, document, Node, requests, errors, changed, badge, button, emit,
+  return { context, document, Node, requests, errors, changed, badge, button, emit, mountedBeforeIdle,
     measurements: () => measurements,
     settle() { for (const [id, timer] of [...timers]) if (timer.delay === 1110) { timers.delete(id); timer.callback(); } },
     configure(showBadge) { context.WO.showBadge = showBadge; document.emit('wo-config-change'); changed(); },
   };
+}
+
+{
+  const t = harness();
+  assert.equal(t.mountedBeforeIdle, false, 'the badge must not be built while the page is still parsing');
+  assert.ok(t.badge(), 'the badge mounts in the idle task after parsing');
 }
 
 for (const removal of ['host', 'body']) {

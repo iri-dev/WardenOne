@@ -61,6 +61,13 @@ ok(!buckets.security.has('media.net') && !buckets.security.has('tapad.com'), 'an
 ok(!buckets.security.has('cdn.adnet.example') && buckets.tracker.has('cdn.adnet.example'), 'a name under an ad-list parent is tracker kind');
 ok(buckets.security.has('gift-airdrop.example'), 'an oisd name no ad list carries stays security');
 ok(buckets.security.has('evil-download.example'), 'a name another security feed carries stays security');
+/* A name EasyList, EasyPrivacy or uBlock scope narrowly (curated-host-scopes.json) is an ad or tracker name. */
+vm.runInContext('var CURATED_SCOPED_HOSTS = new Set(["scoped-ad.example"]);', box);
+const narrowedOut = new Set();
+const fresh = { security: new Set(), tracker: new Set(), adshield: new Set() };
+box.settle(new Set(['scoped-ad.example', 'other-threat.example']), fresh, narrowedOut);
+ok(narrowedOut.has('scoped-ad.example') && !fresh.security.has('scoped-ad.example'), 'a curated scoped name is dropped, never called a threat');
+ok(fresh.security.has('other-threat.example') && !narrowedOut.has('other-threat.example'), 'other oisd names settle as before');
 
 /* Wiring: oisd is still downloaded as a malware feed, held, and settled before rules are built. */
 const update = BG.slice(BG.indexOf('const domainBuckets = { security: new Set()'), BG.indexOf('const listRules = await listDomainRules(domainBuckets, merged, feedDomainCounts);'));
@@ -68,7 +75,8 @@ ok(/'https:\/\/raw\.githubusercontent\.com\/sjhgvr\/oisd\/main\/domainswild2_big
   'oisd big is still one of the malware feeds');
 ok(/const adOverlapSources = new Set\(\['https:\/\/raw\.githubusercontent\.com\/sjhgvr\/oisd\/main\/domainswild2_big\.txt'\]\);/.test(update), 'oisd big is held for settling');
 ok(/if \(holdForAdOverlap\) adOverlapCandidates\.add\(d\);\s*else domainBuckets\[sourceKind\]\.add\(d\);/.test(update), 'held names skip the security bucket');
-ok(/settleAdOverlapCandidates\(adOverlapCandidates, domainBuckets\);/.test(update), 'held names are settled before rules are built');
+ok(/settleAdOverlapCandidates\(adOverlapCandidates, domainBuckets, narrowedHeld\);\n\s*for \(const d of narrowedHeld\) merged\.delete\(d\);/.test(update),
+  'held names are settled before rules are built, and curated scoped names leave the merged set');
 
 /* Grabber and miner names drop any path they carry, so "bit.ly/abc" must not become all of bit.ly. */
 const region = (from, to) => { const a = BG.indexOf(from), b = BG.indexOf(to, a); assert.ok(a >= 0 && b > a, from); return BG.slice(a, b); };
@@ -99,7 +107,7 @@ for (const host of ['uct.service.usercentrics.eu', 'privacy-analytics-proxy.cook
   'onetrust.com', 'cookiebot.com', 'cookielaw.org.evil-consent.net', 'onetrust.com.cookie-check.net']) {
   ok(neverBox.never(host) === false, 'a consent company analytics host or lookalike stays blockable: ' + host);
 }
-ok(/if \(remoteRuleSourceKind\(sourceKind\) === 'security'\) return true;\n  return !isNeverBlockDomain\(host\)/.test(BG), 'a security list still blocks a consent host');
+ok(/if \(remoteRuleSourceKind\(sourceKind\) === 'security'\) return true;\n(?:  (?!return )[^\n]*\n){0,6}  return !isNeverBlockDomain\(host\)/.test(BG), 'a security list still blocks a consent host');
 /* Radio Times lost its typefaces: a tracker list named Adobe Fonts' kit loader. */
 ok(neverBox.never('use.typekit.net') === true, 'Adobe Fonts kit loader loads');
 ok(neverBox.never('p.typekit.net') === false && neverBox.never('typekit.net') === false, 'Adobe Fonts usage beacon stays blockable');

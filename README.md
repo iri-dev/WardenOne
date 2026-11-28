@@ -1308,7 +1308,7 @@ alone.
 Cookie banners come in a few different shapes and one action doesn't fit them all:
 
 - WardenOne uses explicit OneTrust, Cookiebot and TrustArc controls where recognized, with a guarded generic fallback. It opens choices when needed and saves disabled optional categories while preserving required choices.
-- On sites that load OneTrust from OneTrust's own servers, WardenOne answers it without loading it. It saves OneTrust's own refusal cookies and answers the calls the site makes, so the banner and everything it fetches never load. A choice you already made stays as it is. To change your choice on one of those sites, switch Auto-reject cookie banners off for that site.
+- On sites that use OneTrust's servers, WardenOne saves your refusal locally and keeps the banner from loading. A choice you already made stays as it is. Press the site's OneTrust Cookie Settings button to load the preference panel and change your choice.
 - If a banner comes back after rejection, WardenOne rejects it again, including banners that reuse their original controls. It waits for the banner to disappear and return before reusing a clicked button, and spaces repeated choices to avoid click loops.
 - Activity distinguishes a failed action, a dispatched action with an **unverified** opt-out, and an opt-out verified in the consent manager's changed saved state. A disappearing banner alone does not establish rejection. Custom or unreadable states remain unverified.
 - If it's a consent-or-pay wall with no way to say no, and the article's already there underneath, an opt-in can lift the wall without clicking anything or saving a consent cookie. If the article never actually loaded WardenOne puts the wall back. Better than a blank page.
@@ -2133,7 +2133,7 @@ regardless of the sleep profile.
 
 ## Resource Saver
 
-Controls for autoplaying media, background throttling, lazy-loading images, prefetch and preload.
+Controls for autoplaying media, background throttling, lazy loading images and blocking speculative loading.
 Block autoplay is off by default. When enabled, it permits delayed startup and retries for the
 media you select through its player or controls; unrelated media stays blocked. Turning it or Block hidden
 media abuse off releases its playback block in open tabs without a reload.

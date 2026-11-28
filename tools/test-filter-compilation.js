@@ -10,6 +10,7 @@ const vm = require('vm');
 const crypto = require('crypto');
 const { makeParser, sourceSnapshot } = require('./build-cosmetics.js');
 const { loadNetworkParser } = require('./bench-filter-parsing.js');
+const { compileHostRules } = require('./build-easyprivacy-dnr.js');
 const { fixtures } = require('./lib/filter-compilation-fixtures.js');
 const root = path.resolve(__dirname, '..');
 const background = fs.readFileSync(path.join(root, 'background.js'), 'utf8');
@@ -78,6 +79,31 @@ async function run() {
   assert.deepStrictEqual(plain(commands), { scriptlets: packaged.scriptlets, procedural: packaged.procedural });
 
   const network = loadNetworkParser(background);
+  const scopedHosts = compileHostRules([
+    '||typed-tracker.example^$script,third-party',
+    '||typed-tracker.example^$xhr',
+    '||child.typed-tracker.example^$script,image',
+    '||frame.example^$subdocument,3p',
+    '||negative.example^$~image',
+    '||first-party.example^$script,first-party',
+    '||first-party-negated.example^$script,~third-party',
+    '||unsupported.example^$script,unknown-option',
+    '||scoped.example^$image,domain=publisher.example',
+    '||curated.example^$script',
+  ].join('\n'), new Set(['curated.example'])).rules;
+  const byHost = new Map(scopedHosts.flatMap(({ condition }) =>
+    condition.requestDomains.map(host => [host, condition.resourceTypes])));
+  assert.deepStrictEqual(byHost.get('typed-tracker.example'), ['script', 'xmlhttprequest']);
+  assert.deepStrictEqual(byHost.get('child.typed-tracker.example'), ['image']);
+  assert.deepStrictEqual(byHost.get('frame.example'), ['sub_frame']);
+  assert(byHost.get('negative.example').includes('script'));
+  assert(!byHost.get('negative.example').includes('image'));
+  for (const host of ['first-party.example', 'first-party-negated.example', 'unsupported.example', 'scoped.example', 'curated.example']) {
+    assert(!byHost.has(host), host + ' was imported without its scope');
+  }
+  assert(scopedHosts.every(({ condition }) => condition.domainType === 'thirdParty' &&
+    !condition.resourceTypes.includes('main_frame')));
+
   const input = ['plain.feed-fixture.net', 'github.io', 'tenant.github.io', 'tenant.github.io', '||ads.example^$script,third-party',
     '@@||cdn.example^$xhr,domain=site.example', '@@||broad.example^$script',
     '||unsupported.example^$csp=script-src', '||overflow.example^$image',

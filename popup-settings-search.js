@@ -213,6 +213,20 @@
       for(var p=el;p;p=p.parentElement){if(p===ancestor)return true;}
       return false;
     }
+    function holdsRow(el){
+      return !!(el.classList&&el.classList.contains('row'))||!!(el.querySelector&&el.querySelector('.row'));
+    }
+    // While searching, a card's row-less parts show only when the row they follow does.
+    function followRowAbove(card,searching){
+      var lead=null;
+      Array.prototype.slice.call(card.children||[]).forEach(function(c){
+        if(holdsRow(c)){lead=c;return;}
+        if(!c.classList)return;
+        var leadIsRow=!!(lead&&lead.classList&&lead.classList.contains('row'));
+        var leadHidden=!!lead&&(leadIsRow?lead.classList.contains('wo-hidden'):!lead.querySelector('.row:not(.wo-hidden)'));
+        c.classList.toggle('wo-hidden',searching&&leadHidden);
+      });
+    }
 
     // Best match first, without moving any element: while searching, sections and the rows inside them get a
     // CSS order by their best score, and clearing the search puts the normal order back.
@@ -246,7 +260,12 @@
       orderBy(groupsEl,sections);
       kids.forEach(function(k){
         if(!k.classList||!k.classList.contains('card-group'))return;
-        var units=Array.prototype.slice.call(k.children||[]).map(function(c,i){return {members:[c],score:scoreOf(c),index:i};});
+        // A part with no row of its own (Update now, the cleaner's result) moves with the row above it.
+        var units=[];
+        Array.prototype.slice.call(k.children||[]).forEach(function(c,i){
+          if(units.length&&!holdsRow(c))units[units.length-1].members.push(c);
+          else units.push({members:[c],score:scoreOf(c),index:i});
+        });
         orderBy(k,units);
       });
     }
@@ -277,6 +296,7 @@
         if(g.closest&&g.closest('#site-dash'))return;
         var hide=!!q&&!g.querySelector('.row:not(.wo-hidden)');
         g.classList.toggle('wo-hidden',hide);
+        followRowAbove(g,!!q);
         var hh=g.previousElementSibling;
         if(hh&&/^H[1-6]$/.test(hh.tagName))hh.classList.toggle('wo-hidden',hide);
         var foldout=g.parentElement;
