@@ -65,6 +65,7 @@ for (const [name, store, base, size] of [
   ['sitePause', 'session', 'ALLOWLIST_RULE_BASE', null],
   ['listBlockOnce', 'session', 'LIST_ONCE_RULE_BASE', 'LIST_ONCE_RULES_BUDGET'],
   ['socialEmbedLoad', 'session', 'SOCIAL_EMBED_ONCE_RULE_BASE', 'SOCIAL_EMBED_ONCE_RULES_BUDGET'],
+  ['googleSignInHandoff', 'session', 'GOOGLE_SIGNIN_HANDOFF_RULE_BASE', 'GOOGLE_SIGNIN_HANDOFF_RULES_BUDGET'],
 ]) {
   const owner = api.policy.explicitOwners.find(entry => entry.name === name);
   assert.equal(owner.store, store);
@@ -91,6 +92,16 @@ api.policy.validate({ addRules: [allow(number('ALLOWLIST_RULE_BASE'), 100000, 'a
   assert.throws(() => api.policy.validate({ addRules: [allow(number('SOCIAL_EMBED_ONCE_RULE_BASE'), number('SOCIAL_EMBED_ONCE_PRIORITY') + 1)] }, 'session'), /authority/);
   assert.throws(() => api.policy.validate({ addRules: [allow(number('SOCIAL_EMBED_ONCE_RULE_BASE'), 1000, 'allowAllRequests')] }, 'session'), /Unbounded/);
   assert.throws(() => api.policy.validate({ addRules: [allow(number('SOCIAL_EMBED_ONCE_RULE_BASE'), number('SOCIAL_EMBED_ONCE_PRIORITY'))] }, 'dynamic'), /authority/);
+}
+/* Google's relay frame may pass cookie isolation (2000) and nothing above it, and never opens a whole document. */
+{
+  const owner = api.policy.explicitOwners.find(entry => entry.name === 'googleSignInHandoff');
+  assert.equal(owner.max, number('GOOGLE_SIGNIN_HANDOFF_PRIORITY'), 'the handoff ceiling is the handoff priority');
+  assert(owner.max > api.policy.securityMin && owner.max < 3000, 'the handoff passes cookie isolation but not the security lists');
+  api.policy.validate({ addRules: [allow(number('GOOGLE_SIGNIN_HANDOFF_RULE_BASE'), number('GOOGLE_SIGNIN_HANDOFF_PRIORITY'))] }, 'session');
+  assert.throws(() => api.policy.validate({ addRules: [allow(number('GOOGLE_SIGNIN_HANDOFF_RULE_BASE'), number('GOOGLE_SIGNIN_HANDOFF_PRIORITY') + 1)] }, 'session'), /authority/);
+  assert.throws(() => api.policy.validate({ addRules: [allow(number('GOOGLE_SIGNIN_HANDOFF_RULE_BASE'), 1000, 'allowAllRequests')] }, 'session'), /Unbounded/);
+  assert.throws(() => api.policy.validate({ addRules: [allow(number('GOOGLE_SIGNIN_HANDOFF_RULE_BASE'), number('GOOGLE_SIGNIN_HANDOFF_PRIORITY'))] }, 'dynamic'), /authority/);
 }
 /* A list block Continue may pass the lists but nothing above them, and never opens a whole document. */
 api.policy.validate({ addRules: [allow(number('LIST_ONCE_RULE_BASE'), number('LIST_ONCE_PRIORITY'))] }, 'session');

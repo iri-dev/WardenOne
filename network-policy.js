@@ -17,6 +17,9 @@ const WONetworkPolicy = (() => {
     /* "Load" on a social embed WardenOne held back: a real click, one provider's embed hosts, one tab and one site,
        just above the guard's own blocks (2000) and below the security lists. */
     { store: 'session', base: 913400, size: 24, max: 2010, name: 'socialEmbedLoad' },
+    /* Google's older sign in window opened by a tab for its own origin: one tab, one site, accounts.google.com only,
+       just above cookie isolation (2000) so its hidden relay frame keeps the session it was asked to finish. */
+    { store: 'session', base: 913600, size: 16, max: 2010, name: 'googleSignInHandoff' },
   ].map(Object.freeze));
 
   function validate(change, store) {

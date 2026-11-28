@@ -740,6 +740,7 @@ checkCommand('feed domain validation tests', ['tools/test-feed-domain-validation
 checkCommand('feed shared-platform and oisd tests', ['tools/test-feed-shared-platforms.js']);
 checkCommand('De-AMP default and loop guard tests', ['tools/test-deamp-default.js']);
 checkCommand('social embed guard tests', ['tools/test-social-embed-guard.js']);
+checkCommand('Google sign in handoff tests', ['tools/test-google-signin-handoff.js']);
 checkCommand('fingerprint shield tests', ['tools/test-fingerprint-shield.js']);
 checkCommand('referrer cap tests', ['tools/test-referrer-cap.js']);
 checkCommand('OneTrust local answer tests', ['tools/test-onetrust-answer.js']);

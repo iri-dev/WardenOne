@@ -4282,6 +4282,8 @@ const LIST_ONCE_RULES_BUDGET = 16;
 // The social embed guard's network blocks, and the tab-scoped allow each press of its "Load" button adds.
 const SOCIAL_EMBED_RULES_BUDGET = 8;
 const SOCIAL_EMBED_ONCE_RULES_BUDGET = 24;
+// The tab-scoped allow that opening Google's older sign in window adds for its hidden relay frame.
+const GOOGLE_SIGNIN_HANDOFF_RULES_BUDGET = 16;
 const ONETRUST_PREFERENCES_RULES_BUDGET = 16;
 // One block rule per hostname caught resolving to a private address this session.
 const REBIND_QUARANTINE_RULES_BUDGET = 128;
@@ -4309,6 +4311,7 @@ const TOTAL_DYNAMIC_BUDGET = LIST_RULES_BUDGET + OPTION_RULES_MAX + REDIRECT_RUL
 const TOTAL_SESSION_BUDGET = ALLOWLIST_RULES_BUDGET + MEDIA_COMPAT_RULES_BUDGET + LOGIN_COMPAT_RULES_BUDGET
   + SAFE_SEARCH_RULES_BUDGET + SCRIPT_SHIELD_RULES_BUDGET + SMALL_SESSION_RULES_BUDGET + ONETRUST_PREFERENCES_RULES_BUDGET
   + REBIND_QUARANTINE_RULES_BUDGET + INTRANET_NETWORK_RULES_BUDGET + FIREWALL_SESSION_RULES_BUDGET + TRACKER_COOKIE_ALIAS_RULES_BUDGET + TRACKING_REDIRECT_FALLBACK_BUDGET
+  + GOOGLE_SIGNIN_HANDOFF_RULES_BUDGET
   + SOCIAL_EMBED_RULES_BUDGET + SOCIAL_EMBED_ONCE_RULES_BUDGET + IP_PROGRAM_ONCE_RULES_BUDGET + LIST_ONCE_RULES_BUDGET;
 // All other dynamic builders emit only safe actions. The grabber band has one redirect, the
 // tracker learner one automatic cookie removal; every firewall slot is conservatively reserved
@@ -6157,6 +6160,7 @@ function logRuleBases() {
     [IP_LOOKUP_BLOCK_RULE_BASE, 'IP-lookup block'],
     [SOCIAL_EMBED_RULE_BASE, 'Social embed guard'],
     [SOCIAL_EMBED_ONCE_RULE_BASE, 'Social embed you loaded'],
+    [GOOGLE_SIGNIN_HANDOFF_RULE_BASE, 'Google sign in you started'],
     [SCRIPT_SHIELD_RULE_BASE, 'Script Shield'],
     [FINGERPRINT_SCRIPT_RULE_BASE, 'Fingerprint-script block'],
     [GOOGLE_SEARCH_ALLOW_RULE_BASE, 'Search compatibility'],
@@ -6207,6 +6211,7 @@ function logAllowingRuleBases() {
     NEVER_BLOCK_ALLOW_RULE_BASE, ALLOWLIST_RULE_BASE, MEDIA_COMPAT_RULE_BASE,
     LOGIN_COMPAT_RULE_BASE, GOOGLE_SEARCH_ALLOW_RULE_BASE, SAFE_SEARCH_RULE_BASE, LINK_CLEAN_RULE_BASE,
     TRACKING_REDIRECT_RULE_BASE, TRACKING_REDIRECT_FALLBACK_BASE, IP_PROGRAM_LOCAL_RULE_BASE, IP_PROGRAM_ONCE_RULE_BASE, LIST_ONCE_RULE_BASE,
+    GOOGLE_SIGNIN_HANDOFF_RULE_BASE,
     /* A $csp rule appends a response header and lets the request finish, so it is not a block.
        A $redirect rule is: the request it names never reaches the network. */
     CSP_RULE_BASE,
@@ -15297,6 +15302,91 @@ registerListener('social embed load', () => {
     void clearSocialEmbedOnce(details.tabId, host).catch(() => {});
   });
   chrome.tabs?.onRemoved?.addListener((tabId) => { void clearSocialEmbedOnce(tabId).catch(() => {}); });
+});
+
+/* Google's older sign in library (gapi.auth2) finishes in a hidden accounts.google.com frame on the page, which
+   watches Google's session cookies and asks for the token with them. Cookie isolation hid both, so the button did
+   nothing once an account was chosen. The sign in window already tells Google the site, so when a tab opens it for
+   its own origin, the frame gets its cookies back in that tab while the tab stays on the site. */
+const GOOGLE_SIGNIN_HANDOFF_RULE_BASE = 913600;
+const GOOGLE_SIGNIN_HANDOFF_PRIORITY = 2010;
+const GOOGLE_SIGNIN_HANDOFF_HOST = 'accounts.google.com';
+let GOOGLE_SIGNIN_HANDOFF_ACTIVE = null;
+function googleSignInHandoffRule(rule) {
+  return !!rule && rule.id >= GOOGLE_SIGNIN_HANDOFF_RULE_BASE && rule.id < GOOGLE_SIGNIN_HANDOFF_RULE_BASE + GOOGLE_SIGNIN_HANDOFF_RULES_BUDGET;
+}
+/* Only the relay flow: Google's authorize endpoint, a real client id, and a storagerelay return to one origin.
+   GIS popups answer the opener directly and need no frame cookies, so they never match. */
+function googleSignInRelayOrigin(popupUrl) {
+  let url;
+  try { url = new URL(String(popupUrl || '')); } catch (_) { return ''; }
+  if (url.protocol !== 'https:' || url.hostname !== GOOGLE_SIGNIN_HANDOFF_HOST || url.port || url.username || url.password) return '';
+  if (url.pathname !== '/o/oauth2/auth' && url.pathname !== '/o/oauth2/v2/auth') return '';
+  if (!/^[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com$/.test(url.searchParams.get('client_id') || '')) return '';
+  const relay = /^storagerelay:\/\/(https?)\/([a-z0-9.-]+(?::[0-9]{1,5})?)(?:\?id=[A-Za-z0-9_-]+)?$/i.exec(url.searchParams.get('redirect_uri') || '');
+  if (!relay) return '';
+  let origin = '';
+  try { origin = new URL(relay[1].toLowerCase() + '://' + relay[2]).origin; } catch (_) { return ''; }
+  for (const named of [url.searchParams.get('ss_domain'), url.searchParams.get('origin')]) {
+    if (named !== null && named !== origin) return '';
+  }
+  return origin;
+}
+async function allowGoogleSignInHandoff(details) {
+  const tabId = details && details.sourceTabId;
+  if (!Number.isInteger(tabId) || tabId < 0) return false;
+  const origin = googleSignInRelayOrigin(details.url);
+  if (!origin) return false;
+  const frameId = Number.isInteger(details.sourceFrameId) ? details.sourceFrameId : 0;
+  /* The window must come from a frame on the origin it names, so a page cannot borrow another site's sign in. */
+  const frame = await chrome.webNavigation.getFrame({ tabId, frameId }).catch(() => null);
+  let opener;
+  try { opener = new URL(frame && frame.url); } catch (_) { return false; }
+  if (opener.origin !== origin) return false;
+  const site = String(registrableDomainBg(opener.hostname) || opener.hostname).toLowerCase().replace(/\.$/, '');
+  /* Google's own pages are outside cookie isolation already. */
+  if (!/^[a-z0-9.-]+$/.test(site) || (!site.includes('.') && site !== 'localhost') || site === registrableDomainBg(GOOGLE_SIGNIN_HANDOFF_HOST)) return false;
+  return serializeSubsystem('googleSignInHandoff', async () => {
+    const mine = (await chrome.declarativeNetRequest.getSessionRules()).filter(googleSignInHandoffRule);
+    if (mine.some((rule) => rule.condition.tabIds?.includes(tabId) && rule.condition.initiatorDomains?.[0] === site)) return true;
+    const used = new Set(mine.map((rule) => rule.id));
+    let id = GOOGLE_SIGNIN_HANDOFF_RULE_BASE;
+    while (used.has(id) && id < GOOGLE_SIGNIN_HANDOFF_RULE_BASE + GOOGLE_SIGNIN_HANDOFF_RULES_BUDGET) id++;
+    const removeRuleIds = [];
+    if (id >= GOOGLE_SIGNIN_HANDOFF_RULE_BASE + GOOGLE_SIGNIN_HANDOFF_RULES_BUDGET) { id = mine[0].id; removeRuleIds.push(id); }
+    /* The page loads the frame and the frame calls Google; other frames in the tab keep their isolation. */
+    await writeSessionRules({ removeRuleIds, addRules: [{ id, priority: GOOGLE_SIGNIN_HANDOFF_PRIORITY, action: { type: 'allow' },
+      condition: { tabIds: [tabId], initiatorDomains: [site, GOOGLE_SIGNIN_HANDOFF_HOST], requestDomains: [GOOGLE_SIGNIN_HANDOFF_HOST],
+        resourceTypes: ['sub_frame', 'xmlhttprequest'] } }] });
+    GOOGLE_SIGNIN_HANDOFF_ACTIVE = true;
+    return true;
+  });
+}
+/* keepHost: the site the tab just committed; the handoff stays while the tab is on the site it was opened for. */
+async function clearGoogleSignInHandoff(tabId, keepHost) {
+  if (GOOGLE_SIGNIN_HANDOFF_ACTIVE === false) return;
+  return serializeSubsystem('googleSignInHandoff', async () => {
+    const existing = (await chrome.declarativeNetRequest.getSessionRules()).filter(googleSignInHandoffRule);
+    GOOGLE_SIGNIN_HANDOFF_ACTIVE = existing.length > 0;
+    const keep = String(keepHost || '').toLowerCase().replace(/\.$/, '');
+    const ids = existing.filter((rule) => {
+      if (tabId !== undefined && !rule.condition.tabIds?.includes(tabId)) return false;
+      const site = rule.condition.initiatorDomains?.[0] || '';
+      return !(keep && site && (keep === site || keep.endsWith('.' + site)));
+    }).map((rule) => rule.id);
+    if (ids.length) await writeSessionRules({ removeRuleIds: ids, addRules: [] });
+    if (ids.length === existing.length) GOOGLE_SIGNIN_HANDOFF_ACTIVE = false;
+  });
+}
+registerListener('google sign in handoff', () => {
+  chrome.webNavigation?.onCreatedNavigationTarget?.addListener((details) => { void allowGoogleSignInHandoff(details).catch(() => {}); });
+  chrome.webNavigation?.onCommitted?.addListener((details) => {
+    if (!details || details.frameId !== 0 || !/^https?:/i.test(String(details.url || ''))) return;
+    let host = '';
+    try { host = new URL(details.url).hostname; } catch (_) {}
+    void clearGoogleSignInHandoff(details.tabId, host).catch(() => {});
+  });
+  chrome.tabs?.onRemoved?.addListener((tabId) => { void clearGoogleSignInHandoff(tabId).catch(() => {}); });
 });
 
 // Unclassified cross-site requests keep the existing passive pixel/beacon scope.
